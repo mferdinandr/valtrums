@@ -16,7 +16,8 @@ import type {
 } from "./types";
 
 export const MOCK_ACCOUNT = "demo.testnet";
-const USDC_ID = "usdc.tkn.testnet";
+export const MOCK_USDC_ID = "usdc.tkn.testnet";
+const USDC_ID = MOCK_USDC_ID;
 const BOND = 20_000_000n; // 20 USDC
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -28,6 +29,9 @@ const TOKENS: Record<string, { symbol: string; decimals: number; price: bigint }
   "mog.tkn.testnet": { symbol: "MOG", decimals: 18, price: 15n * 10n ** 11n },
   "wojak.tkn.testnet": { symbol: "WOJAK", decimals: 18, price: 8n * 10n ** 13n },
 };
+
+/** Price table (USD per whole coin, 1e18 scaled) so a mock swap quote stays consistent with the demo battles. */
+export const MOCK_TOKENS = TOKENS;
 
 export interface MockOptions {
   /** Clock in epoch milliseconds. Defaults to Date.now. */
