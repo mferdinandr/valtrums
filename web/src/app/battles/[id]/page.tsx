@@ -9,6 +9,7 @@ import { DepositForm } from "@/components/deposit-form";
 import { HpBar } from "@/components/hp-bar";
 import { useArena, useWallet } from "@/components/providers";
 import { StatusTimeline } from "@/components/status-timeline";
+import { TerminalPanel } from "@/components/terminal/terminal-panel";
 import { useAsync } from "@/hooks/use-async";
 import { useNow } from "@/hooks/use-now";
 import { useTokenMetas } from "@/hooks/use-token-metas";
@@ -182,6 +183,8 @@ function Detail({ battle, reload }: { battle: BattleView; reload: () => void }) 
       {depositOpen && (
         <DepositForm battle={battle} metaA={metaA} metaB={metaB} lockedSide={pos?.side ?? null} onDone={() => { reload(); position.reload(); }} />
       )}
+
+      {depositOpen && <TerminalPanel scopeBattleId={battle.id} onDone={() => { reload(); position.reload(); }} />}
 
       {plan.data && plan.data.length > 0 && (
         <Card>

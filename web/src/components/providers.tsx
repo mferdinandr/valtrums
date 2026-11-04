@@ -6,6 +6,7 @@ import { config } from "@/lib/config";
 import { createMockArenaApi, MOCK_ACCOUNT } from "@/lib/arena/mock";
 import { createNearArenaApi } from "@/lib/arena/near";
 import type { ArenaApi } from "@/lib/arena/types";
+import { createMockEnv, createNearEnv, type TerminalEnv } from "@/lib/terminal/env";
 
 export interface WalletState {
   /** Connected account id, or null when signed out. */
@@ -17,6 +18,7 @@ export interface WalletState {
 
 const WalletContext = createContext<WalletState | null>(null);
 const ArenaContext = createContext<ArenaApi | null>(null);
+const TerminalEnvContext = createContext<TerminalEnv | null>(null);
 
 export function useWallet(): WalletState {
   const ctx = useContext(WalletContext);
@@ -30,11 +32,18 @@ export function useArena(): ArenaApi {
   return ctx;
 }
 
+export function useTerminalEnv(): TerminalEnv {
+  const ctx = useContext(TerminalEnvContext);
+  if (!ctx) throw new Error("useTerminalEnv must be used inside <Providers>");
+  return ctx;
+}
+
 const MOCK_KEY = "valtrum:demo-account";
 
 /** Demo mode: a fake wallet so the whole UI is usable without a deployed contract. */
 function MockProviders({ children }: { children: ReactNode }) {
   const api = useMemo(() => createMockArenaApi({ latencyMs: 150 }), []);
+  const env = useMemo(() => createMockEnv(api), [api]);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -55,7 +64,9 @@ function MockProviders({ children }: { children: ReactNode }) {
   const wallet = useMemo(() => ({ accountId, loading, signIn, signOut }), [accountId, loading, signIn, signOut]);
   return (
     <WalletContext.Provider value={wallet}>
-      <ArenaContext.Provider value={api}>{children}</ArenaContext.Provider>
+      <ArenaContext.Provider value={api}>
+        <TerminalEnvContext.Provider value={env}>{children}</TerminalEnvContext.Provider>
+      </ArenaContext.Provider>
     </WalletContext.Provider>
   );
 }
@@ -74,6 +85,19 @@ function NearBridge({ children }: { children: ReactNode }) {
     [connector],
   );
 
+  const env = useMemo(
+    () =>
+      createNearEnv({
+        api,
+        arenaId: config.arenaContractId,
+        network: config.network,
+        rpcUrl: config.rpcUrl,
+        connector,
+        fundingMode: config.fundingRouter,
+      }),
+    [api, connector],
+  );
+
   const wallet = useMemo<WalletState>(
     () => ({ accountId: signedAccountId || null, loading, signIn, signOut }),
     [signedAccountId, loading, signIn, signOut],
@@ -81,7 +105,9 @@ function NearBridge({ children }: { children: ReactNode }) {
 
   return (
     <WalletContext.Provider value={wallet}>
-      <ArenaContext.Provider value={api}>{children}</ArenaContext.Provider>
+      <ArenaContext.Provider value={api}>
+        <TerminalEnvContext.Provider value={env}>{children}</TerminalEnvContext.Provider>
+      </ArenaContext.Provider>
     </WalletContext.Provider>
   );
 }
