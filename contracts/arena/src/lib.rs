@@ -3074,6 +3074,259 @@ mod tests {
         );
     }
 
+    /// Settling battle 1 (A won) with on-chain execution through `dex`.
+    fn execution_arena() -> Arena {
+        let mut arena = live_arena();
+        set_context("owner", END_NS);
+        arena.set_execution(Some(acc("dex")), Some(acc("burn")));
+        settle_with(&mut arena, 120, 105);
+        arena
+    }
+
+    fn exec_step(arena: &mut Arena, index: u32, min_out: u128) -> PromiseOrValue<bool> {
+        set_context("agent", END_NS + 1);
+        arena.execute_step(1, index, U128(min_out))
+    }
+
+    fn proceeds_from(
+        arena: &mut Arena,
+        sender: &str,
+        token: &str,
+        amount: u128,
+        index: u32,
+    ) -> u128 {
+        set_context(token, END_NS + 2);
+        let msg =
+            json!({"action": "step_proceeds", "battle_id": 1, "step_index": index}).to_string();
+        returned(arena.ft_on_transfer(acc(sender), U128(amount), msg))
+    }
+
+    fn plan_dispatched(arena: &Arena, index: usize) -> bool {
+        arena.get_settlement_plan(1)[index].dispatched
+    }
+
+    #[test]
+    fn the_full_plan_runs_on_chain_and_settles() {
+        let mut arena = execution_arena();
+
+        // Dump: 160 loser coin -> at least 30 USDC; the DEX paid 40
+        assert!(matches!(
+            exec_step(&mut arena, 0, 30),
+            PromiseOrValue::Promise(_)
+        ));
+        assert!(plan_dispatched(&arena, 0));
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 0);
+        assert_eq!(arena.get_settlement_plan(1).len(), 4);
+
+        // Buy: 22 USDC -> winner coin; Burn: 2 USDC -> winner coin, burned
+        let _ = exec_step(&mut arena, 1, 200);
+        assert_eq!(proceeds_from(&mut arena, "dex", "pepe", 220, 1), 0);
+        let _ = exec_step(&mut arena, 2, 9);
+        assert_eq!(proceeds_from(&mut arena, "dex", "pepe", 10, 2), 0);
+
+        // Return: the fee is booked without a swap
+        assert!(matches!(
+            exec_step(&mut arena, 3, 1),
+            PromiseOrValue::Value(true)
+        ));
+
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Settled);
+        assert_eq!(arena.get_config().treasury_accrued, U128(2));
+        let settlement = arena.battles.get(&1).unwrap().settlement.clone().unwrap();
+        assert_eq!(settlement.liquid_pool, 220);
+        assert_eq!(settlement.burned, 10);
+        assert_eq!(settlement.credit_pool, 14);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5_000_000);
+    }
+
+    #[test]
+    fn the_realized_amount_is_what_the_dex_actually_paid() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        proceeds_from(&mut arena, "dex", "usdc", 100, 0); // better than the minimum
+        let plan = arena.get_settlement_plan(1);
+        assert_eq!(plan[0].realized, Some(U128(100)));
+        assert_eq!(plan[1].amount, U128(55)); // 55% of what really arrived
+    }
+
+    #[test]
+    fn proceeds_below_the_minimum_are_rejected() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 29, 0), 29);
+        assert!(!arena.get_settlement_plan(1)[0].done);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 30, 0), 0);
+        assert!(arena.get_settlement_plan(1)[0].done);
+    }
+
+    #[test]
+    fn proceeds_need_a_dispatched_step() {
+        let mut arena = execution_arena();
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 40);
+        assert!(!arena.get_settlement_plan(1)[0].done);
+    }
+
+    #[test]
+    fn proceeds_from_anyone_but_the_dex_are_rejected() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        assert_eq!(proceeds_from(&mut arena, "mallory", "usdc", 40, 0), 40);
+        assert!(!arena.get_settlement_plan(1)[0].done);
+    }
+
+    #[test]
+    fn proceeds_in_the_wrong_token_are_rejected() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        assert_eq!(proceeds_from(&mut arena, "dex", "pepe", 40, 0), 40);
+        assert_eq!(proceeds_from(&mut arena, "dex", "shib", 40, 0), 40);
+        assert!(!arena.get_settlement_plan(1)[0].done);
+    }
+
+    #[test]
+    fn a_step_cannot_be_booked_twice() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 0);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 40);
+    }
+
+    #[test]
+    fn proceeds_are_ignored_without_execution_config() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 40);
+    }
+
+    #[test]
+    fn proceeds_are_accepted_while_paused() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        set_context("owner", END_NS + 1);
+        arena.set_paused(true);
+        assert_eq!(proceeds_from(&mut arena, "dex", "usdc", 40, 0), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Step already dispatched")]
+    fn a_step_cannot_be_dispatched_twice() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        let _ = exec_step(&mut arena, 0, 30);
+    }
+
+    #[test]
+    #[should_panic(expected = "Steps must be reported in order")]
+    fn steps_are_dispatched_in_order() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        proceeds_from(&mut arena, "dex", "usdc", 40, 0);
+        let _ = exec_step(&mut arena, 2, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Minimum output must be positive")]
+    fn a_swap_step_needs_a_positive_minimum() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "On-chain execution is not configured")]
+    fn executing_needs_the_dex_to_be_configured() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        let _ = exec_step(&mut arena, 0, 30);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_execute_steps() {
+        let mut arena = execution_arena();
+        set_context("alice", END_NS + 1);
+        let _ = arena.execute_step(1, 0, U128(30));
+    }
+
+    #[test]
+    #[should_panic(expected = "Execution runs on-chain")]
+    fn reported_amounts_are_refused_when_execution_is_on_chain() {
+        let mut arena = execution_arena();
+        report(&mut arena, 0, 40);
+    }
+
+    #[test]
+    fn a_refused_swap_makes_the_step_dispatchable_again() {
+        for failure in [Err(PromiseError::Failed), Ok(U128(0))] {
+            let mut arena = execution_arena();
+            let _ = exec_step(&mut arena, 0, 30);
+            assert!(plan_dispatched(&arena, 0));
+            set_context("arena", END_NS + 3);
+            arena.on_step_sent(1, 0, U128(160), failure);
+            assert!(!plan_dispatched(&arena, 0));
+            let _ = exec_step(&mut arena, 0, 30);
+            assert!(plan_dispatched(&arena, 0));
+        }
+    }
+
+    #[test]
+    fn an_accepted_swap_keeps_the_step_dispatched() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        set_context("arena", END_NS + 3);
+        arena.on_step_sent(1, 0, U128(160), Ok(U128(160)));
+        assert!(plan_dispatched(&arena, 0));
+    }
+
+    #[test]
+    fn a_failed_callback_never_reopens_a_finished_step() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 30);
+        proceeds_from(&mut arena, "dex", "usdc", 40, 0);
+        set_context("arena", END_NS + 3);
+        arena.on_step_sent(1, 0, U128(160), Err(PromiseError::Failed));
+        assert!(arena.get_settlement_plan(1)[0].done);
+    }
+
+    #[test]
+    fn a_zero_amount_swap_step_completes_without_the_dex() {
+        let mut arena = execution_arena();
+        let _ = exec_step(&mut arena, 0, 1);
+        proceeds_from(&mut arena, "dex", "usdc", 1, 0); // 1 USDC: every share rounds to 0 except fee
+        let plan = arena.get_settlement_plan(1);
+        assert_eq!(plan[1].amount, U128(0));
+        assert!(matches!(
+            exec_step(&mut arena, 1, 1),
+            PromiseOrValue::Value(true)
+        ));
+        assert!(arena.get_settlement_plan(1)[1].done);
+    }
+
+    #[test]
+    fn execution_is_configured_by_the_owner_with_both_accounts() {
+        let mut arena = new_arena();
+        arena.set_execution(Some(acc("dex")), Some(acc("burn")));
+        let config = arena.get_config();
+        assert_eq!(config.execution_dex, Some(acc("dex")));
+        assert_eq!(config.burn_account, Some(acc("burn")));
+        arena.set_execution(None, None);
+        assert_eq!(arena.get_config().execution_dex, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Set both the DEX and the burn account, or neither")]
+    fn execution_needs_both_accounts() {
+        let mut arena = new_arena();
+        arena.set_execution(Some(acc("dex")), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the owner")]
+    fn only_the_owner_configures_execution() {
+        let mut arena = new_arena();
+        set_context("stranger", 0);
+        arena.set_execution(Some(acc("dex")), Some(acc("burn")));
+    }
+
     #[test]
     #[should_panic(expected = "Only the owner")]
     fn non_owner_cannot_pause() {
