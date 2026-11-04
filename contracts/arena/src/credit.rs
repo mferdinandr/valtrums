@@ -37,6 +37,16 @@ impl Account {
         }
     }
 
+    /// Puts back credit taken for a deposit that did not complete. The expiry
+    /// never moves earlier, so a refund cannot shorten the credit's lifetime.
+    pub fn restore_credit(&mut self, amount: u128, expires_at_ns: u64) {
+        if amount == 0 {
+            return;
+        }
+        self.credit_balance += amount;
+        self.credit_expires_at_ns = self.credit_expires_at_ns.max(expires_at_ns);
+    }
+
     /// Spends `amount` of valid credit. Expired credit cannot be spent.
     pub fn consume_credit(&mut self, now_ns: u64, amount: u128) -> Result<(), CreditError> {
         if amount > self.available_credit(now_ns) {
@@ -139,6 +149,33 @@ mod tests {
             account.consume_credit(CREDIT_TTL_NS, 1),
             Err(CreditError::Insufficient)
         );
+    }
+
+    #[test]
+    fn restoring_credit_after_a_full_spend_brings_back_the_original_expiry() {
+        let mut account = account_with_credit(35);
+        let expiry = account.credit_expires_at_ns;
+        account.consume_credit(DAY_NS, 35).unwrap();
+        account.restore_credit(35, expiry);
+        assert_eq!(account.credit_balance, 35);
+        assert_eq!(account.credit_expires_at_ns, expiry);
+        assert_eq!(account.available_credit(DAY_NS), 35);
+    }
+
+    #[test]
+    fn restoring_credit_never_shortens_the_expiry() {
+        let mut account = account_with_credit(10);
+        account.credit_expires_at_ns = 5 * DAY_NS;
+        account.restore_credit(5, 2 * DAY_NS);
+        assert_eq!(account.credit_balance, 15);
+        assert_eq!(account.credit_expires_at_ns, 5 * DAY_NS);
+    }
+
+    #[test]
+    fn restoring_zero_changes_nothing() {
+        let mut account = Account::default();
+        account.restore_credit(0, 99);
+        assert_eq!(account, Account::default());
     }
 
     #[test]

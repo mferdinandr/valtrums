@@ -65,6 +65,8 @@ pub struct Arena {
     /// How long deposits stay open after the agent approves a battle.
     deposit_window_secs: u64,
     agents: IterableSet<AccountId>,
+    /// Router that swaps USDC into a side's coin and delivers the deposit.
+    router: Option<AccountId>,
     paused: bool,
     /// USDC owed to the treasury, paid out by `flush_treasury`.
     treasury_accrued: u128,
@@ -93,6 +95,7 @@ impl Arena {
             bond: bond.0,
             deposit_window_secs: deposit_window_secs.0,
             agents: IterableSet::new(StorageKey::Agents),
+            router: None,
             paused: false,
             treasury_accrued: 0,
             battles: LookupMap::new(StorageKey::Battles),
@@ -117,6 +120,12 @@ impl Arena {
     pub fn set_treasury(&mut self, treasury: AccountId) {
         self.assert_owner();
         self.treasury = treasury;
+    }
+
+    /// Sets (or clears) the router that is trusted to deliver swapped deposits.
+    pub fn set_router(&mut self, router: Option<AccountId>) {
+        self.assert_owner();
+        self.router = router;
     }
 
     pub fn set_bond(&mut self, bond: U128) {
@@ -337,6 +346,7 @@ impl Arena {
             bond: U128(self.bond),
             deposit_window_secs: U64(self.deposit_window_secs),
             agents: self.agents.iter().cloned().collect(),
+            router: self.router.clone(),
             paused: self.paused,
             treasury_accrued: U128(self.treasury_accrued),
         }
@@ -553,6 +563,7 @@ mod tests {
         assert_eq!(config.bond, U128(5_000_000));
         assert_eq!(config.deposit_window_secs, U64(3_600));
         assert!(config.agents.is_empty());
+        assert_eq!(config.router, None);
         assert!(!config.paused);
         assert_eq!(config.treasury_accrued, U128(0));
     }
@@ -1321,6 +1332,23 @@ mod tests {
         assert_eq!(battle.vault_b.0, sum(Side::B));
         assert_eq!(battle.vault_a, U128(400));
         assert_eq!(battle.vault_b, U128(1_075));
+    }
+
+    #[test]
+    fn owner_sets_and_clears_the_router() {
+        let mut arena = new_arena();
+        arena.set_router(Some(acc("router")));
+        assert_eq!(arena.get_config().router, Some(acc("router")));
+        arena.set_router(None);
+        assert_eq!(arena.get_config().router, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the owner")]
+    fn non_owner_cannot_set_the_router() {
+        let mut arena = new_arena();
+        set_context("stranger", 0);
+        arena.set_router(Some(acc("stranger")));
     }
 
     #[test]
