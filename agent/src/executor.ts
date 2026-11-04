@@ -20,16 +20,3 @@ export class MockStepExecutor implements StepExecutor {
     return this.realize(step, battle);
   }
 }
-
-/**
- * Extension point for signing and broadcasting steps on a foreign chain. It is
- * not implemented in this build: selecting it fails loudly instead of
- * pretending a step was executed.
- */
-export class ForeignChainStepExecutor implements StepExecutor {
-  async execute(step: SettlementStep, battle: BattleView): Promise<bigint> {
-    throw new Error(
-      `foreign-chain execution is not available in this build (battle ${battle.id}, step ${step.index})`,
-    );
-  }
-}

@@ -31,8 +31,8 @@ export class FakeEvmRpc implements EvmRpc {
   readonly receipts = new Map<string, EvmReceipt>();
   /** Every raw transaction passed to sendRawTransaction, in order. */
   readonly broadcasts: string[] = [];
-  /** Next transactions revert (consumed one per transaction). */
-  revertNext = 0;
+  /** Transactions for which this returns true revert (nonce still increments). */
+  shouldRevert: ((tx: DecodedTx) => boolean) | null = null;
   /** Next sendRawTransaction calls throw after storing nothing. */
   failSend = 0;
   /** When set, a broadcast is accepted into the mempool but not mined until `mine()`. */
@@ -140,8 +140,7 @@ export class FakeEvmRpc implements EvmRpc {
     }
     this.nonces.set(sender, expected + 1n);
     let logs: EvmLog[] | null = [];
-    if (this.revertNext > 0) {
-      this.revertNext--;
+    if (this.shouldRevert?.(tx)) {
       logs = null;
     } else {
       logs = this.execute(sender, tx);
