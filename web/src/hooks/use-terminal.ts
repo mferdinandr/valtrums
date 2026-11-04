@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useSyncExternalStore } from "react";
 import { useArena, useTerminalEnv, useWallet } from "@/components/providers";
+import { canKeyDeposit } from "@/lib/terminal/session-key";
 import { createRouteParser } from "@/lib/terminal/parse-client";
 import { createTerminal, type HistoryEntry, type TerminalController, type TerminalState } from "@/lib/terminal/machine";
 
@@ -28,7 +29,7 @@ export function useTerminal(scopeBattleId?: number): UseTerminal {
         sender: env.sender,
         funding: env.funding,
         getAccountId: () => accountRef.current,
-        preferBalance: () => (accountRef.current ? env.session.get(accountRef.current) !== null : false),
+        preferBalance: () => (accountRef.current ? canKeyDeposit(env.session.get(accountRef.current), env.chain.arenaId, Date.now()) : false),
         scopeBattleId,
       }),
     [api, env, scopeBattleId],

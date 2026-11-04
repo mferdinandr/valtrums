@@ -5,6 +5,7 @@ import { FundBalance } from "@/components/fund-balance";
 import { useTerminalEnv, useWallet } from "@/components/providers";
 import { useAsync } from "@/hooks/use-async";
 import { formatUsdc } from "@/lib/amounts";
+import { canKeyDeposit } from "@/lib/terminal/session-key";
 import type { DepositPlan } from "@/lib/terminal/plan";
 
 /** Lets the user choose wallet or arena balance for the deposit and fund the balance when it is short. */
@@ -24,7 +25,7 @@ export function FundingSource({
 
   const needed = plan.totalUnits - plan.creditUnits;
   const short = plan.balanceAvailable < needed ? needed - plan.balanceAvailable : 0n;
-  const session = accountId ? env.session.get(accountId) : null;
+  const session = accountId && canKeyDeposit(env.session.get(accountId), env.chain.arenaId, Date.now());
 
   return (
     <div className="space-y-2 border-2 border-edge p-2">

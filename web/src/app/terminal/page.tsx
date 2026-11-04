@@ -11,6 +11,10 @@ export default function TerminalPage() {
         <p className="mt-2 text-xl text-mute">
           Say what you want in plain English or Bahasa Indonesia. You always see a summary first, and nothing is sent until you confirm.
         </p>
+        <p className="mt-2 text-lg text-mute">
+          Approvals: funding your arena balance takes one wallet approval. Deposits paid from that balance need none while a valid session key exists;
+          without one, each deposit asks your wallet once.
+        </p>
       </div>
       <TerminalPanel />
       <SessionPanel />

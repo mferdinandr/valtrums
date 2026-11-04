@@ -11,6 +11,7 @@ import { useTerminalEnv, useWallet } from "@/components/providers";
 import { useTerminal } from "@/hooks/use-terminal";
 import { formatUsdc } from "@/lib/amounts";
 import { MAX_PROMPT_CHARS } from "@/lib/terminal/intent";
+import { canKeyDeposit } from "@/lib/terminal/session-key";
 import type { Summary } from "@/lib/terminal/summary";
 import type { FundingQuote } from "@/lib/terminal/funding";
 import { cn } from "@/lib/utils";
@@ -192,7 +193,7 @@ export function TerminalPanel({ scopeBattleId, onDone }: { scopeBattleId?: numbe
           </div>
           <p className="text-lg text-mute">
             {state.plan.payFromBalance
-              ? accountId && env.session.get(accountId)
+              ? accountId && canKeyDeposit(env.session.get(accountId), env.chain.arenaId, Date.now())
                 ? "Your session key signs this deposit, so there is no wallet prompt. "
                 : "Your wallet asks for one approval; no deposit is attached. "
               : "Your wallet asks for one approval. "}

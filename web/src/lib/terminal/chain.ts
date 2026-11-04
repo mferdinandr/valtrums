@@ -5,6 +5,7 @@ import { Near } from "near-kit";
 import { pow10, toBigInt, USDC_DECIMALS } from "../amounts";
 import { MOCK_TOKENS } from "../arena/mock";
 import type { ArenaApi } from "../arena/types";
+import { canSessionSign, recordSessionUse, type StoredSession } from "./session-key";
 import type { DepositTx } from "./transaction";
 
 export interface FundingSplit {
@@ -47,6 +48,9 @@ export interface MockChainOptions {
   /** Starting wallet USDC (base units) for any account. Default 100 USDC. */
   walletUsdc?: bigint;
   now?: () => number;
+  /** Current session key, if any. A valid one signs `deposit_from_balance` without a wallet prompt. */
+  getSession?: () => StoredSession | null;
+  onSessionUsed?: (session: StoredSession) => void;
 }
 
 export interface MockTerminalChain extends TerminalChain, TxSender {
@@ -125,6 +129,11 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
           minTokenOut: BigInt(tx.args.min_token_out),
         });
         sent.push(tx);
+        const session = opts.getSession?.() ?? null;
+        if (session && canSessionSign(session.policy, tx, now()).ok) {
+          opts.onSessionUsed?.({ ...session, policy: recordSessionUse(session.policy, tx) });
+          return "session";
+        }
         return "wallet";
       }
       const msg =

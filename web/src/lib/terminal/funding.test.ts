@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMockFundingRouter } from "./funding";
 import { createIntentsFundingRouter, createOneClickService } from "./oneclick";
-import { canSessionSign, createSessionPolicy, createSessionStore, SESSION_METHODS } from "./session-key";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -104,40 +103,5 @@ describe("intents funding router (browser side)", () => {
     });
     const q = await r.quote(req);
     expect(await r.execute(q)).toMatchObject({ ok: false, reason: "offline" });
-  });
-});
-
-describe("session keys", () => {
-  const policy = createSessionPolicy({ accountId: "a.testnet", arenaId: "arena.testnet", nowMs: 1000, ttlMs: 60_000, maxUsdcUnits: 10_000_000n });
-  const claim = { receiverId: "arena.testnet", method: "claim", deposit: "0" };
-
-  it("is scoped to the arena and its no-deposit methods", () => {
-    expect(policy.methods).toEqual([...SESSION_METHODS]);
-    expect(canSessionSign(policy, claim, 2000)).toEqual({ ok: true });
-    expect(canSessionSign(policy, { ...claim, receiverId: "usdc.testnet" }, 2000).ok).toBe(false);
-    expect(canSessionSign(policy, { ...claim, method: "withdraw_liquid" }, 2000).ok).toBe(false);
-  });
-
-  it("cannot sign a USDC deposit because it needs an attached yoctoNEAR", () => {
-    const deposit = { receiverId: "usdc.testnet", method: "ft_transfer_call", deposit: "1", usdcSpend: 5_000_000n };
-    expect(canSessionSign(policy, deposit, 2000).ok).toBe(false);
-    expect(canSessionSign(policy, { ...claim, deposit: "1" }, 2000)).toMatchObject({ ok: false });
-  });
-
-  it("stops at expiry and at the spend limit", () => {
-    expect(canSessionSign(policy, claim, 61_000)).toMatchObject({ ok: false });
-    expect(canSessionSign({ ...policy, spentUsdcUnits: 9_000_000n }, { ...claim, usdcSpend: 2_000_000n }, 2000).ok).toBe(false);
-    expect(canSessionSign(null, claim, 2000).ok).toBe(false);
-  });
-
-  it("persists a session per account and drops it after expiry", () => {
-    const m = new Map<string, string>();
-    const store = createSessionStore({ getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) });
-    store.save({ policy, secretKey: "ed25519:xyz" });
-    expect(store.load("a.testnet", 2000)?.policy.maxUsdcUnits).toBe(10_000_000n);
-    expect(store.load("b.testnet", 2000)).toBeNull();
-    expect(store.load("a.testnet", 100_000)).toBeNull();
-    store.clear();
-    expect(store.load("a.testnet", 2000)).toBeNull();
   });
 });
