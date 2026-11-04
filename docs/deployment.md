@@ -35,6 +35,29 @@ near contract call-function as-transaction valtrum-usdc-8875bb.testnet mint \
 
 An account must be registered with a token (`storage_deposit`) before it can receive it; `mint` registers the account it mints to.
 
+## Demo battle
+
+`scripts/demo-battle-testnet.sh <suffix>` plays one full battle on the deployment above and prints where the value went. It starts the agent locally (on-chain execution, market data from the mock DEX, a 40-second price window and 10-second passes), creates three players, proposes a 120-second battle between PEPE and SHIB, deposits on both sides, lets the agent lock it, moves the PEPE price up 25% through the DEX rate, waits for settlement, then claims and withdraws.
+
+A complete run on this deployment (battle 1):
+
+| Step | Result |
+| --- | --- |
+| Audit and approval | by the agent, from the DEX's liquidity and rates |
+| Vaults | 400 PEPE on side A, 160 SHIB on side B |
+| Prices | PEPE 0.001 to 0.00125 USD (+25%), SHIB unchanged: side A wins |
+| Dump | 160 SHIB sold for 40 USDC |
+| Buy | 22 USDC (55%) bought 22,000 PEPE |
+| Burn | 2 USDC (5%) bought 2,000 PEPE, sent to the burn account |
+| Return | 2 USDC (5%) fee booked for the treasury |
+| Claim by the winner | 22,400 PEPE (400 principal + 22,000 reward) withdrawn, plus 14 USDC of credit (35%) valid for 7 days |
+| Creator | the 5 USDC bond returned |
+| Left in the arena | 0 PEPE and 16 USDC: the 14 USDC credit pool and the 2 USDC fee |
+
+The numbers add up: nothing was created or lost beyond the burn.
+
+The agent needs a node that does not rate-limit: the public `rpc.testnet.near.org` answered HTTP 429 during the first attempt and stalled the run. The script defaults to `https://test.rpc.fastnear.com`; set `NEAR_RPC_URL` to use another provider.
+
 ## Deploying your own copy
 
 ```bash
