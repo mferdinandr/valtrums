@@ -1,18 +1,37 @@
 use near_sdk::json_types::{U128, U64};
-use near_sdk::store::IterableSet;
-use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault};
+use near_sdk::serde_json::{self, json};
+use near_sdk::store::{IterableSet, LookupMap};
+use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault, PromiseOrValue};
 
 pub mod events;
 pub mod math;
 pub mod types;
 pub mod views;
 
-use views::ConfigView;
+use types::{Battle, BattleStatus, NS_PER_SECOND};
+use views::{BattleView, ConfigView};
+
+/// Longest battle a proposer can request.
+const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
+/// Most battles `get_battles` returns in one call.
+const MAX_PAGE_SIZE: u64 = 100;
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
 enum StorageKey {
     Agents,
+    Battles,
+}
+
+/// Messages accepted through `ft_transfer_call`.
+#[near(serializers = [json])]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum TransferMsg {
+    Propose {
+        token_a: AccountId,
+        token_b: AccountId,
+        duration_secs: u64,
+    },
 }
 
 /// Battle arena contract: battle lifecycle, vaults, positions and settlement.
@@ -30,6 +49,8 @@ pub struct Arena {
     paused: bool,
     /// USDC owed to the treasury, paid out by `flush_treasury`.
     treasury_accrued: u128,
+    battles: LookupMap<u64, Battle>,
+    battle_count: u64,
 }
 
 #[near]
@@ -52,6 +73,8 @@ impl Arena {
             agents: IterableSet::new(StorageKey::Agents),
             paused: false,
             treasury_accrued: 0,
+            battles: LookupMap::new(StorageKey::Battles),
+            battle_count: 0,
         }
     }
 
@@ -89,7 +112,51 @@ impl Arena {
         self.paused = paused;
     }
 
+    // ─── Token receiver ─────────────────────────────────────────────────
+
+    /// NEP-141 receiver. USDC with a `propose` message creates a battle and
+    /// keeps the bond; anything unexpected is returned in full.
+    pub fn ft_on_transfer(
+        &mut self,
+        sender_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        let token = env::predecessor_account_id();
+        if self.paused || token != self.usdc {
+            return PromiseOrValue::Value(amount);
+        }
+        let unused = match serde_json::from_str::<TransferMsg>(&msg) {
+            Ok(TransferMsg::Propose {
+                token_a,
+                token_b,
+                duration_secs,
+            }) => self.handle_propose(sender_id, amount.0, token_a, token_b, duration_secs),
+            Err(_) => amount.0,
+        };
+        PromiseOrValue::Value(U128(unused))
+    }
+
     // ─── Views ──────────────────────────────────────────────────────────
+
+    pub fn get_battle(&self, battle_id: u64) -> Option<BattleView> {
+        self.battles
+            .get(&battle_id)
+            .map(|battle| BattleView::new(battle_id, battle))
+    }
+
+    pub fn get_battle_count(&self) -> u64 {
+        self.battle_count
+    }
+
+    /// Battles in ascending id order. `from_index` is a zero-based offset.
+    pub fn get_battles(&self, from_index: u64, limit: u64) -> Vec<BattleView> {
+        let limit = limit.min(MAX_PAGE_SIZE);
+        (from_index.saturating_add(1)..=self.battle_count)
+            .take(limit as usize)
+            .filter_map(|id| self.get_battle(id))
+            .collect()
+    }
 
     pub fn get_config(&self) -> ConfigView {
         ConfigView {
@@ -106,6 +173,59 @@ impl Arena {
 }
 
 impl Arena {
+    fn handle_propose(
+        &mut self,
+        creator: AccountId,
+        amount: u128,
+        token_a: AccountId,
+        token_b: AccountId,
+        duration_secs: u64,
+    ) -> u128 {
+        let invalid_tokens = token_a == token_b || token_a == self.usdc || token_b == self.usdc;
+        let invalid_duration = duration_secs == 0 || duration_secs > MAX_DURATION_SECS;
+        if invalid_tokens || invalid_duration || amount < self.bond {
+            return amount;
+        }
+
+        let battle_id = self
+            .battle_count
+            .checked_add(1)
+            .unwrap_or_else(|| env::panic_str("Battle id overflow"));
+        self.battle_count = battle_id;
+        self.battles.insert(
+            battle_id,
+            Battle {
+                creator: creator.clone(),
+                token_a: token_a.clone(),
+                token_b: token_b.clone(),
+                bond: self.bond,
+                duration_ns: duration_secs * NS_PER_SECOND,
+                deposit_deadline_ns: 0,
+                status: BattleStatus::Proposed,
+                vault_a: 0,
+                vault_b: 0,
+                start_time_ns: 0,
+                end_time_ns: 0,
+                initial_price_a: None,
+                initial_price_b: None,
+                final_price_a: None,
+                final_price_b: None,
+                winner: None,
+            },
+        );
+        events::emit(
+            "battle_proposed",
+            json!({
+                "battle_id": battle_id,
+                "creator": creator,
+                "token_a": token_a,
+                "token_b": token_b,
+                "bond": U128(self.bond),
+            }),
+        );
+        amount - self.bond
+    }
+
     fn assert_owner(&self) {
         require!(
             env::predecessor_account_id() == self.owner,
@@ -238,6 +358,210 @@ mod tests {
         assert_eq!(config.bond, U128(9));
         assert_eq!(config.deposit_window_secs, U64(60));
         assert!(config.paused);
+    }
+
+    fn propose_msg(token_a: &str, token_b: &str, duration_secs: u64) -> String {
+        json!({
+            "action": "propose",
+            "token_a": acc(token_a),
+            "token_b": acc(token_b),
+            "duration_secs": duration_secs,
+        })
+        .to_string()
+    }
+
+    fn returned(result: PromiseOrValue<U128>) -> u128 {
+        match result {
+            PromiseOrValue::Value(v) => v.0,
+            PromiseOrValue::Promise(_) => panic!("expected an immediate value"),
+        }
+    }
+
+    fn propose(arena: &mut Arena, sender: &str, amount: u128, msg: String) -> u128 {
+        set_context("usdc", 0);
+        returned(arena.ft_on_transfer(acc(sender), U128(amount), msg))
+    }
+
+    #[test]
+    fn valid_proposal_creates_battle_and_keeps_bond() {
+        let mut arena = new_arena();
+        let unused = propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("pepe", "shib", 86_400),
+        );
+        assert_eq!(unused, 0);
+        assert_eq!(arena.get_battle_count(), 1);
+
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.creator, acc("alice"));
+        assert_eq!(battle.token_a, acc("pepe"));
+        assert_eq!(battle.token_b, acc("shib"));
+        assert_eq!(battle.status, BattleStatus::Proposed);
+        assert_eq!(battle.bond, U128(5_000_000));
+        assert_eq!(battle.duration_ns, U64(86_400 * NS_PER_SECOND));
+        assert_eq!(battle.deposit_deadline_ns, U64(0));
+        assert!(battle.initial_price_a.is_none());
+    }
+
+    #[test]
+    fn proposal_emits_event() {
+        let mut arena = new_arena();
+        propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("pepe", "shib", 60),
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs
+            .iter()
+            .any(|l| l.contains("\"event\":\"battle_proposed\"")));
+    }
+
+    #[test]
+    fn excess_bond_is_returned() {
+        let mut arena = new_arena();
+        let unused = propose(
+            &mut arena,
+            "alice",
+            8_000_000,
+            propose_msg("pepe", "shib", 60),
+        );
+        assert_eq!(unused, 3_000_000);
+        assert_eq!(arena.get_battle_count(), 1);
+    }
+
+    #[test]
+    fn insufficient_bond_is_returned_in_full() {
+        let mut arena = new_arena();
+        let unused = propose(
+            &mut arena,
+            "alice",
+            4_999_999,
+            propose_msg("pepe", "shib", 60),
+        );
+        assert_eq!(unused, 4_999_999);
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn identical_tokens_are_returned_in_full() {
+        let mut arena = new_arena();
+        let unused = propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("pepe", "pepe", 60),
+        );
+        assert_eq!(unused, 5_000_000);
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn usdc_cannot_be_a_battle_token() {
+        let mut arena = new_arena();
+        let unused = propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("usdc", "shib", 60),
+        );
+        assert_eq!(unused, 5_000_000);
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn invalid_duration_is_returned_in_full() {
+        let mut arena = new_arena();
+        assert_eq!(
+            propose(
+                &mut arena,
+                "alice",
+                5_000_000,
+                propose_msg("pepe", "shib", 0)
+            ),
+            5_000_000
+        );
+        assert_eq!(
+            propose(
+                &mut arena,
+                "alice",
+                5_000_000,
+                propose_msg("pepe", "shib", MAX_DURATION_SECS + 1)
+            ),
+            5_000_000
+        );
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn malformed_message_is_returned_in_full() {
+        let mut arena = new_arena();
+        assert_eq!(propose(&mut arena, "alice", 7, "not json".to_string()), 7);
+        assert_eq!(
+            propose(
+                &mut arena,
+                "alice",
+                7,
+                json!({"action": "unknown"}).to_string()
+            ),
+            7
+        );
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn unexpected_token_is_returned_in_full() {
+        let mut arena = new_arena();
+        set_context("scam", 0);
+        let result = arena.ft_on_transfer(
+            acc("alice"),
+            U128(5_000_000),
+            propose_msg("pepe", "shib", 60),
+        );
+        assert_eq!(returned(result), 5_000_000);
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn paused_contract_returns_proposals() {
+        let mut arena = new_arena();
+        arena.set_paused(true);
+        let unused = propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("pepe", "shib", 60),
+        );
+        assert_eq!(unused, 5_000_000);
+        assert_eq!(arena.get_battle_count(), 0);
+    }
+
+    #[test]
+    fn battles_are_paginated_in_ascending_order() {
+        let mut arena = new_arena();
+        for _ in 0..5 {
+            propose(
+                &mut arena,
+                "alice",
+                5_000_000,
+                propose_msg("pepe", "shib", 60),
+            );
+        }
+        let ids = |from, limit| -> Vec<u64> {
+            arena
+                .get_battles(from, limit)
+                .iter()
+                .map(|b| b.id)
+                .collect()
+        };
+        assert_eq!(ids(0, 100), vec![1, 2, 3, 4, 5]);
+        assert_eq!(ids(1, 2), vec![2, 3]);
+        assert_eq!(ids(4, 10), vec![5]);
+        assert!(ids(5, 10).is_empty());
+        assert!(arena.get_battle(6).is_none());
     }
 
     #[test]
