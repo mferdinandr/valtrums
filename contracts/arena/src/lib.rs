@@ -148,7 +148,10 @@ impl Arena {
         bond: U128,
         deposit_window_secs: U64,
     ) -> Self {
-        require!(deposit_window_secs.0 > 0, "Deposit window must be positive");
+        require!(
+            (1..=MAX_DURATION_SECS).contains(&deposit_window_secs.0),
+            "Deposit window must be between 1 second and 30 days"
+        );
         Self {
             owner,
             usdc,
@@ -210,7 +213,10 @@ impl Arena {
 
     pub fn set_deposit_window_secs(&mut self, secs: U64) {
         self.assert_owner();
-        require!(secs.0 > 0, "Deposit window must be positive");
+        require!(
+            (1..=MAX_DURATION_SECS).contains(&secs.0),
+            "Deposit window must be between 1 second and 30 days"
+        );
         self.deposit_window_secs = secs.0;
     }
 
@@ -1511,10 +1517,47 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Deposit window must be positive")]
+    #[should_panic(expected = "Deposit window must be between 1 second and 30 days")]
     fn init_rejects_zero_window() {
         set_context("owner", 0);
         Arena::new(acc("owner"), acc("usdc"), acc("treasury"), U128(1), U64(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit window must be between 1 second and 30 days")]
+    fn init_rejects_a_window_over_the_cap() {
+        set_context("owner", 0);
+        Arena::new(
+            acc("owner"),
+            acc("usdc"),
+            acc("treasury"),
+            U128(1),
+            U64(MAX_DURATION_SECS + 1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit window must be between 1 second and 30 days")]
+    fn the_owner_cannot_set_a_window_over_the_cap() {
+        let mut arena = new_arena();
+        arena.set_deposit_window_secs(U64(MAX_DURATION_SECS + 1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit window must be between 1 second and 30 days")]
+    fn the_owner_cannot_set_a_zero_window() {
+        let mut arena = new_arena();
+        arena.set_deposit_window_secs(U64(0));
+    }
+
+    #[test]
+    fn the_window_cap_itself_is_allowed() {
+        let mut arena = new_arena();
+        arena.set_deposit_window_secs(U64(MAX_DURATION_SECS));
+        assert_eq!(
+            arena.get_config().deposit_window_secs,
+            U64(MAX_DURATION_SECS)
+        );
     }
 
     #[test]
