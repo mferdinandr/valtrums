@@ -6,6 +6,8 @@
 #   scripts/demo-battle-testnet.sh <suffix>
 #
 # Needs the `near` CLI, node and pnpm, and the credentials the deploy script stored.
+# The agent uses NEAR_RPC_URL (default: a FastNEAR testnet endpoint); the public
+# rpc.testnet.near.org rate-limits and can stall a run.
 set -euo pipefail
 
 SUFFIX="${1:?usage: demo-battle-testnet.sh <suffix>}"
@@ -82,7 +84,7 @@ chmod 600 "$WORK/agent.key"
 (cd "$ROOT_DIR" && pnpm install --frozen-lockfile >/dev/null && pnpm -F @valtrum/agent build >/dev/null)
 (cd "$ROOT_DIR" &&
   ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
-  NEAR_RPC_URL="https://rpc.testnet.near.org" NEAR_NETWORK=testnet \
+  NEAR_RPC_URL="${NEAR_RPC_URL:-https://test.rpc.fastnear.com}" NEAR_NETWORK=testnet \
   EXECUTION_MODE=onchain MARKET_DATA=mockdex TWAP_WINDOW_SECS=40 AGENT_INTERVAL_SECS=10 \
   HEALTH_PORT=0 BASELINE_STORE_PATH="$WORK/baselines.json" \
   pnpm -F @valtrum/agent start > "$WORK/agent.log" 2>&1) &
