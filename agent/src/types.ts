@@ -35,6 +35,8 @@ export interface SettlementStep {
   kind: "Dump" | "Buy" | "Burn" | "Return";
   amount: string;
   done: boolean;
+  /** Sent to the DEX, proceeds pending. Only meaningful with on-chain execution. */
+  dispatched: boolean;
   realized: string | null;
 }
 
@@ -45,4 +47,8 @@ export interface ConfigView {
   bond: string;
   agents: string[];
   paused: boolean;
+  /** DEX the arena swaps settlement steps on; null means mock execution. */
+  execution_dex: string | null;
+  /** Receiver of burned winner coin; null when on-chain execution is off. */
+  burn_account: string | null;
 }

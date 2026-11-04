@@ -17,6 +17,8 @@ export interface ArenaClient {
   setInitialPrices(battleId: number, priceA: bigint, priceB: bigint): Promise<void>;
   settleBattle(battleId: number, finalPriceA: bigint, finalPriceB: bigint): Promise<void>;
   reportExecution(battleId: number, stepIndex: number, realizedAmount: bigint): Promise<void>;
+  /** On-chain execution: dispatch (or book, for Return/zero steps) one plan step. */
+  executeStep(battleId: number, stepIndex: number, minOut: bigint): Promise<void>;
   emergencyHalt(battleId: number, reason: string): Promise<void>;
 }
 

@@ -64,7 +64,7 @@ describe("runOnce", () => {
       makeBattle({ id: 1, status: "Settling" }),
       makeBattle({ id: 2, status: "Live", end_time_ns: ns(nowMs + 99 * MIN) }),
     ]);
-    client.putPlan(1, [{ index: 0, kind: "Dump", amount: "5", done: false, realized: null }]);
+    client.putPlan(1, [{ index: 0, kind: "Dump", amount: "5", done: false, dispatched: false, realized: null }]);
     const { d } = deps(client);
     await runOnce(d);
     const n = client.calls.length;
