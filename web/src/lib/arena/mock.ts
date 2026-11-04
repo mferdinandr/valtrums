@@ -6,7 +6,9 @@ import type {
   BattleActionInput,
   BattleView,
   ConfigView,
+  DepositFromBalanceInput,
   DepositInput,
+  FundBalanceInput,
   LivePrices,
   PositionView,
   ProposeInput,
@@ -57,6 +59,18 @@ function hash(seed: number, mod: number): number {
 export interface MockArenaApi extends ArenaApi {
   /** Makes the next `withdrawLiquid` fail at the token transfer; the balance is restored. */
   failNextWithdraw(message?: string): void;
+  /**
+   * Makes the next `depositFromBalance` fail at the swap. Like the contract, credit and balance are
+   * restored; the call throws so callers can tell nothing was deposited.
+   */
+  failNextBalanceDeposit(message?: string): void;
+  /** Links a wallet so `fundBalance` debits it. Without one, funding only credits the balance. */
+  attachWallet(port: MockWalletPort): void;
+}
+
+export interface MockWalletPort {
+  balance(accountId: string): bigint;
+  debit(accountId: string, units: bigint): void;
 }
 
 export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
@@ -142,6 +156,8 @@ export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
   const addLiquid = (acct: string, token: string, delta: bigint) =>
     liquid.set(liquidKey(acct, token), liquidOf(acct, token) + delta);
   let nextWithdrawFailure: string | null = null;
+  let nextBalanceDepositFailure: string | null = null;
+  let walletPort: MockWalletPort | null = null;
   const key = (id: number, acct: string) => `${id}:${acct}`;
 
   const seedPosition = (id: number, acct: string, side: Side, amount: number) => {
@@ -379,6 +395,62 @@ export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
 
     failNextWithdraw(message = "Token transfer failed. Your balance was restored.") {
       nextWithdrawFailure = message;
+    },
+
+    failNextBalanceDeposit(message = "The swap failed. Your balance and credit were restored.") {
+      nextBalanceDepositFailure = message;
+    },
+
+    attachWallet(port) {
+      walletPort = port;
+    },
+
+    async fundBalance({ signerId, amount }: FundBalanceInput) {
+      await wait();
+      if (amount <= 0n) throw new Error("Amount must be positive");
+      if (walletPort && walletPort.balance(signerId) < amount) throw new Error("Not enough USDC in the wallet");
+      walletPort?.debit(signerId, amount);
+      addLiquid(signerId, USDC_ID, amount);
+    },
+
+    async depositFromBalance({ signerId, battleId, side, totalUsdc, minTokenOut }: DepositFromBalanceInput) {
+      await wait();
+      const b = find(battleId);
+      if (totalUsdc <= 0n) throw new Error("Deposit refused");
+      if (b.status !== "Approved") throw new Error("Deposit refused: deposits are closed");
+      const k = key(b.id, signerId);
+      const existing = positions.get(k);
+      if (existing && existing.side !== side) throw new Error("Deposit refused: already on the other side");
+
+      // Credit first (only while its timer is alive), then the internal balance.
+      const acct = accounts.get(signerId) ?? { credit_balance: "0", credit_expires_at_ns: "0" };
+      const creditAlive = toBigInt(acct.credit_expires_at_ns) > ns(now());
+      const credit = creditAlive ? toBigInt(acct.credit_balance) : 0n;
+      const fromCredit = credit < totalUsdc ? credit : totalUsdc;
+      const fromBalance = totalUsdc - fromCredit;
+      if (liquidOf(signerId, USDC_ID) < fromBalance) throw new Error("Deposit refused: balance is short");
+
+      const token = side === "A" ? b.token_a : b.token_b;
+      const meta = metaOf(token);
+      const out = usdcToCoin(totalUsdc, meta.decimals, TOKENS[token]?.price ?? 10n ** 12n);
+
+      // Debit first, then swap. A failed swap restores credit (expiry kept) and balance.
+      if (nextBalanceDepositFailure !== null || out < minTokenOut || out === 0n) {
+        const message = nextBalanceDepositFailure ?? "The swap returned less than the minimum. Your balance and credit were restored.";
+        nextBalanceDepositFailure = null;
+        throw new Error(message);
+      }
+      addLiquid(signerId, USDC_ID, -fromBalance);
+      if (fromCredit > 0n) accounts.set(signerId, { ...acct, credit_balance: (credit - fromCredit).toString() });
+      positions.set(k, {
+        side,
+        coin_amount: (toBigInt(existing?.coin_amount) + out).toString(),
+        usdc_equiv: (toBigInt(existing?.usdc_equiv) + totalUsdc).toString(),
+        from_credit: (toBigInt(existing?.from_credit) + fromCredit).toString(),
+        claimed: false,
+      });
+      if (side === "A") b.vault_a = (toBigInt(b.vault_a) + out).toString();
+      else b.vault_b = (toBigInt(b.vault_b) + out).toString();
     },
   };
 
