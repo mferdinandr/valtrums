@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["arena", "mock-dex", "router"]
+members = ["arena", "integration", "mock-dex", "mock-ft", "router"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,6 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 near-sdk = "5"
+near-contract-standards = "5"
 uint = { version = "0.10", default-features = false }
 
 [profile.release]
