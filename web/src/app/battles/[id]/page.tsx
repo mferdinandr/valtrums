@@ -14,7 +14,8 @@ import { useAsync } from "@/hooks/use-async";
 import { useNow } from "@/hooks/use-now";
 import { useTokenMetas } from "@/hooks/use-token-metas";
 import { formatBps, formatUnits, formatUsdc, leader, msUntilNs, performanceBps, toBigInt } from "@/lib/amounts";
-import { previewWinnerPayout, priceBasis, vaultsInUsdc } from "@/lib/arena/payout";
+import { describePlan } from "@/lib/arena/plan";
+import { previewClaimForBattle, priceBasis, vaultsInUsdc } from "@/lib/arena/payout";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/arena/status";
 import type { BattleView, Side, TokenMeta } from "@/lib/arena/types";
 
@@ -94,7 +95,9 @@ function Detail({ battle, reload }: { battle: BattleView; reload: () => void }) 
 
   const depositOpen = battle.status === "Approved" && now > 0 && msUntilNs(toBigInt(battle.deposit_deadline_ns), now) > 0;
   const pos = position.data;
-  const preview = pos && vaultsUsdc ? previewWinnerPayout(pos, vaultsUsdc) : null;
+  const preview = pos && basis ? previewClaimForBattle(battle, pos, metaA, metaB, basis, plan.data) : null;
+  const posMeta = pos ? (pos.side === "A" ? metaA : metaB) : null;
+  const planView = plan.data && plan.data.length > 0 ? describePlan(plan.data, battle, metaA, metaB) : null;
 
   const timer =
     battle.status === "Approved"
@@ -169,9 +172,10 @@ function Detail({ battle, reload }: { battle: BattleView; reload: () => void }) 
             Tribe {pos.side}: {formatUnits(toBigInt(pos.coin_amount), (pos.side === "A" ? metaA : metaB).decimals, 4)}{" "}
             {(pos.side === "A" ? metaA : metaB).symbol} (~{formatUsdc(toBigInt(pos.usdc_equiv))})
           </p>
-          {preview && (battle.status === "Settled" ? battle.winner === pos.side : true) && preview.profit > 0n && (
+          {preview && (battle.status === "Settled" ? battle.winner === pos.side : true) && preview.rewardCoin > 0n && posMeta && (
             <p className="mt-1 text-lg text-mute">
-              If tribe {pos.side} wins: {formatUsdc(preview.totalLiquid)} liquid, {formatUsdc(preview.credit)} locked credit.
+              If tribe {pos.side} wins: claim {formatUnits(preview.totalCoin, posMeta.decimals, 4)} {posMeta.symbol} to your
+              liquid balance (principal + reward), plus {formatUsdc(preview.credit)} locked credit, then withdraw.
             </p>
           )}
           <Link href="/portfolio" className="mt-2 inline-block font-pixel text-[9px] uppercase text-neon-cyan underline">
@@ -186,19 +190,22 @@ function Detail({ battle, reload }: { battle: BattleView; reload: () => void }) 
 
       {depositOpen && <TerminalPanel scopeBattleId={battle.id} onDone={() => { reload(); position.reload(); }} />}
 
-      {plan.data && plan.data.length > 0 && (
+      {planView && (
         <Card>
           <CardTitle>Settlement plan</CardTitle>
           <ol className="space-y-1 text-xl">
-            {plan.data.map((s) => (
-              <li key={s.index} className="flex justify-between">
+            {planView.rows.map((r) => (
+              <li key={r.index} className="flex flex-wrap justify-between gap-x-4">
                 <span>
-                  {s.index + 1}. {s.kind}
+                  {r.number}. {r.label} <span className="text-mute">({r.amount})</span>
                 </span>
-                <span className={s.done ? "text-neon-green" : "text-mute"}>{s.done ? "done" : "pending"}</span>
+                <span className={r.done ? "text-neon-green" : "text-mute"}>
+                  {r.done ? `done${r.realized ? `: ${r.realized}` : ""}` : "pending"}
+                </span>
               </li>
             ))}
           </ol>
+          <p className="mt-2 text-lg text-mute">{planView.summary}</p>
         </Card>
       )}
     </div>
