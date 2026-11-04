@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.next
+**/.agent-state
+**/*.tsbuildinfo
+.git
+.github
+.env
+.env.*
+!.env.example
+contracts
+web/*
+!web/package.json
+docs
+deploy
+**/*.md
