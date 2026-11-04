@@ -3461,6 +3461,208 @@ mod tests {
         arena.set_execution(Some(acc("dex")), Some(acc("burn")));
     }
 
+    fn fund_msg() -> String {
+        json!({ "action": "fund_balance" }).to_string()
+    }
+
+    fn fund_usdc(arena: &mut Arena, name: &str, amount: u128) -> u128 {
+        let result = send_usdc(arena, name, amount, fund_msg(), 10);
+        returned(result)
+    }
+
+    fn from_balance(arena: &mut Arena, name: &str, total: u128, timestamp_ns: u64) -> Promise {
+        // no attached deposit: this is what a scoped session key can do
+        call_as(name, timestamp_ns, 0);
+        arena.deposit_from_balance(1, Side::A, U128(total), U128(100))
+    }
+
+    #[test]
+    fn funding_the_balance_credits_liquid_usdc() {
+        let mut arena = arena_with_router();
+        assert_eq!(fund_usdc(&mut arena, "bob", 50), 0);
+        assert_eq!(liquid(&arena, "bob", "usdc"), 50);
+        assert_eq!(fund_usdc(&mut arena, "bob", 25), 0);
+        assert_eq!(liquid(&arena, "bob", "usdc"), 75);
+    }
+
+    #[test]
+    fn funding_with_zero_changes_nothing() {
+        let mut arena = arena_with_router();
+        assert_eq!(fund_usdc(&mut arena, "bob", 0), 0);
+        assert_eq!(liquid(&arena, "bob", "usdc"), 0);
+    }
+
+    #[test]
+    fn only_usdc_can_fund_the_balance() {
+        let mut arena = arena_with_router();
+        set_context("pepe", 10);
+        let result = arena.ft_on_transfer(acc("bob"), U128(50), fund_msg());
+        assert_eq!(returned(result), 50);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 0);
+    }
+
+    #[test]
+    fn a_paused_contract_returns_balance_funding() {
+        let mut arena = arena_with_router();
+        set_context("owner", 0);
+        arena.set_paused(true);
+        assert_eq!(fund_usdc(&mut arena, "bob", 50), 50);
+    }
+
+    #[test]
+    fn a_hybrid_deposit_spends_credit_then_balance() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        fund_usdc(&mut arena, "alice", 20);
+        let _ = from_balance(&mut arena, "alice", 50, 10);
+        assert_eq!(credit_of(&arena, "alice", 10), 0);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5); // 20 - 15 from the wallet side
+    }
+
+    #[test]
+    fn a_deposit_without_credit_spends_only_the_balance() {
+        let mut arena = arena_with_router();
+        fund_usdc(&mut arena, "bob", 80);
+        let _ = from_balance(&mut arena, "bob", 50, 10);
+        assert_eq!(liquid(&arena, "bob", "usdc"), 30);
+    }
+
+    #[test]
+    fn credit_alone_can_fund_a_deposit_from_balance() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 60, CREDIT_EXPIRY);
+        let _ = from_balance(&mut arena, "alice", 50, 10);
+        assert_eq!(credit_of(&arena, "alice", 10), 10);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit refused")]
+    fn an_insufficient_balance_refuses_the_deposit() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        fund_usdc(&mut arena, "alice", 14);
+        let _ = from_balance(&mut arena, "alice", 50, 10);
+    }
+
+    #[test]
+    fn a_refused_deposit_leaves_credit_and_balance_untouched() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        fund_usdc(&mut arena, "alice", 14);
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = from_balance(&mut arena, "alice", 50, 10);
+        }));
+        assert!(attempt.is_err());
+        assert_eq!(credit_of(&arena, "alice", 10), 35);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 14);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit refused")]
+    fn balance_deposits_need_a_router() {
+        let mut arena = approved_arena();
+        fund_usdc(&mut arena, "bob", 80);
+        let _ = from_balance(&mut arena, "bob", 50, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit refused")]
+    fn balance_deposits_respect_the_one_side_rule() {
+        let mut arena = arena_with_router();
+        deposit_coin(&mut arena, "bob", "shib", 100, Side::B, 5);
+        fund_usdc(&mut arena, "bob", 80);
+        let _ = from_balance(&mut arena, "bob", 50, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit refused")]
+    fn balance_deposits_need_an_open_window() {
+        let mut arena = arena_with_router();
+        fund_usdc(&mut arena, "bob", 80);
+        let _ = from_balance(&mut arena, "bob", 50, WINDOW_NS);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposits are paused")]
+    fn balance_deposits_stop_while_paused() {
+        let mut arena = arena_with_router();
+        fund_usdc(&mut arena, "bob", 80);
+        set_context("owner", 10);
+        arena.set_paused(true);
+        let _ = from_balance(&mut arena, "bob", 50, 10);
+    }
+
+    #[test]
+    fn a_failed_balance_deposit_gives_back_credit_and_balance() {
+        for (i, failure) in [Err(PromiseError::Failed), Ok(U128(0)), Ok(U128(10))]
+            .into_iter()
+            .enumerate()
+        {
+            // a separate account per round: collections flush to storage when dropped
+            let user = format!("user{i}");
+            let user = user.as_str();
+            let mut arena = arena_with_router();
+            grant_test_credit(&mut arena, user, 35, CREDIT_EXPIRY);
+            fund_usdc(&mut arena, user, 20);
+            let _ = from_balance(&mut arena, user, 50, 10);
+
+            set_context("arena", 11);
+            arena.on_balance_deposit_done(
+                acc(user),
+                U128(15),
+                U128(50),
+                U128(35),
+                U64(CREDIT_EXPIRY),
+                failure,
+            );
+            assert_eq!(credit_of(&arena, user, 12), 35);
+            assert_eq!(liquid(&arena, user, "usdc"), 20);
+        }
+    }
+
+    #[test]
+    fn a_completed_balance_deposit_keeps_the_spend() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        fund_usdc(&mut arena, "alice", 20);
+        let _ = from_balance(&mut arena, "alice", 50, 10);
+        set_context("arena", 11);
+        arena.on_balance_deposit_done(
+            acc("alice"),
+            U128(15),
+            U128(50),
+            U128(35),
+            U64(CREDIT_EXPIRY),
+            Ok(U128(50)),
+        );
+        assert_eq!(credit_of(&arena, "alice", 12), 0);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5);
+    }
+
+    #[test]
+    fn the_returned_bond_can_fund_a_deposit() {
+        let mut arena = settled_arena();
+        // alice (the creator) got her 5 USDC bond back as liquid USDC; open a new battle for it
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5_000_000);
+        set_context("owner", END_NS + 10);
+        arena.set_router(Some(acc("router")));
+        let msg = json!({
+            "action": "propose",
+            "token_a": acc("pepe"),
+            "token_b": acc("shib"),
+            "duration_secs": 60,
+        })
+        .to_string();
+        let result = send_usdc(&mut arena, "alice", 5_000_000, msg, END_NS + 10);
+        assert_eq!(returned(result), 0);
+        set_context("agent", END_NS + 11);
+        arena.approve_battle(2);
+        call_as("alice", END_NS + 12, 0);
+        let _ = arena.deposit_from_balance(2, Side::A, U128(5_000_000), U128(1));
+        assert_eq!(liquid(&arena, "alice", "usdc"), 0);
+    }
+
     #[test]
     #[should_panic(expected = "Only the owner")]
     fn non_owner_cannot_pause() {
