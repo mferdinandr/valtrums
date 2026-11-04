@@ -19,6 +19,8 @@ use types::{ConfigView, PendingSwap};
 
 /// Gas for the USDC `ft_transfer_call` to the DEX. The DEX runs inside it.
 const DEX_TRANSFER_GAS: Gas = Gas::from_tgas(120);
+/// Gas for the coin `ft_transfer_call` to the arena. The arena runs inside it.
+const ARENA_TRANSFER_GAS: Gas = Gas::from_tgas(50);
 const CALLBACK_GAS: Gas = Gas::from_tgas(15);
 
 #[near(serializers = [borsh])]
@@ -84,8 +86,9 @@ impl Router {
 
     /// NEP-141 receiver. Returns the unused amount.
     ///
-    /// Accepts USDC from the arena with a `swap_deposit` message. Anything
-    /// else is returned in full.
+    /// Accepts USDC from the arena with a `swap_deposit` message, and the
+    /// swapped coin from the DEX with a `{"swap_id":N}` message. Anything else
+    /// is returned in full.
     pub fn ft_on_transfer(
         &mut self,
         sender_id: AccountId,
@@ -96,6 +99,11 @@ impl Router {
         if token == self.usdc && sender_id == self.arena {
             if let Some(ArenaMsg::SwapDeposit(request)) = msgs::parse_arena_msg(&msg) {
                 return self.start_swap(amount.0, request);
+            }
+        }
+        if sender_id == self.dex {
+            if let Some(receipt) = msgs::parse_swap_receipt(&msg) {
+                return self.finish_swap(token, amount.0, receipt.swap_id);
             }
         }
         PromiseOrValue::Value(amount)
@@ -120,6 +128,31 @@ impl Router {
             );
         }
         U128(unused)
+    }
+
+    /// Resolves the coin hop to the arena. Whatever the arena did not use is
+    /// recorded as stranded for the beneficiary. Never panics.
+    #[private]
+    pub fn on_deposit_sent(
+        &mut self,
+        beneficiary: AccountId,
+        token: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) {
+        let used = result.ok().map(|used| used.0);
+        let unused = msgs::unused_after_transfer(amount.0, used);
+        if unused > 0 {
+            self.add_stranded(&beneficiary, &token, unused);
+            events::emit(
+                "deposit_stranded",
+                json!({
+                    "beneficiary": beneficiary,
+                    "token": token,
+                    "amount": U128(unused),
+                }),
+            );
+        }
     }
 
     // ─── Views ──────────────────────────────────────────────────────────
@@ -184,6 +217,49 @@ impl Router {
                     .on_swap_sent(swap_id, U128(amount)),
             )
             .into()
+    }
+
+    /// Handles the swapped coin coming back from the DEX. The pending record is
+    /// removed only when the coin and amount match it, so a swap id is used once.
+    fn finish_swap(
+        &mut self,
+        token: AccountId,
+        amount: u128,
+        swap_id: u64,
+    ) -> PromiseOrValue<U128> {
+        let valid = self
+            .pending
+            .get(&swap_id)
+            .is_some_and(|p| p.token_out == token && amount >= p.min_token_out.0);
+        if !valid {
+            return PromiseOrValue::Value(U128(amount));
+        }
+        let Some(pending) = self.pending.remove(&swap_id) else {
+            return PromiseOrValue::Value(U128(amount));
+        };
+        let arena_msg = msgs::arena_deposit_msg(&pending);
+        events::emit(
+            "swap_completed",
+            json!({ "swap_id": swap_id, "token_out": token, "amount_out": U128(amount) }),
+        );
+        // Detached: the coin is fully accepted from the DEX; the router answers
+        // for what the arena sends back.
+        let _ = ext_ft::ext(token.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(ARENA_TRANSFER_GAS)
+            .ft_transfer_call(self.arena.clone(), U128(amount), None, arena_msg)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_deposit_sent(pending.beneficiary, token, U128(amount)),
+            );
+        PromiseOrValue::Value(U128(0))
+    }
+
+    fn add_stranded(&mut self, account: &AccountId, token: &AccountId, amount: u128) {
+        let key = (account.clone(), token.clone());
+        let current = self.stranded.get(&key).copied().unwrap_or(0);
+        self.stranded.insert(key, current.saturating_add(amount));
     }
 
     fn assert_owner(&self) {
