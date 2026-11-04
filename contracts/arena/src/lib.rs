@@ -6,6 +6,7 @@ use near_sdk::{
     Promise, PromiseError, PromiseOrValue,
 };
 
+pub mod credit;
 pub mod events;
 pub mod math;
 pub mod types;
