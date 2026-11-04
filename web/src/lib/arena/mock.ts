@@ -108,7 +108,7 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
     // Deposits open for 6 more hours.
     mk(2, F, M, "Approved", 6 * HOUR_MS, 4_000_000, 2_500_000),
     // Live, 9 hours in.
-    mk(3, M, W, "Live", -9 * HOUR_MS, 80_000_000, 120_000_000, init(M, W)),
+    mk(3, M, W, "Live", -9 * HOUR_MS, 5_000_000_000, 120_000_000, init(M, W)),
     // Ended 20 minutes ago, waiting for the settlement plan to run.
     mk(4, S, F, "Settling", -DAY_MS - 20 * 60_000, 6_000_000, 3_000_000, init(S, F)),
     // Settled two days ago; side A won.
@@ -214,12 +214,12 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
       await wait();
       const b = find(id);
       if (b.status !== "Settling" && b.status !== "Settled") return [];
-      const done = b.status === "Settled";
+      const settled = b.status === "Settled";
       return [
-        { index: 0, kind: "Dump", amount: b.vault_b, done, realized: done ? "1200000" : null },
-        { index: 1, kind: "Buy", amount: "1200000", done, realized: done ? b.vault_a : null },
-        { index: 2, kind: "Burn", amount: "60000", done: false, realized: null },
-        { index: 3, kind: "Return", amount: b.vault_a, done: false, realized: null },
+        { index: 0, kind: "Dump", amount: b.vault_b, done: true, realized: "1200000" },
+        { index: 1, kind: "Buy", amount: "1200000", done: true, realized: b.vault_a },
+        { index: 2, kind: "Burn", amount: "60000", done: settled, realized: settled ? "60000" : null },
+        { index: 3, kind: "Return", amount: b.vault_a, done: settled, realized: settled ? b.vault_a : null },
       ];
     },
 
