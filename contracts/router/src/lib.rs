@@ -7,7 +7,7 @@ use near_sdk::serde_json::json;
 use near_sdk::store::LookupMap;
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
-    PromiseError, PromiseOrValue,
+    Promise, PromiseError, PromiseOrValue,
 };
 
 pub mod events;
@@ -22,6 +22,8 @@ const DEX_TRANSFER_GAS: Gas = Gas::from_tgas(120);
 /// Gas for the coin `ft_transfer_call` to the arena. The arena runs inside it.
 const ARENA_TRANSFER_GAS: Gas = Gas::from_tgas(50);
 const CALLBACK_GAS: Gas = Gas::from_tgas(15);
+/// Gas for paying out stranded coin.
+const CLAIM_TRANSFER_GAS: Gas = Gas::from_tgas(15);
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
@@ -39,6 +41,7 @@ pub trait FungibleToken {
         memo: Option<String>,
         msg: String,
     ) -> U128;
+    fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
 }
 
 #[near(contract_state)]
@@ -80,6 +83,50 @@ impl Router {
     pub fn set_dex(&mut self, dex: AccountId) {
         self.assert_owner();
         self.dex = dex;
+    }
+
+    /// Pays the caller's stranded balance of `token`. The balance is cleared
+    /// before the transfer and restored if the transfer fails.
+    #[payable]
+    pub fn claim_stranded(&mut self, token: AccountId) -> Promise {
+        near_sdk::assert_one_yocto();
+        let account = env::predecessor_account_id();
+        let key = (account.clone(), token.clone());
+        let amount = self.stranded.get(&key).copied().unwrap_or(0);
+        require!(amount > 0, "Nothing stranded for this token");
+        self.stranded.remove(&key);
+        ext_ft::ext(token.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(CLAIM_TRANSFER_GAS)
+            .ft_transfer(account.clone(), U128(amount), None)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_claim_paid(account, token, U128(amount)),
+            )
+    }
+
+    /// Restores the stranded balance if the payout failed. Never panics.
+    #[private]
+    pub fn on_claim_paid(
+        &mut self,
+        account: AccountId,
+        token: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        if result.is_err() {
+            self.add_stranded(&account, &token, amount.0);
+            events::emit(
+                "claim_failed",
+                json!({ "account": account, "token": token, "amount": amount }),
+            );
+        } else {
+            events::emit(
+                "stranded_claimed",
+                json!({ "account": account, "token": token, "amount": amount }),
+            );
+        }
     }
 
     // ─── Token receiver ─────────────────────────────────────────────────
