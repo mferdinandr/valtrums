@@ -9,17 +9,22 @@ use near_sdk::{
 pub mod credit;
 pub mod events;
 pub mod math;
+pub mod mpc;
 pub mod types;
 pub mod views;
 
 use credit::plan_funding;
 use math::Outcome;
+use mpc::{
+    ForeignCall, ForeignConfig, ForeignConfigInput, ForeignTxParams, SignRequest, SignStatus,
+};
 use types::{
     Account, Battle, BattleStatus, Settlement, SettlementStep, Side, StepKind, UserPosition,
     NS_PER_SECOND,
 };
 use views::{
-    AccountView, BattleView, ConfigView, FundingPreview, PositionView, SettlementStepView,
+    AccountView, BattleView, ConfigView, ForeignConfigView, FundingPreview, PositionView,
+    SettlementStepView, SignRequestView,
 };
 
 /// Longest battle a proposer can request.
@@ -33,6 +38,11 @@ const ROUTER_HOP_GAS: Gas = Gas::from_tgas(30);
 const SWAP_CALLBACK_GAS: Gas = Gas::from_tgas(15);
 /// Minimum gas for the hop to the execution DEX; the rest of the call's gas follows it.
 const EXECUTION_HOP_GAS: Gas = Gas::from_tgas(60);
+/// Gas for the MPC signer call and for the callback that stores its answer.
+const MPC_SIGN_GAS: Gas = Gas::from_tgas(250);
+const SIGN_CALLBACK_GAS: Gas = Gas::from_tgas(15);
+/// A failed signing request can be retried this many times.
+const MAX_SIGN_ATTEMPTS: u32 = 5;
 /// Most battles `get_battles` returns in one call.
 const MAX_PAGE_SIZE: u64 = 100;
 
@@ -44,6 +54,7 @@ enum StorageKey {
     Accounts,
     Positions,
     Liquid,
+    SignRequests,
 }
 
 #[ext_contract(ext_ft)]
@@ -136,6 +147,10 @@ pub struct Arena {
     positions: LookupMap<(u64, AccountId), UserPosition>,
     /// Withdrawable balances per (account, token).
     liquid: LookupMap<(AccountId, AccountId), u128>,
+    /// Foreign-chain settings; `None` disables cross-chain signing.
+    foreign: Option<ForeignConfig>,
+    sign_requests: LookupMap<u64, SignRequest>,
+    sign_request_count: u64,
 }
 
 #[near]
@@ -168,6 +183,9 @@ impl Arena {
             accounts: LookupMap::new(StorageKey::Accounts),
             positions: LookupMap::new(StorageKey::Positions),
             liquid: LookupMap::new(StorageKey::Liquid),
+            foreign: None,
+            sign_requests: LookupMap::new(StorageKey::SignRequests),
+            sign_request_count: 0,
         }
     }
 
@@ -204,6 +222,15 @@ impl Arena {
             (None, None) => None,
             _ => env::panic_str("Set both the DEX and the burn account, or neither"),
         };
+    }
+
+    /// Sets (or clears) the foreign chain and MPC signer used for cross-chain steps.
+    pub fn set_foreign(&mut self, config: Option<ForeignConfigInput>) {
+        self.assert_owner();
+        self.foreign = config.map(|input| {
+            ForeignConfig::from_input(input)
+                .unwrap_or_else(|_| env::panic_str("Invalid foreign address"))
+        });
     }
 
     pub fn set_bond(&mut self, bond: U128) {
@@ -664,6 +691,169 @@ impl Arena {
         }
     }
 
+    // ─── Agent: cross-chain signing ─────────────────────────────────────
+
+    /// Builds a foreign-chain transaction for a battle and asks the MPC signer to
+    /// sign it from the battle's own derivation path. The signed transaction is
+    /// stored (and announced) by `on_signature`; the agent broadcasts it. Needs
+    /// about 280 TGas attached. With `step_index` the call must fit that step.
+    pub fn request_signature(
+        &mut self,
+        battle_id: u64,
+        call: ForeignCall,
+        params: ForeignTxParams,
+        step_index: Option<u32>,
+    ) -> Promise {
+        self.assert_agent();
+        let config = self
+            .foreign
+            .clone()
+            .unwrap_or_else(|| env::panic_str("Cross-chain signing is not configured"));
+        let battle = self
+            .battles
+            .get(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        require!(
+            matches!(
+                battle.status,
+                BattleStatus::Approved | BattleStatus::Live | BattleStatus::Settling
+            ),
+            "Battle is not active"
+        );
+        if let Some(index) = step_index {
+            require!(
+                battle.status == BattleStatus::Settling,
+                "Steps can only be signed while settling"
+            );
+            let step = battle
+                .settlement
+                .as_ref()
+                .and_then(|settlement| settlement.steps.get(index as usize))
+                .unwrap_or_else(|| env::panic_str("Unknown step"));
+            require!(!step.done, "Step already reported");
+            match (step.kind, &call) {
+                (StepKind::Dump | StepKind::Buy, ForeignCall::SwapExactIn { .. }) => {}
+                (StepKind::Burn, ForeignCall::SwapExactIn { recipient, .. }) => require!(
+                    mpc::parse_address(recipient) == Ok(config.burn),
+                    "A burn swap must pay the burn address"
+                ),
+                (StepKind::Return, ForeignCall::Transfer { to, .. }) => require!(
+                    mpc::parse_address(to) == Ok(config.treasury),
+                    "The fee must go to the treasury address"
+                ),
+                _ => env::panic_str("Call does not fit this step"),
+            }
+        }
+
+        let tx = mpc::build_tx(&config, &call, &params).unwrap_or_else(|error| {
+            env::panic_str(match error {
+                mpc::CallError::BadAddress => "Invalid foreign address",
+                mpc::CallError::ZeroAmount => "Amount must be positive",
+                mpc::CallError::SpenderNotRouter => "Approvals are only allowed for the router",
+                mpc::CallError::RecipientNotAllowed => {
+                    "Transfers are only allowed to the treasury or burn address"
+                }
+            })
+        });
+        let request_id = self
+            .sign_request_count
+            .checked_add(1)
+            .unwrap_or_else(|| env::panic_str("Request id overflow"));
+        self.sign_request_count = request_id;
+        let payload_hash = tx.signing_hash();
+        self.sign_requests.insert(
+            request_id,
+            SignRequest {
+                battle_id,
+                step_index,
+                path: format!("valtrum-battle-{battle_id}"),
+                tx,
+                status: SignStatus::Pending,
+                signed_tx: None,
+                attempts: 0,
+            },
+        );
+        events::emit(
+            "signature_requested",
+            json!({
+                "request_id": request_id,
+                "battle_id": battle_id,
+                "step_index": step_index,
+                "payload_hash": mpc::hex_encode(&payload_hash),
+            }),
+        );
+        self.send_to_signer(request_id)
+    }
+
+    /// Asks the signer again for a request whose attempt failed.
+    pub fn retry_signature(&mut self, request_id: u64) -> Promise {
+        self.assert_agent();
+        let request = self
+            .sign_requests
+            .get_mut(&request_id)
+            .unwrap_or_else(|| env::panic_str("Request not found"));
+        require!(
+            request.status == SignStatus::Failed,
+            "Only a failed request can be retried"
+        );
+        require!(
+            request.attempts < MAX_SIGN_ATTEMPTS,
+            "Too many failed attempts"
+        );
+        request.status = SignStatus::Pending;
+        self.send_to_signer(request_id)
+    }
+
+    /// Stores the MPC signature as a signed transaction, or marks the attempt as
+    /// failed so it can be retried. Never panics.
+    #[private]
+    pub fn on_signature(
+        &mut self,
+        request_id: u64,
+        #[callback_result] result: Result<near_sdk::serde_json::Value, PromiseError>,
+    ) {
+        let Some(request) = self.sign_requests.get_mut(&request_id) else {
+            return;
+        };
+        if request.status != SignStatus::Pending {
+            return;
+        }
+        let outcome = match result {
+            Ok(response) => mpc::parse_signature(&response)
+                .map_err(|_| "unusable signer response")
+                .map(|signature| request.tx.signed(&signature)),
+            Err(_) => Err("signer call failed"),
+        };
+        match outcome {
+            Ok(signed) => {
+                let tx_hash = mpc::hex_encode(&mpc::tx_hash(&signed));
+                let event = json!({
+                    "request_id": request_id,
+                    "battle_id": request.battle_id,
+                    "step_index": request.step_index,
+                    "signed_tx": mpc::hex_encode(&signed),
+                    "tx_hash": tx_hash,
+                });
+                request.signed_tx = Some(signed);
+                request.status = SignStatus::Signed;
+                events::emit("signature_ready", event);
+            }
+            Err(reason) => {
+                request.attempts += 1;
+                request.status = SignStatus::Failed;
+                events::emit(
+                    "signature_failed",
+                    json!({
+                        "request_id": request_id,
+                        "battle_id": request.battle_id,
+                        "reason": reason,
+                        "attempts": request.attempts,
+                    }),
+                );
+            }
+        }
+    }
+
     // ─── Treasury ───────────────────────────────────────────────────────
 
     /// Pays accrued USDC to the treasury. Anyone may call; the destination is fixed.
@@ -967,6 +1157,37 @@ impl Arena {
         )
     }
 
+    pub fn get_signature_request(&self, request_id: u64) -> Option<SignRequestView> {
+        self.sign_requests.get(&request_id).map(|request| {
+            let signed = request.signed_tx.as_deref();
+            SignRequestView {
+                battle_id: request.battle_id,
+                step_index: request.step_index,
+                path: request.path.clone(),
+                status: request.status,
+                unsigned_tx: mpc::hex_encode(&request.tx.unsigned()),
+                payload_hash: mpc::hex_encode(&request.tx.signing_hash()),
+                signed_tx: signed.map(mpc::hex_encode),
+                tx_hash: signed.map(|bytes| mpc::hex_encode(&mpc::tx_hash(bytes))),
+                attempts: request.attempts,
+            }
+        })
+    }
+
+    pub fn get_signature_request_count(&self) -> u64 {
+        self.sign_request_count
+    }
+
+    pub fn get_foreign_config(&self) -> Option<ForeignConfigView> {
+        self.foreign.as_ref().map(|config| ForeignConfigView {
+            mpc_contract: config.mpc_contract.clone(),
+            chain_id: U64(config.chain_id),
+            router: mpc::hex_encode(&config.router),
+            treasury: mpc::hex_encode(&config.treasury),
+            burn: mpc::hex_encode(&config.burn),
+        })
+    }
+
     pub fn get_battle_count(&self) -> u64 {
         self.battle_count
     }
@@ -998,6 +1219,39 @@ impl Arena {
 }
 
 impl Arena {
+    /// Calls the MPC signer for a stored request and chains the callback.
+    fn send_to_signer(&self, request_id: u64) -> Promise {
+        let config = self
+            .foreign
+            .as_ref()
+            .unwrap_or_else(|| env::panic_str("Cross-chain signing is not configured"));
+        let request = self
+            .sign_requests
+            .get(&request_id)
+            .unwrap_or_else(|| env::panic_str("Request not found"));
+        let args = json!({
+            "request": {
+                "path": request.path,
+                "payload_v2": { "Ecdsa": mpc::hex_encode(&request.tx.signing_hash()) },
+                "domain_id": 0,
+            }
+        })
+        .to_string()
+        .into_bytes();
+        Promise::new(config.mpc_contract.clone())
+            .function_call(
+                "sign".to_string(),
+                args,
+                NearToken::from_yoctonear(1),
+                MPC_SIGN_GAS,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(SIGN_CALLBACK_GAS)
+                    .on_signature(request_id),
+            )
+    }
+
     /// Books one finished step in order. Reporting the sale of the loser vault
     /// fixes the 55/35/5/5 split of the proceeds and appends the remaining steps;
     /// the last step settles the battle.
@@ -3704,6 +3958,421 @@ mod tests {
         call_as("alice", END_NS + 12, 0);
         let _ = arena.deposit_from_balance(2, Side::A, U128(5_000_000), U128(1));
         assert_eq!(liquid(&arena, "alice", "usdc"), 0);
+    }
+
+    const F_ROUTER: &str = "2626664c2603336e57b271c5c0b26f421741e481";
+    const F_TREASURY: &str = "00000000000000000000000000000000000a11ce";
+    const F_BURN: &str = "000000000000000000000000000000000000dead";
+    const F_USDC: &str = "833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+    const F_COIN: &str = "4200000000000000000000000000000000000006";
+
+    fn foreign_input() -> ForeignConfigInput {
+        ForeignConfigInput {
+            mpc_contract: acc("signer"),
+            chain_id: U64(8453),
+            router: F_ROUTER.into(),
+            treasury: F_TREASURY.into(),
+            burn: F_BURN.into(),
+        }
+    }
+
+    fn tx_params() -> ForeignTxParams {
+        ForeignTxParams {
+            nonce: U64(3),
+            max_priority_fee_per_gas: U128(1_000_000),
+            max_fee_per_gas: U128(2_000_000_000),
+            gas_limit: U64(150_000),
+        }
+    }
+
+    fn swap_call(recipient: &str) -> ForeignCall {
+        ForeignCall::SwapExactIn {
+            token_in: F_COIN.into(),
+            token_out: F_USDC.into(),
+            fee: 3000,
+            recipient: recipient.into(),
+            amount_in: U128(500),
+            min_out: U128(400),
+        }
+    }
+
+    fn fee_call(to: &str) -> ForeignCall {
+        ForeignCall::Transfer {
+            token: F_USDC.into(),
+            to: to.into(),
+            amount: U128(2_000_000),
+        }
+    }
+
+    /// Battle 1 is Settling (A won, plan = [Dump]) and the foreign chain is configured.
+    fn signing_arena() -> Arena {
+        let mut arena = live_arena();
+        set_context("owner", END_NS);
+        arena.set_foreign(Some(foreign_input()));
+        settle_with(&mut arena, 120, 105);
+        arena
+    }
+
+    fn sign_as_agent(arena: &mut Arena, call: ForeignCall, step_index: Option<u32>) -> Promise {
+        set_context("agent", END_NS + 1);
+        arena.request_signature(1, call, tx_params(), step_index)
+    }
+
+    fn good_response(recovery_id: u64) -> near_sdk::serde_json::Value {
+        json!({
+            "Secp256k1": {
+                "big_r": format!("02{}", "ab".repeat(32)),
+                "s": "11".repeat(32),
+                "recovery_id": recovery_id,
+            }
+        })
+    }
+
+    fn deliver(
+        arena: &mut Arena,
+        request_id: u64,
+        result: Result<near_sdk::serde_json::Value, PromiseError>,
+    ) {
+        set_context("arena", END_NS + 2);
+        arena.on_signature(request_id, result);
+    }
+
+    #[test]
+    fn the_owner_configures_the_foreign_chain() {
+        let mut arena = new_arena();
+        assert!(arena.get_foreign_config().is_none());
+        arena.set_foreign(Some(foreign_input()));
+        let view = arena.get_foreign_config().unwrap();
+        assert_eq!(view.chain_id, U64(8453));
+        assert_eq!(view.router, F_ROUTER);
+        assert_eq!(view.mpc_contract, acc("signer"));
+        arena.set_foreign(None);
+        assert!(arena.get_foreign_config().is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid foreign address")]
+    fn a_bad_foreign_address_is_refused() {
+        let mut arena = new_arena();
+        let mut input = foreign_input();
+        input.router = "0x1234".into();
+        arena.set_foreign(Some(input));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the owner")]
+    fn only_the_owner_configures_the_foreign_chain() {
+        let mut arena = new_arena();
+        set_context("stranger", 0);
+        arena.set_foreign(Some(foreign_input()));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cross-chain signing is not configured")]
+    fn signing_needs_the_foreign_chain() {
+        let mut arena = live_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_request_signatures() {
+        let mut arena = signing_arena();
+        set_context("alice", END_NS + 1);
+        let _ = arena.request_signature(1, swap_call(F_BURN), tx_params(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not active")]
+    fn signing_needs_an_active_battle() {
+        let mut arena = arena_with_proposal();
+        set_context("owner", 0);
+        arena.set_foreign(Some(foreign_input()));
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+    }
+
+    #[test]
+    fn a_request_is_stored_pending_with_the_payload_hash_and_a_battle_path() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("signature_requested")));
+
+        assert_eq!(arena.get_signature_request_count(), 1);
+        let view = arena.get_signature_request(1).unwrap();
+        assert_eq!(view.status, SignStatus::Pending);
+        assert_eq!(view.path, "valtrum-battle-1");
+        assert_eq!(view.attempts, 0);
+        assert!(view.signed_tx.is_none());
+        let tx = arena.sign_requests.get(&1).unwrap().tx.clone();
+        assert_eq!(view.payload_hash, mpc::hex_encode(&tx.signing_hash()));
+        assert_eq!(view.unsigned_tx, mpc::hex_encode(&tx.unsigned()));
+        assert_eq!(tx.nonce, 3);
+        assert_eq!(tx.chain_id, 8453);
+    }
+
+    #[test]
+    fn every_request_gets_its_own_id() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        let _ = sign_as_agent(&mut arena, fee_call(F_TREASURY), None);
+        assert_eq!(arena.get_signature_request_count(), 2);
+        assert_ne!(
+            arena.get_signature_request(1).unwrap().payload_hash,
+            arena.get_signature_request(2).unwrap().payload_hash
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Steps can only be signed while settling")]
+    fn steps_are_only_signed_while_settling() {
+        let mut arena = approved_arena();
+        set_context("owner", 0);
+        arena.set_foreign(Some(foreign_input()));
+        set_context("agent", 1);
+        let _ = arena.request_signature(1, swap_call(F_BURN), tx_params(), Some(0));
+    }
+
+    #[test]
+    fn a_call_must_fit_its_step() {
+        let mut arena = signing_arena();
+        // the dump step takes a swap
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), Some(0));
+        // after the dump is reported the plan grows to Buy, Burn, Return
+        report(&mut arena, 0, 40);
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), Some(2)); // burn: swap paying the burn address
+        let _ = sign_as_agent(&mut arena, fee_call(F_TREASURY), Some(3)); // return: fee to the treasury
+        assert_eq!(arena.get_signature_request_count(), 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "Call does not fit this step")]
+    fn a_transfer_does_not_fit_the_dump_step() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, fee_call(F_TREASURY), Some(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "A burn swap must pay the burn address")]
+    fn a_burn_swap_must_pay_the_burn_address() {
+        let mut arena = signing_arena();
+        report(&mut arena, 0, 40);
+        let _ = sign_as_agent(&mut arena, swap_call(F_TREASURY), Some(2));
+    }
+
+    #[test]
+    #[should_panic(expected = "The fee must go to the treasury address")]
+    fn the_fee_must_go_to_the_treasury() {
+        let mut arena = signing_arena();
+        report(&mut arena, 0, 40);
+        let _ = sign_as_agent(&mut arena, fee_call(F_BURN), Some(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "Step already reported")]
+    fn a_finished_step_cannot_be_signed_again() {
+        let mut arena = signing_arena();
+        report(&mut arena, 0, 40);
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), Some(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown step")]
+    fn an_unknown_step_is_refused() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), Some(9));
+    }
+
+    #[test]
+    #[should_panic(expected = "Approvals are only allowed for the router")]
+    fn approvals_for_other_spenders_are_refused() {
+        let mut arena = signing_arena();
+        let call = ForeignCall::Approve {
+            token: F_COIN.into(),
+            spender: F_BURN.into(),
+            amount: U128(1),
+        };
+        let _ = sign_as_agent(&mut arena, call, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Transfers are only allowed to the treasury or burn address")]
+    fn transfers_to_strangers_are_refused() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(
+            &mut arena,
+            fee_call("00000000000000000000000000000000000bad01"),
+            None,
+        );
+    }
+
+    #[test]
+    fn a_good_signature_becomes_a_signed_transaction() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Ok(good_response(1)));
+
+        let view = arena.get_signature_request(1).unwrap();
+        assert_eq!(view.status, SignStatus::Signed);
+        let tx = arena.sign_requests.get(&1).unwrap().tx.clone();
+        let expected = tx.signed(&mpc::EcdsaSignature {
+            r: [0xab; 32],
+            s: [0x11; 32],
+            y_parity: 1,
+        });
+        assert_eq!(view.signed_tx, Some(mpc::hex_encode(&expected)));
+        assert_eq!(
+            view.tx_hash,
+            Some(mpc::hex_encode(&mpc::tx_hash(&expected)))
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("signature_ready")));
+    }
+
+    #[test]
+    fn a_high_s_signature_is_stored_normalized() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        // the group order minus five: valid, but far above half the order
+        let high_s = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413c".to_string();
+        let response =
+            json!({ "big_r": format!("02{}", "ab".repeat(32)), "s": high_s, "recovery_id": 0 });
+        deliver(&mut arena, 1, Ok(response));
+        let signed =
+            mpc::hex_decode(&arena.get_signature_request(1).unwrap().signed_tx.unwrap()).unwrap();
+        // tail = yParity, 0xa0 + r (32 bytes), s. The stored s is 5 (n - (n - 5)), which
+        // RLP writes as the single byte 0x05, and the parity flipped from 0 to 1.
+        let len = signed.len();
+        assert_eq!(signed[len - 1], 0x05);
+        assert_eq!(signed[len - 34], 0xa0);
+        assert_eq!(signed[len - 35], 0x01);
+    }
+
+    #[test]
+    fn a_signer_error_marks_the_request_failed() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Err(PromiseError::Failed));
+        let view = arena.get_signature_request(1).unwrap();
+        assert_eq!(view.status, SignStatus::Failed);
+        assert_eq!(view.attempts, 1);
+        assert!(view.signed_tx.is_none());
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("signature_failed")));
+    }
+
+    #[test]
+    fn an_unusable_response_marks_the_request_failed() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(
+            &mut arena,
+            1,
+            Ok(json!({ "Ed25519": { "signature": [1, 2] } })),
+        );
+        assert_eq!(
+            arena.get_signature_request(1).unwrap().status,
+            SignStatus::Failed
+        );
+    }
+
+    #[test]
+    fn a_late_answer_for_a_finished_request_is_ignored() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Ok(good_response(0)));
+        let signed = arena.get_signature_request(1).unwrap().signed_tx;
+        deliver(&mut arena, 1, Err(PromiseError::Failed));
+        deliver(&mut arena, 1, Ok(good_response(1)));
+        let view = arena.get_signature_request(1).unwrap();
+        assert_eq!(view.status, SignStatus::Signed);
+        assert_eq!(view.signed_tx, signed);
+        assert_eq!(view.attempts, 0);
+    }
+
+    #[test]
+    fn an_answer_for_an_unknown_request_does_not_panic() {
+        let mut arena = signing_arena();
+        deliver(&mut arena, 77, Ok(good_response(0)));
+        assert_eq!(arena.get_signature_request_count(), 0);
+    }
+
+    #[test]
+    fn a_failed_request_can_be_retried_and_then_succeeds() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Err(PromiseError::Failed));
+
+        set_context("agent", END_NS + 3);
+        let _ = arena.retry_signature(1);
+        assert_eq!(
+            arena.get_signature_request(1).unwrap().status,
+            SignStatus::Pending
+        );
+        deliver(&mut arena, 1, Ok(good_response(0)));
+        let view = arena.get_signature_request(1).unwrap();
+        assert_eq!(view.status, SignStatus::Signed);
+        assert_eq!(view.attempts, 1);
+    }
+
+    #[test]
+    fn retrying_keeps_the_same_payload() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        let before = arena.get_signature_request(1).unwrap().payload_hash;
+        deliver(&mut arena, 1, Err(PromiseError::Failed));
+        set_context("agent", END_NS + 3);
+        let _ = arena.retry_signature(1);
+        assert_eq!(arena.get_signature_request(1).unwrap().payload_hash, before);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a failed request can be retried")]
+    fn a_pending_request_cannot_be_retried() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        set_context("agent", END_NS + 3);
+        let _ = arena.retry_signature(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a failed request can be retried")]
+    fn a_signed_request_cannot_be_retried() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Ok(good_response(0)));
+        set_context("agent", END_NS + 3);
+        let _ = arena.retry_signature(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Request not found")]
+    fn an_unknown_request_cannot_be_retried() {
+        let mut arena = signing_arena();
+        set_context("agent", END_NS + 3);
+        let _ = arena.retry_signature(5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_retry() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        deliver(&mut arena, 1, Err(PromiseError::Failed));
+        set_context("alice", END_NS + 3);
+        let _ = arena.retry_signature(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Too many failed attempts")]
+    fn retries_stop_after_the_attempt_limit() {
+        let mut arena = signing_arena();
+        let _ = sign_as_agent(&mut arena, swap_call(F_BURN), None);
+        for _ in 0..MAX_SIGN_ATTEMPTS {
+            deliver(&mut arena, 1, Err(PromiseError::Failed));
+            set_context("agent", END_NS + 3);
+            let _ = arena.retry_signature(1);
+        }
     }
 
     #[test]

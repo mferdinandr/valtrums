@@ -65,7 +65,7 @@ pub const FEE_BPS: u128 = 500;
 
 const _: () = assert!(LIQUID_BPS + CREDIT_BPS + BURN_BPS + FEE_BPS == BPS_DENOMINATOR);
 
-mod wide {
+pub(crate) mod wide {
     #![allow(clippy::all)]
     uint::construct_uint! {
         pub struct U256(4);
