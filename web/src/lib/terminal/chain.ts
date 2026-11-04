@@ -102,8 +102,11 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
         failure = null;
         throw new Error(m);
       }
-      const msg = JSON.parse(tx.args.msg) as { battle_id: number; side: "A" | "B"; total_usdc: string; min_token_out: string };
-      const amount = BigInt(tx.args.amount);
+      const msg =
+        tx.method === "ft_transfer_call"
+          ? (JSON.parse(tx.args.msg) as { battle_id: number; side: "A" | "B"; total_usdc: string; min_token_out: string })
+          : tx.args;
+      const amount = tx.method === "ft_transfer_call" ? BigInt(tx.args.amount) : 0n;
       const total = BigInt(msg.total_usdc);
       const split = await chain.previewFunding(signerId, total);
       if (amount < split.fromWallet) throw new Error("Arena rejected the deposit: amount below the wallet part");
@@ -140,7 +143,13 @@ export function createNearTerminalChain(opts: NearChainOptions): TerminalChain {
     if (r === undefined) throw new Error(`${contract}.${method} returned no value`);
     return r;
   };
-  const getRouter = () => view<RouterInfo>(opts.arenaId, "get_router");
+  // The arena names its router in `get_config`; the router names the DEX.
+  const getRouter = async (): Promise<RouterInfo> => {
+    const cfg = await view<{ router: string | null }>(opts.arenaId, "get_config");
+    if (!cfg.router) return { router: null, dex: null };
+    const rc = await view<{ dex: string | null }>(cfg.router, "get_config");
+    return { router: cfg.router, dex: rc.dex ?? null };
+  };
   return {
     mode: "near",
     arenaId: opts.arenaId,

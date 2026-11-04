@@ -7,8 +7,14 @@ import { createTerminal, type TerminalController } from "./machine";
 import { resolveIntent, type DepositPlan } from "./plan";
 import { ruleBasedParser, parseWithRules } from "./rule-parser";
 import { buildSummary, summaryText } from "./summary";
-import { buildDepositTx, verifyTx } from "./transaction";
+import { buildDepositTx, verifyTx, type TransferCallTx } from "./transaction";
 import type { ParsedIntent } from "./intent";
+
+function transferTx(plan: DepositPlan): TransferCallTx {
+  const tx = buildDepositTx(plan);
+  if (tx.method !== "ft_transfer_call") throw new Error("expected ft_transfer_call");
+  return tx;
+}
 
 const T0 = 1_800_000_000_000;
 const NEW_USER = "newbie.testnet"; // no credit, no positions
@@ -125,7 +131,7 @@ describe("summary", () => {
 describe("deposit transaction", () => {
   it("matches the message shape in the router protocol", async () => {
     const { plan } = await readyPlan("Deposit 50 USDC to $FLOKI");
-    const tx = buildDepositTx(plan);
+    const tx = transferTx(plan);
     expect(tx.method).toBe("ft_transfer_call");
     expect(tx.receiverId).toBe("usdc.tkn.testnet");
     expect(tx.deposit).toBe("1");
@@ -142,14 +148,14 @@ describe("deposit transaction", () => {
 
   it("sends only the wallet part as the transfer amount", async () => {
     const { plan } = await readyPlan("Deposit 50 USDC to $FLOKI using 35 credit", MOCK_ACCOUNT);
-    const tx = buildDepositTx(plan);
+    const tx = transferTx(plan);
     expect(tx.args.amount).toBe("15000000");
     expect(JSON.parse(tx.args.msg).total_usdc).toBe("50000000");
   });
 
   it("verifies a faithful transaction and flags every kind of drift", async () => {
     const { plan } = await readyPlan("Deposit 50 USDC to $FLOKI");
-    const tx = buildDepositTx(plan);
+    const tx = transferTx(plan);
     expect(verifyTx(plan, tx)).toEqual({ ok: true });
     const withMsg = (patch: Record<string, unknown>) => ({ ...tx, args: { ...tx.args, msg: JSON.stringify({ ...JSON.parse(tx.args.msg), ...patch }) } });
     expect(verifyTx(plan, { ...tx, receiverId: "evil.testnet" }).ok).toBe(false);
@@ -164,6 +170,36 @@ describe("deposit transaction", () => {
   });
 });
 
+describe("credit-only deposit", () => {
+  it("uses deposit_with_credit on the arena when no USDC leaves the wallet", async () => {
+    const { plan } = await readyPlan("Deposit 20 USDC to $FLOKI using 20 credit", MOCK_ACCOUNT);
+    expect(plan.walletUnits).toBe(0n);
+    const tx = buildDepositTx(plan);
+    expect(tx).toMatchObject({
+      receiverId: "arena.testnet",
+      method: "deposit_with_credit",
+      deposit: "1",
+      args: { battle_id: 2, side: "A", total_usdc: "20000000", min_token_out: plan.minOut.toString() },
+    });
+    expect(verifyTx(plan, tx)).toEqual({ ok: true });
+    expect(verifyTx(plan, { ...tx, args: { ...tx.args, side: "B" } } as typeof tx).ok).toBe(false);
+    expect(verifyTx(plan, { ...tx, receiverId: "usdc.tkn.testnet" }).ok).toBe(false);
+    expect(verifyTx(plan, { ...tx, args: { ...tx.args, extra: 1 } } as unknown as typeof tx).ok).toBe(false);
+  });
+
+  it("executes end to end and consumes only credit", async () => {
+    const s = setup();
+    const t = createTerminal({ parser: ruleBasedParser, api: s.api, chain: s.chain, sender: s.chain, funding: s.funding, getAccountId: () => MOCK_ACCOUNT, now: () => T0 });
+    await t.submit("Deposit 20 USDC to $FLOKI using 20 credit");
+    expect(t.getState().phase).toBe("confirm");
+    await t.confirm();
+    expect(t.getState().phase).toBe("done");
+    expect(s.chain.sent[0]!.method).toBe("deposit_with_credit");
+    expect(await s.chain.usdcBalance(MOCK_ACCOUNT)).toBe(100_000_000n);
+    expect((await s.chain.previewFunding(MOCK_ACCOUNT, 20_000_000n)).fromCredit).toBe(15_000_000n);
+  });
+});
+
 describe("executeDeposit", () => {
   it("aborts before signing when the built transaction differs from the confirmed summary", async () => {
     const { plan, s } = await readyPlan("Deposit 50 USDC to $FLOKI");
@@ -171,7 +207,7 @@ describe("executeDeposit", () => {
       ...s,
       sender: s.chain,
       buildTx: (p) => {
-        const tx = buildDepositTx(p);
+        const tx = transferTx(p);
         return { ...tx, args: { ...tx.args, msg: JSON.stringify({ ...JSON.parse(tx.args.msg), side: "B" }) } };
       },
     });
@@ -293,7 +329,7 @@ describe("terminal state machine (mock api end to end)", () => {
     await t.confirmFunding();
     expect(phase(t)).toBe("done");
     expect(chain.sent).toHaveLength(1);
-    expect(JSON.parse(chain.sent[0]!.args.msg).total_usdc).toBe("50000000");
+    expect(JSON.parse((chain.sent[0] as TransferCallTx).args.msg).total_usdc).toBe("50000000");
   });
 
   it("shows a failed state and deposits nothing when funding fails", async () => {
