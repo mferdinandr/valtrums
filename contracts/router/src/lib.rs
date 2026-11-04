@@ -3,19 +3,40 @@
 //! every hop either fully succeeds or hands the amount back to the sender.
 
 use near_sdk::json_types::U128;
+use near_sdk::serde_json::json;
 use near_sdk::store::LookupMap;
-use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault};
+use near_sdk::{
+    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
+    PromiseError, PromiseOrValue,
+};
 
 pub mod events;
+pub mod msgs;
 pub mod types;
 
+use msgs::{ArenaMsg, SwapDeposit};
 use types::{ConfigView, PendingSwap};
+
+/// Gas for the USDC `ft_transfer_call` to the DEX. The DEX runs inside it.
+const DEX_TRANSFER_GAS: Gas = Gas::from_tgas(120);
+const CALLBACK_GAS: Gas = Gas::from_tgas(15);
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
 enum StorageKey {
     Pending,
     Stranded,
+}
+
+#[ext_contract(ext_ft)]
+pub trait FungibleToken {
+    fn ft_transfer_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        memo: Option<String>,
+        msg: String,
+    ) -> U128;
 }
 
 #[near(contract_state)]
@@ -59,6 +80,48 @@ impl Router {
         self.dex = dex;
     }
 
+    // ─── Token receiver ─────────────────────────────────────────────────
+
+    /// NEP-141 receiver. Returns the unused amount.
+    ///
+    /// Accepts USDC from the arena with a `swap_deposit` message. Anything
+    /// else is returned in full.
+    pub fn ft_on_transfer(
+        &mut self,
+        sender_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        let token = env::predecessor_account_id();
+        if token == self.usdc && sender_id == self.arena {
+            if let Some(ArenaMsg::SwapDeposit(request)) = msgs::parse_arena_msg(&msg) {
+                return self.start_swap(amount.0, request);
+            }
+        }
+        PromiseOrValue::Value(amount)
+    }
+
+    /// Resolves the USDC hop to the DEX. Returns the unused USDC, which is the
+    /// router's own `ft_on_transfer` result for the arena.
+    #[private]
+    pub fn on_swap_sent(
+        &mut self,
+        swap_id: u64,
+        amount: U128,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) -> U128 {
+        let used = result.ok().map(|used| used.0);
+        let unused = msgs::unused_after_transfer(amount.0, used);
+        if unused > 0 {
+            self.pending.remove(&swap_id);
+            events::emit(
+                "swap_failed",
+                json!({ "swap_id": swap_id, "returned": U128(unused) }),
+            );
+        }
+        U128(unused)
+    }
+
     // ─── Views ──────────────────────────────────────────────────────────
 
     pub fn get_config(&self) -> ConfigView {
@@ -85,6 +148,44 @@ impl Router {
 }
 
 impl Router {
+    fn start_swap(&mut self, amount: u128, request: SwapDeposit) -> PromiseOrValue<U128> {
+        if amount == 0 || request.token_out == self.usdc {
+            return PromiseOrValue::Value(U128(amount));
+        }
+        let swap_id = self.next_swap_id;
+        self.next_swap_id += 1;
+        let pending = PendingSwap {
+            battle_id: request.battle_id,
+            side: request.side,
+            beneficiary: request.beneficiary,
+            token_out: request.token_out,
+            min_token_out: request.min_token_out,
+            usdc_in: U128(amount),
+            from_credit: request.from_credit,
+        };
+        let dex_msg = msgs::dex_swap_msg(&pending, swap_id, &env::current_account_id());
+        events::emit(
+            "swap_started",
+            json!({
+                "swap_id": swap_id,
+                "battle_id": pending.battle_id,
+                "beneficiary": pending.beneficiary,
+                "usdc_in": pending.usdc_in,
+            }),
+        );
+        self.pending.insert(swap_id, pending);
+        ext_ft::ext(self.usdc.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(DEX_TRANSFER_GAS)
+            .ft_transfer_call(self.dex.clone(), U128(amount), None, dex_msg)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_swap_sent(swap_id, U128(amount)),
+            )
+            .into()
+    }
+
     fn assert_owner(&self) {
         require!(
             env::predecessor_account_id() == self.owner,
