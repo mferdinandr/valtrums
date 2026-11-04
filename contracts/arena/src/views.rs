@@ -14,6 +14,10 @@ pub struct ConfigView {
     pub agents: Vec<AccountId>,
     /// Contract allowed to deliver swapped deposits; `None` disables USDC deposits.
     pub router: Option<AccountId>,
+    /// DEX the arena swaps through when it executes settlement steps itself.
+    pub execution_dex: Option<AccountId>,
+    /// Account that receives burned coins.
+    pub burn_account: Option<AccountId>,
     pub paused: bool,
     pub treasury_accrued: U128,
 }
@@ -112,6 +116,8 @@ pub struct SettlementStepView {
     pub kind: StepKind,
     pub amount: U128,
     pub done: bool,
+    /// Sent to the DEX and waiting for its proceeds.
+    pub dispatched: bool,
     pub realized: Option<U128>,
 }
 
@@ -122,6 +128,7 @@ impl SettlementStepView {
             kind: step.kind,
             amount: U128(step.amount),
             done: step.done,
+            dispatched: step.min_out.is_some() && !step.done,
             realized: step.done.then_some(U128(step.realized)),
         }
     }
