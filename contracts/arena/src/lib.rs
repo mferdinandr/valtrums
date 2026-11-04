@@ -50,7 +50,18 @@ enum TransferMsg {
     Deposit {
         battle_id: u64,
         side: Side,
+        /// Only honored when the sender is the configured router.
+        beneficiary: Option<AccountId>,
+        usdc_equiv: Option<U128>,
+        from_credit: Option<U128>,
     },
+}
+
+/// Deposit details attached by the router after a swap.
+struct RoutedDeposit {
+    beneficiary: AccountId,
+    usdc_equiv: u128,
+    from_credit: u128,
 }
 
 /// Battle arena contract: battle lifecycle, vaults, positions and settlement.
@@ -276,8 +287,25 @@ impl Arena {
             }) if token == self.usdc => {
                 self.handle_propose(sender_id, amount.0, token_a, token_b, duration_secs)
             }
-            Ok(TransferMsg::Deposit { battle_id, side }) => {
-                self.handle_deposit(sender_id, token, amount.0, battle_id, side)
+            Ok(TransferMsg::Deposit {
+                battle_id,
+                side,
+                beneficiary,
+                usdc_equiv,
+                from_credit,
+            }) => {
+                let from_router = self.router.as_ref() == Some(&sender_id);
+                let routed = match (beneficiary, usdc_equiv, from_credit) {
+                    (Some(beneficiary), Some(usdc_equiv), Some(from_credit)) if from_router => {
+                        Some(RoutedDeposit {
+                            beneficiary,
+                            usdc_equiv: usdc_equiv.0,
+                            from_credit: from_credit.0,
+                        })
+                    }
+                    _ => None,
+                };
+                self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
             _ => amount.0,
         };
@@ -354,14 +382,20 @@ impl Arena {
 }
 
 impl Arena {
-    /// Direct deposit of a side's own coin. Returns the amount not accepted.
+    /// Deposit of a side's own coin, either sent directly or delivered by the
+    /// router after a swap. Returns the amount not accepted.
+    ///
+    /// Direct deposits need the window to be open. Routed deposits are accepted
+    /// until the agent locks the battle, because the user's USDC was already
+    /// swapped and cannot be unwound.
     fn handle_deposit(
         &mut self,
-        account_id: AccountId,
+        sender_id: AccountId,
         token: AccountId,
         amount: u128,
         battle_id: u64,
         side: Side,
+        routed: Option<RoutedDeposit>,
     ) -> u128 {
         let now = env::block_timestamp();
         let Some(battle) = self.battles.get(&battle_id) else {
@@ -371,10 +405,15 @@ impl Arena {
             Side::A => &battle.token_a,
             Side::B => &battle.token_b,
         };
-        let open = battle.status == BattleStatus::Approved && now < battle.deposit_deadline_ns;
+        let open = battle.status == BattleStatus::Approved
+            && (routed.is_some() || now < battle.deposit_deadline_ns);
         if amount == 0 || !open || &token != side_token {
             return amount;
         }
+        let (account_id, usdc_equiv, from_credit) = match routed {
+            Some(routed) => (routed.beneficiary, routed.usdc_equiv, routed.from_credit),
+            None => (sender_id, 0, 0),
+        };
         let key = (battle_id, account_id.clone());
         if self
             .positions
@@ -401,6 +440,14 @@ impl Arena {
                 .coin_amount
                 .checked_add(amount)
                 .unwrap_or_else(|| env::panic_str("Position overflow"));
+            position.usdc_equiv = position
+                .usdc_equiv
+                .checked_add(usdc_equiv)
+                .unwrap_or_else(|| env::panic_str("Position overflow"));
+            position.from_credit = position
+                .from_credit
+                .checked_add(from_credit)
+                .unwrap_or_else(|| env::panic_str("Position overflow"));
             position.coin_amount
         } else {
             self.positions.insert(
@@ -408,8 +455,8 @@ impl Arena {
                 UserPosition {
                     side,
                     coin_amount: amount,
-                    usdc_equiv: 0,
-                    from_credit: 0,
+                    usdc_equiv,
+                    from_credit,
                     claimed: false,
                 },
             );
@@ -423,8 +470,8 @@ impl Arena {
                 "side": side,
                 "coin_amount": U128(amount),
                 "position_total": U128(total),
-                "usdc_equiv": U128(0),
-                "from_credit": U128(0),
+                "usdc_equiv": U128(usdc_equiv),
+                "from_credit": U128(from_credit),
             }),
         );
         0
@@ -1349,6 +1396,121 @@ mod tests {
         let mut arena = new_arena();
         set_context("stranger", 0);
         arena.set_router(Some(acc("stranger")));
+    }
+
+    fn routed_msg(beneficiary: &str, usdc_equiv: u128, from_credit: u128, side: Side) -> String {
+        json!({
+            "action": "deposit",
+            "battle_id": 1,
+            "side": side,
+            "beneficiary": acc(beneficiary),
+            "usdc_equiv": U128(usdc_equiv),
+            "from_credit": U128(from_credit),
+        })
+        .to_string()
+    }
+
+    fn router_deliver(
+        arena: &mut Arena,
+        token: &str,
+        amount: u128,
+        msg: String,
+        timestamp_ns: u64,
+    ) -> u128 {
+        set_context(token, timestamp_ns);
+        returned(arena.ft_on_transfer(acc("router"), U128(amount), msg))
+    }
+
+    fn arena_with_router() -> Arena {
+        let mut arena = approved_arena();
+        set_context("owner", 0);
+        arena.set_router(Some(acc("router")));
+        arena
+    }
+
+    #[test]
+    fn router_deposit_credits_the_beneficiary() {
+        let mut arena = arena_with_router();
+        let msg = routed_msg("alice", 50_000_000, 35_000_000, Side::A);
+        assert_eq!(router_deliver(&mut arena, "pepe", 900, msg, 10), 0);
+
+        let position = arena.get_position(1, acc("alice")).unwrap();
+        assert_eq!(position.side, Side::A);
+        assert_eq!(position.coin_amount, U128(900));
+        assert_eq!(position.usdc_equiv, U128(50_000_000));
+        assert_eq!(position.from_credit, U128(35_000_000));
+        assert!(arena.get_position(1, acc("router")).is_none());
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(900));
+    }
+
+    #[test]
+    fn router_deposits_are_accepted_after_the_deadline_until_lock() {
+        let mut arena = arena_with_router();
+        let msg = routed_msg("alice", 10, 0, Side::A);
+        assert_eq!(
+            router_deliver(&mut arena, "pepe", 5, msg, WINDOW_NS + 10),
+            0
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(5));
+    }
+
+    #[test]
+    fn router_deposits_are_rejected_once_the_battle_is_live() {
+        let mut arena = arena_with_router();
+        fund(&mut arena, 1, 100, 100);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+        let msg = routed_msg("alice", 10, 0, Side::A);
+        assert_eq!(router_deliver(&mut arena, "pepe", 5, msg, WINDOW_NS + 1), 5);
+        assert!(arena.get_position(1, acc("alice")).is_none());
+    }
+
+    #[test]
+    fn beneficiary_fields_are_ignored_for_other_senders() {
+        let mut arena = arena_with_router();
+        set_context("pepe", 10);
+        let result = arena.ft_on_transfer(
+            acc("mallory"),
+            U128(100),
+            routed_msg("alice", 999, 999, Side::A),
+        );
+        assert_eq!(returned(result), 0);
+        assert!(arena.get_position(1, acc("alice")).is_none());
+        let position = arena.get_position(1, acc("mallory")).unwrap();
+        assert_eq!(position.usdc_equiv, U128(0));
+        assert_eq!(position.from_credit, U128(0));
+    }
+
+    #[test]
+    fn router_deposit_respects_the_one_side_rule() {
+        let mut arena = arena_with_router();
+        deposit_coin(&mut arena, "alice", "pepe", 100, Side::A, 10);
+        let msg = routed_msg("alice", 10, 0, Side::B);
+        assert_eq!(router_deliver(&mut arena, "shib", 7, msg, 20), 7);
+        assert_eq!(arena.get_battle(1).unwrap().vault_b, U128(0));
+    }
+
+    #[test]
+    fn router_top_up_accumulates_accounting_fields() {
+        let mut arena = arena_with_router();
+        router_deliver(
+            &mut arena,
+            "pepe",
+            100,
+            routed_msg("alice", 50, 20, Side::A),
+            10,
+        );
+        router_deliver(
+            &mut arena,
+            "pepe",
+            40,
+            routed_msg("alice", 30, 0, Side::A),
+            20,
+        );
+        let position = arena.get_position(1, acc("alice")).unwrap();
+        assert_eq!(position.coin_amount, U128(140));
+        assert_eq!(position.usdc_equiv, U128(80));
+        assert_eq!(position.from_credit, U128(20));
     }
 
     #[test]
