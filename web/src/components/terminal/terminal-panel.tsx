@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { useWallet } from "@/components/providers";
+import { FundingSource } from "@/components/terminal/funding-source";
+import { useTerminalEnv, useWallet } from "@/components/providers";
 import { useTerminal } from "@/hooks/use-terminal";
 import { formatUsdc } from "@/lib/amounts";
 import { MAX_PROMPT_CHARS } from "@/lib/terminal/intent";
+import { canKeyDeposit } from "@/lib/terminal/session-key";
 import type { Summary } from "@/lib/terminal/summary";
 import type { FundingQuote } from "@/lib/terminal/funding";
 import { cn } from "@/lib/utils";
@@ -57,6 +59,7 @@ function QuoteView({ quote }: { quote: FundingQuote }) {
 export function TerminalPanel({ scopeBattleId, onDone }: { scopeBattleId?: number; onDone?: () => void }) {
   const { accountId, signIn } = useWallet();
   const { controller, state, history } = useTerminal(scopeBattleId);
+  const env = useTerminalEnv();
   const [text, setText] = useState("");
   const [refunds, setRefunds] = useState<Record<string, string>>({});
 
@@ -168,6 +171,7 @@ export function TerminalPanel({ scopeBattleId, onDone }: { scopeBattleId?: numbe
       {state.phase === "confirm" && (
         <div className="space-y-3 border-2 border-neon-amber p-3">
           <SummaryView summary={state.summary} />
+          <FundingSource plan={state.plan} onSelect={(src) => void controller.setFundingSource(src)} />
           {state.plan.bridgeLegs.map((l) => (
             <div key={l.chain}>
               <Label htmlFor={`refund-${l.chain}`}>Your {l.chain} address for refunds</Label>
@@ -187,7 +191,14 @@ export function TerminalPanel({ scopeBattleId, onDone }: { scopeBattleId?: numbe
               Cancel
             </Button>
           </div>
-          <p className="text-lg text-mute">Your wallet asks for one approval. The terminal never holds your funds or keys.</p>
+          <p className="text-lg text-mute">
+            {state.plan.payFromBalance
+              ? accountId && canKeyDeposit(env.session.get(accountId), env.chain.arenaId, Date.now())
+                ? "Your session key signs this deposit, so there is no wallet prompt. "
+                : "Your wallet asks for one approval; no deposit is attached. "
+              : "Your wallet asks for one approval. "}
+            The terminal never holds your funds or keys.
+          </p>
         </div>
       )}
 

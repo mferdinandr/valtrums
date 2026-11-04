@@ -25,8 +25,14 @@ export interface DepositPlan {
   totalUnits: bigint;
   /** Credit the arena will consume (credit is always used first). */
   creditUnits: bigint;
-  /** USDC sent by `ft_transfer_call`: `total - credit`. */
+  /** USDC sent by `ft_transfer_call`: `total - credit`. Always 0 when paying from the arena balance. */
   walletUnits: bigint;
+  /** True when the deposit is paid by `deposit_from_balance` (credit first, then the arena's internal balance). */
+  payFromBalance: boolean;
+  /** USDC taken from the arena's internal balance: `total - credit` when `payFromBalance`, otherwise 0. */
+  balanceUnits: bigint;
+  /** Internal balance the account held when the plan was resolved (informational). */
+  balanceAvailable: bigint;
   /** Part of the wallet amount that is already in the NEAR wallet. */
   nearWalletUnits: bigint;
   /** Part of the wallet amount that must be bridged in first. */
@@ -49,6 +55,8 @@ export interface ResolveContext {
   chain: TerminalChain;
   accountId: string;
   nowMs: number;
+  /** Pay from credit plus the arena's internal balance instead of the wallet. */
+  payFromBalance?: boolean;
 }
 
 interface Candidate {
@@ -135,6 +143,12 @@ export async function resolveIntent(intent: ParsedIntent, ctx: ResolveContext): 
     );
   }
 
+  const payFromBalance = ctx.payFromBalance === true;
+  const balanceAvailable = toBigInt(await api.getLiquidBalance(accountId, cfg.usdc));
+  if (payFromBalance && intent.sources.some((s) => s.kind === "other_chain")) {
+    reasons.push("Paying from the arena balance cannot be combined with a cross-chain transfer.");
+  }
+
   const preview = await chain.previewFunding(accountId, total);
   const notes: string[] = [];
   if (claimedCredit < preview.fromCredit) {
@@ -151,8 +165,16 @@ export async function resolveIntent(intent: ParsedIntent, ctx: ResolveContext): 
     if (take > 0n) bridgeLegs.push({ chain: s.chain!, amount: take });
     bridgeLeft -= take;
   }
-  const nearWalletUnits = bridgeLeft;
-  if (nearWalletUnits > 0n) {
+  const nearWalletUnits = payFromBalance ? 0n : bridgeLeft;
+  const balanceUnits = payFromBalance ? preview.fromWallet : 0n;
+  if (payFromBalance) {
+    bridgeLegs.length = 0;
+    if (balanceAvailable < balanceUnits) {
+      reasons.push(
+        `Your arena balance holds ${formatUsdc(balanceAvailable)} but ${formatUsdc(balanceUnits)} is needed. Fund the balance first.`,
+      );
+    }
+  } else if (nearWalletUnits > 0n) {
     const balance = await chain.usdcBalance(accountId);
     if (balance < nearWalletUnits) {
       reasons.push(`Your NEAR wallet holds ${formatUsdc(balance)} USDC but ${formatUsdc(nearWalletUnits)} is needed.`);
@@ -180,7 +202,10 @@ export async function resolveIntent(intent: ParsedIntent, ctx: ResolveContext): 
       usdcId: cfg.usdc,
       totalUnits: total,
       creditUnits: preview.fromCredit,
-      walletUnits: preview.fromWallet,
+      walletUnits: payFromBalance ? 0n : preview.fromWallet,
+      payFromBalance,
+      balanceUnits,
+      balanceAvailable,
       nearWalletUnits,
       bridgeLegs,
       expectedOut,

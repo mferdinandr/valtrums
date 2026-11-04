@@ -5,7 +5,7 @@ import type { ArenaApi } from "../arena/types";
 import type { TerminalChain, TxSender } from "./chain";
 import { executeDeposit, freezePlan, type ExecutionResult } from "./executor";
 import type { FundingQuote, FundingRouter } from "./funding";
-import { MAX_PROMPT_CHARS, type IntentParser } from "./intent";
+import { MAX_PROMPT_CHARS, type IntentParser, type ParsedIntent } from "./intent";
 import { resolveIntent, type DepositPlan } from "./plan";
 import { hasActionWord } from "./rule-parser";
 import { buildSummary, type Summary } from "./summary";
@@ -37,6 +37,8 @@ export interface TerminalDeps {
   funding: FundingRouter;
   getAccountId: () => string | null;
   now?: () => number;
+  /** True when a valid session key can sign `deposit_from_balance`; the terminal then pays from the balance by default when it covers the deposit. */
+  preferBalance?: () => boolean;
   /** When set (battle page), prompts that do not name a battle are scoped to it. */
   scopeBattleId?: number;
 }
@@ -49,6 +51,11 @@ export interface TerminalController {
   /** Confirm the summary. `refundTo` maps chain -> refund address and is required when bridging. */
   confirm(refundTo?: Record<string, string>): Promise<void>;
   confirmFunding(): Promise<void>;
+  /**
+   * While reviewing the summary, switch between paying from the wallet and paying from credit plus the arena
+   * balance. The plan is resolved again from live data, so the summary always matches what will be sent.
+   */
+  setFundingSource(source: "wallet" | "balance"): Promise<void>;
   cancel(): void;
 }
 
@@ -59,6 +66,7 @@ export function createTerminal(deps: TerminalDeps): TerminalController {
   let seq = 0;
   let busy = false;
   let refunds: Record<string, string> = {};
+  let lastIntent: ParsedIntent | null = null;
   const listeners = new Set<() => void>();
 
   const emit = () => listeners.forEach((l) => l());
@@ -121,7 +129,14 @@ export function createTerminal(deps: TerminalDeps): TerminalController {
           return set({ phase: "error", message: parsed.error });
         }
         const intent = deps.scopeBattleId !== undefined && parsed.intent.battle === undefined ? { ...parsed.intent, battle: deps.scopeBattleId } : parsed.intent;
-        const res = await resolveIntent(intent, { api: deps.api, chain: deps.chain, accountId, nowMs: now() });
+        lastIntent = intent;
+        const ctx = { api: deps.api, chain: deps.chain, accountId, nowMs: now() };
+        let res = await resolveIntent(intent, ctx);
+        // With a valid session key the balance path needs no wallet prompt, so prefer it when it is fully covered.
+        if (res.kind === "ready" && deps.preferBalance?.() && res.plan.bridgeLegs.length === 0) {
+          const viaBalance = await resolveIntent(intent, { ...ctx, payFromBalance: true });
+          if (viaBalance.kind === "ready") res = viaBalance;
+        }
         if (res.kind === "clarify") {
           log("info", res.question);
           return set({ phase: "clarify", question: res.question, prompt });
@@ -177,6 +192,32 @@ export function createTerminal(deps: TerminalDeps): TerminalController {
       busy = true;
       try {
         await runExecution(plan, quotes);
+      } finally {
+        busy = false;
+      }
+    },
+
+    async setFundingSource(source) {
+      if (busy || state.phase !== "confirm" || !lastIntent) return;
+      const accountId = deps.getAccountId();
+      if (!accountId) return;
+      busy = true;
+      try {
+        const res = await resolveIntent(lastIntent, { api: deps.api, chain: deps.chain, accountId, nowMs: now(), payFromBalance: source === "balance" });
+        if (res.kind === "ready") {
+          const plan = freezePlan(res.plan);
+          set({ phase: "confirm", plan, summary: buildSummary(plan) });
+        } else if (res.kind === "blocked") {
+          // Stay on the current summary and say why the other source is not possible.
+          res.reasons.forEach((r) => log("error", r));
+          emit();
+        } else {
+          log("info", res.question);
+          emit();
+        }
+      } catch (e) {
+        log("error", e instanceof Error ? e.message : "Could not update the funding source");
+        emit();
       } finally {
         busy = false;
       }

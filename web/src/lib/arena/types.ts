@@ -105,6 +105,22 @@ export interface BattleActionInput {
   battleId: number;
 }
 
+export interface FundBalanceInput {
+  signerId: string;
+  /** USDC base units moved from the wallet into the arena's internal balance. */
+  amount: bigint;
+}
+
+export interface DepositFromBalanceInput {
+  signerId: string;
+  battleId: number;
+  side: Side;
+  /** Total USDC value of the deposit. Credit is spent first, then the internal balance. */
+  totalUsdc: bigint;
+  /** Least coin output (base units) the swap may return. */
+  minTokenOut: bigint;
+}
+
 export interface ArenaApi {
   readonly mode: "mock" | "near";
   getConfig(): Promise<ConfigView>;
@@ -129,4 +145,15 @@ export interface ArenaApi {
    * balance, so callers should re-read it after the call.
    */
   withdrawLiquid(input: WithdrawLiquidInput): Promise<void>;
+  /**
+   * Moves wallet USDC into the arena's internal balance (`ft_transfer_call` with `fund_balance`, 1 yoctoNEAR,
+   * full-access approval). The balance can be withdrawn any time with `withdrawLiquid`.
+   */
+  fundBalance(input: FundBalanceInput): Promise<void>;
+  /**
+   * Deposits into a battle from credit and the internal balance (`deposit_from_balance`). No attached
+   * deposit, so a scoped session key can sign it. If the swap fails the contract restores credit and
+   * balance and nothing is deposited.
+   */
+  depositFromBalance(input: DepositFromBalanceInput): Promise<void>;
 }

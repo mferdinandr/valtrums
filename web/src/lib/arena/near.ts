@@ -5,7 +5,9 @@ import type {
   BattleActionInput,
   BattleView,
   ConfigView,
+  DepositFromBalanceInput,
   DepositInput,
+  FundBalanceInput,
   LivePrices,
   PositionView,
   ProposeInput,
@@ -26,6 +28,7 @@ export interface NearArenaOptions {
 
 const GAS_FT_CALL = "100 Tgas";
 const GAS_CLAIM = "100 Tgas";
+const GAS_BALANCE_DEPOSIT = "200 Tgas";
 const ONE_YOCTO = "1 yocto";
 
 export function createNearArenaApi(opts: NearArenaOptions): ArenaApi {
@@ -125,6 +128,21 @@ export function createNearArenaApi(opts: NearArenaOptions): ArenaApi {
         "withdraw_initial_deposit",
         { battle_id: battleId.toString() },
         { signerId, gas: GAS_CLAIM },
+      );
+    },
+
+    async fundBalance({ signerId, amount }: FundBalanceInput) {
+      const cfg = await getConfig();
+      await ftTransferCall(signerId, cfg.usdc, amount, { action: "fund_balance" });
+    },
+
+    // No attached deposit: the only deposit path a function-call key can sign.
+    async depositFromBalance({ signerId, battleId, side, totalUsdc, minTokenOut }: DepositFromBalanceInput) {
+      await signer().call(
+        opts.contractId,
+        "deposit_from_balance",
+        { battle_id: battleId, side, total_usdc: totalUsdc.toString(), min_token_out: minTokenOut.toString() },
+        { signerId, gas: GAS_BALANCE_DEPOSIT },
       );
     },
 

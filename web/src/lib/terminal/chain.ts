@@ -5,6 +5,7 @@ import { Near } from "near-kit";
 import { pow10, toBigInt, USDC_DECIMALS } from "../amounts";
 import { MOCK_TOKENS } from "../arena/mock";
 import type { ArenaApi } from "../arena/types";
+import { canSessionSign, recordSessionUse, type StoredSession } from "./session-key";
 import type { DepositTx } from "./transaction";
 
 export interface FundingSplit {
@@ -47,6 +48,9 @@ export interface MockChainOptions {
   /** Starting wallet USDC (base units) for any account. Default 100 USDC. */
   walletUsdc?: bigint;
   now?: () => number;
+  /** Current session key, if any. A valid one signs `deposit_from_balance` without a wallet prompt. */
+  getSession?: () => StoredSession | null;
+  onSessionUsed?: (session: StoredSession) => void;
 }
 
 export interface MockTerminalChain extends TerminalChain, TxSender {
@@ -73,6 +77,14 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
     const left = toBigInt(acc.credit_balance) - (creditSpent.get(id) ?? 0n);
     return left > 0n ? left : 0n;
   };
+
+  // Funding the arena balance in demo mode spends the same wallet USDC the terminal sees.
+  if ("attachWallet" in api && typeof api.attachWallet === "function") {
+    (api as { attachWallet(p: { balance(a: string): bigint; debit(a: string, u: bigint): void }): void }).attachWallet({
+      balance: wallet,
+      debit: (id, units) => wallets.set(id, wallet(id) - units),
+    });
+  }
 
   const chain: MockTerminalChain = {
     mode: "mock",
@@ -106,6 +118,23 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
         const m = failure;
         failure = null;
         throw new Error(m);
+      }
+      if (tx.method === "deposit_from_balance") {
+        // Credit first, then the internal balance; a swap failure restores both and throws.
+        await api.depositFromBalance({
+          signerId,
+          battleId: tx.args.battle_id,
+          side: tx.args.side,
+          totalUsdc: BigInt(tx.args.total_usdc),
+          minTokenOut: BigInt(tx.args.min_token_out),
+        });
+        sent.push(tx);
+        const session = opts.getSession?.() ?? null;
+        if (session && canSessionSign(session.policy, tx, now()).ok) {
+          opts.onSessionUsed?.({ ...session, policy: recordSessionUse(session.policy, tx) });
+          return "session";
+        }
+        return "wallet";
       }
       const msg =
         tx.method === "ft_transfer_call"
