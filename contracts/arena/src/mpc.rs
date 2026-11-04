@@ -5,8 +5,9 @@
 //! returns. The contract methods that call the signer live in `lib.rs`.
 
 use crate::math::wide::U256;
-use near_sdk::env;
+use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::Value;
+use near_sdk::{env, near};
 
 /// A 20-byte EVM address.
 pub type Address = [u8; 20];
@@ -170,6 +171,7 @@ pub fn hex_decode(text: &str) -> Option<Vec<u8>> {
 // ─── transactions ───────────────────────────────────────────────────────
 
 /// An EIP-1559 (type 2) transaction.
+#[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvmTx {
     pub chain_id: u64,
@@ -232,6 +234,158 @@ impl EvmTx {
 /// The transaction hash of a signed transaction.
 pub fn tx_hash(signed: &[u8]) -> [u8; 32] {
     keccak(signed)
+}
+
+// ─── step requests ──────────────────────────────────────────────────────
+
+/// What the foreign-chain transaction does. Addresses are 40-character hex strings.
+#[near(serializers = [json])]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug)]
+pub enum ForeignCall {
+    /// `approve(spender, amount)` on `token`; the spender must be the configured router.
+    Approve {
+        token: String,
+        spender: String,
+        amount: U128,
+    },
+    /// `transfer(to, amount)` on `token`; `to` must be the configured treasury or burn address.
+    Transfer {
+        token: String,
+        to: String,
+        amount: U128,
+    },
+    /// A Uniswap V3 `exactInputSingle` through the configured router.
+    SwapExactIn {
+        token_in: String,
+        token_out: String,
+        fee: u32,
+        recipient: String,
+        amount_in: U128,
+        min_out: U128,
+    },
+}
+
+/// Fee and nonce data that only the operator can know when the request is made.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct ForeignTxParams {
+    pub nonce: U64,
+    pub max_priority_fee_per_gas: U128,
+    pub max_fee_per_gas: U128,
+    pub gas_limit: U64,
+}
+
+/// Chain-level settings for foreign transactions, in JSON form.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct ForeignConfigInput {
+    pub mpc_contract: near_sdk::AccountId,
+    pub chain_id: U64,
+    pub router: String,
+    pub treasury: String,
+    pub burn: String,
+}
+
+/// Validated chain-level settings.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForeignConfig {
+    pub mpc_contract: near_sdk::AccountId,
+    pub chain_id: u64,
+    pub router: Address,
+    pub treasury: Address,
+    pub burn: Address,
+}
+
+impl ForeignConfig {
+    pub fn from_input(input: ForeignConfigInput) -> Result<Self, MpcError> {
+        Ok(Self {
+            mpc_contract: input.mpc_contract,
+            chain_id: input.chain_id.0,
+            router: parse_address(&input.router)?,
+            treasury: parse_address(&input.treasury)?,
+            burn: parse_address(&input.burn)?,
+        })
+    }
+}
+
+/// Why a requested call was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallError {
+    BadAddress,
+    ZeroAmount,
+    /// Approvals may only go to the configured router.
+    SpenderNotRouter,
+    /// Transfers may only go to the treasury or the burn address.
+    RecipientNotAllowed,
+}
+
+/// Turns a call into a transaction, enforcing the destination rules of the config.
+pub fn build_tx(
+    config: &ForeignConfig,
+    call: &ForeignCall,
+    params: &ForeignTxParams,
+) -> Result<EvmTx, CallError> {
+    let address = |text: &str| parse_address(text).map_err(|_| CallError::BadAddress);
+    let nonzero = |amount: u128| {
+        if amount == 0 {
+            Err(CallError::ZeroAmount)
+        } else {
+            Ok(amount)
+        }
+    };
+    let (to, data) = match call {
+        ForeignCall::Approve {
+            token,
+            spender,
+            amount,
+        } => {
+            let spender = address(spender)?;
+            if spender != config.router {
+                return Err(CallError::SpenderNotRouter);
+            }
+            (address(token)?, erc20_approve(&spender, nonzero(amount.0)?))
+        }
+        ForeignCall::Transfer { token, to, amount } => {
+            let recipient = address(to)?;
+            if recipient != config.treasury && recipient != config.burn {
+                return Err(CallError::RecipientNotAllowed);
+            }
+            (
+                address(token)?,
+                erc20_transfer(&recipient, nonzero(amount.0)?),
+            )
+        }
+        ForeignCall::SwapExactIn {
+            token_in,
+            token_out,
+            fee,
+            recipient,
+            amount_in,
+            min_out,
+        } => (
+            config.router,
+            exact_input_single(
+                &address(token_in)?,
+                &address(token_out)?,
+                *fee,
+                &address(recipient)?,
+                nonzero(amount_in.0)?,
+                nonzero(min_out.0)?,
+            ),
+        ),
+    };
+    Ok(EvmTx {
+        chain_id: config.chain_id,
+        nonce: params.nonce.0,
+        max_priority_fee_per_gas: params.max_priority_fee_per_gas.0,
+        max_fee_per_gas: params.max_fee_per_gas.0,
+        gas_limit: params.gas_limit.0,
+        to,
+        value: 0,
+        data,
+    })
 }
 
 // ─── signature handling ─────────────────────────────────────────────────
@@ -575,6 +729,139 @@ mod tests {
             y_parity: 1,
         };
         assert_eq!(normalize_low_s(signature), signature);
+    }
+
+    // ── building transactions from calls ──
+
+    const ROUTER: &str = "2626664c2603336e57b271c5c0b26f421741e481";
+    const TREASURY: &str = "00000000000000000000000000000000000a11ce";
+    const BURN: &str = "000000000000000000000000000000000000dead";
+    const USDC_EVM: &str = "833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+    const COIN_EVM: &str = "4200000000000000000000000000000000000006";
+
+    fn config() -> ForeignConfig {
+        ForeignConfig {
+            mpc_contract: "signer.testnet".parse().unwrap(),
+            chain_id: 8453,
+            router: addr(ROUTER),
+            treasury: addr(TREASURY),
+            burn: addr(BURN),
+        }
+    }
+
+    fn params() -> ForeignTxParams {
+        ForeignTxParams {
+            nonce: U64(7),
+            max_priority_fee_per_gas: U128(1_000_000),
+            max_fee_per_gas: U128(2_000_000_000),
+            gas_limit: U64(120_000),
+        }
+    }
+
+    fn swap(recipient: &str, amount_in: u128, min_out: u128) -> ForeignCall {
+        ForeignCall::SwapExactIn {
+            token_in: COIN_EVM.into(),
+            token_out: USDC_EVM.into(),
+            fee: 3000,
+            recipient: recipient.into(),
+            amount_in: U128(amount_in),
+            min_out: U128(min_out),
+        }
+    }
+
+    #[test]
+    fn a_swap_targets_the_router_with_the_swap_calldata() {
+        let tx = build_tx(&config(), &swap(BURN, 500, 400), &params()).unwrap();
+        assert_eq!(tx.to, addr(ROUTER));
+        assert_eq!(tx.chain_id, 8453);
+        assert_eq!(tx.nonce, 7);
+        assert_eq!(tx.value, 0);
+        assert_eq!(
+            tx.data,
+            exact_input_single(
+                &addr(COIN_EVM),
+                &addr(USDC_EVM),
+                3000,
+                &addr(BURN),
+                500,
+                400
+            )
+        );
+    }
+
+    #[test]
+    fn a_transfer_to_the_treasury_or_burn_address_is_allowed() {
+        for to in [TREASURY, BURN] {
+            let call = ForeignCall::Transfer {
+                token: USDC_EVM.into(),
+                to: to.into(),
+                amount: U128(2_000_000),
+            };
+            let tx = build_tx(&config(), &call, &params()).unwrap();
+            assert_eq!(tx.to, addr(USDC_EVM));
+            assert_eq!(tx.data, erc20_transfer(&addr(to), 2_000_000));
+        }
+    }
+
+    #[test]
+    fn a_transfer_anywhere_else_is_refused() {
+        let call = ForeignCall::Transfer {
+            token: USDC_EVM.into(),
+            to: "00000000000000000000000000000000000bad01".into(),
+            amount: U128(1),
+        };
+        assert_eq!(
+            build_tx(&config(), &call, &params()),
+            Err(CallError::RecipientNotAllowed)
+        );
+    }
+
+    #[test]
+    fn approvals_are_only_allowed_for_the_router() {
+        let approve = |spender: &str| ForeignCall::Approve {
+            token: COIN_EVM.into(),
+            spender: spender.into(),
+            amount: U128(1_000),
+        };
+        let tx = build_tx(&config(), &approve(ROUTER), &params()).unwrap();
+        assert_eq!(tx.to, addr(COIN_EVM));
+        assert_eq!(tx.data, erc20_approve(&addr(ROUTER), 1_000));
+        assert_eq!(
+            build_tx(&config(), &approve(BURN), &params()),
+            Err(CallError::SpenderNotRouter)
+        );
+    }
+
+    #[test]
+    fn zero_amounts_and_bad_addresses_are_refused() {
+        assert_eq!(
+            build_tx(&config(), &swap(BURN, 0, 400), &params()),
+            Err(CallError::ZeroAmount)
+        );
+        assert_eq!(
+            build_tx(&config(), &swap(BURN, 500, 0), &params()),
+            Err(CallError::ZeroAmount)
+        );
+        assert_eq!(
+            build_tx(&config(), &swap("not-an-address", 500, 400), &params()),
+            Err(CallError::BadAddress)
+        );
+    }
+
+    #[test]
+    fn foreign_config_validates_its_addresses() {
+        let input = |router: &str| ForeignConfigInput {
+            mpc_contract: "signer.testnet".parse().unwrap(),
+            chain_id: U64(8453),
+            router: router.into(),
+            treasury: TREASURY.into(),
+            burn: BURN.into(),
+        };
+        assert!(ForeignConfig::from_input(input(ROUTER)).is_ok());
+        assert_eq!(
+            ForeignConfig::from_input(input("0x12")),
+            Err(MpcError::BadAddress)
+        );
     }
 
     #[test]
