@@ -1,0 +1,55 @@
+@import "@fontsource/press-start-2p/400.css";
+@import "@fontsource/vt323/400.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-void font-term text-xl text-ink antialiased;
+    background-image:
+      linear-gradient(rgba(46, 230, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(46, 230, 255, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-pixel uppercase tracking-wide;
+  }
+  ::selection {
+    @apply bg-neon-pink text-black;
+  }
+}
+
+@layer components {
+  .pixel-frame {
+    @apply border-2 border-edge bg-panel shadow-pixel;
+  }
+  .scanlines::after {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.18) 3px
+    );
+    z-index: 50;
+  }
+  .blink {
+    animation: blink 1s steps(2, start) infinite;
+  }
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
