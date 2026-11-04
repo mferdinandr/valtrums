@@ -152,6 +152,52 @@ impl Arena {
         );
     }
 
+    // ─── Agent: lock ────────────────────────────────────────────────────
+
+    /// Closes the deposit window, records the initial prices once, and starts
+    /// the battle timer. A battle with an empty side is voided instead: its
+    /// deposits become refundable and the bond stays with the treasury.
+    pub fn set_initial_prices(&mut self, battle_id: u64, price_a: U128, price_b: U128) {
+        self.assert_agent();
+        require!(price_a.0 > 0 && price_b.0 > 0, "Prices must be non-zero");
+        let now = env::block_timestamp();
+        let battle = self.battle_in_status(battle_id, BattleStatus::Approved);
+        require!(
+            now >= battle.deposit_deadline_ns,
+            "Deposit window is still open"
+        );
+
+        if battle.vault_a == 0 || battle.vault_b == 0 {
+            battle.status = BattleStatus::Voided;
+            let bond = battle.bond;
+            self.accrue_treasury(bond);
+            events::emit(
+                "battle_voided",
+                json!({ "battle_id": battle_id, "reason": "empty side", "bond_seized": U128(bond) }),
+            );
+            return;
+        }
+
+        let end_time = now
+            .checked_add(battle.duration_ns)
+            .unwrap_or_else(|| env::panic_str("End time overflow"));
+        battle.initial_price_a = Some(price_a.0);
+        battle.initial_price_b = Some(price_b.0);
+        battle.status = BattleStatus::Live;
+        battle.start_time_ns = now;
+        battle.end_time_ns = end_time;
+        events::emit(
+            "battle_locked",
+            json!({
+                "battle_id": battle_id,
+                "start_time_ns": U64(now),
+                "end_time_ns": U64(end_time),
+                "initial_price_a": price_a,
+                "initial_price_b": price_b,
+            }),
+        );
+    }
+
     // ─── Treasury ───────────────────────────────────────────────────────
 
     /// Pays accrued USDC to the treasury. Anyone may call; the destination is fixed.
@@ -788,6 +834,114 @@ mod tests {
     fn flush_requires_accrued_funds() {
         let mut arena = new_arena();
         let _ = arena.flush_treasury();
+    }
+
+    /// Puts coins in each vault, standing in for deposits (added in a later change).
+    fn fund(arena: &mut Arena, battle_id: u64, vault_a: u128, vault_b: u128) {
+        let battle = arena.battles.get_mut(&battle_id).unwrap();
+        battle.vault_a = vault_a;
+        battle.vault_b = vault_b;
+    }
+
+    fn approved_arena() -> Arena {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.approve_battle(1);
+        arena
+    }
+
+    const WINDOW_NS: u64 = 3_600 * NS_PER_SECOND;
+
+    #[test]
+    fn lock_records_prices_and_starts_the_timer() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 60);
+        set_context("agent", WINDOW_NS + 5);
+        arena.set_initial_prices(1, U128(100), U128(250));
+
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.status, BattleStatus::Live);
+        assert_eq!(battle.initial_price_a, Some(U128(100)));
+        assert_eq!(battle.initial_price_b, Some(U128(250)));
+        assert_eq!(battle.start_time_ns, U64(WINDOW_NS + 5));
+        assert_eq!(
+            battle.end_time_ns,
+            U64(WINDOW_NS + 5 + 86_400 * NS_PER_SECOND)
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs
+            .iter()
+            .any(|l| l.contains("\"event\":\"battle_locked\"")));
+    }
+
+    #[test]
+    fn lock_is_allowed_exactly_at_the_deadline() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 1, 1);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Live);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit window is still open")]
+    fn lock_before_deadline_fails() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 60);
+        set_context("agent", WINDOW_NS - 1);
+        arena.set_initial_prices(1, U128(100), U128(250));
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn initial_prices_cannot_be_set_twice() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 60);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(100), U128(250));
+        arena.set_initial_prices(1, U128(1), U128(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_lock_a_proposed_battle() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Prices must be non-zero")]
+    fn zero_prices_are_rejected() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 60);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(0), U128(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_lock() {
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 60);
+        set_context("alice", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+    }
+
+    #[test]
+    fn empty_side_voids_the_battle_at_lock() {
+        for (a, b) in [(100, 0), (0, 100), (0, 0)] {
+            let mut arena = approved_arena();
+            fund(&mut arena, 1, a, b);
+            set_context("agent", WINDOW_NS);
+            arena.set_initial_prices(1, U128(1), U128(1));
+
+            let battle = arena.get_battle(1).unwrap();
+            assert_eq!(battle.status, BattleStatus::Voided);
+            assert!(battle.initial_price_a.is_none());
+            assert_eq!(battle.start_time_ns, U64(0));
+            assert_eq!(arena.get_config().treasury_accrued, U128(5_000_000));
+        }
     }
 
     #[test]
