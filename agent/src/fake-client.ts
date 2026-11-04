@@ -126,6 +126,12 @@ export class FakeArenaClient implements ArenaClient {
     b.status = "Settling";
     b.final_price_a = priceA.toString();
     b.final_price_b = priceB.toString();
+    if (b.initial_price_a !== null && b.initial_price_b !== null) {
+      // Relative performance: final/initial, compared without division.
+      const a = priceA * BigInt(b.initial_price_b);
+      const bb = priceB * BigInt(b.initial_price_a);
+      b.winner = a > bb ? "A" : a < bb ? "B" : b.winner;
+    }
     const steps = this.planTemplate.map(
       ([kind, amount], index): SettlementStep => ({
         index,
