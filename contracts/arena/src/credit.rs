@@ -71,7 +71,6 @@ mod tests {
         Account {
             credit_balance: amount,
             credit_expires_at_ns: CREDIT_TTL_NS,
-            ..Account::default()
         }
     }
 

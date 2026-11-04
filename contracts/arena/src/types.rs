@@ -69,6 +69,46 @@ pub struct Battle {
     pub final_price_a: Option<u128>,
     pub final_price_b: Option<u128>,
     pub winner: Option<Side>,
+    /// Set once the battle has a winner; tracks the foreign-chain execution.
+    pub settlement: Option<Settlement>,
+}
+
+/// What an execution step does with the loser's vault proceeds.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepKind {
+    /// Sell the loser vault (loser coin) for USDC. Reports the USDC received.
+    Dump,
+    /// Buy the winner coin with the liquid share. Reports the coin received.
+    Buy,
+    /// Buy the winner coin with the burn share and burn it. Reports the coin burned.
+    Burn,
+    /// Send the protocol fee in USDC to the treasury. Reports the USDC sent.
+    Return,
+}
+
+/// One step of the settlement plan, executed outside the contract.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettlementStep {
+    pub kind: StepKind,
+    /// Input amount: loser coin for `Dump`, USDC for the others.
+    pub amount: u128,
+    pub done: bool,
+    pub realized: u128,
+}
+
+/// Progress and results of a battle's settlement.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Settlement {
+    pub steps: Vec<SettlementStep>,
+    /// Winner coin to share pro-rata among winners as liquid reward (55%).
+    pub liquid_pool: u128,
+    /// USDC to share pro-rata among winners as new locked credit (35%).
+    pub credit_pool: u128,
+    /// Winner coin burned (5%).
+    pub burned: u128,
 }
 
 /// A user's stake in one battle.
@@ -89,7 +129,6 @@ pub struct UserPosition {
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Account {
-    pub liquid_balance: u128,
     pub credit_balance: u128,
     pub credit_expires_at_ns: u64,
 }
@@ -131,7 +170,6 @@ mod tests {
         let account = Account {
             credit_balance: 35,
             credit_expires_at_ns: CREDIT_TTL_NS,
-            ..Account::default()
         };
         assert_eq!(
             account.available_credit(3 * 24 * 60 * 60 * NS_PER_SECOND),
@@ -144,7 +182,6 @@ mod tests {
         let account = Account {
             credit_balance: 35,
             credit_expires_at_ns: CREDIT_TTL_NS,
-            ..Account::default()
         };
         assert_eq!(
             account.available_credit(8 * 24 * 60 * 60 * NS_PER_SECOND),
@@ -155,7 +192,6 @@ mod tests {
     #[test]
     fn new_account_is_empty() {
         let account = Account::default();
-        assert_eq!(account.liquid_balance, 0);
         assert_eq!(account.available_credit(0), 0);
     }
 }
