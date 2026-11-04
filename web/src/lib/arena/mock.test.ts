@@ -105,3 +105,94 @@ describe("mock arena api", () => {
     expect((await api.getBattle(n + 1))?.status).toBe("Proposed");
   });
 });
+
+describe("mock balance funding and deposits", () => {
+  const usdcOf = async (api: ReturnType<typeof createMockArenaApi>, who = MOCK_ACCOUNT) => BigInt(await api.getLiquidBalance(who, USDC));
+  const creditOf = async (api: ReturnType<typeof createMockArenaApi>, who = MOCK_ACCOUNT) => BigInt((await api.getAccount(who)).credit_balance);
+
+  it("funds the internal USDC balance", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const before = await usdcOf(api);
+    await api.fundBalance({ signerId: MOCK_ACCOUNT, amount: 10_000_000n });
+    expect(await usdcOf(api)).toBe(before + 10_000_000n);
+    await expect(api.fundBalance({ signerId: MOCK_ACCOUNT, amount: 0n })).rejects.toThrow();
+  });
+
+  it("debits an attached wallet and refuses more than it holds", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    let wallet = 5_000_000n;
+    api.attachWallet({ balance: () => wallet, debit: (_id, n) => void (wallet -= n) });
+    await api.fundBalance({ signerId: MOCK_ACCOUNT, amount: 3_000_000n });
+    expect(wallet).toBe(2_000_000n);
+    await expect(api.fundBalance({ signerId: MOCK_ACCOUNT, amount: 3_000_000n })).rejects.toThrow("Not enough USDC");
+    expect(wallet).toBe(2_000_000n);
+  });
+
+  it("spends credit first and then the balance (hybrid)", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const balance = await usdcOf(api); // 12.5
+    const credit = await creditOf(api); // 35
+    await api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 40_000_000n, minTokenOut: 1n });
+    expect(await creditOf(api)).toBe(0n);
+    expect(await usdcOf(api)).toBe(balance - (40_000_000n - credit));
+    const pos = (await api.getPosition(2, MOCK_ACCOUNT))!;
+    expect(pos.from_credit).toBe(credit.toString());
+    expect(BigInt(pos.usdc_equiv)).toBeGreaterThanOrEqual(40_000_000n);
+  });
+
+  it("keeps the credit expiry when credit is spent", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const expiry = (await api.getAccount(MOCK_ACCOUNT)).credit_expires_at_ns;
+    await api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 10_000_000n, minTokenOut: 1n });
+    expect((await api.getAccount(MOCK_ACCOUNT)).credit_expires_at_ns).toBe(expiry);
+    expect(await creditOf(api)).toBe(25_000_000n);
+  });
+
+  it("ignores expired credit and uses only the balance", async () => {
+    let now = T0;
+    const api = createMockArenaApi({ now: () => now });
+    now = T0 + 6 * 24 * 3_600_000; // credit expired, battle 2 deposits closed in the mock? use a fresh balance instead
+    const fresh = "fresh.testnet";
+    await api.fundBalance({ signerId: fresh, amount: 20_000_000n });
+    // battle 2 is still Approved in the mock status; the credit rule is what is under test
+    await api.depositFromBalance({ signerId: fresh, battleId: 2, side: "A", totalUsdc: 20_000_000n, minTokenOut: 1n });
+    expect(await usdcOf(api, fresh)).toBe(0n);
+    expect(await creditOf(api, fresh)).toBe(0n);
+  });
+
+  it("refuses when credit plus balance is short and changes nothing", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const state = async () => JSON.stringify([(await usdcOf(api)).toString(), (await creditOf(api)).toString(), await api.getPosition(2, MOCK_ACCOUNT), (await api.getBattle(2))!.vault_a]);
+    const before = await state();
+    await expect(api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 60_000_000n, minTokenOut: 1n })).rejects.toThrow("Deposit refused");
+    expect(await state()).toBe(before);
+  });
+
+  it("refuses closed battles and the opposite side", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    await api.fundBalance({ signerId: "x.testnet", amount: 10_000_000n });
+    await expect(api.depositFromBalance({ signerId: "x.testnet", battleId: 3, side: "A", totalUsdc: 1_000_000n, minTokenOut: 1n })).rejects.toThrow("Deposit refused");
+    // The demo account already backs side A of battle 2.
+    await expect(api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "B", totalUsdc: 1_000_000n, minTokenOut: 1n })).rejects.toThrow("Deposit refused");
+  });
+
+  it("restores balance and credit when the swap fails", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const before = [await usdcOf(api), await creditOf(api), (await api.getBattle(2))!.vault_a];
+    api.failNextBalanceDeposit();
+    await expect(api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 40_000_000n, minTokenOut: 1n })).rejects.toThrow("restored");
+    expect([await usdcOf(api), await creditOf(api), (await api.getBattle(2))!.vault_a]).toEqual(before);
+    // The failure is one-shot.
+    await api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 40_000_000n, minTokenOut: 1n });
+    expect(await creditOf(api)).toBe(0n);
+  });
+
+  it("treats a minimum output above the quote as a failed swap that restores everything", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const before = [await usdcOf(api), await creditOf(api)];
+    await expect(
+      api.depositFromBalance({ signerId: MOCK_ACCOUNT, battleId: 2, side: "A", totalUsdc: 40_000_000n, minTokenOut: 10n ** 40n }),
+    ).rejects.toThrow("restored");
+    expect([await usdcOf(api), await creditOf(api)]).toEqual(before);
+  });
+});
