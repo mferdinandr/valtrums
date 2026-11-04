@@ -1,4 +1,4 @@
-use crate::types::{Battle, BattleStatus, Side, UserPosition};
+use crate::types::{Battle, BattleStatus, SettlementStep, Side, StepKind, UserPosition};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
 
@@ -103,4 +103,27 @@ pub struct AccountView {
 pub struct FundingPreview {
     pub from_credit: U128,
     pub from_wallet: U128,
+}
+
+/// One settlement step as exposed to clients.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettlementStepView {
+    pub index: u32,
+    pub kind: StepKind,
+    pub amount: U128,
+    pub done: bool,
+    pub realized: Option<U128>,
+}
+
+impl SettlementStepView {
+    pub fn new(index: usize, step: &SettlementStep) -> Self {
+        Self {
+            index: index as u32,
+            kind: step.kind,
+            amount: U128(step.amount),
+            done: step.done,
+            realized: step.done.then_some(U128(step.realized)),
+        }
+    }
 }

@@ -13,8 +13,14 @@ pub mod types;
 pub mod views;
 
 use credit::plan_funding;
-use types::{Account, Battle, BattleStatus, Side, UserPosition, NS_PER_SECOND};
-use views::{AccountView, BattleView, ConfigView, FundingPreview, PositionView};
+use math::Outcome;
+use types::{
+    Account, Battle, BattleStatus, Settlement, SettlementStep, Side, StepKind, UserPosition,
+    NS_PER_SECOND,
+};
+use views::{
+    AccountView, BattleView, ConfigView, FundingPreview, PositionView, SettlementStepView,
+};
 
 /// Longest battle a proposer can request.
 const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
@@ -248,6 +254,130 @@ impl Arena {
         );
     }
 
+    // ─── Agent: settlement ──────────────────────────────────────────────
+
+    /// Submits the final prices after the battle ends. A tie voids the battle
+    /// (deposits refundable); otherwise the winner is set and the settlement
+    /// plan starts with selling the loser vault.
+    pub fn settle_battle(&mut self, battle_id: u64, final_price_a: U128, final_price_b: U128) {
+        self.assert_agent();
+        require!(
+            final_price_a.0 > 0 && final_price_b.0 > 0,
+            "Prices must be non-zero"
+        );
+        let now = env::block_timestamp();
+        let battle = self.battle_in_status(battle_id, BattleStatus::Live);
+        require!(now >= battle.end_time_ns, "Battle has not ended");
+        let (Some(initial_a), Some(initial_b)) = (battle.initial_price_a, battle.initial_price_b)
+        else {
+            env::panic_str("Initial prices missing")
+        };
+        let outcome =
+            math::determine_winner(initial_a, final_price_a.0, initial_b, final_price_b.0)
+                .unwrap_or_else(|_| env::panic_str("Price calculation failed"));
+        battle.final_price_a = Some(final_price_a.0);
+        battle.final_price_b = Some(final_price_b.0);
+
+        match outcome {
+            Outcome::Tie => {
+                battle.status = BattleStatus::Voided;
+                events::emit(
+                    "battle_voided",
+                    json!({ "battle_id": battle_id, "reason": "tie" }),
+                );
+            }
+            Outcome::Winner(side) => {
+                let loser_vault = match side {
+                    Side::A => battle.vault_b,
+                    Side::B => battle.vault_a,
+                };
+                battle.winner = Some(side);
+                battle.status = BattleStatus::Settling;
+                battle.settlement = Some(Settlement {
+                    steps: vec![SettlementStep {
+                        kind: StepKind::Dump,
+                        amount: loser_vault,
+                        done: false,
+                        realized: 0,
+                    }],
+                    ..Settlement::default()
+                });
+                events::emit(
+                    "battle_settling",
+                    json!({
+                        "battle_id": battle_id,
+                        "winner": side,
+                        "loser_vault": U128(loser_vault),
+                    }),
+                );
+            }
+        }
+    }
+
+    /// Records the result of one execution step, in order. Reporting the sale of
+    /// the loser vault fixes the 55/35/5/5 split of the proceeds and appends the
+    /// remaining steps; the last report settles the battle.
+    pub fn report_execution(&mut self, battle_id: u64, step_index: u32, realized_amount: U128) {
+        self.assert_agent();
+        let battle = self.battle_in_status(battle_id, BattleStatus::Settling);
+        let settlement = battle
+            .settlement
+            .as_mut()
+            .unwrap_or_else(|| env::panic_str("Settlement missing"));
+        let index = step_index as usize;
+        require!(index < settlement.steps.len(), "Unknown step");
+        require!(!settlement.steps[index].done, "Step already reported");
+        require!(
+            settlement.steps[..index].iter().all(|step| step.done),
+            "Steps must be reported in order"
+        );
+
+        let realized = realized_amount.0;
+        settlement.steps[index].done = true;
+        settlement.steps[index].realized = realized;
+        let mut fee_to_treasury = 0;
+        match settlement.steps[index].kind {
+            StepKind::Dump => {
+                let split = math::split_profit(realized)
+                    .unwrap_or_else(|_| env::panic_str("Split calculation failed"));
+                settlement.credit_pool = split.credit;
+                for (kind, amount) in [
+                    (StepKind::Buy, split.liquid),
+                    (StepKind::Burn, split.burn),
+                    (StepKind::Return, split.fee),
+                ] {
+                    settlement.steps.push(SettlementStep {
+                        kind,
+                        amount,
+                        done: false,
+                        realized: 0,
+                    });
+                }
+            }
+            StepKind::Buy => settlement.liquid_pool = realized,
+            StepKind::Burn => settlement.burned = realized,
+            StepKind::Return => fee_to_treasury = realized,
+        }
+        let finished = settlement.steps.iter().all(|step| step.done);
+        if finished {
+            battle.status = BattleStatus::Settled;
+        }
+        events::emit(
+            "execution_reported",
+            json!({
+                "battle_id": battle_id,
+                "step_index": step_index,
+                "realized": realized_amount,
+            }),
+        );
+        if finished {
+            events::emit("battle_settled", json!({ "battle_id": battle_id }));
+        }
+        if fee_to_treasury > 0 {
+            self.accrue_treasury(fee_to_treasury);
+        }
+    }
+
     // ─── Treasury ───────────────────────────────────────────────────────
 
     /// Pays accrued USDC to the treasury. Anyone may call; the destination is fixed.
@@ -445,6 +575,21 @@ impl Arena {
             from_credit: U128(plan.from_credit),
             from_wallet: U128(plan.from_wallet),
         }
+    }
+
+    pub fn get_settlement_plan(&self, battle_id: u64) -> Vec<SettlementStepView> {
+        self.battles
+            .get(&battle_id)
+            .and_then(|battle| battle.settlement.as_ref())
+            .map(|settlement| {
+                settlement
+                    .steps
+                    .iter()
+                    .enumerate()
+                    .map(|(index, step)| SettlementStepView::new(index, step))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn get_battle_count(&self) -> u64 {
@@ -705,6 +850,7 @@ impl Arena {
                 final_price_a: None,
                 final_price_b: None,
                 winner: None,
+                settlement: None,
             },
         );
         events::emit(
@@ -1891,6 +2037,218 @@ mod tests {
         grant_test_credit(&mut arena, "alice", 60, CREDIT_EXPIRY);
         call_as("alice", 10, 0);
         let _ = arena.deposit_with_credit(1, Side::A, U128(50), U128(100));
+    }
+
+    const DAY_NS: u64 = 24 * 3_600 * NS_PER_SECOND;
+    const END_NS: u64 = WINDOW_NS + DAY_NS;
+
+    /// Battle 1 is Live: bob holds 400 pepe (A), carol 160 shib (B), prices 100/100.
+    fn live_arena() -> Arena {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 400, Side::A, 10);
+        deposit_coin(&mut arena, "carol", "shib", 160, Side::B, 10);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(100), U128(100));
+        arena
+    }
+
+    fn settle_with(arena: &mut Arena, final_a: u128, final_b: u128) {
+        set_context("agent", END_NS);
+        arena.settle_battle(1, U128(final_a), U128(final_b));
+    }
+
+    fn report(arena: &mut Arena, index: u32, realized: u128) {
+        set_context("agent", END_NS + 1);
+        arena.report_execution(1, index, U128(realized));
+    }
+
+    #[test]
+    fn winner_is_decided_and_the_plan_starts_with_the_dump() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.status, BattleStatus::Settling);
+        assert_eq!(battle.winner, Some(Side::A));
+        assert_eq!(battle.final_price_a, Some(U128(120)));
+
+        let plan = arena.get_settlement_plan(1);
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].kind, StepKind::Dump);
+        assert_eq!(plan[0].amount, U128(160)); // loser (B) vault
+        assert!(!plan[0].done);
+        assert!(plan[0].realized.is_none());
+    }
+
+    #[test]
+    fn side_b_can_win() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 90, 101);
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.winner, Some(Side::B));
+        assert_eq!(arena.get_settlement_plan(1)[0].amount, U128(400));
+    }
+
+    #[test]
+    fn a_tie_voids_the_battle() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 110, 110);
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.status, BattleStatus::Voided);
+        assert!(battle.winner.is_none());
+        assert!(arena.get_settlement_plan(1).is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle has not ended")]
+    fn cannot_settle_before_the_end() {
+        let mut arena = live_arena();
+        set_context("agent", END_NS - 1);
+        arena.settle_battle(1, U128(120), U128(105));
+    }
+
+    #[test]
+    #[should_panic(expected = "Prices must be non-zero")]
+    fn settlement_rejects_zero_prices() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 0, 105);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_settle() {
+        let mut arena = live_arena();
+        set_context("alice", END_NS);
+        arena.settle_battle(1, U128(120), U128(105));
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_settle_twice() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        settle_with(&mut arena, 120, 105);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_settle_a_battle_that_is_not_live() {
+        let mut arena = approved_arena();
+        settle_with(&mut arena, 120, 105);
+    }
+
+    #[test]
+    fn reporting_the_dump_fixes_the_split_and_appends_steps() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40); // PRD example: 40 -> 22 / 14 / 2 / 2
+
+        let plan = arena.get_settlement_plan(1);
+        let steps: Vec<(StepKind, u128)> = plan.iter().map(|s| (s.kind, s.amount.0)).collect();
+        assert_eq!(
+            steps,
+            vec![
+                (StepKind::Dump, 160),
+                (StepKind::Buy, 22),
+                (StepKind::Burn, 2),
+                (StepKind::Return, 2),
+            ]
+        );
+        assert_eq!(plan[0].realized, Some(U128(40)));
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Settling);
+        assert_eq!(
+            arena
+                .battles
+                .get(&1)
+                .unwrap()
+                .settlement
+                .as_ref()
+                .unwrap()
+                .credit_pool,
+            14
+        );
+    }
+
+    #[test]
+    fn the_last_report_settles_the_battle_and_books_the_fee() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40);
+        report(&mut arena, 1, 220);
+        report(&mut arena, 2, 10);
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Settling);
+        report(&mut arena, 3, 2);
+
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Settled);
+        assert_eq!(arena.get_config().treasury_accrued, U128(2));
+        let settlement = arena.battles.get(&1).unwrap().settlement.clone().unwrap();
+        assert_eq!(settlement.liquid_pool, 220);
+        assert_eq!(settlement.burned, 10);
+        assert_eq!(settlement.credit_pool, 14);
+        assert!(arena.get_settlement_plan(1).iter().all(|s| s.done));
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs
+            .iter()
+            .any(|l| l.contains("\"event\":\"battle_settled\"")));
+    }
+
+    #[test]
+    #[should_panic(expected = "Step already reported")]
+    fn a_step_cannot_be_reported_twice() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40);
+        report(&mut arena, 0, 40);
+    }
+
+    #[test]
+    #[should_panic(expected = "Steps must be reported in order")]
+    fn steps_must_be_reported_in_order() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40);
+        report(&mut arena, 2, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown step")]
+    fn unknown_steps_are_rejected() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 7, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_report_execution() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        set_context("alice", END_NS + 1);
+        arena.report_execution(1, 0, U128(40));
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn reports_need_a_settling_battle() {
+        let mut arena = live_arena();
+        report(&mut arena, 0, 40);
+    }
+
+    #[test]
+    fn a_dump_that_realizes_nothing_still_completes() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 0);
+        for index in 1..4 {
+            report(&mut arena, index, 0);
+        }
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Settled);
+    }
+
+    #[test]
+    fn the_plan_view_of_an_unsettled_battle_is_empty() {
+        let arena = live_arena();
+        assert!(arena.get_settlement_plan(1).is_empty());
+        assert!(arena.get_settlement_plan(99).is_empty());
     }
 
     #[test]
