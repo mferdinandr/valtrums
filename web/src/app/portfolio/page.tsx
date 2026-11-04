@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CreditPanel } from "@/components/credit-panel";
 import { LiquidBalances, type LiquidRow } from "@/components/liquid-balances";
-import { useArena, useWallet } from "@/components/providers";
+import { FundBalance } from "@/components/fund-balance";
+import { useArena, useTerminalEnv, useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
 import { useAsync } from "@/hooks/use-async";
 import { useState } from "react";
@@ -140,6 +141,7 @@ function PositionRow({
 
 export default function PortfolioPage() {
   const api = useArena();
+  const env = useTerminalEnv();
   const { accountId, loading: walletLoading, signIn } = useWallet();
 
   const { data, error, loading, reload } = useAsync(async () => {
@@ -160,8 +162,9 @@ export default function PortfolioPage() {
     const sorted = rows.sort((x, y) => y.battle.id - x.battle.id);
     const tokenIds = liquidTokenIds(usdc, sorted.map((r) => r.battle));
     const balances = await readLiquidBalances(api, accountId, tokenIds);
-    return { account, usdc, tokenIds, balances, rows: sorted };
-  }, [api, accountId]);
+    const walletUsdc = await env.chain.usdcBalance(accountId);
+    return { account, usdc, tokenIds, balances, walletUsdc, rows: sorted };
+  }, [api, env, accountId]);
 
   const metas = useTokenMetas((data?.rows ?? []).flatMap((r) => [r.battle.token_a, r.battle.token_b]));
   const withdraw = useAction();
@@ -215,6 +218,8 @@ export default function PortfolioPage() {
               onWithdraw={(r) => onWithdraw(r.meta)}
             />
           </div>
+
+          <FundBalance walletUsdc={data.walletUsdc} balance={data.balances[data.usdc] ?? 0n} onFunded={reload} />
 
           <section className="space-y-4">
             <h2 className="text-sm text-neon-cyan">Positions</h2>

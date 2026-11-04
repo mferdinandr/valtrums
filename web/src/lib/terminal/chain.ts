@@ -74,6 +74,14 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
     return left > 0n ? left : 0n;
   };
 
+  // Funding the arena balance in demo mode spends the same wallet USDC the terminal sees.
+  if ("attachWallet" in api && typeof api.attachWallet === "function") {
+    (api as { attachWallet(p: { balance(a: string): bigint; debit(a: string, u: bigint): void }): void }).attachWallet({
+      balance: wallet,
+      debit: (id, units) => wallets.set(id, wallet(id) - units),
+    });
+  }
+
   const chain: MockTerminalChain = {
     mode: "mock",
     arenaId: "arena.testnet",
