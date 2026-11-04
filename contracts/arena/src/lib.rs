@@ -1,7 +1,10 @@
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json};
 use near_sdk::store::{IterableSet, LookupMap};
-use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault, PromiseOrValue};
+use near_sdk::{
+    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
+    Promise, PromiseError, PromiseOrValue,
+};
 
 pub mod events;
 pub mod math;
@@ -13,6 +16,9 @@ use views::{BattleView, ConfigView};
 
 /// Longest battle a proposer can request.
 const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
+/// Gas for the USDC transfer out to the treasury and its callback.
+const FT_TRANSFER_GAS: Gas = Gas::from_tgas(10);
+const CALLBACK_GAS: Gas = Gas::from_tgas(5);
 /// Most battles `get_battles` returns in one call.
 const MAX_PAGE_SIZE: u64 = 100;
 
@@ -21,6 +27,11 @@ const MAX_PAGE_SIZE: u64 = 100;
 enum StorageKey {
     Agents,
     Battles,
+}
+
+#[ext_contract(ext_ft)]
+pub trait FungibleToken {
+    fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
 }
 
 /// Messages accepted through `ft_transfer_call`.
@@ -112,6 +123,68 @@ impl Arena {
         self.paused = paused;
     }
 
+    // ─── Agent: audit decision ──────────────────────────────────────────
+
+    /// Audit passed: opens the deposit window.
+    pub fn approve_battle(&mut self, battle_id: u64) {
+        self.assert_agent();
+        let window_ns = self.deposit_window_secs * NS_PER_SECOND;
+        let battle = self.battle_in_status(battle_id, BattleStatus::Proposed);
+        let deadline = env::block_timestamp() + window_ns;
+        battle.status = BattleStatus::Approved;
+        battle.deposit_deadline_ns = deadline;
+        events::emit(
+            "battle_approved",
+            json!({ "battle_id": battle_id, "deposit_deadline_ns": U64(deadline) }),
+        );
+    }
+
+    /// Audit failed: the proposal is cancelled and the bond is seized.
+    pub fn void_battle(&mut self, battle_id: u64, reason: String) {
+        self.assert_agent();
+        let battle = self.battle_in_status(battle_id, BattleStatus::Proposed);
+        battle.status = BattleStatus::Voided;
+        let bond = battle.bond;
+        self.accrue_treasury(bond);
+        events::emit(
+            "battle_voided",
+            json!({ "battle_id": battle_id, "reason": reason, "bond_seized": U128(bond) }),
+        );
+    }
+
+    // ─── Treasury ───────────────────────────────────────────────────────
+
+    /// Pays accrued USDC to the treasury. Anyone may call; the destination is fixed.
+    pub fn flush_treasury(&mut self) -> Promise {
+        let amount = self.treasury_accrued;
+        require!(amount > 0, "Nothing to flush");
+        self.treasury_accrued = 0;
+        ext_ft::ext(self.usdc.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(FT_TRANSFER_GAS)
+            .ft_transfer(self.treasury.clone(), U128(amount), None)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_treasury_flushed(U128(amount)),
+            )
+    }
+
+    /// Restores the accrued amount if the transfer failed, so funds are never lost.
+    #[private]
+    pub fn on_treasury_flushed(
+        &mut self,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        if result.is_err() {
+            self.accrue_treasury(amount.0);
+            events::emit("treasury_flush_failed", json!({ "amount": amount }));
+        } else {
+            events::emit("treasury_flushed", json!({ "amount": amount }));
+        }
+    }
+
     // ─── Token receiver ─────────────────────────────────────────────────
 
     /// NEP-141 receiver. USDC with a `propose` message creates a battle and
@@ -173,6 +246,26 @@ impl Arena {
 }
 
 impl Arena {
+    fn accrue_treasury(&mut self, amount: u128) {
+        self.treasury_accrued = self
+            .treasury_accrued
+            .checked_add(amount)
+            .unwrap_or_else(|| env::panic_str("Treasury overflow"));
+    }
+
+    /// Loads a battle and requires it to be in `expected`.
+    fn battle_in_status(&mut self, battle_id: u64, expected: BattleStatus) -> &mut Battle {
+        let battle = self
+            .battles
+            .get_mut(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        require!(
+            battle.status == expected,
+            "Battle is not in the required status"
+        );
+        battle
+    }
+
     fn handle_propose(
         &mut self,
         creator: AccountId,
@@ -233,7 +326,6 @@ impl Arena {
         );
     }
 
-    #[allow(dead_code)]
     fn assert_agent(&self) {
         require!(
             self.agents.contains(&env::predecessor_account_id()),
@@ -562,6 +654,140 @@ mod tests {
         assert_eq!(ids(4, 10), vec![5]);
         assert!(ids(5, 10).is_empty());
         assert!(arena.get_battle(6).is_none());
+    }
+
+    fn arena_with_proposal() -> Arena {
+        let mut arena = new_arena();
+        arena.add_agent(acc("agent"));
+        propose(
+            &mut arena,
+            "alice",
+            5_000_000,
+            propose_msg("pepe", "shib", 86_400),
+        );
+        arena
+    }
+
+    #[test]
+    fn agent_approval_opens_deposit_window() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 1_000);
+        arena.approve_battle(1);
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.status, BattleStatus::Approved);
+        assert_eq!(
+            battle.deposit_deadline_ns,
+            U64(1_000 + 3_600 * NS_PER_SECOND)
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs
+            .iter()
+            .any(|l| l.contains("\"event\":\"battle_approved\"")));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_approve() {
+        let mut arena = arena_with_proposal();
+        set_context("alice", 0);
+        arena.approve_battle(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_approve_twice() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.approve_battle(1);
+        arena.approve_battle(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle not found")]
+    fn cannot_approve_unknown_battle() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.approve_battle(99);
+    }
+
+    #[test]
+    fn void_seizes_bond_for_the_treasury() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.void_battle(1, "low liquidity".to_string());
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.status, BattleStatus::Voided);
+        assert_eq!(arena.get_config().treasury_accrued, U128(5_000_000));
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("low liquidity")));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_void() {
+        let mut arena = arena_with_proposal();
+        set_context("alice", 0);
+        arena.void_battle(1, "x".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_void_an_approved_battle() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.approve_battle(1);
+        arena.void_battle(1, "late".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn cannot_approve_a_voided_battle() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.void_battle(1, "honeypot".to_string());
+        arena.approve_battle(1);
+    }
+
+    #[test]
+    fn agents_keep_working_while_paused() {
+        let mut arena = arena_with_proposal();
+        set_context("owner", 0);
+        arena.set_paused(true);
+        set_context("agent", 0);
+        arena.approve_battle(1);
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Approved);
+    }
+
+    #[test]
+    fn flush_clears_accrual_and_failed_transfer_restores_it() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.void_battle(1, "honeypot".to_string());
+
+        set_context("anyone", 0);
+        let _ = arena.flush_treasury();
+        assert_eq!(arena.get_config().treasury_accrued, U128(0));
+
+        arena.on_treasury_flushed(U128(5_000_000), Err(PromiseError::Failed));
+        assert_eq!(arena.get_config().treasury_accrued, U128(5_000_000));
+    }
+
+    #[test]
+    fn successful_flush_leaves_accrual_at_zero() {
+        let mut arena = arena_with_proposal();
+        set_context("agent", 0);
+        arena.void_battle(1, "honeypot".to_string());
+        set_context("anyone", 0);
+        let _ = arena.flush_treasury();
+        arena.on_treasury_flushed(U128(5_000_000), Ok(()));
+        assert_eq!(arena.get_config().treasury_accrued, U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Nothing to flush")]
+    fn flush_requires_accrued_funds() {
+        let mut arena = new_arena();
+        let _ = arena.flush_treasury();
     }
 
     #[test]
