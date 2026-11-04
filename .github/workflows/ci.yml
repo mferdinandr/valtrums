@@ -51,3 +51,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/Dockerfile
+          load: true
+          push: false
+          tags: valtrum-agent:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test /healthz (offline, dummy config)
+        run: |
+          docker run -d --name agent --read-only --network none \
+            -e ARENA_CONTRACT_ID=arena.testnet \
+            -e AGENT_ACCOUNT_ID=agent.testnet \
+            -e AGENT_PRIVATE_KEY=ed25519:3D4YudUQRE39Lc4JHghuB5WM8kbgDDa9RZpgZw2UtPazpCuRuZLqmvZqDnUvdk8ByQDRVoGHg5ZXZhmDkpvUgMEG \
+            -e HEALTH_PORT=8080 \
+            valtrum-agent:ci
+          for i in $(seq 1 15); do
+            if docker exec agent node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"; then
+              echo "healthz ok"; exit 0
+            fi
+            sleep 1
+          done
+          docker logs agent
+          exit 1
