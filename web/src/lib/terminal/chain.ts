@@ -28,9 +28,12 @@ export interface TerminalChain {
   getRouter(): Promise<RouterInfo>;
 }
 
+export type SendVia = "wallet" | "session";
+
 /** Submits transactions. A real sender must show the wallet prompt; it never signs anything the caller did not pass. */
 export interface TxSender {
-  send(tx: DepositTx, signerId: string): Promise<void>;
+  /** Resolves with how it was approved: a wallet prompt or a session key. */
+  send(tx: DepositTx, signerId: string): Promise<SendVia>;
 }
 
 // ---- mock ----
@@ -114,6 +117,7 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
       creditSpent.set(signerId, (creditSpent.get(signerId) ?? 0n) + split.fromCredit);
       await api.depositCoin({ signerId, battleId: msg.battle_id, side: msg.side, tokenId, amount: out });
       sent.push(tx);
+      return "wallet";
     },
   };
   return chain;
