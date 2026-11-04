@@ -1,0 +1,36 @@
+# Run from the repository root:
+#   cp deploy/.env.agent.example deploy/.env.agent   # then fill it in
+#   docker compose -f deploy/docker-compose.yml up --build -d
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: agent/Dockerfile
+      args:
+        AGENT_VERSION: ${AGENT_VERSION:-dev}
+    image: valtrum-agent:${AGENT_VERSION:-dev}
+    env_file: .env.agent
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - agent-state:/var/lib/valtrum-agent
+      # Alternative to AGENT_PRIVATE_KEY: mount a secret file and set AGENT_PRIVATE_KEY_FILE.
+      # - ./secrets/agent_key:/run/secrets/agent_key:ro
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  agent-state:
