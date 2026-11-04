@@ -21,6 +21,10 @@ const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
 /// Gas for the USDC transfer out to the treasury and its callback.
 const FT_TRANSFER_GAS: Gas = Gas::from_tgas(10);
 const CALLBACK_GAS: Gas = Gas::from_tgas(5);
+/// Minimum gas for the USDC hop to the router; the rest of the call's gas is
+/// handed to it (via unused-gas weight) because the swap spans several hops.
+const ROUTER_HOP_GAS: Gas = Gas::from_tgas(30);
+const SWAP_CALLBACK_GAS: Gas = Gas::from_tgas(15);
 /// Most battles `get_battles` returns in one call.
 const MAX_PAGE_SIZE: u64 = 100;
 
@@ -36,6 +40,13 @@ enum StorageKey {
 #[ext_contract(ext_ft)]
 pub trait FungibleToken {
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
+    fn ft_transfer_call(
+        &mut self,
+        receiver_id: AccountId,
+        amount: U128,
+        memo: Option<String>,
+        msg: String,
+    ) -> PromiseOrValue<U128>;
 }
 
 /// Messages accepted through `ft_transfer_call`.
@@ -47,10 +58,27 @@ enum TransferMsg {
         token_b: AccountId,
         duration_secs: u64,
     },
+    DepositUsdc {
+        battle_id: u64,
+        side: Side,
+        total_usdc: U128,
+        min_token_out: U128,
+    },
     Deposit {
         battle_id: u64,
         side: Side,
+        /// Only honored when the sender is the configured router.
+        beneficiary: Option<AccountId>,
+        usdc_equiv: Option<U128>,
+        from_credit: Option<U128>,
     },
+}
+
+/// Deposit details attached by the router after a swap.
+struct RoutedDeposit {
+    beneficiary: AccountId,
+    usdc_equiv: u128,
+    from_credit: u128,
 }
 
 /// Battle arena contract: battle lifecycle, vaults, positions and settlement.
@@ -65,6 +93,8 @@ pub struct Arena {
     /// How long deposits stay open after the agent approves a battle.
     deposit_window_secs: u64,
     agents: IterableSet<AccountId>,
+    /// Router that swaps USDC into a side's coin and delivers the deposit.
+    router: Option<AccountId>,
     paused: bool,
     /// USDC owed to the treasury, paid out by `flush_treasury`.
     treasury_accrued: u128,
@@ -93,6 +123,7 @@ impl Arena {
             bond: bond.0,
             deposit_window_secs: deposit_window_secs.0,
             agents: IterableSet::new(StorageKey::Agents),
+            router: None,
             paused: false,
             treasury_accrued: 0,
             battles: LookupMap::new(StorageKey::Battles),
@@ -117,6 +148,12 @@ impl Arena {
     pub fn set_treasury(&mut self, treasury: AccountId) {
         self.assert_owner();
         self.treasury = treasury;
+    }
+
+    /// Sets (or clears) the router that is trusted to deliver swapped deposits.
+    pub fn set_router(&mut self, router: Option<AccountId>) {
+        self.assert_owner();
+        self.router = router;
     }
 
     pub fn set_bond(&mut self, bond: U128) {
@@ -267,12 +304,106 @@ impl Arena {
             }) if token == self.usdc => {
                 self.handle_propose(sender_id, amount.0, token_a, token_b, duration_secs)
             }
-            Ok(TransferMsg::Deposit { battle_id, side }) => {
-                self.handle_deposit(sender_id, token, amount.0, battle_id, side)
+            Ok(TransferMsg::DepositUsdc {
+                battle_id,
+                side,
+                total_usdc,
+                min_token_out,
+            }) if token == self.usdc => {
+                return match self.start_usdc_deposit(
+                    sender_id,
+                    amount.0,
+                    battle_id,
+                    side,
+                    total_usdc.0,
+                    min_token_out.0,
+                ) {
+                    Some(promise) => PromiseOrValue::Promise(promise),
+                    None => PromiseOrValue::Value(amount),
+                };
+            }
+            Ok(TransferMsg::Deposit {
+                battle_id,
+                side,
+                beneficiary,
+                usdc_equiv,
+                from_credit,
+            }) => {
+                let from_router = self.router.as_ref() == Some(&sender_id);
+                let routed = match (beneficiary, usdc_equiv, from_credit) {
+                    (Some(beneficiary), Some(usdc_equiv), Some(from_credit)) if from_router => {
+                        Some(RoutedDeposit {
+                            beneficiary,
+                            usdc_equiv: usdc_equiv.0,
+                            from_credit: from_credit.0,
+                        })
+                    }
+                    _ => None,
+                };
+                self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
             _ => amount.0,
         };
         PromiseOrValue::Value(U128(unused))
+    }
+
+    /// Deposits entirely from locked credit (no wallet USDC needed). Requires 1 yoctoNEAR.
+    #[payable]
+    pub fn deposit_with_credit(
+        &mut self,
+        battle_id: u64,
+        side: Side,
+        total_usdc: U128,
+        min_token_out: U128,
+    ) -> Promise {
+        near_sdk::assert_one_yocto();
+        require!(!self.paused, "Deposits are paused");
+        self.start_usdc_deposit(
+            env::predecessor_account_id(),
+            0,
+            battle_id,
+            side,
+            total_usdc.0,
+            min_token_out.0,
+        )
+        .unwrap_or_else(|| env::panic_str("Deposit refused"))
+    }
+
+    /// Settles the USDC deposit once the router's hop resolves. Returns how much of
+    /// the user's transfer to give back: only the excess on success, everything on
+    /// failure (with the credit that was spent restored).
+    #[private]
+    pub fn on_swap_deposit_done(
+        &mut self,
+        account_id: AccountId,
+        amount_sent: U128,
+        total_usdc: U128,
+        from_credit: U128,
+        credit_expires_at_ns: U64,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) -> U128 {
+        if matches!(result, Ok(used) if used.0 == total_usdc.0) {
+            let from_wallet = total_usdc.0 - from_credit.0;
+            return U128(amount_sent.0 - from_wallet);
+        }
+        if from_credit.0 > 0 {
+            if let Some(account) = self.accounts.get_mut(&account_id) {
+                account.restore_credit(from_credit.0, credit_expires_at_ns.0);
+            } else {
+                let mut account = Account::default();
+                account.restore_credit(from_credit.0, credit_expires_at_ns.0);
+                self.accounts.insert(account_id.clone(), account);
+            }
+        }
+        events::emit(
+            "deposit_usdc_refunded",
+            json!({
+                "account_id": account_id,
+                "refunded": amount_sent,
+                "credit_restored": from_credit,
+            }),
+        );
+        amount_sent
     }
 
     // ─── Views ──────────────────────────────────────────────────────────
@@ -337,6 +468,7 @@ impl Arena {
             bond: U128(self.bond),
             deposit_window_secs: U64(self.deposit_window_secs),
             agents: self.agents.iter().cloned().collect(),
+            router: self.router.clone(),
             paused: self.paused,
             treasury_accrued: U128(self.treasury_accrued),
         }
@@ -344,14 +476,96 @@ impl Arena {
 }
 
 impl Arena {
-    /// Direct deposit of a side's own coin. Returns the amount not accepted.
-    fn handle_deposit(
+    /// Begins a USDC deposit: spends credit first, takes the wallet part from
+    /// `wallet_amount`, and forwards the total to the router. Returns `None`
+    /// (nothing changed) when the deposit is not allowed.
+    fn start_usdc_deposit(
         &mut self,
         account_id: AccountId,
+        wallet_amount: u128,
+        battle_id: u64,
+        side: Side,
+        total_usdc: u128,
+        min_token_out: u128,
+    ) -> Option<Promise> {
+        let router = self.router.clone()?;
+        let now = env::block_timestamp();
+        let battle = self.battles.get(&battle_id)?;
+        if total_usdc == 0
+            || battle.status != BattleStatus::Approved
+            || now >= battle.deposit_deadline_ns
+        {
+            return None;
+        }
+        let token_out = match side {
+            Side::A => battle.token_a.clone(),
+            Side::B => battle.token_b.clone(),
+        };
+        if self
+            .positions
+            .get(&(battle_id, account_id.clone()))
+            .is_some_and(|position| position.side != side)
+        {
+            return None;
+        }
+
+        let mut account = self.accounts.get(&account_id).cloned().unwrap_or_default();
+        let plan = plan_funding(account.available_credit(now), total_usdc);
+        if wallet_amount < plan.from_wallet {
+            return None;
+        }
+        let credit_expires_at_ns = account.credit_expires_at_ns;
+        if plan.from_credit > 0 {
+            account
+                .consume_credit(now, plan.from_credit)
+                .unwrap_or_else(|_| env::panic_str("Credit unavailable"));
+            self.accounts.insert(account_id.clone(), account);
+        }
+
+        let msg = json!({
+            "action": "swap_deposit",
+            "battle_id": battle_id,
+            "side": side,
+            "beneficiary": account_id,
+            "token_out": token_out,
+            "min_token_out": U128(min_token_out),
+            "from_credit": U128(plan.from_credit),
+        })
+        .to_string();
+        Some(
+            ext_ft::ext(self.usdc.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(ROUTER_HOP_GAS)
+                .with_unused_gas_weight(1)
+                .ft_transfer_call(router, U128(total_usdc), None, msg)
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(SWAP_CALLBACK_GAS)
+                        .on_swap_deposit_done(
+                            account_id,
+                            U128(wallet_amount),
+                            U128(total_usdc),
+                            U128(plan.from_credit),
+                            U64(credit_expires_at_ns),
+                        ),
+                ),
+        )
+    }
+
+    /// Deposit of a side's own coin, either sent directly or delivered by the
+    /// router after a swap. Returns the amount not accepted.
+    ///
+    /// Direct deposits need the window to be open. Routed deposits are accepted
+    /// until the agent locks the battle, because the user's USDC was already
+    /// swapped and cannot be unwound.
+    fn handle_deposit(
+        &mut self,
+        sender_id: AccountId,
         token: AccountId,
         amount: u128,
         battle_id: u64,
         side: Side,
+        routed: Option<RoutedDeposit>,
     ) -> u128 {
         let now = env::block_timestamp();
         let Some(battle) = self.battles.get(&battle_id) else {
@@ -361,10 +575,15 @@ impl Arena {
             Side::A => &battle.token_a,
             Side::B => &battle.token_b,
         };
-        let open = battle.status == BattleStatus::Approved && now < battle.deposit_deadline_ns;
+        let open = battle.status == BattleStatus::Approved
+            && (routed.is_some() || now < battle.deposit_deadline_ns);
         if amount == 0 || !open || &token != side_token {
             return amount;
         }
+        let (account_id, usdc_equiv, from_credit) = match routed {
+            Some(routed) => (routed.beneficiary, routed.usdc_equiv, routed.from_credit),
+            None => (sender_id, 0, 0),
+        };
         let key = (battle_id, account_id.clone());
         if self
             .positions
@@ -391,6 +610,14 @@ impl Arena {
                 .coin_amount
                 .checked_add(amount)
                 .unwrap_or_else(|| env::panic_str("Position overflow"));
+            position.usdc_equiv = position
+                .usdc_equiv
+                .checked_add(usdc_equiv)
+                .unwrap_or_else(|| env::panic_str("Position overflow"));
+            position.from_credit = position
+                .from_credit
+                .checked_add(from_credit)
+                .unwrap_or_else(|| env::panic_str("Position overflow"));
             position.coin_amount
         } else {
             self.positions.insert(
@@ -398,8 +625,8 @@ impl Arena {
                 UserPosition {
                     side,
                     coin_amount: amount,
-                    usdc_equiv: 0,
-                    from_credit: 0,
+                    usdc_equiv,
+                    from_credit,
                     claimed: false,
                 },
             );
@@ -413,8 +640,8 @@ impl Arena {
                 "side": side,
                 "coin_amount": U128(amount),
                 "position_total": U128(total),
-                "usdc_equiv": U128(0),
-                "from_credit": U128(0),
+                "usdc_equiv": U128(usdc_equiv),
+                "from_credit": U128(from_credit),
             }),
         );
         0
@@ -553,6 +780,7 @@ mod tests {
         assert_eq!(config.bond, U128(5_000_000));
         assert_eq!(config.deposit_window_secs, U64(3_600));
         assert!(config.agents.is_empty());
+        assert_eq!(config.router, None);
         assert!(!config.paused);
         assert_eq!(config.treasury_accrued, U128(0));
     }
@@ -1321,6 +1549,348 @@ mod tests {
         assert_eq!(battle.vault_b.0, sum(Side::B));
         assert_eq!(battle.vault_a, U128(400));
         assert_eq!(battle.vault_b, U128(1_075));
+    }
+
+    #[test]
+    fn owner_sets_and_clears_the_router() {
+        let mut arena = new_arena();
+        arena.set_router(Some(acc("router")));
+        assert_eq!(arena.get_config().router, Some(acc("router")));
+        arena.set_router(None);
+        assert_eq!(arena.get_config().router, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the owner")]
+    fn non_owner_cannot_set_the_router() {
+        let mut arena = new_arena();
+        set_context("stranger", 0);
+        arena.set_router(Some(acc("stranger")));
+    }
+
+    fn routed_msg(beneficiary: &str, usdc_equiv: u128, from_credit: u128, side: Side) -> String {
+        json!({
+            "action": "deposit",
+            "battle_id": 1,
+            "side": side,
+            "beneficiary": acc(beneficiary),
+            "usdc_equiv": U128(usdc_equiv),
+            "from_credit": U128(from_credit),
+        })
+        .to_string()
+    }
+
+    fn router_deliver(
+        arena: &mut Arena,
+        token: &str,
+        amount: u128,
+        msg: String,
+        timestamp_ns: u64,
+    ) -> u128 {
+        set_context(token, timestamp_ns);
+        returned(arena.ft_on_transfer(acc("router"), U128(amount), msg))
+    }
+
+    fn arena_with_router() -> Arena {
+        let mut arena = approved_arena();
+        set_context("owner", 0);
+        arena.set_router(Some(acc("router")));
+        arena
+    }
+
+    #[test]
+    fn router_deposit_credits_the_beneficiary() {
+        let mut arena = arena_with_router();
+        let msg = routed_msg("alice", 50_000_000, 35_000_000, Side::A);
+        assert_eq!(router_deliver(&mut arena, "pepe", 900, msg, 10), 0);
+
+        let position = arena.get_position(1, acc("alice")).unwrap();
+        assert_eq!(position.side, Side::A);
+        assert_eq!(position.coin_amount, U128(900));
+        assert_eq!(position.usdc_equiv, U128(50_000_000));
+        assert_eq!(position.from_credit, U128(35_000_000));
+        assert!(arena.get_position(1, acc("router")).is_none());
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(900));
+    }
+
+    #[test]
+    fn router_deposits_are_accepted_after_the_deadline_until_lock() {
+        let mut arena = arena_with_router();
+        let msg = routed_msg("alice", 10, 0, Side::A);
+        assert_eq!(
+            router_deliver(&mut arena, "pepe", 5, msg, WINDOW_NS + 10),
+            0
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(5));
+    }
+
+    #[test]
+    fn router_deposits_are_rejected_once_the_battle_is_live() {
+        let mut arena = arena_with_router();
+        fund(&mut arena, 1, 100, 100);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+        let msg = routed_msg("alice", 10, 0, Side::A);
+        assert_eq!(router_deliver(&mut arena, "pepe", 5, msg, WINDOW_NS + 1), 5);
+        assert!(arena.get_position(1, acc("alice")).is_none());
+    }
+
+    #[test]
+    fn beneficiary_fields_are_ignored_for_other_senders() {
+        let mut arena = arena_with_router();
+        set_context("pepe", 10);
+        let result = arena.ft_on_transfer(
+            acc("mallory"),
+            U128(100),
+            routed_msg("alice", 999, 999, Side::A),
+        );
+        assert_eq!(returned(result), 0);
+        assert!(arena.get_position(1, acc("alice")).is_none());
+        let position = arena.get_position(1, acc("mallory")).unwrap();
+        assert_eq!(position.usdc_equiv, U128(0));
+        assert_eq!(position.from_credit, U128(0));
+    }
+
+    #[test]
+    fn router_deposit_respects_the_one_side_rule() {
+        let mut arena = arena_with_router();
+        deposit_coin(&mut arena, "alice", "pepe", 100, Side::A, 10);
+        let msg = routed_msg("alice", 10, 0, Side::B);
+        assert_eq!(router_deliver(&mut arena, "shib", 7, msg, 20), 7);
+        assert_eq!(arena.get_battle(1).unwrap().vault_b, U128(0));
+    }
+
+    #[test]
+    fn router_top_up_accumulates_accounting_fields() {
+        let mut arena = arena_with_router();
+        router_deliver(
+            &mut arena,
+            "pepe",
+            100,
+            routed_msg("alice", 50, 20, Side::A),
+            10,
+        );
+        router_deliver(
+            &mut arena,
+            "pepe",
+            40,
+            routed_msg("alice", 30, 0, Side::A),
+            20,
+        );
+        let position = arena.get_position(1, acc("alice")).unwrap();
+        assert_eq!(position.coin_amount, U128(140));
+        assert_eq!(position.usdc_equiv, U128(80));
+        assert_eq!(position.from_credit, U128(20));
+    }
+
+    const CREDIT_EXPIRY: u64 = WINDOW_NS * 100;
+
+    fn usdc_msg(side: Side, total: u128) -> String {
+        json!({
+            "action": "deposit_usdc",
+            "battle_id": 1,
+            "side": side,
+            "total_usdc": U128(total),
+            "min_token_out": U128(100),
+        })
+        .to_string()
+    }
+
+    fn send_usdc(
+        arena: &mut Arena,
+        sender: &str,
+        amount: u128,
+        msg: String,
+        timestamp_ns: u64,
+    ) -> PromiseOrValue<U128> {
+        set_context("usdc", timestamp_ns);
+        arena.ft_on_transfer(acc(sender), U128(amount), msg)
+    }
+
+    fn is_promise(result: &PromiseOrValue<U128>) -> bool {
+        matches!(result, PromiseOrValue::Promise(_))
+    }
+
+    fn credit_of(arena: &Arena, name: &str, timestamp_ns: u64) -> u128 {
+        set_context("owner", timestamp_ns);
+        arena.get_account(acc(name)).credit_balance.0
+    }
+
+    #[test]
+    fn hybrid_deposit_spends_35_credit_and_forwards_50() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        let result = send_usdc(&mut arena, "alice", 15, usdc_msg(Side::A, 50), 10);
+        assert!(is_promise(&result));
+        assert_eq!(credit_of(&arena, "alice", 10), 0);
+    }
+
+    #[test]
+    fn deposit_without_credit_is_all_wallet() {
+        let mut arena = arena_with_router();
+        let result = send_usdc(&mut arena, "bob", 50, usdc_msg(Side::A, 50), 10);
+        assert!(is_promise(&result));
+    }
+
+    #[test]
+    fn excess_wallet_usdc_is_returned_after_success() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        let result = send_usdc(&mut arena, "alice", 20, usdc_msg(Side::A, 50), 10);
+        assert!(is_promise(&result));
+
+        set_context("arena", 11);
+        let unused = arena.on_swap_deposit_done(
+            acc("alice"),
+            U128(20),
+            U128(50),
+            U128(35),
+            U64(CREDIT_EXPIRY),
+            Ok(U128(50)),
+        );
+        assert_eq!(unused, U128(5));
+        assert_eq!(credit_of(&arena, "alice", 11), 0);
+    }
+
+    #[test]
+    fn failed_swap_restores_credit_and_refunds_the_whole_transfer() {
+        for failure in [
+            Err(PromiseError::Failed),
+            Ok(U128(0)),
+            Ok(U128(10)), // partial use is treated as failure
+        ] {
+            let mut arena = arena_with_router();
+            grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+            let _ = send_usdc(&mut arena, "alice", 15, usdc_msg(Side::A, 50), 10);
+            assert_eq!(credit_of(&arena, "alice", 10), 0);
+
+            set_context("arena", 11);
+            let unused = arena.on_swap_deposit_done(
+                acc("alice"),
+                U128(15),
+                U128(50),
+                U128(35),
+                U64(CREDIT_EXPIRY),
+                failure,
+            );
+            assert_eq!(unused, U128(15));
+            assert_eq!(credit_of(&arena, "alice", 12), 35);
+            assert_eq!(
+                arena.get_account(acc("alice")).credit_expires_at_ns,
+                U64(CREDIT_EXPIRY)
+            );
+        }
+    }
+
+    #[test]
+    fn failed_swap_without_credit_only_refunds() {
+        let mut arena = arena_with_router();
+        let _ = send_usdc(&mut arena, "bob", 50, usdc_msg(Side::A, 50), 10);
+        set_context("arena", 11);
+        let unused = arena.on_swap_deposit_done(
+            acc("bob"),
+            U128(50),
+            U128(50),
+            U128(0),
+            U64(0),
+            Err(PromiseError::Failed),
+        );
+        assert_eq!(unused, U128(50));
+        assert_eq!(credit_of(&arena, "bob", 12), 0);
+    }
+
+    #[test]
+    fn refused_deposits_return_everything_and_keep_credit() {
+        let refused = |arena: &mut Arena, amount: u128, msg: String, ts: u64| {
+            let result = send_usdc(arena, "alice", amount, msg, ts);
+            assert_eq!(returned(result), amount);
+            assert_eq!(credit_of(arena, "alice", ts), 35);
+        };
+
+        // wallet part too small for what credit cannot cover
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        refused(&mut arena, 14, usdc_msg(Side::A, 50), 10);
+        // zero total
+        refused(&mut arena, 15, usdc_msg(Side::A, 0), 10);
+        // window closed
+        refused(&mut arena, 15, usdc_msg(Side::A, 50), WINDOW_NS);
+        // unknown battle
+        let unknown = json!({"action":"deposit_usdc","battle_id":9,"side":"A","total_usdc":"50","min_token_out":"1"});
+        refused(&mut arena, 15, unknown.to_string(), 10);
+
+        // no router configured
+        let mut arena = approved_arena();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        refused(&mut arena, 15, usdc_msg(Side::A, 50), 10);
+
+        // battle not approved
+        let mut arena = arena_with_proposal();
+        set_context("owner", 0);
+        arena.set_router(Some(acc("router")));
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        refused(&mut arena, 15, usdc_msg(Side::A, 50), 10);
+
+        // opposite side of an existing position
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        deposit_coin(&mut arena, "alice", "pepe", 100, Side::A, 5);
+        refused(&mut arena, 15, usdc_msg(Side::B, 50), 10);
+    }
+
+    #[test]
+    fn expired_credit_cannot_cover_the_deposit() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, 1_000);
+        let result = send_usdc(&mut arena, "alice", 15, usdc_msg(Side::A, 50), 1_000);
+        assert_eq!(returned(result), 15);
+        let result = send_usdc(&mut arena, "alice", 50, usdc_msg(Side::A, 50), 1_000);
+        assert!(is_promise(&result));
+    }
+
+    #[test]
+    fn paused_contract_returns_usdc_deposits() {
+        let mut arena = arena_with_router();
+        set_context("owner", 0);
+        arena.set_paused(true);
+        let result = send_usdc(&mut arena, "bob", 50, usdc_msg(Side::A, 50), 10);
+        assert_eq!(returned(result), 50);
+    }
+
+    fn call_as(name: &str, timestamp_ns: u64, yocto: u128) {
+        let ctx = near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(acc(name))
+            .block_timestamp(timestamp_ns)
+            .attached_deposit(near_sdk::NearToken::from_yoctonear(yocto))
+            .build();
+        near_sdk::testing_env!(ctx);
+    }
+
+    #[test]
+    fn credit_alone_can_fund_a_deposit() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 60, CREDIT_EXPIRY);
+        call_as("alice", 10, 1);
+        let _ = arena.deposit_with_credit(1, Side::A, U128(50), U128(100));
+        assert_eq!(credit_of(&arena, "alice", 10), 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Deposit refused")]
+    fn credit_only_deposit_needs_enough_credit() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 35, CREDIT_EXPIRY);
+        call_as("alice", 10, 1);
+        let _ = arena.deposit_with_credit(1, Side::A, U128(50), U128(100));
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn credit_only_deposit_requires_one_yocto() {
+        let mut arena = arena_with_router();
+        grant_test_credit(&mut arena, "alice", 60, CREDIT_EXPIRY);
+        call_as("alice", 10, 0);
+        let _ = arena.deposit_with_credit(1, Side::A, U128(50), U128(100));
     }
 
     #[test]

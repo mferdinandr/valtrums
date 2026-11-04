@@ -12,6 +12,8 @@ pub struct ConfigView {
     pub bond: U128,
     pub deposit_window_secs: U64,
     pub agents: Vec<AccountId>,
+    /// Contract allowed to deliver swapped deposits; `None` disables USDC deposits.
+    pub router: Option<AccountId>,
     pub paused: bool,
     pub treasury_accrued: U128,
 }
