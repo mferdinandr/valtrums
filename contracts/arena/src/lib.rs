@@ -389,6 +389,29 @@ impl Arena {
         }
     }
 
+    // ─── Agent: emergency halt ──────────────────────────────────────────
+
+    /// Stops a battle whose token is being rugged. No rewards are paid, and every
+    /// depositor can take back their deposit; the creator's bond is returned.
+    pub fn emergency_halt(&mut self, battle_id: u64, reason: String) {
+        self.assert_agent();
+        let battle = self
+            .battles
+            .get_mut(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        require!(
+            matches!(battle.status, BattleStatus::Approved | BattleStatus::Live),
+            "Battle cannot be halted"
+        );
+        battle.status = BattleStatus::EmergencyHalted;
+        let (creator, bond) = (battle.creator.clone(), battle.bond);
+        events::emit(
+            "emergency_halt",
+            json!({ "battle_id": battle_id, "reason": reason }),
+        );
+        self.return_bond(&creator, bond);
+    }
+
     // ─── Claims and withdrawals ─────────────────────────────────────────
 
     /// Winners claim their principal plus their pro-rata share of the liquid
@@ -447,6 +470,46 @@ impl Arena {
                 "principal": U128(stake),
                 "liquid_reward": U128(liquid_share),
                 "credit_granted": U128(credit_share),
+            }),
+        );
+    }
+
+    /// Takes back a deposit in full after a halt, or after a battle was voided at
+    /// lock (empty side) or by a tie. The coin lands in the liquid balance.
+    pub fn withdraw_initial_deposit(&mut self, battle_id: u64) {
+        let account_id = env::predecessor_account_id();
+        let battle = self
+            .battles
+            .get(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        require!(
+            matches!(
+                battle.status,
+                BattleStatus::EmergencyHalted | BattleStatus::Voided
+            ),
+            "Refunds are not available"
+        );
+        let (token_a, token_b) = (battle.token_a.clone(), battle.token_b.clone());
+
+        let position = self
+            .positions
+            .get_mut(&(battle_id, account_id.clone()))
+            .unwrap_or_else(|| env::panic_str("No position in this battle"));
+        require!(!position.claimed, "Already refunded");
+        position.claimed = true;
+        let (side, amount) = (position.side, position.coin_amount);
+        let token = match side {
+            Side::A => token_a,
+            Side::B => token_b,
+        };
+        self.add_liquid(&account_id, &token, amount);
+        events::emit(
+            "refund",
+            json!({
+                "battle_id": battle_id,
+                "account_id": account_id,
+                "token": token,
+                "amount": U128(amount),
             }),
         );
     }
@@ -2592,6 +2655,190 @@ mod tests {
         call_as("bob", END_NS + 6, 1);
         let _ = arena.withdraw_liquid(acc("pepe"), U128(620));
         assert_eq!(liquid(&arena, "bob", "pepe"), 0);
+    }
+
+    fn halt_as_agent(arena: &mut Arena, timestamp_ns: u64) {
+        set_context("agent", timestamp_ns);
+        arena.emergency_halt(1, "liquidity drop".to_string());
+    }
+
+    fn refund_as(arena: &mut Arena, name: &str, timestamp_ns: u64) {
+        set_context(name, timestamp_ns);
+        arena.withdraw_initial_deposit(1);
+    }
+
+    #[test]
+    fn a_halted_live_battle_refunds_both_sides_in_full() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        assert_eq!(
+            arena.get_battle(1).unwrap().status,
+            BattleStatus::EmergencyHalted
+        );
+
+        refund_as(&mut arena, "bob", WINDOW_NS + 200);
+        refund_as(&mut arena, "carol", WINDOW_NS + 200);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 400);
+        assert_eq!(liquid(&arena, "carol", "shib"), 160);
+        assert!(arena.get_position(1, acc("bob")).unwrap().claimed);
+    }
+
+    #[test]
+    fn a_halt_pays_no_rewards_or_fees() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        refund_as(&mut arena, "bob", WINDOW_NS + 200);
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("\"event\":\"refund\"")));
+        assert_eq!(arena.get_config().treasury_accrued, U128(0));
+        assert_eq!(credit_of(&arena, "bob", WINDOW_NS + 200), 0);
+    }
+
+    #[test]
+    fn a_halt_returns_the_bond_to_the_creator() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5_000_000);
+    }
+
+    #[test]
+    fn an_approved_battle_can_be_halted_during_the_gathering_window() {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 10);
+        halt_as_agent(&mut arena, 20);
+        refund_as(&mut arena, "bob", 30);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 100);
+    }
+
+    #[test]
+    #[should_panic(expected = "Already refunded")]
+    fn a_deposit_is_refunded_once() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        refund_as(&mut arena, "bob", WINDOW_NS + 200);
+        refund_as(&mut arena, "bob", WINDOW_NS + 300);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle cannot be halted")]
+    fn a_settled_battle_cannot_be_halted() {
+        let mut arena = settled_arena();
+        halt_as_agent(&mut arena, END_NS + 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle cannot be halted")]
+    fn a_settling_battle_cannot_be_halted() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        halt_as_agent(&mut arena, END_NS + 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle cannot be halted")]
+    fn a_proposed_battle_cannot_be_halted() {
+        let mut arena = arena_with_proposal();
+        halt_as_agent(&mut arena, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle cannot be halted")]
+    fn a_battle_cannot_be_halted_twice() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        halt_as_agent(&mut arena, WINDOW_NS + 200);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_agents_halt() {
+        let mut arena = live_arena();
+        set_context("alice", WINDOW_NS + 100);
+        arena.emergency_halt(1, "x".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not in the required status")]
+    fn a_halted_battle_cannot_be_settled() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        settle_with(&mut arena, 120, 105);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle not found")]
+    fn halting_an_unknown_battle_fails() {
+        let mut arena = live_arena();
+        set_context("agent", WINDOW_NS + 100);
+        arena.emergency_halt(42, "x".to_string());
+    }
+
+    #[test]
+    fn deposits_are_refundable_after_a_void_at_lock() {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 10);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+        assert_eq!(arena.get_battle(1).unwrap().status, BattleStatus::Voided);
+
+        refund_as(&mut arena, "bob", WINDOW_NS + 10);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 100);
+        // the bond of a battle nobody joined stays with the treasury
+        assert_eq!(liquid(&arena, "alice", "usdc"), 0);
+    }
+
+    #[test]
+    fn deposits_are_refundable_after_a_tie() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 110, 110);
+        refund_as(&mut arena, "bob", END_NS + 5);
+        refund_as(&mut arena, "carol", END_NS + 5);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 400);
+        assert_eq!(liquid(&arena, "carol", "shib"), 160);
+    }
+
+    #[test]
+    #[should_panic(expected = "Refunds are not available")]
+    fn a_live_battle_has_no_refunds() {
+        let mut arena = live_arena();
+        refund_as(&mut arena, "bob", WINDOW_NS + 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Refunds are not available")]
+    fn a_settled_battle_has_no_refunds() {
+        let mut arena = settled_arena();
+        refund_as(&mut arena, "bob", END_NS + 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "No position in this battle")]
+    fn refunds_need_a_position() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        refund_as(&mut arena, "stranger", WINDOW_NS + 200);
+    }
+
+    #[test]
+    fn refunds_work_while_paused() {
+        let mut arena = live_arena();
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        set_context("owner", WINDOW_NS + 100);
+        arena.set_paused(true);
+        refund_as(&mut arena, "bob", WINDOW_NS + 200);
+        assert_eq!(liquid(&arena, "bob", "pepe"), 400);
+    }
+
+    #[test]
+    fn agents_can_still_halt_while_paused() {
+        let mut arena = live_arena();
+        set_context("owner", WINDOW_NS + 50);
+        arena.set_paused(true);
+        halt_as_agent(&mut arena, WINDOW_NS + 100);
+        assert_eq!(
+            arena.get_battle(1).unwrap().status,
+            BattleStatus::EmergencyHalted
+        );
     }
 
     #[test]
