@@ -41,6 +41,7 @@ enum StorageKey {
     Battles,
     Accounts,
     Positions,
+    Liquid,
 }
 
 #[ext_contract(ext_ft)]
@@ -109,6 +110,8 @@ pub struct Arena {
     accounts: LookupMap<AccountId, Account>,
     /// One position per (battle, account).
     positions: LookupMap<(u64, AccountId), UserPosition>,
+    /// Withdrawable balances per (account, token).
+    liquid: LookupMap<(AccountId, AccountId), u128>,
 }
 
 #[near]
@@ -136,6 +139,7 @@ impl Arena {
             battle_count: 0,
             accounts: LookupMap::new(StorageKey::Accounts),
             positions: LookupMap::new(StorageKey::Positions),
+            liquid: LookupMap::new(StorageKey::Liquid),
         }
     }
 
@@ -281,10 +285,12 @@ impl Arena {
         match outcome {
             Outcome::Tie => {
                 battle.status = BattleStatus::Voided;
+                let (creator, bond) = (battle.creator.clone(), battle.bond);
                 events::emit(
                     "battle_voided",
                     json!({ "battle_id": battle_id, "reason": "tie" }),
                 );
+                self.return_bond(&creator, bond);
             }
             Outcome::Winner(side) => {
                 let loser_vault = match side {
@@ -359,8 +365,10 @@ impl Arena {
             StepKind::Return => fee_to_treasury = realized,
         }
         let finished = settlement.steps.iter().all(|step| step.done);
+        let mut bond_refund = None;
         if finished {
             battle.status = BattleStatus::Settled;
+            bond_refund = Some((battle.creator.clone(), battle.bond));
         }
         events::emit(
             "execution_reported",
@@ -373,8 +381,113 @@ impl Arena {
         if finished {
             events::emit("battle_settled", json!({ "battle_id": battle_id }));
         }
+        if let Some((creator, bond)) = bond_refund {
+            self.return_bond(&creator, bond);
+        }
         if fee_to_treasury > 0 {
             self.accrue_treasury(fee_to_treasury);
+        }
+    }
+
+    // ─── Claims and withdrawals ─────────────────────────────────────────
+
+    /// Winners claim their principal plus their pro-rata share of the liquid
+    /// reward (as withdrawable winner coin) and of the new locked credit.
+    pub fn claim(&mut self, battle_id: u64) {
+        let account_id = env::predecessor_account_id();
+        let now = env::block_timestamp();
+        let battle = self
+            .battles
+            .get(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        require!(
+            battle.status == BattleStatus::Settled,
+            "Battle is not settled"
+        );
+        let winner = battle
+            .winner
+            .unwrap_or_else(|| env::panic_str("Winner missing"));
+        let (winner_token, winner_vault) = match winner {
+            Side::A => (battle.token_a.clone(), battle.vault_a),
+            Side::B => (battle.token_b.clone(), battle.vault_b),
+        };
+        let settlement = battle
+            .settlement
+            .as_ref()
+            .unwrap_or_else(|| env::panic_str("Settlement missing"));
+        let (liquid_pool, credit_pool) = (settlement.liquid_pool, settlement.credit_pool);
+
+        let position = self
+            .positions
+            .get_mut(&(battle_id, account_id.clone()))
+            .unwrap_or_else(|| env::panic_str("No position in this battle"));
+        require!(position.side == winner, "Nothing to claim");
+        require!(!position.claimed, "Already claimed");
+        position.claimed = true;
+        let stake = position.coin_amount;
+
+        let liquid_share = math::mul_div_floor(stake, liquid_pool, winner_vault)
+            .unwrap_or_else(|_| env::panic_str("Reward calculation failed"));
+        let credit_share = math::mul_div_floor(stake, credit_pool, winner_vault)
+            .unwrap_or_else(|_| env::panic_str("Reward calculation failed"));
+        let payout = stake
+            .checked_add(liquid_share)
+            .unwrap_or_else(|| env::panic_str("Payout overflow"));
+
+        self.add_liquid(&account_id, &winner_token, payout);
+        if credit_share > 0 {
+            self.grant_credit(&account_id, credit_share, now);
+        }
+        events::emit(
+            "claim",
+            json!({
+                "battle_id": battle_id,
+                "account_id": account_id,
+                "token": winner_token,
+                "principal": U128(stake),
+                "liquid_reward": U128(liquid_share),
+                "credit_granted": U128(credit_share),
+            }),
+        );
+    }
+
+    /// Pays out part of a liquid balance. Requires 1 yoctoNEAR. Stays available
+    /// while the contract is paused.
+    #[payable]
+    pub fn withdraw_liquid(&mut self, token: AccountId, amount: U128) -> Promise {
+        near_sdk::assert_one_yocto();
+        require!(amount.0 > 0, "Amount must be positive");
+        let account_id = env::predecessor_account_id();
+        let key = (account_id.clone(), token.clone());
+        let balance = self.liquid.get(&key).copied().unwrap_or(0);
+        require!(balance >= amount.0, "Insufficient liquid balance");
+        self.liquid.insert(key, balance - amount.0);
+        ext_ft::ext(token.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(FT_TRANSFER_GAS)
+            .ft_transfer(account_id.clone(), amount, None)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_liquid_paid(account_id, token, amount),
+            )
+    }
+
+    /// Restores the balance if the payout failed, so funds are never lost.
+    #[private]
+    pub fn on_liquid_paid(
+        &mut self,
+        account_id: AccountId,
+        token: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        if result.is_err() {
+            self.add_liquid(&account_id, &token, amount.0);
+            events::emit(
+                "withdraw_failed",
+                json!({ "account_id": account_id, "token": token, "amount": amount }),
+            );
         }
     }
 
@@ -555,7 +668,6 @@ impl Arena {
         let account = self.accounts.get(&account_id).cloned().unwrap_or_default();
         let credit = account.available_credit(now);
         AccountView {
-            liquid_balance: U128(account.liquid_balance),
             credit_balance: U128(credit),
             credit_expires_at_ns: U64(if credit > 0 {
                 account.credit_expires_at_ns
@@ -592,6 +704,15 @@ impl Arena {
             .unwrap_or_default()
     }
 
+    pub fn get_liquid_balance(&self, account_id: AccountId, token_id: AccountId) -> U128 {
+        U128(
+            self.liquid
+                .get(&(account_id, token_id))
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
     pub fn get_battle_count(&self) -> u64 {
         self.battle_count
     }
@@ -621,6 +742,34 @@ impl Arena {
 }
 
 impl Arena {
+    fn add_liquid(&mut self, account_id: &AccountId, token: &AccountId, amount: u128) {
+        let key = (account_id.clone(), token.clone());
+        let balance = self.liquid.get(&key).copied().unwrap_or(0);
+        let balance = balance
+            .checked_add(amount)
+            .unwrap_or_else(|| env::panic_str("Balance overflow"));
+        self.liquid.insert(key, balance);
+    }
+
+    /// The creation bond goes back to the creator once the battle ran or ended
+    /// through no fault of theirs.
+    fn return_bond(&mut self, creator: &AccountId, bond: u128) {
+        let usdc = self.usdc.clone();
+        self.add_liquid(creator, &usdc, bond);
+    }
+
+    /// Adds locked credit and restarts the 7-day timer for the whole balance.
+    fn grant_credit(&mut self, account_id: &AccountId, amount: u128, now: u64) {
+        let mut account = self.accounts.get(account_id).cloned().unwrap_or_default();
+        account.sweep_expired(now);
+        account.credit_balance = account
+            .credit_balance
+            .checked_add(amount)
+            .unwrap_or_else(|| env::panic_str("Credit overflow"));
+        account.credit_expires_at_ns = now + types::CREDIT_TTL_NS;
+        self.accounts.insert(account_id.clone(), account);
+    }
+
     /// Begins a USDC deposit: spends credit first, takes the wallet part from
     /// `wallet_amount`, and forwards the total to the router. Returns `None`
     /// (nothing changed) when the deposit is not allowed.
@@ -1452,7 +1601,6 @@ mod tests {
             Account {
                 credit_balance: amount,
                 credit_expires_at_ns: expires_at_ns,
-                ..Account::default()
             },
         );
     }
@@ -1461,7 +1609,6 @@ mod tests {
     fn unknown_account_has_empty_balances() {
         let arena = new_arena();
         let view = arena.get_account(acc("nobody"));
-        assert_eq!(view.liquid_balance, U128(0));
         assert_eq!(view.credit_balance, U128(0));
         assert_eq!(view.credit_expires_at_ns, U64(0));
     }
@@ -2249,6 +2396,202 @@ mod tests {
         let arena = live_arena();
         assert!(arena.get_settlement_plan(1).is_empty());
         assert!(arena.get_settlement_plan(99).is_empty());
+    }
+
+    /// Fully settled battle 1: A (bob, 400 pepe) beat B (carol, 160 shib).
+    /// The dump realized 40 USDC: 220 pepe bought, 10 burned, 2 USDC fee.
+    fn settled_arena() -> Arena {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40);
+        report(&mut arena, 1, 220);
+        report(&mut arena, 2, 10);
+        report(&mut arena, 3, 2);
+        arena
+    }
+
+    fn claim_as(arena: &mut Arena, name: &str, timestamp_ns: u64) {
+        set_context(name, timestamp_ns);
+        arena.claim(1);
+    }
+
+    fn liquid(arena: &Arena, name: &str, token: &str) -> u128 {
+        arena.get_liquid_balance(acc(name), acc(token)).0
+    }
+
+    #[test]
+    fn winner_claims_principal_reward_and_credit() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+
+        // principal 400 + liquid reward 220 (bob holds 100% of the winner vault)
+        assert_eq!(liquid(&arena, "bob", "pepe"), 620);
+        assert_eq!(credit_of(&arena, "bob", END_NS + 5), 14);
+        assert_eq!(
+            arena.get_account(acc("bob")).credit_expires_at_ns,
+            U64(END_NS + 5 + 7 * DAY_NS)
+        );
+        assert!(arena.get_position(1, acc("bob")).unwrap().claimed);
+    }
+
+    #[test]
+    fn winners_share_rewards_pro_rata() {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 300, Side::A, 10);
+        deposit_coin(&mut arena, "dave", "pepe", 100, Side::A, 10);
+        deposit_coin(&mut arena, "carol", "shib", 160, Side::B, 10);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(100), U128(100));
+        settle_with(&mut arena, 120, 105);
+        for (index, realized) in [(0, 40), (1, 220), (2, 10), (3, 2)] {
+            report(&mut arena, index, realized);
+        }
+
+        claim_as(&mut arena, "bob", END_NS + 5);
+        claim_as(&mut arena, "dave", END_NS + 5);
+        // bob 75%: 300 + 165, dave 25%: 100 + 55
+        assert_eq!(liquid(&arena, "bob", "pepe"), 465);
+        assert_eq!(liquid(&arena, "dave", "pepe"), 155);
+        // credit pool 14: bob floor(10.5) = 10, dave floor(3.5) = 3
+        assert_eq!(credit_of(&arena, "bob", END_NS + 5), 10);
+        assert_eq!(credit_of(&arena, "dave", END_NS + 5), 3);
+        // payouts never exceed what was realized plus the principals
+        assert!(liquid(&arena, "bob", "pepe") + liquid(&arena, "dave", "pepe") <= 400 + 220);
+    }
+
+    #[test]
+    #[should_panic(expected = "Nothing to claim")]
+    fn losers_cannot_claim() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "carol", END_NS + 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Already claimed")]
+    fn a_position_is_claimed_once() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+        claim_as(&mut arena, "bob", END_NS + 6);
+    }
+
+    #[test]
+    #[should_panic(expected = "No position in this battle")]
+    fn claiming_without_a_position_fails() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "stranger", END_NS + 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not settled")]
+    fn nothing_can_be_claimed_before_settlement() {
+        let mut arena = live_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Battle is not settled")]
+    fn nothing_can_be_claimed_while_settling() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 120, 105);
+        report(&mut arena, 0, 40);
+        claim_as(&mut arena, "bob", END_NS + 5);
+    }
+
+    #[test]
+    fn new_credit_resets_the_timer_for_the_whole_balance() {
+        let mut arena = settled_arena();
+        grant_test_credit(&mut arena, "bob", 6, END_NS + 2 * DAY_NS);
+        claim_as(&mut arena, "bob", END_NS + DAY_NS);
+        assert_eq!(credit_of(&arena, "bob", END_NS + DAY_NS), 6 + 14);
+        assert_eq!(
+            arena.get_account(acc("bob")).credit_expires_at_ns,
+            U64(END_NS + DAY_NS + 7 * DAY_NS)
+        );
+    }
+
+    #[test]
+    fn expired_credit_is_dropped_when_new_credit_arrives() {
+        let mut arena = settled_arena();
+        grant_test_credit(&mut arena, "bob", 6, 1);
+        claim_as(&mut arena, "bob", END_NS + 5);
+        assert_eq!(credit_of(&arena, "bob", END_NS + 5), 14);
+    }
+
+    #[test]
+    fn the_creator_gets_the_bond_back_when_the_battle_settles() {
+        let arena = settled_arena();
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5_000_000);
+    }
+
+    #[test]
+    fn the_creator_gets_the_bond_back_when_the_battle_ties() {
+        let mut arena = live_arena();
+        settle_with(&mut arena, 110, 110);
+        assert_eq!(liquid(&arena, "alice", "usdc"), 5_000_000);
+    }
+
+    #[test]
+    fn the_bond_is_not_returned_before_the_battle_ends() {
+        let arena = live_arena();
+        assert_eq!(liquid(&arena, "alice", "usdc"), 0);
+    }
+
+    #[test]
+    fn withdrawing_debits_the_liquid_balance_and_can_be_restored() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+
+        call_as("bob", END_NS + 6, 1);
+        let _ = arena.withdraw_liquid(acc("pepe"), U128(600));
+        assert_eq!(liquid(&arena, "bob", "pepe"), 20);
+
+        arena.on_liquid_paid(
+            acc("bob"),
+            acc("pepe"),
+            U128(600),
+            Err(PromiseError::Failed),
+        );
+        assert_eq!(liquid(&arena, "bob", "pepe"), 620);
+
+        arena.on_liquid_paid(acc("bob"), acc("pepe"), U128(600), Ok(()));
+        assert_eq!(liquid(&arena, "bob", "pepe"), 620);
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient liquid balance")]
+    fn cannot_withdraw_more_than_the_balance() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+        call_as("bob", END_NS + 6, 1);
+        let _ = arena.withdraw_liquid(acc("pepe"), U128(621));
+    }
+
+    #[test]
+    #[should_panic(expected = "Amount must be positive")]
+    fn cannot_withdraw_zero() {
+        let mut arena = settled_arena();
+        call_as("bob", END_NS + 6, 1);
+        let _ = arena.withdraw_liquid(acc("pepe"), U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn withdrawing_requires_one_yocto() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+        call_as("bob", END_NS + 6, 0);
+        let _ = arena.withdraw_liquid(acc("pepe"), U128(1));
+    }
+
+    #[test]
+    fn withdrawals_work_while_paused() {
+        let mut arena = settled_arena();
+        claim_as(&mut arena, "bob", END_NS + 5);
+        set_context("owner", END_NS + 5);
+        arena.set_paused(true);
+        call_as("bob", END_NS + 6, 1);
+        let _ = arena.withdraw_liquid(acc("pepe"), U128(620));
+        assert_eq!(liquid(&arena, "bob", "pepe"), 0);
     }
 
     #[test]

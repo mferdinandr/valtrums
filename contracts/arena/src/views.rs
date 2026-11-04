@@ -92,7 +92,6 @@ impl PositionView {
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountView {
-    pub liquid_balance: U128,
     pub credit_balance: U128,
     pub credit_expires_at_ns: U64,
 }
