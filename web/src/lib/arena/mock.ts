@@ -1,5 +1,5 @@
-import { CREDIT_TTL_NS, NS_PER_MS, coinToUsdc, pow10, toBigInt } from "../amounts";
-import { previewWinnerPayout, vaultsInUsdc } from "./payout";
+import { CREDIT_TTL_NS, NS_PER_MS, coinToUsdc, pow10, splitProfit, toBigInt, usdcToCoin } from "../amounts";
+import { previewClaimForBattle } from "./payout";
 import type {
   AccountView,
   ArenaApi,
@@ -13,6 +13,7 @@ import type {
   SettlementStep,
   Side,
   TokenMeta,
+  WithdrawLiquidInput,
 } from "./types";
 
 export const MOCK_ACCOUNT = "demo.testnet";
@@ -52,7 +53,13 @@ function hash(seed: number, mod: number): number {
   return x % mod;
 }
 
-export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
+/** The mock adds hooks to simulate a failing token transfer on payout. */
+export interface MockArenaApi extends ArenaApi {
+  /** Makes the next `withdrawLiquid` fail at the token transfer; the balance is restored. */
+  failNextWithdraw(message?: string): void;
+}
+
+export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
   const now = options.now ?? Date.now;
   const latency = options.latencyMs ?? 0;
   const t0 = now();
@@ -128,6 +135,13 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
 
   const positions = new Map<string, PositionView>();
   const accounts = new Map<string, AccountView>();
+  /** Liquid balances keyed by `account:token`, in the token's base units. */
+  const liquid = new Map<string, bigint>();
+  const liquidKey = (acct: string, token: string) => `${acct}:${token}`;
+  const liquidOf = (acct: string, token: string) => liquid.get(liquidKey(acct, token)) ?? 0n;
+  const addLiquid = (acct: string, token: string, delta: bigint) =>
+    liquid.set(liquidKey(acct, token), liquidOf(acct, token) + delta);
+  let nextWithdrawFailure: string | null = null;
   const key = (id: number, acct: string) => `${id}:${acct}`;
 
   const seedPosition = (id: number, acct: string, side: Side, amount: number) => {
@@ -154,13 +168,17 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
   seedPosition(5, MOCK_ACCOUNT, "A", 100_000_000);
   seedPosition(6, MOCK_ACCOUNT, "A", 500_000);
 
+  // A returned creation bond in USDC and coins from an earlier claimed win.
+  addLiquid(MOCK_ACCOUNT, USDC_ID, 12_500_000n);
+  addLiquid(MOCK_ACCOUNT, "pepe.tkn.testnet", coins(2_500_000, 18));
+
   accounts.set(MOCK_ACCOUNT, {
-    liquid_balance: (12_500_000n).toString(),
     credit_balance: (35_000_000n).toString(),
     credit_expires_at_ns: ns(t0 + 5 * DAY_MS + 3 * HOUR_MS).toString(),
   });
 
   const metaOf = (id: string): TokenMeta => {
+    if (id === USDC_ID) return { id, symbol: "USDC", decimals: 6 };
     const t = TOKENS[id];
     return { id, symbol: t?.symbol ?? id.split(".")[0]!.toUpperCase(), decimals: t?.decimals ?? 18 };
   };
@@ -171,7 +189,22 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
     return b;
   };
 
-  const api: ArenaApi = {
+  /** Pools of a settled battle whose side A won, derived from the final prices. */
+  const settledPool = (b: BattleView) => {
+    const loserMeta = metaOf(b.token_b);
+    const dump = coinToUsdc(toBigInt(b.vault_b), loserMeta.decimals, BigInt(b.final_price_b!));
+    const split = splitProfit(dump);
+    const price = BigInt(b.final_price_a!);
+    const decimals = metaOf(b.token_a).decimals;
+    return {
+      dump,
+      split,
+      bought: usdcToCoin(split.liquid, decimals, price),
+      burned: usdcToCoin(split.burn, decimals, price),
+    };
+  };
+
+  const api: MockArenaApi = {
     mode: "mock",
 
     async getConfig(): Promise<ConfigView> {
@@ -211,19 +244,28 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
     async getAccount(acct) {
       await wait();
       const a = accounts.get(acct);
-      return a ? { ...a } : { liquid_balance: "0", credit_balance: "0", credit_expires_at_ns: "0" };
+      return a ? { ...a } : { credit_balance: "0", credit_expires_at_ns: "0" };
+    },
+
+    async getLiquidBalance(acct, token) {
+      await wait();
+      return liquidOf(acct, token).toString();
     },
 
     async getSettlementPlan(id): Promise<SettlementStep[]> {
       await wait();
       const b = find(id);
       if (b.status !== "Settling" && b.status !== "Settled") return [];
-      const settled = b.status === "Settled";
+      // Settling: only the dump step exists yet. Settled: the full four-step plan, all reported.
+      if (b.status === "Settling") {
+        return [{ index: 0, kind: "Dump", amount: b.vault_b, done: false, realized: null }];
+      }
+      const pool = settledPool(b);
       return [
-        { index: 0, kind: "Dump", amount: b.vault_b, done: true, realized: "1200000" },
-        { index: 1, kind: "Buy", amount: "1200000", done: true, realized: b.vault_a },
-        { index: 2, kind: "Burn", amount: "60000", done: settled, realized: settled ? "60000" : null },
-        { index: 3, kind: "Return", amount: b.vault_a, done: settled, realized: settled ? b.vault_a : null },
+        { index: 0, kind: "Dump", amount: b.vault_b, done: true, realized: pool.dump.toString() },
+        { index: 1, kind: "Buy", amount: pool.split.liquid.toString(), done: true, realized: pool.bought.toString() },
+        { index: 2, kind: "Burn", amount: pool.split.burn.toString(), done: true, realized: pool.burned.toString() },
+        { index: 3, kind: "Return", amount: pool.split.fee.toString(), done: true, realized: pool.split.fee.toString() },
       ];
     },
 
@@ -294,11 +336,15 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
         b: BigInt(b.final_price_b!),
         source: "final" as const,
       };
-      const preview = previewWinnerPayout(pos, vaultsInUsdc(b, metaOf(b.token_a), metaOf(b.token_b), prices));
-      const acct = accounts.get(signerId) ?? { liquid_balance: "0", credit_balance: "0", credit_expires_at_ns: "0" };
+      const metaA = metaOf(b.token_a);
+      const metaB = metaOf(b.token_b);
+      const preview = previewClaimForBattle(b, pos, metaA, metaB, prices, await api.getSettlementPlan(battleId));
+      const acct = accounts.get(signerId) ?? { credit_balance: "0", credit_expires_at_ns: "0" };
       const live = toBigInt(acct.credit_expires_at_ns) > ns(now());
+      // Like the contract: the winner coin (principal + reward) goes to the liquid balance, the new credit
+      // is locked and restarts the 7-day timer for the whole balance.
+      addLiquid(signerId, b.winner === "A" ? b.token_a : b.token_b, preview.totalCoin);
       accounts.set(signerId, {
-        liquid_balance: (toBigInt(acct.liquid_balance) + preview.totalLiquid).toString(),
         credit_balance: ((live ? toBigInt(acct.credit_balance) : 0n) + preview.credit).toString(),
         credit_expires_at_ns: (ns(now()) + CREDIT_TTL_NS).toString(),
       });
@@ -311,7 +357,28 @@ export function createMockArenaApi(options: MockOptions = {}): ArenaApi {
       const pos = positions.get(key(battleId, signerId));
       if ((b.status !== "EmergencyHalted" && b.status !== "Voided") || !pos) throw new Error("Nothing to refund");
       if (pos.claimed) throw new Error("Already refunded");
+      // The full deposit is credited to the liquid balance of the position's coin.
+      addLiquid(signerId, pos.side === "A" ? b.token_a : b.token_b, toBigInt(pos.coin_amount));
       pos.claimed = true;
+    },
+
+    async withdrawLiquid({ signerId, token, amount }: WithdrawLiquidInput) {
+      await wait();
+      if (amount <= 0n) throw new Error("Amount must be positive");
+      const have = liquidOf(signerId, token);
+      if (amount > have) throw new Error("Not enough liquid balance");
+      // The contract debits first, then transfers; a failed transfer restores the balance.
+      addLiquid(signerId, token, -amount);
+      if (nextWithdrawFailure !== null) {
+        const message = nextWithdrawFailure;
+        nextWithdrawFailure = null;
+        addLiquid(signerId, token, amount);
+        throw new Error(message);
+      }
+    },
+
+    failNextWithdraw(message = "Token transfer failed. Your balance was restored.") {
+      nextWithdrawFailure = message;
     },
   };
 

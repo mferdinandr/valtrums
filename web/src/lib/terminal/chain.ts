@@ -22,6 +22,11 @@ export interface TerminalChain {
   readonly arenaId: string;
   /** `preview_funding`: how a deposit of `totalUnits` splits between credit and wallet. */
   previewFunding(accountId: string, totalUnits: bigint): Promise<FundingSplit>;
+  /**
+   * USDC held in the NEAR wallet (`ft_balance_of` on the USDC token). Deposits through `ft_transfer_call`
+   * spend wallet USDC, so this is the right source. The arena's internal liquid balance is a separate
+   * payout bucket that must be withdrawn first; it is deliberately not counted here.
+   */
   usdcBalance(accountId: string): Promise<bigint>;
   /** Expected token output (coin base units) for swapping `usdcIn`; null when no route or rate exists. */
   quoteTokenOut(tokenId: string, usdcIn: bigint): Promise<bigint | null>;

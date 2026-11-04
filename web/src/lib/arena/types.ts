@@ -40,7 +40,6 @@ export interface PositionView {
 }
 
 export interface AccountView {
-  liquid_balance: string;
   credit_balance: string;
   credit_expires_at_ns: string;
 }
@@ -93,6 +92,14 @@ export interface DepositInput {
   amount: bigint;
 }
 
+export interface WithdrawLiquidInput {
+  signerId: string;
+  /** NEP-141 contract of the balance to pay out. */
+  token: string;
+  /** Base units of that token. */
+  amount: bigint;
+}
+
 export interface BattleActionInput {
   signerId: string;
   battleId: number;
@@ -106,6 +113,8 @@ export interface ArenaApi {
   getBattle(battleId: number): Promise<BattleView | null>;
   getPosition(battleId: number, accountId: string): Promise<PositionView | null>;
   getAccount(accountId: string): Promise<AccountView>;
+  /** Liquid (withdrawable) balance of one token, in that token's base units (U128 string). */
+  getLiquidBalance(accountId: string, tokenId: string): Promise<string>;
   getSettlementPlan(battleId: number): Promise<SettlementStep[]>;
   getTokenMeta(tokenId: string): Promise<TokenMeta>;
   /** Spot prices while a battle is live, or null when no price source is available. */
@@ -115,4 +124,9 @@ export interface ArenaApi {
   depositCoin(input: DepositInput): Promise<void>;
   claim(input: BattleActionInput): Promise<void>;
   withdrawInitialDeposit(input: BattleActionInput): Promise<void>;
+  /**
+   * Pays a liquid balance out to the wallet. If the token transfer fails the contract restores the
+   * balance, so callers should re-read it after the call.
+   */
+  withdrawLiquid(input: WithdrawLiquidInput): Promise<void>;
 }

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createMockArenaApi, MOCK_ACCOUNT } from "./mock";
-import { previewWinnerPayout, priceBasis, vaultsInUsdc } from "./payout";
+import { previewClaimForBattle, priceBasis } from "./payout";
 
 const T0 = 1_800_000_000_000;
+const USDC = "usdc.tkn.testnet";
 
 describe("mock arena api", () => {
   it("is deterministic for a fixed clock", async () => {
@@ -33,18 +34,47 @@ describe("mock arena api", () => {
     now += 1;
   });
 
-  it("claim matches the payout preview", async () => {
+  it("claim matches the payout preview and credits the winner coin", async () => {
     const api = createMockArenaApi({ now: () => T0 });
     const b = (await api.getBattle(5))!;
     const pos = (await api.getPosition(5, MOCK_ACCOUNT))!;
-    const prices = priceBasis(b, null)!;
-    const vaults = vaultsInUsdc(b, await api.getTokenMeta(b.token_a), await api.getTokenMeta(b.token_b), prices);
-    const preview = previewWinnerPayout(pos, vaults);
+    const metaA = await api.getTokenMeta(b.token_a);
+    const metaB = await api.getTokenMeta(b.token_b);
+    const preview = previewClaimForBattle(b, pos, metaA, metaB, priceBasis(b, null)!, await api.getSettlementPlan(5));
+    expect(preview.estimated).toBe(false);
+    const coinBefore = BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, b.token_a));
+    const usdcBefore = BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, USDC));
     const before = await api.getAccount(MOCK_ACCOUNT);
     await api.claim({ signerId: MOCK_ACCOUNT, battleId: 5 });
     const after = await api.getAccount(MOCK_ACCOUNT);
-    expect(BigInt(after.liquid_balance) - BigInt(before.liquid_balance)).toBe(preview.totalLiquid);
+    expect(BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, b.token_a)) - coinBefore).toBe(preview.totalCoin);
+    expect(preview.totalCoin).toBeGreaterThan(preview.principalCoin);
+    expect(BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, USDC))).toBe(usdcBefore);
     expect(BigInt(after.credit_balance) - BigInt(before.credit_balance)).toBe(preview.credit);
+  });
+
+  it("seeds liquid balances per token", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    expect(BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, USDC))).toBe(12_500_000n);
+    expect(BigInt(await api.getLiquidBalance(MOCK_ACCOUNT, "pepe.tkn.testnet"))).toBeGreaterThan(0n);
+    expect(await api.getLiquidBalance(MOCK_ACCOUNT, "mog.tkn.testnet")).toBe("0");
+    expect(await api.getLiquidBalance("nobody.testnet", USDC)).toBe("0");
+    expect(await api.getAccount("nobody.testnet")).toEqual({ credit_balance: "0", credit_expires_at_ns: "0" });
+  });
+
+  it("refund credits the full deposit to the liquid balance", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    const b = (await api.getBattle(6))!;
+    const pos = (await api.getPosition(6, MOCK_ACCOUNT))!;
+    await api.withdrawInitialDeposit({ signerId: MOCK_ACCOUNT, battleId: 6 });
+    expect(await api.getLiquidBalance(MOCK_ACCOUNT, b.token_a)).toBe(pos.coin_amount);
+  });
+
+  it("serves a one step plan while settling and a four step plan once settled", async () => {
+    const api = createMockArenaApi({ now: () => T0 });
+    expect((await api.getSettlementPlan(4)).map((s) => s.kind)).toEqual(["Dump"]);
+    expect((await api.getSettlementPlan(5)).map((s) => s.kind)).toEqual(["Dump", "Buy", "Burn", "Return"]);
+    expect(await api.getSettlementPlan(3)).toEqual([]);
   });
 
   it("refunds only after halt or void", async () => {

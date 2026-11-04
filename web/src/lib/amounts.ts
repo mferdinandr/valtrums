@@ -47,6 +47,12 @@ export function coinToUsdc(amount: bigint, coinDecimals: number, priceE18: bigin
   return (amount * priceE18 * pow10(USDC_DECIMALS)) / (pow10(coinDecimals) * PRICE_SCALE);
 }
 
+/** Coin amount (base units) worth `usdc` base units at a price scaled by 1e18. Inverse of coinToUsdc, floored. */
+export function usdcToCoin(usdc: bigint, coinDecimals: number, priceE18: bigint): bigint {
+  if (priceE18 <= 0n) return 0n;
+  return (usdc * pow10(coinDecimals) * PRICE_SCALE) / (priceE18 * pow10(USDC_DECIMALS));
+}
+
 // ---- time ----
 
 export function nsToMs(ns: bigint): number {

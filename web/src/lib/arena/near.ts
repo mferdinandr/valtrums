@@ -11,6 +11,7 @@ import type {
   ProposeInput,
   SettlementStep,
   TokenMeta,
+  WithdrawLiquidInput,
 } from "./types";
 
 type HotConnector = Parameters<typeof fromHotConnect>[0];
@@ -71,6 +72,8 @@ export function createNearArenaApi(opts: NearArenaOptions): ArenaApi {
     getPosition: (battleId, accountId) =>
       view<PositionView | null>("get_position", { battle_id: battleId.toString(), account_id: accountId }),
     getAccount: (accountId) => view<AccountView>("get_account", { account_id: accountId }),
+    getLiquidBalance: async (accountId, tokenId) =>
+      String(await view<string | number>("get_liquid_balance", { account_id: accountId, token_id: tokenId })),
     getSettlementPlan: (battleId) => view<SettlementStep[]>("get_settlement_plan", { battle_id: battleId.toString() }),
 
     getTokenMeta(tokenId) {
@@ -122,6 +125,16 @@ export function createNearArenaApi(opts: NearArenaOptions): ArenaApi {
         "withdraw_initial_deposit",
         { battle_id: battleId.toString() },
         { signerId, gas: GAS_CLAIM },
+      );
+    },
+
+    // Needs 1 yoctoNEAR, so the wallet asks for full-access approval.
+    async withdrawLiquid({ signerId, token, amount }: WithdrawLiquidInput) {
+      await signer().call(
+        opts.contractId,
+        "withdraw_liquid",
+        { token, amount: amount.toString() },
+        { signerId, gas: GAS_FT_CALL, attachedDeposit: ONE_YOCTO },
       );
     },
   };
