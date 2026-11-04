@@ -10,6 +10,9 @@ importers:
 
   agent:
     dependencies:
+      '@noble/hashes':
+        specifier: ^2.4.0
+        version: 2.4.0
       near-kit:
         specifier: ^0.20.2
         version: 0.20.2(@hot-labs/near-connect@0.12.0)
