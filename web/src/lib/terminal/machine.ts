@@ -72,7 +72,7 @@ export function createTerminal(deps: TerminalDeps): TerminalController {
 
   async function runExecution(plan: DepositPlan, quotes: FundingQuote[]) {
     set({ phase: "executing", plan, stage: plan.bridgeLegs.length > 0 ? "funding" : "depositing" });
-    const result = await executeDeposit(plan, plan, deps, {
+    const result = await executeDeposit(plan, plan, { ...deps, api: deps.api }, {
       fundingQuotes: quotes,
       onStage: (stage) => set({ phase: "executing", plan, stage }),
       fundingHooks: {

@@ -2,12 +2,15 @@
 // The confirmed plan is frozen at confirmation time; every transaction is compared against it before signing.
 // If funding fails or anything differs, nothing is deposited.
 
+import type { ArenaApi } from "../arena/types";
 import type { FundingHooks, FundingQuote, FundingRouter } from "./funding";
 import type { SendVia, TerminalChain, TxSender } from "./chain";
 import type { DepositPlan } from "./plan";
 import { buildDepositTx, verifyTx, type DepositTx } from "./transaction";
 
 export interface ExecutionDeps {
+  /** Read access to the arena for the pre-send balance check. */
+  api: Pick<ArenaApi, "getLiquidBalance">;
   chain: TerminalChain;
   sender: TxSender;
   funding: FundingRouter;
@@ -69,12 +72,21 @@ export async function executeDeposit(
 
   // Funds and credit may have moved while we waited; the deposit must still be what was confirmed.
   const split = await deps.chain.previewFunding(confirmed.accountId, confirmed.totalUnits);
-  if (split.fromCredit !== confirmed.creditUnits || split.fromWallet !== confirmed.walletUnits) {
+  // `fromWallet` is the non-credit part: the wallet part, or the internal balance part when paying from balance.
+  const expectedNonCredit = confirmed.payFromBalance ? confirmed.balanceUnits : confirmed.walletUnits;
+  if (split.fromCredit !== confirmed.creditUnits || split.fromWallet !== expectedNonCredit) {
     return abort("state", "Your credit changed while preparing the deposit. Nothing was sent; please run the command again.");
   }
-  const balance = await deps.chain.usdcBalance(confirmed.accountId);
-  if (balance < confirmed.walletUnits) {
-    return abort("balance", "The wallet does not hold enough USDC after funding. Nothing was deposited.");
+  if (confirmed.payFromBalance) {
+    const held = await deps.api.getLiquidBalance(confirmed.accountId, confirmed.usdcId);
+    if (BigInt(held) < confirmed.balanceUnits) {
+      return abort("balance", "The arena balance is too low now. Nothing was deposited.");
+    }
+  } else {
+    const balance = await deps.chain.usdcBalance(confirmed.accountId);
+    if (balance < confirmed.walletUnits) {
+      return abort("balance", "The wallet does not hold enough USDC after funding. Nothing was deposited.");
+    }
   }
 
   const tx = check();

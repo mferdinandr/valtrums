@@ -3,7 +3,9 @@
 import type { DepositPlan } from "./plan";
 
 export const GAS_FT_TRANSFER_CALL = "100 Tgas";
+export const GAS_BALANCE_DEPOSIT = "200 Tgas";
 export const ONE_YOCTO = "1";
+export const NO_DEPOSIT = "0";
 
 export interface TransferCallTx {
   /** USDC contract. */
@@ -25,7 +27,20 @@ export interface CreditDepositTx {
   deposit: string;
 }
 
-export type DepositTx = TransferCallTx | CreditDepositTx;
+/**
+ * Deposit paid from credit and the arena's internal balance. No attached deposit, which is what lets a scoped
+ * function-call key sign it without a wallet prompt.
+ */
+export interface BalanceDepositTx {
+  /** Arena contract. */
+  receiverId: string;
+  method: "deposit_from_balance";
+  args: { battle_id: number; side: "A" | "B"; total_usdc: string; min_token_out: string };
+  gas: string;
+  deposit: typeof NO_DEPOSIT;
+}
+
+export type DepositTx = TransferCallTx | CreditDepositTx | BalanceDepositTx;
 
 export interface DepositMsg {
   action: "deposit_usdc";
@@ -38,6 +53,9 @@ export interface DepositMsg {
 /** Interface.md: step 1 `ft_transfer_call` with the `deposit_usdc` message, or `deposit_with_credit` when no USDC leaves the wallet. */
 export function buildDepositTx(plan: DepositPlan): DepositTx {
   const fields = { battle_id: plan.battleId, side: plan.side, total_usdc: plan.totalUnits.toString(), min_token_out: plan.minOut.toString() };
+  if (plan.payFromBalance) {
+    return { receiverId: plan.arenaId, method: "deposit_from_balance", args: fields, gas: GAS_BALANCE_DEPOSIT, deposit: NO_DEPOSIT };
+  }
   if (plan.walletUnits === 0n) {
     return { receiverId: plan.arenaId, method: "deposit_with_credit", args: fields, gas: GAS_FT_TRANSFER_CALL, deposit: ONE_YOCTO };
   }
@@ -56,7 +74,11 @@ export type VerifyResult = { ok: true } | { ok: false; mismatches: string[] };
 /** Compare the structured, confirmed plan with the transaction about to be signed. Any difference aborts. */
 export function verifyTx(plan: DepositPlan, tx: DepositTx): VerifyResult {
   const bad: string[] = [];
-  if (tx.deposit !== ONE_YOCTO) bad.push("attached deposit is not exactly 1 yoctoNEAR");
+  const balanceMode = plan.payFromBalance;
+  if (balanceMode) {
+    if (tx.deposit !== NO_DEPOSIT) bad.push("attached deposit is not zero");
+    if (plan.walletUnits !== 0n) bad.push("a balance deposit must not move wallet USDC");
+  } else if (tx.deposit !== ONE_YOCTO) bad.push("attached deposit is not exactly 1 yoctoNEAR");
   const expected: Record<string, unknown> = {
     battle_id: plan.battleId,
     side: plan.side,
@@ -65,7 +87,11 @@ export function verifyTx(plan: DepositPlan, tx: DepositTx): VerifyResult {
   };
   let fields: Record<string, unknown>;
 
-  if (plan.walletUnits === 0n) {
+  if (balanceMode) {
+    if (tx.method !== "deposit_from_balance") return { ok: false, mismatches: [...bad, `method ${String(tx.method)} is not deposit_from_balance`] };
+    if (tx.receiverId !== plan.arenaId) bad.push(`contract ${tx.receiverId} is not the arena ${plan.arenaId}`);
+    fields = tx.args as Record<string, unknown>;
+  } else if (plan.walletUnits === 0n) {
     if (tx.method !== "deposit_with_credit") return { ok: false, mismatches: [...bad, `method ${String(tx.method)} is not deposit_with_credit`] };
     if (tx.receiverId !== plan.arenaId) bad.push(`contract ${tx.receiverId} is not the arena ${plan.arenaId}`);
     fields = tx.args as Record<string, unknown>;

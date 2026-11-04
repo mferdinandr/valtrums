@@ -115,6 +115,18 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
         failure = null;
         throw new Error(m);
       }
+      if (tx.method === "deposit_from_balance") {
+        // Credit first, then the internal balance; a swap failure restores both and throws.
+        await api.depositFromBalance({
+          signerId,
+          battleId: tx.args.battle_id,
+          side: tx.args.side,
+          totalUsdc: BigInt(tx.args.total_usdc),
+          minTokenOut: BigInt(tx.args.min_token_out),
+        });
+        sent.push(tx);
+        return "wallet";
+      }
       const msg =
         tx.method === "ft_transfer_call"
           ? (JSON.parse(tx.args.msg) as { battle_id: number; side: "A" | "B"; total_usdc: string; min_token_out: string })
