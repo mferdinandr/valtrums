@@ -28,6 +28,7 @@ export function useTerminal(scopeBattleId?: number): UseTerminal {
         sender: env.sender,
         funding: env.funding,
         getAccountId: () => accountRef.current,
+        preferBalance: () => (accountRef.current ? env.session.get(accountRef.current) !== null : false),
         scopeBattleId,
       }),
     [api, env, scopeBattleId],
