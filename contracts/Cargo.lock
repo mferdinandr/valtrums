@@ -2498,6 +2498,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-mock-dex"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+ "uint 0.10.2",
+]
+
+[[package]]
 name = "valtrum-router"
 version = "0.1.0"
 dependencies = [
