@@ -1,3 +1,4 @@
+use crate::mpc::SignStatus;
 use crate::types::{Battle, BattleStatus, SettlementStep, Side, StepKind, UserPosition};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
@@ -132,4 +133,30 @@ impl SettlementStepView {
             realized: step.done.then_some(U128(step.realized)),
         }
     }
+}
+
+/// A foreign-chain signing request as exposed to clients (hex without `0x`).
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignRequestView {
+    pub battle_id: u64,
+    pub step_index: Option<u32>,
+    pub path: String,
+    pub status: SignStatus,
+    pub unsigned_tx: String,
+    pub payload_hash: String,
+    pub signed_tx: Option<String>,
+    pub tx_hash: Option<String>,
+    pub attempts: u32,
+}
+
+/// Chain-level settings for foreign transactions as exposed to clients.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForeignConfigView {
+    pub mpc_contract: AccountId,
+    pub chain_id: U64,
+    pub router: String,
+    pub treasury: String,
+    pub burn: String,
 }

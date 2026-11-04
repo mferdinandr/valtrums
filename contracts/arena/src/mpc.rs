@@ -388,6 +388,34 @@ pub fn build_tx(
     })
 }
 
+// ─── signing requests ───────────────────────────────────────────────────
+
+/// Where a signing request stands.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignStatus {
+    /// Sent to the signer, no answer yet.
+    Pending,
+    /// The signature arrived and the signed transaction is stored.
+    Signed,
+    /// The signer failed or answered with something unusable; it can be retried.
+    Failed,
+}
+
+/// A transaction waiting for, or holding, its MPC signature.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct SignRequest {
+    pub battle_id: u64,
+    pub step_index: Option<u32>,
+    /// Derivation path: every battle signs from its own foreign-chain address.
+    pub path: String,
+    pub tx: EvmTx,
+    pub status: SignStatus,
+    pub signed_tx: Option<Vec<u8>>,
+    pub attempts: u32,
+}
+
 // ─── signature handling ─────────────────────────────────────────────────
 
 fn string_field<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
@@ -430,6 +458,14 @@ pub fn parse_signature(response: &Value) -> Result<EcdsaSignature, MpcError> {
     .ok_or(MpcError::BadSignature)?;
     let s =
         to_array_32(hex_decode(s).ok_or(MpcError::BadSignature)?).ok_or(MpcError::BadSignature)?;
+    // Reject values outside the valid range instead of letting later arithmetic fail.
+    let n = U256::from_big_endian(&SECP256K1_N);
+    for scalar in [&r, &s] {
+        let value = U256::from_big_endian(scalar);
+        if value.is_zero() || value >= n {
+            return Err(MpcError::BadSignature);
+        }
+    }
     Ok(normalize_low_s(EcdsaSignature {
         r,
         s,
@@ -691,6 +727,28 @@ mod tests {
                 "{response}"
             );
         }
+    }
+
+    #[test]
+    fn scalars_outside_the_valid_range_are_rejected() {
+        let n_hex = hex_encode(&SECP256K1_N);
+        let zero = "00".repeat(32);
+        let max = "ff".repeat(32);
+        let point = format!("02{}", "ab".repeat(32));
+        for (r_point, s) in [
+            (point.clone(), zero.clone()),
+            (point.clone(), n_hex.clone()),
+            (point.clone(), max.clone()),
+            (format!("02{zero}"), "11".repeat(32)),
+            (format!("02{n_hex}"), "11".repeat(32)),
+        ] {
+            let response = json!({ "big_r": r_point, "s": s, "recovery_id": 0 });
+            assert_eq!(parse_signature(&response), Err(MpcError::BadSignature));
+        }
+        // n - 1 is the largest valid scalar
+        let n_minus_one = (U256::from_big_endian(&SECP256K1_N) - U256::one()).to_big_endian();
+        let response = json!({ "big_r": point, "s": hex_encode(&n_minus_one), "recovery_id": 0 });
+        assert!(parse_signature(&response).is_ok());
     }
 
     #[test]
