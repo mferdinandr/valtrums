@@ -1742,7 +1742,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05e4722c697a58a99d5d06a08c30821d7c082a4632198de1eaa5a6c22ef42373"
 dependencies = [
  "fixed-hash",
- "uint",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -2448,6 +2448,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "uint"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2833f28e3adbd1b867292ee4053252ea89ab85e44e5e4701ffead8cada0539fa"
+dependencies = [
+ "byteorder",
+ "crunchy",
+ "hex",
+ "static_assertions",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2482,6 +2494,7 @@ name = "valtrum-arena"
 version = "0.1.0"
 dependencies = [
  "near-sdk",
+ "uint 0.10.2",
 ]
 
 [[package]]
