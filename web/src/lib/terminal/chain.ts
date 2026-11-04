@@ -127,7 +127,8 @@ export function createMockTerminalChain(api: ArenaApi, opts: MockChainOptions = 
 
 export interface NearChainOptions {
   arenaId: string;
-  usdcId: string;
+  /** Resolved lazily (the arena config names the USDC contract). */
+  getUsdcId: () => Promise<string>;
   network: "testnet" | "mainnet";
   rpcUrl: string;
 }
@@ -151,13 +152,13 @@ export function createNearTerminalChain(opts: NearChainOptions): TerminalChain {
       return { fromCredit: BigInt(r.from_credit), fromWallet: BigInt(r.from_wallet) };
     },
     async usdcBalance(accountId) {
-      return BigInt(await view<string>(opts.usdcId, "ft_balance_of", { account_id: accountId }));
+      return BigInt(await view<string>(await opts.getUsdcId(), "ft_balance_of", { account_id: accountId }));
     },
     async quoteTokenOut(tokenId, usdcIn) {
       const { dex } = await getRouter();
       if (!dex) return null;
       // The DEX exposes its fixed rate as `get_rate`: out = in * num / den.
-      const rate = await view<{ num: string; den: string } | null>(dex, "get_rate", { token_in: opts.usdcId, token_out: tokenId });
+      const rate = await view<{ num: string; den: string } | null>(dex, "get_rate", { token_in: await opts.getUsdcId(), token_out: tokenId });
       if (!rate || BigInt(rate.den) === 0n) return null;
       return (usdcIn * BigInt(rate.num)) / BigInt(rate.den);
     },

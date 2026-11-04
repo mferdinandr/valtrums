@@ -26,6 +26,10 @@ interface Mention {
   end: number;
 }
 
+export function hasActionWord(text: string): boolean {
+  return ACTION_RE.test(text);
+}
+
 function clarify(error: string): ParseResult {
   return { ok: false, error, clarify: true };
 }
