@@ -4080,6 +4080,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-mock-mpc"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-router"
 version = "0.1.0"
 dependencies = [
