@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { CreditPanel } from "@/components/credit-panel";
+import { LiquidBalances, type LiquidRow } from "@/components/liquid-balances";
 import { useArena, useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
 import { useAsync } from "@/hooks/use-async";
+import { useState } from "react";
 import { fallbackMeta, useTokenMetas } from "@/hooks/use-token-metas";
 import { formatUnits, formatUsdc, toBigInt } from "@/lib/amounts";
-import { previewWinnerPayout, priceBasis, vaultsInUsdc } from "@/lib/arena/payout";
+import { previewClaimForBattle, priceBasis } from "@/lib/arena/payout";
+import { liquidTokenIds, metaFor, readLiquidBalances, withdrawLiquidChecked } from "@/lib/arena/withdraw";
 import { isRefundable, STATUS_LABEL, STATUS_TONE } from "@/lib/arena/status";
 import type { BattleView, PositionView, TokenMeta } from "@/lib/arena/types";
 
@@ -24,12 +27,19 @@ function PositionRow({
   accountId,
   metaA,
   metaB,
+  balance,
+  busyToken,
+  onWithdraw,
   onDone,
 }: {
   row: Row;
   accountId: string;
   metaA: TokenMeta;
   metaB: TokenMeta;
+  /** Liquid balance of this position's coin. */
+  balance: bigint;
+  busyToken: string | null;
+  onWithdraw: (meta: TokenMeta) => void;
   onDone: () => void;
 }) {
   const api = useArena();
@@ -42,7 +52,12 @@ function PositionRow({
   const canRefund = isRefundable(battle.status) && !position.claimed;
 
   const basis = priceBasis(battle, null);
-  const preview = canClaim && basis ? previewWinnerPayout(position, vaultsInUsdc(battle, metaA, metaB, basis)) : null;
+  const plan = useAsync(
+    () => (canClaim ? api.getSettlementPlan(battle.id) : Promise.resolve(null)),
+    [api, battle.id, canClaim],
+  );
+  const preview = canClaim && basis ? previewClaimForBattle(battle, position, metaA, metaB, basis, plan.data) : null;
+  const coinId = position.side === "A" ? battle.token_a : battle.token_b;
 
   const act = (fn: () => Promise<void>) => void action.run(fn).then((ok) => ok && onDone());
 
@@ -61,12 +76,31 @@ function PositionRow({
 
       {preview && (
         <ul className="mt-2 text-lg text-mute">
-          <li>Principal back, liquid: {formatUsdc(preview.principal)}</li>
-          <li>Profit {formatUsdc(preview.profit)} splits 55 / 35 / 5 / 5:</li>
-          <li className="pl-4">liquid {formatUsdc(preview.liquid)}, locked credit {formatUsdc(preview.credit)}</li>
-          <li className="pl-4">burned {formatUsdc(preview.burn)}, fee {formatUsdc(preview.fee)}</li>
-          <li className="text-neon-green">Total liquid now: {formatUsdc(preview.totalLiquid)}</li>
+          <li className="text-neon-amber">Step 1, Claim: credits your liquid balance and grants locked credit.</li>
+          <li>
+            Principal back: {formatUnits(preview.principalCoin, meta.decimals, 4)} {meta.symbol}
+          </li>
+          <li>
+            Liquid reward (55% pool): {formatUnits(preview.rewardCoin, meta.decimals, 4)} {meta.symbol} (~
+            {formatUsdc(preview.rewardUsdc)})
+          </li>
+          <li className="text-neon-green">
+            Liquid after claim: {formatUnits(preview.totalCoin, meta.decimals, 4)} {meta.symbol}
+          </li>
+          <li>
+            New locked credit (35% pool): {formatUsdc(preview.credit)}. Burned {formatUsdc(preview.burn)}, fee{" "}
+            {formatUsdc(preview.fee)}.
+          </li>
+          <li className="text-neon-amber">Step 2, Withdraw: sends the coins to your wallet.</li>
+          {preview.estimated && <li>Estimated from final prices until the sale is reported.</li>}
         </ul>
+      )}
+
+      {canRefund && (
+        <p className="mt-2 text-lg text-mute">
+          Step 1, Refund: credits your full deposit of {formatUnits(toBigInt(position.coin_amount), meta.decimals, 4)}{" "}
+          {meta.symbol} to your liquid balance. Step 2, Withdraw: sends it to your wallet.
+        </p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -84,7 +118,16 @@ function PositionRow({
             {action.busy ? "Refunding..." : "Refund deposit"}
           </Button>
         )}
-        {position.claimed && <span className="text-neon-green">{isRefundable(battle.status) ? "Refunded" : "Claimed"}</span>}
+        {position.claimed && (
+          <span className="text-neon-green">
+            {isRefundable(battle.status) ? "Refunded to liquid balance" : "Claimed to liquid balance"}
+          </span>
+        )}
+        {position.claimed && balance > 0n && (
+          <Button variant="cyan" disabled={busyToken !== null} onClick={() => onWithdraw({ ...meta, id: coinId })}>
+            {busyToken === coinId ? "Withdrawing..." : `Withdraw ${formatUnits(balance, meta.decimals, 4)} ${meta.symbol}`}
+          </Button>
+        )}
         {lost && <span className="text-mute">Tribe lost. Nothing to claim.</span>}
         {!canClaim && !canRefund && !position.claimed && !lost && (
           <span className="text-mute">Waiting for the battle to finish.</span>
@@ -102,6 +145,7 @@ export default function PortfolioPage() {
   const { data, error, loading, reload } = useAsync(async () => {
     if (!accountId) return null;
     const account = await api.getAccount(accountId);
+    const usdc = (await api.getConfig()).usdc;
     const count = await api.getBattleCount();
     const battles: BattleView[] = [];
     for (let from = 0; from < count; from += 100) battles.push(...(await api.getBattles(from, 100)));
@@ -113,10 +157,30 @@ export default function PortfolioPage() {
         }),
       )
     ).filter((r): r is Row => r !== null);
-    return { account, rows: rows.sort((x, y) => y.battle.id - x.battle.id) };
+    const sorted = rows.sort((x, y) => y.battle.id - x.battle.id);
+    const tokenIds = liquidTokenIds(usdc, sorted.map((r) => r.battle));
+    const balances = await readLiquidBalances(api, accountId, tokenIds);
+    return { account, usdc, tokenIds, balances, rows: sorted };
   }, [api, accountId]);
 
   const metas = useTokenMetas((data?.rows ?? []).flatMap((r) => [r.battle.token_a, r.battle.token_b]));
+  const withdraw = useAction();
+  const [busyToken, setBusyToken] = useState<string | null>(null);
+
+  const onWithdraw = (meta: TokenMeta) => {
+    if (!accountId || !data) return;
+    const amount = data.balances[meta.id] ?? 0n;
+    if (amount <= 0n) return;
+    setBusyToken(meta.id);
+    void withdraw
+      .run(async () => {
+        await withdrawLiquidChecked(api, { signerId: accountId, token: meta.id, amount });
+      })
+      .finally(() => {
+        setBusyToken(null);
+        reload();
+      });
+  };
 
   if (walletLoading) return <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>;
   if (!accountId) {
@@ -140,11 +204,16 @@ export default function PortfolioPage() {
         <>
           <div className="grid gap-4 md:grid-cols-2">
             <CreditPanel account={data.account} />
-            <Card>
-              <CardTitle>Liquid balance</CardTitle>
-              <p className="text-4xl text-neon-green">{formatUsdc(toBigInt(data.account.liquid_balance))}</p>
-              <p className="mt-2 text-lg text-mute">Claimed winnings that can be withdrawn at any time.</p>
-            </Card>
+            <LiquidBalances
+              rows={data.tokenIds.map<LiquidRow>((id) => ({
+                meta: metaFor(id, data.usdc, metas, fallbackMeta),
+                balance: data.balances[id] ?? 0n,
+              }))}
+              usdcId={data.usdc}
+              busyToken={busyToken}
+              error={withdraw.error}
+              onWithdraw={(r) => onWithdraw(r.meta)}
+            />
           </div>
 
           <section className="space-y-4">
@@ -161,6 +230,9 @@ export default function PortfolioPage() {
                 accountId={accountId}
                 metaA={metas[row.battle.token_a] ?? fallbackMeta(row.battle.token_a)}
                 metaB={metas[row.battle.token_b] ?? fallbackMeta(row.battle.token_b)}
+                balance={data.balances[row.position.side === "A" ? row.battle.token_a : row.battle.token_b] ?? 0n}
+                busyToken={busyToken}
+                onWithdraw={onWithdraw}
                 onDone={reload}
               />
             ))}
