@@ -9,6 +9,7 @@ license = "MIT"
 
 [workspace.dependencies]
 near-sdk = "5"
+uint = { version = "0.10", default-features = false }
 
 [profile.release]
 codegen-units = 1

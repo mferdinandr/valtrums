@@ -1,5 +1,8 @@
 use near_sdk::{near, AccountId};
 
+pub mod math;
+pub mod types;
+
 /// Battle arena contract: battle lifecycle, vaults, positions and settlement.
 #[near(contract_state)]
 pub struct Arena {
