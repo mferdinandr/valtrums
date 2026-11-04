@@ -1,31 +1,29 @@
-import { DexHeuristicHoneypotSimulator, DexLiquiditySource, MarketAuditor } from "./auditor.js";
+import { MarketAuditor } from "./auditor.js";
 import { JsonFileBaselineStore } from "./baseline.js";
 import { loadConfig } from "./config.js";
 import { HealthState, attestationFromEnv, parseHealthPort, startHealthServer } from "./health.js";
-import { DexScreenerClient } from "./dexscreener.js";
 import { SignerViewAddressResolver } from "./evm-address.js";
 import { UniswapV3QuoterSource } from "./evm-quote.js";
 import { FetchEvmRpc } from "./evm-rpc.js";
 import { MockStepExecutor, type StepExecutor } from "./executor.js";
 import { ForeignChainStepExecutor } from "./foreign-executor.js";
+import { loadMarketConfig } from "./market-config.js";
+import { createMarketData } from "./market-wiring.js";
 import { OnChainStepExecutor } from "./onchain-executor.js";
 import { MockDexQuoteSource } from "./quote.js";
-import { createFetchHttpClient } from "./http.js";
 import { runLoop } from "./loop.js";
 import { createJsonLogger, errorMessage } from "./logger.js";
 import { NearArenaClient, createNearTransport } from "./near-client.js";
 import { checkExecutionMode, runOnce } from "./runtime.js";
 import { loadRuntimeConfig } from "./runtime-config.js";
-import { DexScreenerPriceSource, TwapFetcher } from "./twap.js";
+import { TwapFetcher } from "./twap.js";
 
 async function main(): Promise<void> {
   const log = createJsonLogger();
   const cfg = loadConfig();
   const rt = loadRuntimeConfig();
 
-  const dex = new DexScreenerClient({ http: createFetchHttpClient(), apiKey: cfg.dexscreenerApiKey });
-  const priceSource = new DexScreenerPriceSource(dex);
-  const liquidity = new DexLiquiditySource(dex);
+  const market = loadMarketConfig(process.env, rt.intervalSecs);
   const transport = createNearTransport(cfg);
   const client = new NearArenaClient(cfg.arenaContractId, transport);
   let executor: StepExecutor = new MockStepExecutor();
@@ -58,12 +56,21 @@ async function main(): Promise<void> {
       },
     );
   }
+  const { priceSource, sampler, liquidity, honeypot } = await createMarketData(
+    market,
+    client,
+    transport,
+    cfg.dexscreenerApiKey,
+  );
   const deps = {
     client,
-    auditor: new MarketAuditor(liquidity, new DexHeuristicHoneypotSimulator(dex)),
+    auditor: new MarketAuditor(liquidity, honeypot, market.minLiquidityUsd),
     baselines: new JsonFileBaselineStore(rt.baselinePath),
-    twap: new TwapFetcher(priceSource),
-    sampler: priceSource,
+    twap: new TwapFetcher(priceSource, {
+      windowMs: market.twapWindowSecs * 1000,
+      sampleIntervalMs: rt.intervalSecs * 1000,
+    }),
+    sampler,
     liquidity,
     executor,
     onChainExecutor:
@@ -105,6 +112,9 @@ async function main(): Promise<void> {
     agent: cfg.agentAccountId,
     intervalSecs: rt.intervalSecs,
     watchdogIntervalSecs: rt.watchdogIntervalSecs,
+    marketData: market.marketData,
+    twapWindowSecs: market.twapWindowSecs,
+    minLiquidityUsd: market.minLiquidityUsd,
     executionMode: rt.executionMode,
     slippageBps: rt.executionMode === "mock" ? undefined : rt.slippageBps,
     stepTimeoutSecs: rt.executionMode === "onchain" ? rt.stepTimeoutSecs : undefined,

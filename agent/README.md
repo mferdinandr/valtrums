@@ -23,6 +23,9 @@ Optional:
 | `EXECUTION_MODE` | `mock` | `mock`: the agent reports each step as realized = planned. `onchain`: the arena swaps on its execution DEX and the agent only dispatches steps. `foreign`: the agent executes the steps on an EVM chain through the MPC signer and reports the realized amounts (see below) |
 | `EXECUTION_SLIPPAGE_BPS` | `500` | onchain and foreign: tolerance below the quote used for `min_out`, integer 0 to 9999 |
 | `STEP_TIMEOUT_SECS` | `600` | onchain: a dispatched step older than this is logged as stuck |
+| `MARKET_DATA` | `dexscreener` | `dexscreener`: prices, liquidity and the honeypot heuristic come from DexScreener. `mockdex`: they come from the arena's execution DEX (see "Testnet demo") |
+| `TWAP_WINDOW_SECS` | `1800` | TWAP window for initial and final prices, integer 30 to 604800 and at least `2 * AGENT_INTERVAL_SECS` |
+| `MIN_LIQUIDITY_USD` | `10000` | an audited token needs more than this much liquidity, whole USD, integer 1 to 10^12 |
 | `HEALTH_PORT` | `8080` | port of the health server, `0` disables it |
 | `IMAGE_DIGEST` | `unknown` | image digest reported by `/attestation`, set by the deployer |
 | `AGENT_VERSION` | `unknown` | version reported by `/attestation` (the Docker image sets it from a build arg) |
@@ -93,3 +96,24 @@ Assumptions and limits of this mode:
 - Final prices use the 30 minutes before the pass that settles, so settle promptly after `end_time`.
 - The contract has no reset method for a dispatched step that never gets proceeds. The agent logs `STUCK STEP` (battle id, step index) once per timeout period and does not retry. The timer starts when the agent first sees the dispatch, so it restarts after an agent restart.
 - `min_out` protects against DEX rate changes only; quotes are read from the mock DEX, so a different DEX needs another `QuoteSource` implementation.
+
+## Testnet demo (`MARKET_DATA=mockdex`)
+
+Mock tokens are unknown to DexScreener, so on testnet the agent reads the mock DEX instead. The DEX account is `get_config().execution_dex` and USDC is `get_config().usdc`; the agent refuses to start if `execution_dex` is unset.
+
+- Price: USD per whole coin scaled by 1e18, from `get_rate { token, usdc }` and the token's `ft_metadata` decimals (read once), floored with exact integer math: `num * 10^(decimals + 12) / den`. USDC is $1 with 6 decimals.
+- Liquidity: `get_liquidity { token }` valued at that price in USD; USDC at face value. A token without a usable rate counts as zero liquidity. Because liquidity is valued, a price drop of more than 50% trips the watchdog just like a liquidity cut does.
+- Honeypot check: passes only if token to USDC and USDC to token both have a non-zero rate and the DEX holds some of the token.
+
+The DEX owner moves a price by setting a new rate, for example `set_rate { token_in: <coin>, token_out: <usdc>, num, den }` (`out = in * num / den`). The agent samples the rate every pass, so the new price shows up in the next samples and in the TWAP as a time-weighted blend. Cutting a token's `get_liquidity` by more than half makes the next watchdog check halt the battle; set `WATCHDOG_INTERVAL_SECS` low (for example `30`) in a demo.
+
+Coverage rule for the TWAP: a price is written only if the first sample lies at most `max(window * 0.2, AGENT_INTERVAL_SECS)` after the window start, so history has to span at least `window - max(0.2 * window, interval)`. With the default 1800 s window this is 24 minutes. With `TWAP_WINDOW_SECS=60` and the 30 s pass interval it is 30 seconds, so two samples are enough. Thinner history is refused and retried on the next pass; no price is made up.
+
+Minimum battle timeline with `TWAP_WINDOW_SECS=60`, `AGENT_INTERVAL_SECS=30` (times from the first pass that sees the battle):
+
+1. 0 s: audit and approve. Tokens are sampled from the next pass on.
+2. Deposits stay open until `deposit_deadline`, which the contract sets when the battle is proposed.
+3. The initial prices need 2 samples, so the lock happens about 60 s after approval at the earliest (and not before the deposit deadline).
+4. The battle ends `duration` after the lock. Final prices need the same 60 s of history, so settle after `end_time` with samples from the last minute; keep the agent running throughout.
+
+With the default window the same steps take roughly 25 minutes before a lock and 30 minutes of history before settlement.
