@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ForeignChainStepExecutor, MockStepExecutor } from "../src/executor.js";
 import { makeBattle } from "../src/fake-client.js";
 
-const step = { index: 1, kind: "Buy" as const, amount: "90", done: false, realized: null };
+const step = { index: 1, kind: "Buy" as const, amount: "90", done: false, dispatched: false, realized: null };
 
 describe("MockStepExecutor", () => {
   it("realizes the planned amount by default", async () => {

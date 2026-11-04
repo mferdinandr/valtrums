@@ -61,6 +61,8 @@ describe("loadRuntimeConfig", () => {
       watchdogIntervalSecs: 3600,
       baselinePath: "./.agent-state/baselines.json",
       executionMode: "mock",
+      slippageBps: 500,
+      stepTimeoutSecs: 600,
     });
   });
   it("reads overrides and rejects bad values", () => {
@@ -68,7 +70,7 @@ describe("loadRuntimeConfig", () => {
       loadRuntimeConfig({ AGENT_INTERVAL_SECS: "10", BASELINE_STORE_PATH: "/tmp/x.json" }),
     ).toMatchObject({ intervalSecs: 10, baselinePath: "/tmp/x.json" });
     expect(() => loadRuntimeConfig({ AGENT_INTERVAL_SECS: "0" })).toThrow();
-    expect(() => loadRuntimeConfig({ EXECUTION_MODE: "mpc" })).toThrow(/not available/);
+    expect(() => loadRuntimeConfig({ EXECUTION_MODE: "mpc" })).toThrow(/EXECUTION_MODE/);
   });
 });
 

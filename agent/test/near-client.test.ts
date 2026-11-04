@@ -30,6 +30,16 @@ describe("NearArenaClient", () => {
     });
   });
 
+  it("encodes execute_step with min_out as a string and extra gas", async () => {
+    const { transport, calls } = stubTransport();
+    await new NearArenaClient("arena.testnet", transport).executeStep(4, 2, 10n ** 24n);
+    expect(calls[0]).toMatchObject({
+      kind: "call",
+      method: "execute_step",
+      args: { battle_id: 4, step_index: 2, min_out: "1" + "0".repeat(24) },
+    });
+  });
+
   it("passes the void reason through", async () => {
     const { transport, calls } = stubTransport();
     await new NearArenaClient("arena.testnet", transport).voidBattle(1, "low liquidity");

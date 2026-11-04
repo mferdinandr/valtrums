@@ -90,9 +90,9 @@ describe("driveSettlement", () => {
   it("drives only the steps that are not done", async () => {
     const client = await settling();
     client.putPlan(1, [
-      { index: 0, kind: "Dump", amount: "100", done: true, realized: "100" },
-      { index: 1, kind: "Buy", amount: "90", done: false, realized: null },
-      { index: 2, kind: "Burn", amount: "4", done: false, realized: null },
+      { index: 0, kind: "Dump", amount: "100", done: true, dispatched: false, realized: "100" },
+      { index: 1, kind: "Buy", amount: "90", done: false, dispatched: false, realized: null },
+      { index: 2, kind: "Burn", amount: "4", done: false, dispatched: false, realized: null },
     ]);
     const executed: number[] = [];
     const ex: StepExecutor = {

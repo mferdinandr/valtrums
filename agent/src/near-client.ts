@@ -10,6 +10,8 @@ export interface NearTransport {
 }
 
 const AGENT_CALL_GAS = "100 Tgas";
+/** execute_step starts a cross-contract swap, so it gets a larger budget (unused gas is refunded). */
+const EXECUTE_STEP_GAS = "200 Tgas";
 
 export function createNearTransport(cfg: AgentConfig): NearTransport {
   const near = new Near({
@@ -41,8 +43,8 @@ export class NearArenaClient implements ArenaClient {
     return res as T;
   }
 
-  private async change(method: string, args: object): Promise<void> {
-    await this.transport.call(this.contractId, method, args, AGENT_CALL_GAS);
+  private async change(method: string, args: object, gas: string = AGENT_CALL_GAS): Promise<void> {
+    await this.transport.call(this.contractId, method, args, gas);
   }
 
   async getBattle(battleId: number): Promise<BattleView | null> {
@@ -99,6 +101,14 @@ export class NearArenaClient implements ArenaClient {
       step_index: stepIndex,
       realized_amount: realizedAmount.toString(),
     });
+  }
+
+  executeStep(battleId: number, stepIndex: number, minOut: bigint): Promise<void> {
+    return this.change(
+      "execute_step",
+      { battle_id: battleId, step_index: stepIndex, min_out: minOut.toString() },
+      EXECUTE_STEP_GAS,
+    );
   }
 
   emergencyHalt(battleId: number, reason: string): Promise<void> {
