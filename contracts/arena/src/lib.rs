@@ -73,6 +73,8 @@ enum TransferMsg {
         total_usdc: U128,
         min_token_out: U128,
     },
+    /// Adds the transferred USDC to the sender's internal balance.
+    FundBalance,
     /// Output of a settlement step, paid back by the execution DEX.
     StepProceeds { battle_id: u64, step_index: u32 },
     Deposit {
@@ -91,6 +93,15 @@ enum TransferMsg {
 struct ExecutionConfig {
     dex: AccountId,
     burn_account: AccountId,
+}
+
+/// A validated USDC deposit, ready to be forwarded to the router.
+struct PreparedDeposit {
+    router: AccountId,
+    msg: String,
+    from_credit: u128,
+    from_wallet: u128,
+    credit_expires_at_ns: u64,
 }
 
 /// Deposit details attached by the router after a swap.
@@ -743,6 +754,16 @@ impl Arena {
                 };
                 self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
+            Ok(TransferMsg::FundBalance) if token == self.usdc => {
+                if amount.0 > 0 {
+                    self.add_liquid(&sender_id, &token, amount.0);
+                    events::emit(
+                        "balance_funded",
+                        json!({ "account_id": sender_id, "amount": amount }),
+                    );
+                }
+                0
+            }
             Ok(TransferMsg::StepProceeds {
                 battle_id,
                 step_index,
@@ -750,6 +771,79 @@ impl Arena {
             _ => amount.0,
         };
         PromiseOrValue::Value(U128(unused))
+    }
+
+    /// Deposits USDC from the caller's internal balance (credit first). It needs no
+    /// attached deposit, so a scoped session key can call it; the arena attaches
+    /// its own yoctoNEAR to the router hop. The balance is funded with a
+    /// `fund_balance` transfer.
+    pub fn deposit_from_balance(
+        &mut self,
+        battle_id: u64,
+        side: Side,
+        total_usdc: U128,
+        min_token_out: U128,
+    ) -> Promise {
+        require!(!self.paused, "Deposits are paused");
+        let account_id = env::predecessor_account_id();
+        let usdc = self.usdc.clone();
+        let balance = self
+            .liquid
+            .get(&(account_id.clone(), usdc.clone()))
+            .copied()
+            .unwrap_or(0);
+        let prepared = self
+            .prepare_usdc_deposit(
+                &account_id,
+                balance,
+                battle_id,
+                side,
+                total_usdc.0,
+                min_token_out.0,
+            )
+            .unwrap_or_else(|| env::panic_str("Deposit refused"));
+        if prepared.from_wallet > 0 {
+            self.liquid
+                .insert((account_id.clone(), usdc), balance - prepared.from_wallet);
+        }
+        self.forward_to_router(&prepared, total_usdc.0).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(SWAP_CALLBACK_GAS)
+                .on_balance_deposit_done(
+                    account_id,
+                    U128(prepared.from_wallet),
+                    total_usdc,
+                    U128(prepared.from_credit),
+                    U64(prepared.credit_expires_at_ns),
+                ),
+        )
+    }
+
+    /// If the swap did not go through, gives the credit and the balance back.
+    #[private]
+    pub fn on_balance_deposit_done(
+        &mut self,
+        account_id: AccountId,
+        from_wallet: U128,
+        total_usdc: U128,
+        from_credit: U128,
+        credit_expires_at_ns: U64,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) {
+        if matches!(result, Ok(used) if used.0 == total_usdc.0) {
+            return;
+        }
+        self.restore_credit(&account_id, from_credit.0, credit_expires_at_ns.0);
+        let usdc = self.usdc.clone();
+        self.add_liquid(&account_id, &usdc, from_wallet.0);
+        events::emit(
+            "deposit_usdc_refunded",
+            json!({
+                "account_id": account_id,
+                "refunded": from_wallet,
+                "credit_restored": from_credit,
+            }),
+        );
     }
 
     /// Deposits entirely from locked credit (no wallet USDC needed). Requires 1 yoctoNEAR.
@@ -791,15 +885,7 @@ impl Arena {
             let from_wallet = total_usdc.0 - from_credit.0;
             return U128(amount_sent.0 - from_wallet);
         }
-        if from_credit.0 > 0 {
-            if let Some(account) = self.accounts.get_mut(&account_id) {
-                account.restore_credit(from_credit.0, credit_expires_at_ns.0);
-            } else {
-                let mut account = Account::default();
-                account.restore_credit(from_credit.0, credit_expires_at_ns.0);
-                self.accounts.insert(account_id.clone(), account);
-            }
-        }
+        self.restore_credit(&account_id, from_credit.0, credit_expires_at_ns.0);
         events::emit(
             "deposit_usdc_refunded",
             json!({
@@ -1054,6 +1140,17 @@ impl Arena {
         self.add_liquid(creator, &usdc, bond);
     }
 
+    /// Puts back credit that was spent on a deposit that did not complete. The
+    /// expiry never moves earlier.
+    fn restore_credit(&mut self, account_id: &AccountId, amount: u128, expires_at_ns: u64) {
+        if amount == 0 {
+            return;
+        }
+        let mut account = self.accounts.get(account_id).cloned().unwrap_or_default();
+        account.restore_credit(amount, expires_at_ns);
+        self.accounts.insert(account_id.clone(), account);
+    }
+
     /// Adds locked credit and restarts the 7-day timer for the whole balance.
     fn grant_credit(&mut self, account_id: &AccountId, amount: u128, now: u64) {
         let mut account = self.accounts.get(account_id).cloned().unwrap_or_default();
@@ -1066,18 +1163,18 @@ impl Arena {
         self.accounts.insert(account_id.clone(), account);
     }
 
-    /// Begins a USDC deposit: spends credit first, takes the wallet part from
-    /// `wallet_amount`, and forwards the total to the router. Returns `None`
-    /// (nothing changed) when the deposit is not allowed.
-    fn start_usdc_deposit(
+    /// Validates a USDC deposit and spends its credit part. `wallet_available` is
+    /// what the caller can cover on the wallet side. Returns `None` (nothing
+    /// changed) when the deposit is not allowed.
+    fn prepare_usdc_deposit(
         &mut self,
-        account_id: AccountId,
-        wallet_amount: u128,
+        account_id: &AccountId,
+        wallet_available: u128,
         battle_id: u64,
         side: Side,
         total_usdc: u128,
         min_token_out: u128,
-    ) -> Option<Promise> {
+    ) -> Option<PreparedDeposit> {
         let router = self.router.clone()?;
         let now = env::block_timestamp();
         let battle = self.battles.get(&battle_id)?;
@@ -1099,9 +1196,9 @@ impl Arena {
             return None;
         }
 
-        let mut account = self.accounts.get(&account_id).cloned().unwrap_or_default();
+        let mut account = self.accounts.get(account_id).cloned().unwrap_or_default();
         let plan = plan_funding(account.available_credit(now), total_usdc);
-        if wallet_amount < plan.from_wallet {
+        if wallet_available < plan.from_wallet {
             return None;
         }
         let credit_expires_at_ns = account.credit_expires_at_ns;
@@ -1122,23 +1219,60 @@ impl Arena {
             "from_credit": U128(plan.from_credit),
         })
         .to_string();
+        Some(PreparedDeposit {
+            router,
+            msg,
+            from_credit: plan.from_credit,
+            from_wallet: plan.from_wallet,
+            credit_expires_at_ns,
+        })
+    }
+
+    /// Sends the full USDC amount of a prepared deposit to the router.
+    fn forward_to_router(&self, prepared: &PreparedDeposit, total_usdc: u128) -> Promise {
+        ext_ft::ext(self.usdc.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(ROUTER_HOP_GAS)
+            .with_unused_gas_weight(1)
+            .ft_transfer_call(
+                prepared.router.clone(),
+                U128(total_usdc),
+                None,
+                prepared.msg.clone(),
+            )
+    }
+
+    /// Begins a USDC deposit paid by a token transfer: credit first, the wallet
+    /// part from `wallet_amount`, the total forwarded to the router.
+    fn start_usdc_deposit(
+        &mut self,
+        account_id: AccountId,
+        wallet_amount: u128,
+        battle_id: u64,
+        side: Side,
+        total_usdc: u128,
+        min_token_out: u128,
+    ) -> Option<Promise> {
+        let prepared = self.prepare_usdc_deposit(
+            &account_id,
+            wallet_amount,
+            battle_id,
+            side,
+            total_usdc,
+            min_token_out,
+        )?;
         Some(
-            ext_ft::ext(self.usdc.clone())
-                .with_attached_deposit(NearToken::from_yoctonear(1))
-                .with_static_gas(ROUTER_HOP_GAS)
-                .with_unused_gas_weight(1)
-                .ft_transfer_call(router, U128(total_usdc), None, msg)
-                .then(
-                    Self::ext(env::current_account_id())
-                        .with_static_gas(SWAP_CALLBACK_GAS)
-                        .on_swap_deposit_done(
-                            account_id,
-                            U128(wallet_amount),
-                            U128(total_usdc),
-                            U128(plan.from_credit),
-                            U64(credit_expires_at_ns),
-                        ),
-                ),
+            self.forward_to_router(&prepared, total_usdc).then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(SWAP_CALLBACK_GAS)
+                    .on_swap_deposit_done(
+                        account_id,
+                        U128(wallet_amount),
+                        U128(total_usdc),
+                        U128(prepared.from_credit),
+                        U64(prepared.credit_expires_at_ns),
+                    ),
+            ),
         )
     }
 
