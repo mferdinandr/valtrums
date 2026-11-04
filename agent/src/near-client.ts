@@ -1,5 +1,6 @@
 import { Near } from "near-kit";
 import type { ArenaClient } from "./client.js";
+import { withViewRetries } from "./rpc-resilience.js";
 import type { AgentConfig } from "./config.js";
 import type {
   BattleView,
@@ -49,11 +50,11 @@ export function createNearTransport(cfg: AgentConfig): NearTransport {
     privateKey: cfg.agentPrivateKey as `ed25519:${string}`,
     defaultSignerId: cfg.agentAccountId,
   });
-  return {
+  return withViewRetries({
     view: (contractId, method, args) => near.view(contractId, method, args),
     call: (contractId, method, args, gas) =>
       near.call(contractId, method, args, { gas: gas as never, signerId: cfg.agentAccountId }),
-  };
+  });
 }
 
 /** ArenaClient backed by a real NEAR RPC endpoint. u128 values are sent as strings. */
