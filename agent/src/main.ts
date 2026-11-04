@@ -1,6 +1,7 @@
 import { DexHeuristicHoneypotSimulator, DexLiquiditySource, MarketAuditor } from "./auditor.js";
 import { JsonFileBaselineStore } from "./baseline.js";
 import { loadConfig } from "./config.js";
+import { HealthState, attestationFromEnv, parseHealthPort, startHealthServer } from "./health.js";
 import { DexScreenerClient } from "./dexscreener.js";
 import { MockStepExecutor } from "./executor.js";
 import { OnChainStepExecutor } from "./onchain-executor.js";
@@ -43,11 +44,23 @@ async function main(): Promise<void> {
     log,
   };
 
+  const health = new HealthState(rt.intervalSecs * 1000);
+  const healthServer = await startHealthServer(
+    parseHealthPort(process.env),
+    health,
+    attestationFromEnv(process.env, {
+      agentAccountId: cfg.agentAccountId,
+      executionMode: rt.executionMode,
+      contractId: cfg.arenaContractId,
+    }),
+  );
+
   const stop = new AbortController();
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.once(sig, () => {
       log.info("shutdown requested", { signal: sig });
       stop.abort();
+      healthServer?.close();
     });
   }
 
@@ -74,6 +87,7 @@ async function main(): Promise<void> {
   await runLoop({
     pass: async (watchdog) => {
       const report = await runOnce({ ...deps, watchdog });
+      if (report.errors === 0) health.markPassSucceeded();
       log.info("pass complete", { ...report, watchdog });
     },
     intervalMs: rt.intervalSecs * 1000,
