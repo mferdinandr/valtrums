@@ -320,7 +320,7 @@ describe("runtime config", () => {
     ).toMatchObject({ executionMode: "onchain", slippageBps: 50, stepTimeoutSecs: 90 });
   });
   it("rejects bad values", () => {
-    expect(() => loadRuntimeConfig({ EXECUTION_MODE: "foreign" })).toThrow(/EXECUTION_MODE/);
+    expect(() => loadRuntimeConfig({ EXECUTION_MODE: "bogus" })).toThrow(/EXECUTION_MODE/);
     expect(() => loadRuntimeConfig({ EXECUTION_SLIPPAGE_BPS: "10000" })).toThrow(/SLIPPAGE/);
     expect(() => loadRuntimeConfig({ STEP_TIMEOUT_SECS: "0" })).toThrow(/STEP_TIMEOUT/);
   });

@@ -160,8 +160,9 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
 
 /**
  * Compare the configured execution mode with the arena: on-chain execution
- * needs `execution_dex` set, mock execution needs it unset (the contract
- * refuses `report_execution` otherwise). Returns an error text, or null if fine.
+ * needs `execution_dex` set, mock and foreign execution need it unset (the
+ * contract refuses `report_execution` otherwise), and foreign execution also
+ * needs the arena's foreign signing configuration. Returns an error text, or null if fine.
  */
 export async function checkExecutionMode(
   client: ArenaClient,
@@ -171,8 +172,11 @@ export async function checkExecutionMode(
   if (mode === "onchain" && !dex) {
     return "EXECUTION_MODE=onchain but the arena has no execution_dex";
   }
-  if (mode === "mock" && dex) {
-    return `EXECUTION_MODE=mock but the arena executes on-chain via ${dex}`;
+  if ((mode === "mock" || mode === "foreign") && dex) {
+    return `EXECUTION_MODE=${mode} but the arena executes on-chain via ${dex}`;
+  }
+  if (mode === "foreign" && !(await client.getForeignConfig())) {
+    return "EXECUTION_MODE=foreign but the arena has no foreign signing configuration (set_foreign)";
   }
   return null;
 }

@@ -52,3 +52,48 @@ export interface ConfigView {
   /** Receiver of burned winner coin; null when on-chain execution is off. */
   burn_account: string | null;
 }
+
+/** Chain-level settings for foreign-chain signing (`get_foreign_config`). Addresses are hex without 0x. */
+export interface ForeignConfigView {
+  mpc_contract: string;
+  chain_id: string;
+  router: string;
+  treasury: string;
+  burn: string;
+}
+
+export type SignStatus = "Pending" | "Signed" | "Failed";
+
+/** A signing request (`get_signature_request`); hex fields have no 0x prefix. */
+export interface SignRequestView {
+  battle_id: number;
+  step_index: number | null;
+  path: string;
+  status: SignStatus;
+  unsigned_tx: string;
+  payload_hash: string;
+  signed_tx: string | null;
+  tx_hash: string | null;
+  attempts: number;
+}
+
+/** Call to sign, with EVM addresses as hex strings and amounts as bigint. */
+export type ForeignCall =
+  | { kind: "approve"; token: string; spender: string; amount: bigint }
+  | { kind: "transfer"; token: string; to: string; amount: bigint }
+  | {
+      kind: "swap_exact_in";
+      token_in: string;
+      token_out: string;
+      fee: number;
+      recipient: string;
+      amount_in: bigint;
+      min_out: bigint;
+    };
+
+export interface ForeignTxParams {
+  nonce: bigint;
+  maxPriorityFeePerGas: bigint;
+  maxFeePerGas: bigint;
+  gasLimit: bigint;
+}
