@@ -1,4 +1,12 @@
-import type { BattleView, ConfigView, SettlementStep } from "./types.js";
+import type {
+  BattleView,
+  ConfigView,
+  ForeignCall,
+  ForeignConfigView,
+  ForeignTxParams,
+  SettlementStep,
+  SignRequestView,
+} from "./types.js";
 
 /**
  * Chain access used by the agent: contract views plus the agent-only change
@@ -20,6 +28,20 @@ export interface ArenaClient {
   /** On-chain execution: dispatch (or book, for Return/zero steps) one plan step. */
   executeStep(battleId: number, stepIndex: number, minOut: bigint): Promise<void>;
   emergencyHalt(battleId: number, reason: string): Promise<void>;
+
+  /** Foreign-chain signing (agent-reported execution against a foreign chain). */
+  getForeignConfig(): Promise<ForeignConfigView | null>;
+  getSignatureRequest(requestId: number): Promise<SignRequestView | null>;
+  getSignatureRequestCount(): Promise<number>;
+  /** Asks the contract to have the MPC signer sign a call; resolves to the new request id. */
+  requestSignature(
+    battleId: number,
+    call: ForeignCall,
+    params: ForeignTxParams,
+    stepIndex: number | null,
+  ): Promise<number>;
+  /** Asks the signer again for a request whose attempt failed. */
+  retrySignature(requestId: number): Promise<void>;
 }
 
 const PAGE_SIZE = 50;

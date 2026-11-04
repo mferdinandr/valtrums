@@ -1,5 +1,22 @@
 import type { ArenaClient } from "./client.js";
-import type { BattleStatus, BattleView, ConfigView, SettlementStep } from "./types.js";
+import {
+  encodeApprove,
+  encodeExactInputSingle,
+  encodeTransfer,
+  fromHex,
+  normalizeAddress,
+} from "./evm-abi.js";
+import { decodeTx, encodeTx, txHash } from "./evm-tx.js";
+import type {
+  BattleStatus,
+  BattleView,
+  ConfigView,
+  ForeignCall,
+  ForeignConfigView,
+  ForeignTxParams,
+  SettlementStep,
+  SignRequestView,
+} from "./types.js";
 
 export type RecordedCall =
   | { method: "approve_battle"; battleId: number }
@@ -8,7 +25,9 @@ export type RecordedCall =
   | { method: "settle_battle"; battleId: number; priceA: bigint; priceB: bigint }
   | { method: "report_execution"; battleId: number; stepIndex: number; realized: bigint }
   | { method: "execute_step"; battleId: number; stepIndex: number; minOut: bigint }
-  | { method: "emergency_halt"; battleId: number; reason: string };
+  | { method: "emergency_halt"; battleId: number; reason: string }
+  | { method: "request_signature"; battleId: number; stepIndex: number | null; call: ForeignCall }
+  | { method: "retry_signature"; requestId: number };
 
 /**
  * In-memory ArenaClient for tests. It enforces the same status preconditions as
@@ -35,6 +54,18 @@ export class FakeArenaClient implements ArenaClient {
   lazyPlan = false;
   private readonly tails = new Map<number, SettlementStep[]>();
   private readonly minOuts = new Map<string, bigint>();
+
+  /** Foreign signing config (`set_foreign`); null means not configured. */
+  foreign: ForeignConfigView | null = null;
+  /** Address the fake signer "controls" per path; the fake signature carries it in `r`. */
+  signerAddress: (path: string) => string = () => "0x" + "ab".repeat(20);
+  /** Sign requests as soon as they are made. When false, call `signPending` to answer them. */
+  autoSign = true;
+  /** The next signer answers fail (consumed one per attempt). */
+  failSignatures = 0;
+  readonly maxSignAttempts = 5;
+  private readonly signRequests = new Map<number, SignRequestView & { yParityFields: ForeignCall }>();
+  private signCount = 0;
 
   /** Turn on-chain execution on (or off with nulls). */
   setExecution(dex: string | null, burn: string | null): void {
@@ -220,6 +251,125 @@ export class FakeArenaClient implements ArenaClient {
     step.dispatched = false;
   }
 
+  async getForeignConfig(): Promise<ForeignConfigView | null> {
+    return this.foreign ? { ...this.foreign } : null;
+  }
+
+  async getSignatureRequest(requestId: number): Promise<SignRequestView | null> {
+    const r = this.signRequests.get(requestId);
+    if (!r) return null;
+    const { yParityFields: _call, ...view } = r;
+    return { ...view };
+  }
+
+  async getSignatureRequestCount(): Promise<number> {
+    return this.signCount;
+  }
+
+  /** Mirrors the contract's checks: destinations, step fit, status. */
+  async requestSignature(
+    battleId: number,
+    call: ForeignCall,
+    params: ForeignTxParams,
+    stepIndex: number | null,
+  ): Promise<number> {
+    const cfg = this.foreign;
+    if (!cfg) throw new Error("Cross-chain signing is not configured");
+    const battle = this.require(battleId, ["Approved", "Live", "Settling"]);
+    const same = (a: string, b: string) => normalizeAddress(a) === normalizeAddress(b);
+    if (stepIndex !== null) {
+      if (battle.status !== "Settling") throw new Error("Steps can only be signed while settling");
+      const step = this.plans.get(battleId)?.[stepIndex];
+      if (!step) throw new Error("Unknown step");
+      if (step.done) throw new Error("Step already reported");
+      const ok =
+        ((step.kind === "Dump" || step.kind === "Buy") && call.kind === "swap_exact_in") ||
+        (step.kind === "Burn" && call.kind === "swap_exact_in" && same(call.recipient, cfg.burn)) ||
+        (step.kind === "Return" && call.kind === "transfer" && same(call.to, cfg.treasury));
+      if (!ok) throw new Error("Call does not fit this step");
+    }
+    let to: string;
+    let data: string;
+    if (call.kind === "approve") {
+      if (!same(call.spender, cfg.router)) throw new Error("Approvals are only allowed for the router");
+      to = call.token;
+      data = encodeApprove(call.spender, call.amount);
+    } else if (call.kind === "transfer") {
+      if (!same(call.to, cfg.treasury) && !same(call.to, cfg.burn)) {
+        throw new Error("Transfers are only allowed to the treasury or burn address");
+      }
+      to = call.token;
+      data = encodeTransfer(call.to, call.amount);
+    } else {
+      to = cfg.router;
+      data = encodeExactInputSingle({
+        tokenIn: call.token_in,
+        tokenOut: call.token_out,
+        fee: call.fee,
+        recipient: call.recipient,
+        amountIn: call.amount_in,
+        minOut: call.min_out,
+      });
+    }
+    const unsigned = encodeTx({
+      chainId: BigInt(cfg.chain_id),
+      nonce: params.nonce,
+      maxPriorityFeePerGas: params.maxPriorityFeePerGas,
+      maxFeePerGas: params.maxFeePerGas,
+      gasLimit: params.gasLimit,
+      to,
+      value: 0n,
+      data,
+    });
+    const id = ++this.signCount;
+    this.signRequests.set(id, {
+      battle_id: battleId,
+      step_index: stepIndex,
+      path: `valtrum-battle-${battleId}`,
+      status: "Pending",
+      unsigned_tx: unsigned,
+      payload_hash: "00".repeat(32),
+      signed_tx: null,
+      tx_hash: null,
+      attempts: 0,
+      yParityFields: call,
+    });
+    this.calls.push({ method: "request_signature", battleId, stepIndex, call });
+    if (this.autoSign) this.answer(id);
+    return id;
+  }
+
+  async retrySignature(requestId: number): Promise<void> {
+    const r = this.signRequests.get(requestId);
+    if (!r) throw new Error("Request not found");
+    if (r.status !== "Failed") throw new Error("Only a failed request can be retried");
+    if (r.attempts >= this.maxSignAttempts) throw new Error("Too many failed attempts");
+    r.status = "Pending";
+    this.calls.push({ method: "retry_signature", requestId });
+    if (this.autoSign) this.answer(requestId);
+  }
+
+  /** Answer every pending request (the signer's asynchronous reply). */
+  signPending(): void {
+    for (const [id, r] of this.signRequests) if (r.status === "Pending") this.answer(id);
+  }
+
+  private answer(id: number): void {
+    const r = this.signRequests.get(id)!;
+    if (this.failSignatures > 0) {
+      this.failSignatures--;
+      r.attempts++;
+      r.status = "Failed";
+      return;
+    }
+    const sender = normalizeAddress(this.signerAddress(r.path)).slice(2);
+    const body = r.unsigned_tx;
+    const signed = signFake(body, sender);
+    r.signed_tx = signed;
+    r.tx_hash = txHash(signed).slice(2);
+    r.status = "Signed";
+  }
+
   async emergencyHalt(battleId: number, reason: string): Promise<void> {
     const b = this.require(battleId, ["Approved", "Live"]);
     b.status = "EmergencyHalted";
@@ -248,4 +398,14 @@ export function makeBattle(overrides: Partial<BattleView> & { id: number }): Bat
     winner: null,
     ...overrides,
   };
+}
+
+/** Attach a fake signature whose `r` is the 32-byte left-padded sender address. */
+function signFake(unsignedHex: string, senderHex: string): string {
+  const tx = decodeTx(unsignedHex);
+  return encodeTx(tx, {
+    yParity: 0,
+    r: fromHex(senderHex.padStart(64, "0")),
+    s: fromHex("11".repeat(32)),
+  });
 }

@@ -1,7 +1,15 @@
 import { Near } from "near-kit";
 import type { ArenaClient } from "./client.js";
 import type { AgentConfig } from "./config.js";
-import type { BattleView, ConfigView, SettlementStep } from "./types.js";
+import type {
+  BattleView,
+  ConfigView,
+  ForeignCall,
+  ForeignConfigView,
+  ForeignTxParams,
+  SettlementStep,
+  SignRequestView,
+} from "./types.js";
 
 /** Minimal surface of near-kit that the client needs; lets tests stub the transport. */
 export interface NearTransport {
@@ -12,6 +20,27 @@ export interface NearTransport {
 const AGENT_CALL_GAS = "100 Tgas";
 /** execute_step starts a cross-contract swap, so it gets a larger budget (unused gas is refunded). */
 const EXECUTE_STEP_GAS = "200 Tgas";
+/** request_signature / retry_signature call the MPC signer (about 280 Tgas needed). */
+const SIGN_GAS = "300 Tgas";
+
+function wireCall(call: ForeignCall): object {
+  switch (call.kind) {
+    case "approve":
+      return { kind: "approve", token: call.token, spender: call.spender, amount: call.amount.toString() };
+    case "transfer":
+      return { kind: "transfer", token: call.token, to: call.to, amount: call.amount.toString() };
+    case "swap_exact_in":
+      return {
+        kind: "swap_exact_in",
+        token_in: call.token_in,
+        token_out: call.token_out,
+        fee: call.fee,
+        recipient: call.recipient,
+        amount_in: call.amount_in.toString(),
+        min_out: call.min_out.toString(),
+      };
+  }
+}
 
 export function createNearTransport(cfg: AgentConfig): NearTransport {
   const near = new Near({
@@ -113,5 +142,58 @@ export class NearArenaClient implements ArenaClient {
 
   emergencyHalt(battleId: number, reason: string): Promise<void> {
     return this.change("emergency_halt", { battle_id: battleId, reason });
+  }
+
+  async getForeignConfig(): Promise<ForeignConfigView | null> {
+    return (await this.view<ForeignConfigView | null>("get_foreign_config")) ?? null;
+  }
+
+  async getSignatureRequest(requestId: number): Promise<SignRequestView | null> {
+    return (
+      (await this.view<SignRequestView | null>("get_signature_request", { request_id: requestId })) ?? null
+    );
+  }
+
+  async getSignatureRequestCount(): Promise<number> {
+    return Number(await this.view<number | string>("get_signature_request_count"));
+  }
+
+  /**
+   * The transport does not expose transaction logs, so the new request id is the
+   * count right after the call, checked against the request's battle and step. If
+   * another request slipped in between, this throws and the executor finds the
+   * request by scanning on its next pass.
+   */
+  async requestSignature(
+    battleId: number,
+    call: ForeignCall,
+    params: ForeignTxParams,
+    stepIndex: number | null,
+  ): Promise<number> {
+    await this.change(
+      "request_signature",
+      {
+        battle_id: battleId,
+        call: wireCall(call),
+        params: {
+          nonce: params.nonce.toString(),
+          max_priority_fee_per_gas: params.maxPriorityFeePerGas.toString(),
+          max_fee_per_gas: params.maxFeePerGas.toString(),
+          gas_limit: params.gasLimit.toString(),
+        },
+        step_index: stepIndex,
+      },
+      SIGN_GAS,
+    );
+    const id = await this.getSignatureRequestCount();
+    const request = await this.getSignatureRequest(id);
+    if (!request || request.battle_id !== battleId || request.step_index !== stepIndex) {
+      throw new Error("could not identify the new signature request");
+    }
+    return id;
+  }
+
+  async retrySignature(requestId: number): Promise<void> {
+    await this.change("retry_signature", { request_id: requestId }, SIGN_GAS);
   }
 }

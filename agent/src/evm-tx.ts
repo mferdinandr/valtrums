@@ -115,3 +115,39 @@ export function decodeTx(hex: string): DecodedTx {
 export function txHash(signedHex: string): string {
   return toHex(keccak(fromHex(signedHex)));
 }
+
+const uintBytes = (n: bigint): Uint8Array => {
+  if (n === 0n) return new Uint8Array(0);
+  const hex = n.toString(16);
+  return fromHex(hex.length % 2 ? `0${hex}` : hex);
+};
+
+export interface TxFields {
+  chainId: bigint;
+  nonce: bigint;
+  maxPriorityFeePerGas: bigint;
+  maxFeePerGas: bigint;
+  gasLimit: bigint;
+  to: string;
+  value: bigint;
+  data: string;
+}
+
+/** EIP-1559 encoding `0x02 || rlp(fields [, yParity, r, s])`, hex without 0x. Used by fakes and tests. */
+export function encodeTx(f: TxFields, signature?: { yParity: number; r: Uint8Array; s: Uint8Array }): string {
+  const items: Rlp[] = [
+    uintBytes(f.chainId),
+    uintBytes(f.nonce),
+    uintBytes(f.maxPriorityFeePerGas),
+    uintBytes(f.maxFeePerGas),
+    uintBytes(f.gasLimit),
+    fromHex(f.to),
+    uintBytes(f.value),
+    fromHex(f.data),
+    [],
+  ];
+  if (signature) {
+    items.push(uintBytes(BigInt(signature.yParity)), signature.r, signature.s);
+  }
+  return toHex(Uint8Array.from([0x02, ...rlpEncode(items)])).slice(2);
+}
