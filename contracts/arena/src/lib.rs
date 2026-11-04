@@ -6,13 +6,15 @@ use near_sdk::{
     Promise, PromiseError, PromiseOrValue,
 };
 
+pub mod credit;
 pub mod events;
 pub mod math;
 pub mod types;
 pub mod views;
 
-use types::{Battle, BattleStatus, NS_PER_SECOND};
-use views::{BattleView, ConfigView};
+use credit::plan_funding;
+use types::{Account, Battle, BattleStatus, Side, UserPosition, NS_PER_SECOND};
+use views::{AccountView, BattleView, ConfigView, FundingPreview, PositionView};
 
 /// Longest battle a proposer can request.
 const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
@@ -27,6 +29,8 @@ const MAX_PAGE_SIZE: u64 = 100;
 enum StorageKey {
     Agents,
     Battles,
+    Accounts,
+    Positions,
 }
 
 #[ext_contract(ext_ft)]
@@ -42,6 +46,10 @@ enum TransferMsg {
         token_a: AccountId,
         token_b: AccountId,
         duration_secs: u64,
+    },
+    Deposit {
+        battle_id: u64,
+        side: Side,
     },
 }
 
@@ -62,6 +70,9 @@ pub struct Arena {
     treasury_accrued: u128,
     battles: LookupMap<u64, Battle>,
     battle_count: u64,
+    accounts: LookupMap<AccountId, Account>,
+    /// One position per (battle, account).
+    positions: LookupMap<(u64, AccountId), UserPosition>,
 }
 
 #[near]
@@ -86,6 +97,8 @@ impl Arena {
             treasury_accrued: 0,
             battles: LookupMap::new(StorageKey::Battles),
             battle_count: 0,
+            accounts: LookupMap::new(StorageKey::Accounts),
+            positions: LookupMap::new(StorageKey::Positions),
         }
     }
 
@@ -233,8 +246,9 @@ impl Arena {
 
     // ─── Token receiver ─────────────────────────────────────────────────
 
-    /// NEP-141 receiver. USDC with a `propose` message creates a battle and
-    /// keeps the bond; anything unexpected is returned in full.
+    /// NEP-141 receiver. USDC with a `propose` message creates a battle and keeps
+    /// the bond; a side's own coin with a `deposit` message joins that side.
+    /// Anything unexpected is returned in full.
     pub fn ft_on_transfer(
         &mut self,
         sender_id: AccountId,
@@ -242,7 +256,7 @@ impl Arena {
         msg: String,
     ) -> PromiseOrValue<U128> {
         let token = env::predecessor_account_id();
-        if self.paused || token != self.usdc {
+        if self.paused {
             return PromiseOrValue::Value(amount);
         }
         let unused = match serde_json::from_str::<TransferMsg>(&msg) {
@@ -250,8 +264,13 @@ impl Arena {
                 token_a,
                 token_b,
                 duration_secs,
-            }) => self.handle_propose(sender_id, amount.0, token_a, token_b, duration_secs),
-            Err(_) => amount.0,
+            }) if token == self.usdc => {
+                self.handle_propose(sender_id, amount.0, token_a, token_b, duration_secs)
+            }
+            Ok(TransferMsg::Deposit { battle_id, side }) => {
+                self.handle_deposit(sender_id, token, amount.0, battle_id, side)
+            }
+            _ => amount.0,
         };
         PromiseOrValue::Value(U128(unused))
     }
@@ -262,6 +281,39 @@ impl Arena {
         self.battles
             .get(&battle_id)
             .map(|battle| BattleView::new(battle_id, battle))
+    }
+
+    pub fn get_position(&self, battle_id: u64, account_id: AccountId) -> Option<PositionView> {
+        self.positions
+            .get(&(battle_id, account_id))
+            .map(PositionView::new)
+    }
+
+    pub fn get_account(&self, account_id: AccountId) -> AccountView {
+        let now = env::block_timestamp();
+        let account = self.accounts.get(&account_id).cloned().unwrap_or_default();
+        let credit = account.available_credit(now);
+        AccountView {
+            liquid_balance: U128(account.liquid_balance),
+            credit_balance: U128(credit),
+            credit_expires_at_ns: U64(if credit > 0 {
+                account.credit_expires_at_ns
+            } else {
+                0
+            }),
+        }
+    }
+
+    /// Shows how a USDC deposit of `total_usdc` would split between credit and wallet.
+    pub fn preview_funding(&self, account_id: AccountId, total_usdc: U128) -> FundingPreview {
+        let credit = self.accounts.get(&account_id).map_or(0, |account| {
+            account.available_credit(env::block_timestamp())
+        });
+        let plan = plan_funding(credit, total_usdc.0);
+        FundingPreview {
+            from_credit: U128(plan.from_credit),
+            from_wallet: U128(plan.from_wallet),
+        }
     }
 
     pub fn get_battle_count(&self) -> u64 {
@@ -292,6 +344,82 @@ impl Arena {
 }
 
 impl Arena {
+    /// Direct deposit of a side's own coin. Returns the amount not accepted.
+    fn handle_deposit(
+        &mut self,
+        account_id: AccountId,
+        token: AccountId,
+        amount: u128,
+        battle_id: u64,
+        side: Side,
+    ) -> u128 {
+        let now = env::block_timestamp();
+        let Some(battle) = self.battles.get(&battle_id) else {
+            return amount;
+        };
+        let side_token = match side {
+            Side::A => &battle.token_a,
+            Side::B => &battle.token_b,
+        };
+        let open = battle.status == BattleStatus::Approved && now < battle.deposit_deadline_ns;
+        if amount == 0 || !open || &token != side_token {
+            return amount;
+        }
+        let key = (battle_id, account_id.clone());
+        if self
+            .positions
+            .get(&key)
+            .is_some_and(|position| position.side != side)
+        {
+            return amount;
+        }
+
+        let battle = self
+            .battles
+            .get_mut(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Battle not found"));
+        let vault = match side {
+            Side::A => &mut battle.vault_a,
+            Side::B => &mut battle.vault_b,
+        };
+        *vault = vault
+            .checked_add(amount)
+            .unwrap_or_else(|| env::panic_str("Vault overflow"));
+
+        let total = if let Some(position) = self.positions.get_mut(&key) {
+            position.coin_amount = position
+                .coin_amount
+                .checked_add(amount)
+                .unwrap_or_else(|| env::panic_str("Position overflow"));
+            position.coin_amount
+        } else {
+            self.positions.insert(
+                key,
+                UserPosition {
+                    side,
+                    coin_amount: amount,
+                    usdc_equiv: 0,
+                    from_credit: 0,
+                    claimed: false,
+                },
+            );
+            amount
+        };
+        events::emit(
+            "deposit",
+            json!({
+                "battle_id": battle_id,
+                "account_id": account_id,
+                "side": side,
+                "coin_amount": U128(amount),
+                "position_total": U128(total),
+                "usdc_equiv": U128(0),
+                "from_credit": U128(0),
+            }),
+        );
+        0
+    }
+
     fn accrue_treasury(&mut self, amount: u128) {
         self.treasury_accrued = self
             .treasury_accrued
@@ -942,6 +1070,257 @@ mod tests {
             assert_eq!(battle.start_time_ns, U64(0));
             assert_eq!(arena.get_config().treasury_accrued, U128(5_000_000));
         }
+    }
+
+    fn grant_test_credit(arena: &mut Arena, name: &str, amount: u128, expires_at_ns: u64) {
+        arena.accounts.insert(
+            acc(name),
+            Account {
+                credit_balance: amount,
+                credit_expires_at_ns: expires_at_ns,
+                ..Account::default()
+            },
+        );
+    }
+
+    #[test]
+    fn unknown_account_has_empty_balances() {
+        let arena = new_arena();
+        let view = arena.get_account(acc("nobody"));
+        assert_eq!(view.liquid_balance, U128(0));
+        assert_eq!(view.credit_balance, U128(0));
+        assert_eq!(view.credit_expires_at_ns, U64(0));
+    }
+
+    #[test]
+    fn account_view_shows_only_valid_credit() {
+        let mut arena = new_arena();
+        let expiry = 7 * 24 * 3_600 * NS_PER_SECOND;
+        grant_test_credit(&mut arena, "alice", 35, expiry);
+
+        set_context("owner", expiry - 1);
+        let view = arena.get_account(acc("alice"));
+        assert_eq!(view.credit_balance, U128(35));
+        assert_eq!(view.credit_expires_at_ns, U64(expiry));
+
+        set_context("owner", expiry);
+        let view = arena.get_account(acc("alice"));
+        assert_eq!(view.credit_balance, U128(0));
+        assert_eq!(view.credit_expires_at_ns, U64(0));
+    }
+
+    #[test]
+    fn preview_splits_the_prd_example() {
+        let mut arena = new_arena();
+        grant_test_credit(&mut arena, "alice", 35, 1_000);
+        set_context("owner", 10);
+        let preview = arena.preview_funding(acc("alice"), U128(50));
+        assert_eq!(preview.from_credit, U128(35));
+        assert_eq!(preview.from_wallet, U128(15));
+    }
+
+    #[test]
+    fn preview_ignores_expired_credit() {
+        let mut arena = new_arena();
+        grant_test_credit(&mut arena, "alice", 35, 1_000);
+        set_context("owner", 1_000);
+        let preview = arena.preview_funding(acc("alice"), U128(50));
+        assert_eq!(preview.from_credit, U128(0));
+        assert_eq!(preview.from_wallet, U128(50));
+    }
+
+    #[test]
+    fn preview_for_account_without_credit_is_all_wallet() {
+        let arena = new_arena();
+        let preview = arena.preview_funding(acc("bob"), U128(50));
+        assert_eq!(preview.from_credit, U128(0));
+        assert_eq!(preview.from_wallet, U128(50));
+    }
+
+    #[test]
+    fn missing_position_is_none() {
+        let arena = new_arena();
+        assert!(arena.get_position(1, acc("alice")).is_none());
+    }
+
+    fn deposit_msg(battle_id: u64, side: Side) -> String {
+        json!({ "action": "deposit", "battle_id": battle_id, "side": side }).to_string()
+    }
+
+    /// Sends `amount` of `token` to the arena as a deposit message. Returns the unused amount.
+    fn deposit_coin(
+        arena: &mut Arena,
+        sender: &str,
+        token: &str,
+        amount: u128,
+        side: Side,
+        timestamp_ns: u64,
+    ) -> u128 {
+        set_context(token, timestamp_ns);
+        returned(arena.ft_on_transfer(acc(sender), U128(amount), deposit_msg(1, side)))
+    }
+
+    #[test]
+    fn deposit_joins_a_side_and_fills_its_vault() {
+        let mut arena = approved_arena();
+        let unused = deposit_coin(&mut arena, "bob", "pepe", 400, Side::A, 10);
+        assert_eq!(unused, 0);
+
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.vault_a, U128(400));
+        assert_eq!(battle.vault_b, U128(0));
+        let position = arena.get_position(1, acc("bob")).unwrap();
+        assert_eq!(position.side, Side::A);
+        assert_eq!(position.coin_amount, U128(400));
+        assert!(!position.claimed);
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs.iter().any(|l| l.contains("\"event\":\"deposit\"")));
+    }
+
+    #[test]
+    fn deposit_on_side_b_uses_token_b() {
+        let mut arena = approved_arena();
+        assert_eq!(
+            deposit_coin(&mut arena, "carol", "shib", 250, Side::B, 10),
+            0
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_b, U128(250));
+    }
+
+    #[test]
+    fn topping_up_adds_to_the_same_position() {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 400, Side::A, 10);
+        deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 20);
+        assert_eq!(
+            arena.get_position(1, acc("bob")).unwrap().coin_amount,
+            U128(500)
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(500));
+    }
+
+    #[test]
+    fn opposite_side_is_returned_in_full() {
+        let mut arena = approved_arena();
+        deposit_coin(&mut arena, "bob", "pepe", 400, Side::A, 10);
+        let unused = deposit_coin(&mut arena, "bob", "shib", 300, Side::B, 20);
+        assert_eq!(unused, 300);
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.vault_a, U128(400));
+        assert_eq!(battle.vault_b, U128(0));
+        assert_eq!(arena.get_position(1, acc("bob")).unwrap().side, Side::A);
+    }
+
+    #[test]
+    fn wrong_coin_for_the_side_is_returned() {
+        let mut arena = approved_arena();
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "shib", 300, Side::A, 10),
+            300
+        );
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "usdc", 300, Side::A, 10),
+            300
+        );
+        assert!(arena.get_position(1, acc("bob")).is_none());
+    }
+
+    #[test]
+    fn deposit_window_is_exclusive_of_the_deadline() {
+        let mut arena = approved_arena();
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, WINDOW_NS - 1),
+            0
+        );
+        assert_eq!(
+            deposit_coin(&mut arena, "carol", "pepe", 100, Side::A, WINDOW_NS),
+            100
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(100));
+    }
+
+    #[test]
+    fn deposits_are_rejected_unless_the_battle_is_approved() {
+        let mut arena = arena_with_proposal();
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 1),
+            100
+        );
+
+        let mut arena = approved_arena();
+        fund(&mut arena, 1, 100, 100);
+        set_context("agent", WINDOW_NS);
+        arena.set_initial_prices(1, U128(1), U128(1));
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, WINDOW_NS + 1),
+            100
+        );
+
+        let mut arena = approved_arena();
+        set_context("pepe", 1);
+        let result = arena.ft_on_transfer(acc("bob"), U128(5), deposit_msg(99, Side::A));
+        assert_eq!(returned(result), 5);
+    }
+
+    #[test]
+    fn zero_amount_deposit_is_returned() {
+        let mut arena = approved_arena();
+        assert_eq!(deposit_coin(&mut arena, "bob", "pepe", 0, Side::A, 10), 0);
+        assert!(arena.get_position(1, acc("bob")).is_none());
+    }
+
+    #[test]
+    fn paused_contract_returns_deposits() {
+        let mut arena = approved_arena();
+        set_context("owner", 0);
+        arena.set_paused(true);
+        assert_eq!(
+            deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 10),
+            100
+        );
+        assert_eq!(arena.get_battle(1).unwrap().vault_a, U128(0));
+    }
+
+    #[test]
+    fn direct_deposits_do_not_touch_credit() {
+        let mut arena = approved_arena();
+        grant_test_credit(&mut arena, "bob", 35, WINDOW_NS * 100);
+        deposit_coin(&mut arena, "bob", "pepe", 100, Side::A, 10);
+        set_context("owner", 10);
+        assert_eq!(arena.get_account(acc("bob")).credit_balance, U128(35));
+        assert_eq!(
+            arena.get_position(1, acc("bob")).unwrap().from_credit,
+            U128(0)
+        );
+    }
+
+    #[test]
+    fn vaults_always_equal_the_sum_of_positions() {
+        let mut arena = approved_arena();
+        let deposits = [
+            ("a1", "pepe", Side::A, 100u128),
+            ("a2", "pepe", Side::A, 250),
+            ("b1", "shib", Side::B, 75),
+            ("a1", "pepe", Side::A, 50),
+            ("b2", "shib", Side::B, 1_000),
+            ("a2", "shib", Side::B, 9), // rejected: opposite side
+        ];
+        for (who, token, side, amount) in deposits {
+            deposit_coin(&mut arena, who, token, amount, side, 10);
+        }
+        let sum = |side: Side| -> u128 {
+            ["a1", "a2", "b1", "b2"]
+                .iter()
+                .filter_map(|who| arena.get_position(1, acc(who)))
+                .filter(|p| p.side == side)
+                .map(|p| p.coin_amount.0)
+                .sum()
+        };
+        let battle = arena.get_battle(1).unwrap();
+        assert_eq!(battle.vault_a.0, sum(Side::A));
+        assert_eq!(battle.vault_b.0, sum(Side::B));
+        assert_eq!(battle.vault_a, U128(400));
+        assert_eq!(battle.vault_b, U128(1_075));
     }
 
     #[test]
