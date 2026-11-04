@@ -11,7 +11,7 @@ pnpm -F @valtrum/agent build
 pnpm -F @valtrum/agent start
 ```
 
-Required: `ARENA_CONTRACT_ID`, `AGENT_ACCOUNT_ID`, `AGENT_PRIVATE_KEY` (see the root `.env.example`). The key is never logged.
+Required: `ARENA_CONTRACT_ID`, `AGENT_ACCOUNT_ID`, and exactly one of `AGENT_PRIVATE_KEY` or `AGENT_PRIVATE_KEY_FILE` (see the root `.env.example`). The file variant reads a mounted secret and trims whitespace; setting both or neither is an error. The key is never logged or returned by any endpoint.
 
 Optional:
 
@@ -23,6 +23,19 @@ Optional:
 | `EXECUTION_MODE` | `mock` | `mock`: the agent reports each step as realized = planned. `onchain`: the arena swaps on its execution DEX and the agent only dispatches steps |
 | `EXECUTION_SLIPPAGE_BPS` | `500` | onchain: tolerance below the DEX quote used for `min_out`, integer 0 to 9999 |
 | `STEP_TIMEOUT_SECS` | `600` | onchain: a dispatched step older than this is logged as stuck |
+| `HEALTH_PORT` | `8080` | port of the health server, `0` disables it |
+| `IMAGE_DIGEST` | `unknown` | image digest reported by `/attestation`, set by the deployer |
+| `AGENT_VERSION` | `unknown` | version reported by `/attestation` (the Docker image sets it from a build arg) |
+
+## Health endpoints
+
+- `GET /healthz`: liveness, `200` while the process answers.
+- `GET /readyz`: `200` once a pass finished without errors, and while the last such pass is at most 3 intervals old; otherwise `503`. A pass that logged any per-battle error (or an execution mode mismatch) does not count.
+- `GET /attestation`: `{ image_digest, version, agent_account_id, execution_mode, contract_id }`. Public, non-secret values only.
+
+## Container
+
+`agent/Dockerfile` builds a non-root image whose only writable path is `/var/lib/valtrum-agent` (the default `BASELINE_STORE_PATH`). See `deploy/README.md` for build, run and TEE notes.
 
 ## Execution modes
 
