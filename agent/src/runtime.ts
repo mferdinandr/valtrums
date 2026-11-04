@@ -2,6 +2,8 @@ import { type LiquiditySource, type MarketAuditor, auditAndAct } from "./auditor
 import type { BaselineStore } from "./baseline.js";
 import { type ArenaClient, fetchAllBattles } from "./client.js";
 import type { StepExecutor } from "./executor.js";
+import type { OnChainStepExecutor } from "./onchain-executor.js";
+import type { ExecutionMode } from "./runtime-config.js";
 import { type Logger, errorMessage, silentLogger } from "./logger.js";
 import { planWork } from "./planner.js";
 import { driveSettlement, settleEnded } from "./settlement.js";
@@ -21,6 +23,13 @@ export interface RuntimeDeps {
   sampler: PriceSampler;
   liquidity: LiquiditySource;
   executor: StepExecutor;
+  /** Selected with EXECUTION_MODE=onchain; replaces `executor` for settlement steps. */
+  onChainExecutor?: OnChainStepExecutor;
+  /**
+   * Configured execution mode. When set, each pass checks it against the arena's
+   * `execution_dex` and skips settlement work on a mismatch.
+   */
+  executionMode?: ExecutionMode;
   log?: Logger;
   /** Wall clock in ms; injectable for tests. */
   nowMs?: () => number;
@@ -33,6 +42,7 @@ export interface PassReport {
   locked: number;
   settled: number;
   stepsReported: number;
+  stepsDispatched: number;
   watched: number;
   halted: number;
   errors: number;
@@ -53,6 +63,7 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
     locked: 0,
     settled: 0,
     stepsReported: 0,
+    stepsDispatched: 0,
     watched: 0,
     halted: 0,
     errors: 0,
@@ -65,6 +76,12 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
       log.error(`${what} failed`, { ...fields, error: errorMessage(err) });
     }
   };
+
+  const mismatch = deps.executionMode ? await checkExecutionMode(deps.client, deps.executionMode) : null;
+  if (mismatch) {
+    report.errors++;
+    log.error(`${mismatch}; settlement is paused, other work continues`);
+  }
 
   const before = await fetchAllBattles(deps.client);
 
@@ -100,6 +117,7 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
         });
         break;
       case "settle":
+        if (mismatch) break;
         await guard("settle", fields, async () => {
           if ((await settleEnded(deps.client, deps.twap, item.battleId, nowNs, log)) === "settled") {
             report.settled++;
@@ -113,8 +131,14 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
   const after = await fetchAllBattles(deps.client);
 
   for (const b of after) {
-    if (b.status !== "Settling") continue;
+    if (b.status !== "Settling" || mismatch) continue;
     await guard("settlement steps", { battleId: b.id }, async () => {
+      if (deps.onChainExecutor) {
+        const res = await deps.onChainExecutor.advance(b.id);
+        report.stepsReported += res.booked.length;
+        report.stepsDispatched += res.dispatched.length;
+        return;
+      }
       const res = await driveSettlement(deps.client, deps.executor, b.id, log);
       report.stepsReported += res.reported.length;
     });
@@ -132,4 +156,23 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
   }
 
   return report;
+}
+
+/**
+ * Compare the configured execution mode with the arena: on-chain execution
+ * needs `execution_dex` set, mock execution needs it unset (the contract
+ * refuses `report_execution` otherwise). Returns an error text, or null if fine.
+ */
+export async function checkExecutionMode(
+  client: ArenaClient,
+  mode: ExecutionMode,
+): Promise<string | null> {
+  const dex = (await client.getConfig()).execution_dex;
+  if (mode === "onchain" && !dex) {
+    return "EXECUTION_MODE=onchain but the arena has no execution_dex";
+  }
+  if (mode === "mock" && dex) {
+    return `EXECUTION_MODE=mock but the arena executes on-chain via ${dex}`;
+  }
+  return null;
 }
