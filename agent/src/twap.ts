@@ -115,6 +115,11 @@ export class TwapFetcher {
     ]);
     return { battleId: battle.id, priceA, priceB };
   }
+
+  /** Same 30-minute TWAP, used for the closing prices at settlement. */
+  finalPrices(battle: BattleView): Promise<InitialPricesPayload> {
+    return this.initialPrices(battle);
+  }
 }
 
 /**

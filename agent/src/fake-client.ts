@@ -16,6 +16,13 @@ export type RecordedCall =
 export class FakeArenaClient implements ArenaClient {
   readonly calls: RecordedCall[] = [];
   private readonly battles = new Map<number, BattleView>();
+  private readonly plans = new Map<number, SettlementStep[]>();
+  /** Steps `settle_battle` creates, as [kind, amount] pairs. */
+  planTemplate: Array<[SettlementStep["kind"], string]> = [
+    ["Dump", "100"],
+    ["Buy", "90"],
+    ["Burn", "4"],
+  ];
 
   constructor(battles: BattleView[] = []) {
     for (const b of battles) this.battles.set(b.id, { ...b });
@@ -56,8 +63,13 @@ export class FakeArenaClient implements ArenaClient {
     };
   }
 
-  async getSettlementPlan(): Promise<SettlementStep[]> {
-    return [];
+  async getSettlementPlan(battleId: number): Promise<SettlementStep[]> {
+    return (this.plans.get(battleId) ?? []).map((s) => ({ ...s }));
+  }
+
+  /** Install a plan directly, for tests that start mid-settlement. */
+  putPlan(battleId: number, steps: SettlementStep[]): void {
+    this.plans.set(battleId, steps.map((s) => ({ ...s })));
   }
 
   private require(battleId: number, expected: BattleStatus[]): BattleView {
@@ -94,11 +106,27 @@ export class FakeArenaClient implements ArenaClient {
     b.status = "Settling";
     b.final_price_a = priceA.toString();
     b.final_price_b = priceB.toString();
+    this.plans.set(
+      battleId,
+      this.planTemplate.map(([kind, amount], index) => ({
+        index,
+        kind,
+        amount,
+        done: false,
+        realized: null,
+      })),
+    );
     this.calls.push({ method: "settle_battle", battleId, priceA, priceB });
   }
 
   async reportExecution(battleId: number, stepIndex: number, realized: bigint): Promise<void> {
-    this.require(battleId, ["Settling"]);
+    const b = this.require(battleId, ["Settling"]);
+    const step = this.plans.get(battleId)?.[stepIndex];
+    if (!step) throw new Error(`battle ${battleId} has no step ${stepIndex}`);
+    if (step.done) throw new Error(`step ${stepIndex} of battle ${battleId} already reported`);
+    step.done = true;
+    step.realized = realized.toString();
+    if (this.plans.get(battleId)!.every((s) => s.done)) b.status = "Settled";
     this.calls.push({ method: "report_execution", battleId, stepIndex, realized });
   }
 
