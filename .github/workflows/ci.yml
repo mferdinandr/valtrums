@@ -66,12 +66,30 @@ jobs:
           tags: valtrum-agent:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Smoke test /healthz (offline, dummy config)
+      - name: Generate a throwaway key for the smoke test
+        id: key
+        run: |
+          KEY=$(node -e '
+            const c = require("crypto");
+            const { privateKey, publicKey } = c.generateKeyPairSync("ed25519");
+            const seed = privateKey.export({ type: "pkcs8", format: "der" }).subarray(-32);
+            const pub = publicKey.export({ type: "spki", format: "der" }).subarray(-32);
+            const bytes = Buffer.concat([seed, pub]);
+            const A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+            let n = BigInt("0x" + bytes.toString("hex"));
+            let out = "";
+            while (n > 0n) { out = A[Number(n % 58n)] + out; n /= 58n; }
+            for (const b of bytes) { if (b !== 0) break; out = "1" + out; }
+            console.log("ed25519:" + out);
+          ')
+          echo "::add-mask::$KEY"
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+      - name: Smoke test /healthz (offline, throwaway key)
         run: |
           docker run -d --name agent --read-only --network none \
             -e ARENA_CONTRACT_ID=arena.testnet \
             -e AGENT_ACCOUNT_ID=agent.testnet \
-            -e AGENT_PRIVATE_KEY=ed25519:3D4YudUQRE39Lc4JHghuB5WM8kbgDDa9RZpgZw2UtPazpCuRuZLqmvZqDnUvdk8ByQDRVoGHg5ZXZhmDkpvUgMEG \
+            -e AGENT_PRIVATE_KEY=${{ steps.key.outputs.key }} \
             -e HEALTH_PORT=8080 \
             valtrum-agent:ci
           for i in $(seq 1 15); do
