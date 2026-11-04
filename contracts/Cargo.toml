@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["arena", "mock-dex", "mock-ft", "router"]
+members = ["arena", "integration", "mock-dex", "mock-ft", "router"]
 
 [workspace.package]
 version = "0.1.0"
