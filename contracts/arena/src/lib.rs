@@ -9,6 +9,7 @@ use near_sdk::{
 pub mod credit;
 pub mod events;
 pub mod math;
+pub mod mpc;
 pub mod types;
 pub mod views;
 
