@@ -61,6 +61,13 @@ export interface TwapFetcherOptions {
   windowMs?: number;
   /** Required fraction of the window spanned by samples (first sample to window end). */
   minCoverage?: number;
+  /**
+   * Spacing of the samples in ms. History may start up to one interval later
+   * than the coverage rule allows, so short windows still work: with a 60s
+   * window and 30s samples the first sample may lie up to 30s after the window
+   * start. Default 0 (strict coverage rule only).
+   */
+  sampleIntervalMs?: number;
   backoff?: BackoffOptions;
   now?: () => number;
 }
@@ -74,6 +81,7 @@ export interface InitialPricesPayload {
 export class TwapFetcher {
   private readonly windowMs: number;
   private readonly minCoverage: number;
+  private readonly sampleIntervalMs: number;
   private readonly backoff: BackoffOptions;
   private readonly now: () => number;
 
@@ -83,6 +91,7 @@ export class TwapFetcher {
   ) {
     this.windowMs = opts.windowMs ?? TWAP_WINDOW_MS;
     this.minCoverage = opts.minCoverage ?? 0.8;
+    this.sampleIntervalMs = opts.sampleIntervalMs ?? 0;
     this.backoff = opts.backoff ?? { attempts: 5, baseDelayMs: 1_000, maxDelayMs: 30_000 };
     this.now = opts.now ?? Date.now;
   }
@@ -99,7 +108,10 @@ export class TwapFetcher {
       const samples = await this.source.samples(token, from, to);
       const inWindow = samples.filter((s) => s.tsMs >= from && s.tsMs <= to);
       const earliest = Math.min(...inWindow.map((s) => s.tsMs));
-      if (inWindow.length === 0 || to - earliest < this.windowMs * this.minCoverage) {
+      // The first sample may start this late after the window start: the
+      // uncovered share of the window, or one sample interval if that is longer.
+      const allowedGap = Math.max(this.windowMs * (1 - this.minCoverage), this.sampleIntervalMs);
+      if (inWindow.length === 0 || earliest - from > allowedGap) {
         throw new InsufficientSamplesError(`not enough price history for ${token}`);
       }
       const twap = computeTwap(inWindow, from, to);
