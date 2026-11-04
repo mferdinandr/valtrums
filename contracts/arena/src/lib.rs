@@ -31,6 +31,8 @@ const CALLBACK_GAS: Gas = Gas::from_tgas(5);
 /// handed to it (via unused-gas weight) because the swap spans several hops.
 const ROUTER_HOP_GAS: Gas = Gas::from_tgas(30);
 const SWAP_CALLBACK_GAS: Gas = Gas::from_tgas(15);
+/// Minimum gas for the hop to the execution DEX; the rest of the call's gas follows it.
+const EXECUTION_HOP_GAS: Gas = Gas::from_tgas(60);
 /// Most battles `get_battles` returns in one call.
 const MAX_PAGE_SIZE: u64 = 100;
 
@@ -71,6 +73,8 @@ enum TransferMsg {
         total_usdc: U128,
         min_token_out: U128,
     },
+    /// Output of a settlement step, paid back by the execution DEX.
+    StepProceeds { battle_id: u64, step_index: u32 },
     Deposit {
         battle_id: u64,
         side: Side,
@@ -79,6 +83,14 @@ enum TransferMsg {
         usdc_equiv: Option<U128>,
         from_credit: Option<U128>,
     },
+}
+
+/// Where settlement steps are executed when the arena does it itself.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+struct ExecutionConfig {
+    dex: AccountId,
+    burn_account: AccountId,
 }
 
 /// Deposit details attached by the router after a swap.
@@ -102,6 +114,7 @@ pub struct Arena {
     agents: IterableSet<AccountId>,
     /// Router that swaps USDC into a side's coin and delivers the deposit.
     router: Option<AccountId>,
+    execution: Option<ExecutionConfig>,
     paused: bool,
     /// USDC owed to the treasury, paid out by `flush_treasury`.
     treasury_accrued: u128,
@@ -133,6 +146,7 @@ impl Arena {
             deposit_window_secs: deposit_window_secs.0,
             agents: IterableSet::new(StorageKey::Agents),
             router: None,
+            execution: None,
             paused: false,
             treasury_accrued: 0,
             battles: LookupMap::new(StorageKey::Battles),
@@ -164,6 +178,18 @@ impl Arena {
     pub fn set_router(&mut self, router: Option<AccountId>) {
         self.assert_owner();
         self.router = router;
+    }
+
+    /// Turns on on-chain execution of settlement steps through `dex`, sending burned
+    /// coins to `burn_account` (it must be registered with the coin). Pass both as
+    /// `None` to return to agent-reported execution.
+    pub fn set_execution(&mut self, dex: Option<AccountId>, burn_account: Option<AccountId>) {
+        self.assert_owner();
+        self.execution = match (dex, burn_account) {
+            (Some(dex), Some(burn_account)) => Some(ExecutionConfig { dex, burn_account }),
+            (None, None) => None,
+            _ => env::panic_str("Set both the DEX and the burn account, or neither"),
+        };
     }
 
     pub fn set_bond(&mut self, bond: U128) {
@@ -305,6 +331,7 @@ impl Arena {
                         amount: loser_vault,
                         done: false,
                         realized: 0,
+                        min_out: None,
                     }],
                     ..Settlement::default()
                 });
@@ -325,7 +352,35 @@ impl Arena {
     /// remaining steps; the last report settles the battle.
     pub fn report_execution(&mut self, battle_id: u64, step_index: u32, realized_amount: U128) {
         self.assert_agent();
+        require!(self.execution.is_none(), "Execution runs on-chain");
+        self.complete_step(battle_id, step_index, realized_amount.0);
+    }
+
+    /// Sends one settlement step to the execution DEX (`Return` is settled right
+    /// away). `min_out` is the least output that counts as this step's proceeds;
+    /// the DEX refuses the swap below it and the arena rejects any proceeds
+    /// below it, so a bad price cannot be booked.
+    pub fn execute_step(
+        &mut self,
+        battle_id: u64,
+        step_index: u32,
+        min_out: U128,
+    ) -> PromiseOrValue<bool> {
+        self.assert_agent();
+        let execution = self
+            .execution
+            .clone()
+            .unwrap_or_else(|| env::panic_str("On-chain execution is not configured"));
+        let usdc = self.usdc.clone();
         let battle = self.battle_in_status(battle_id, BattleStatus::Settling);
+        let winner = battle
+            .winner
+            .unwrap_or_else(|| env::panic_str("Winner missing"));
+        let (token_a, token_b) = (battle.token_a.clone(), battle.token_b.clone());
+        let (winner_token, loser_token) = match winner {
+            Side::A => (token_a, token_b),
+            Side::B => (token_b, token_a),
+        };
         let settlement = battle
             .settlement
             .as_mut()
@@ -337,56 +392,94 @@ impl Arena {
             settlement.steps[..index].iter().all(|step| step.done),
             "Steps must be reported in order"
         );
+        require!(
+            settlement.steps[index].min_out.is_none(),
+            "Step already dispatched"
+        );
+        let (kind, amount) = (settlement.steps[index].kind, settlement.steps[index].amount);
 
-        let realized = realized_amount.0;
-        settlement.steps[index].done = true;
-        settlement.steps[index].realized = realized;
-        let mut fee_to_treasury = 0;
-        match settlement.steps[index].kind {
-            StepKind::Dump => {
-                let split = math::split_profit(realized)
-                    .unwrap_or_else(|_| env::panic_str("Split calculation failed"));
-                settlement.credit_pool = split.credit;
-                for (kind, amount) in [
-                    (StepKind::Buy, split.liquid),
-                    (StepKind::Burn, split.burn),
-                    (StepKind::Return, split.fee),
-                ] {
-                    settlement.steps.push(SettlementStep {
-                        kind,
-                        amount,
-                        done: false,
-                        realized: 0,
-                    });
-                }
-            }
-            StepKind::Buy => settlement.liquid_pool = realized,
-            StepKind::Burn => settlement.burned = realized,
-            StepKind::Return => fee_to_treasury = realized,
+        if kind == StepKind::Return || amount == 0 {
+            let realized = if kind == StepKind::Return { amount } else { 0 };
+            self.complete_step(battle_id, step_index, realized);
+            return PromiseOrValue::Value(true);
         }
-        let finished = settlement.steps.iter().all(|step| step.done);
-        let mut bond_refund = None;
-        if finished {
-            battle.status = BattleStatus::Settled;
-            bond_refund = Some((battle.creator.clone(), battle.bond));
+
+        require!(min_out.0 > 0, "Minimum output must be positive");
+        settlement.steps[index].min_out = Some(min_out.0);
+        let (token_in, token_out) = match kind {
+            StepKind::Dump => (loser_token, usdc),
+            _ => (usdc, winner_token),
+        };
+        let receiver_msg = json!({
+            "action": "step_proceeds",
+            "battle_id": battle_id,
+            "step_index": step_index,
+        })
+        .to_string();
+        let msg = json!({
+            "action": "swap",
+            "token_out": token_out,
+            "min_amount_out": min_out,
+            "receiver_id": env::current_account_id(),
+            "receiver_msg": receiver_msg,
+        })
+        .to_string();
+        PromiseOrValue::Promise(
+            ext_ft::ext(token_in)
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(EXECUTION_HOP_GAS)
+                .with_unused_gas_weight(1)
+                .ft_transfer_call(execution.dex, U128(amount), None, msg)
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(CALLBACK_GAS)
+                        .on_step_sent(battle_id, step_index, U128(amount)),
+                ),
+        )
+    }
+
+    /// If the DEX refused the swap, makes the step dispatchable again.
+    #[private]
+    pub fn on_step_sent(
+        &mut self,
+        battle_id: u64,
+        step_index: u32,
+        amount: U128,
+        #[callback_result] result: Result<U128, PromiseError>,
+    ) {
+        if matches!(result, Ok(used) if used.0 == amount.0) {
+            return;
+        }
+        if let Some(step) = self
+            .battles
+            .get_mut(&battle_id)
+            .and_then(|battle| battle.settlement.as_mut())
+            .and_then(|settlement| settlement.steps.get_mut(step_index as usize))
+        {
+            if !step.done {
+                step.min_out = None;
+            }
         }
         events::emit(
-            "execution_reported",
-            json!({
-                "battle_id": battle_id,
-                "step_index": step_index,
-                "realized": realized_amount,
-            }),
+            "step_dispatch_failed",
+            json!({ "battle_id": battle_id, "step_index": step_index }),
         );
-        if finished {
-            events::emit("battle_settled", json!({ "battle_id": battle_id }));
-        }
-        if let Some((creator, bond)) = bond_refund {
-            self.return_bond(&creator, bond);
-        }
-        if fee_to_treasury > 0 {
-            self.accrue_treasury(fee_to_treasury);
-        }
+    }
+
+    /// Reports whether the burn transfer went through.
+    #[private]
+    pub fn on_burn_sent(
+        &mut self,
+        battle_id: u64,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        let event = if result.is_ok() {
+            "burned"
+        } else {
+            "burn_failed"
+        };
+        events::emit(event, json!({ "battle_id": battle_id, "amount": amount }));
     }
 
     // ─── Agent: emergency halt ──────────────────────────────────────────
@@ -599,10 +692,12 @@ impl Arena {
         msg: String,
     ) -> PromiseOrValue<U128> {
         let token = env::predecessor_account_id();
-        if self.paused {
+        let parsed = serde_json::from_str::<TransferMsg>(&msg);
+        // Settlement proceeds must still arrive while paused, or a step would stall.
+        if self.paused && !matches!(parsed, Ok(TransferMsg::StepProceeds { .. })) {
             return PromiseOrValue::Value(amount);
         }
-        let unused = match serde_json::from_str::<TransferMsg>(&msg) {
+        let unused = match parsed {
             Ok(TransferMsg::Propose {
                 token_a,
                 token_b,
@@ -648,6 +743,10 @@ impl Arena {
                 };
                 self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
+            Ok(TransferMsg::StepProceeds {
+                battle_id,
+                step_index,
+            }) => self.handle_step_proceeds(sender_id, token, amount.0, battle_id, step_index),
             _ => amount.0,
         };
         PromiseOrValue::Value(U128(unused))
@@ -798,6 +897,8 @@ impl Arena {
             deposit_window_secs: U64(self.deposit_window_secs),
             agents: self.agents.iter().cloned().collect(),
             router: self.router.clone(),
+            execution_dex: self.execution.as_ref().map(|e| e.dex.clone()),
+            burn_account: self.execution.as_ref().map(|e| e.burn_account.clone()),
             paused: self.paused,
             treasury_accrued: U128(self.treasury_accrued),
         }
@@ -805,6 +906,138 @@ impl Arena {
 }
 
 impl Arena {
+    /// Books one finished step in order. Reporting the sale of the loser vault
+    /// fixes the 55/35/5/5 split of the proceeds and appends the remaining steps;
+    /// the last step settles the battle.
+    fn complete_step(&mut self, battle_id: u64, step_index: u32, realized: u128) {
+        let battle = self.battle_in_status(battle_id, BattleStatus::Settling);
+        let settlement = battle
+            .settlement
+            .as_mut()
+            .unwrap_or_else(|| env::panic_str("Settlement missing"));
+        let index = step_index as usize;
+        require!(index < settlement.steps.len(), "Unknown step");
+        require!(!settlement.steps[index].done, "Step already reported");
+        require!(
+            settlement.steps[..index].iter().all(|step| step.done),
+            "Steps must be reported in order"
+        );
+
+        settlement.steps[index].done = true;
+        settlement.steps[index].realized = realized;
+        let mut fee_to_treasury = 0;
+        match settlement.steps[index].kind {
+            StepKind::Dump => {
+                let split = math::split_profit(realized)
+                    .unwrap_or_else(|_| env::panic_str("Split calculation failed"));
+                settlement.credit_pool = split.credit;
+                for (kind, amount) in [
+                    (StepKind::Buy, split.liquid),
+                    (StepKind::Burn, split.burn),
+                    (StepKind::Return, split.fee),
+                ] {
+                    settlement.steps.push(SettlementStep {
+                        kind,
+                        amount,
+                        done: false,
+                        realized: 0,
+                        min_out: None,
+                    });
+                }
+            }
+            StepKind::Buy => settlement.liquid_pool = realized,
+            StepKind::Burn => settlement.burned = realized,
+            StepKind::Return => fee_to_treasury = realized,
+        }
+        let finished = settlement.steps.iter().all(|step| step.done);
+        let mut bond_refund = None;
+        if finished {
+            battle.status = BattleStatus::Settled;
+            bond_refund = Some((battle.creator.clone(), battle.bond));
+        }
+        events::emit(
+            "execution_reported",
+            json!({
+                "battle_id": battle_id,
+                "step_index": step_index,
+                "realized": U128(realized),
+            }),
+        );
+        if finished {
+            events::emit("battle_settled", json!({ "battle_id": battle_id }));
+        }
+        if let Some((creator, bond)) = bond_refund {
+            self.return_bond(&creator, bond);
+        }
+        if fee_to_treasury > 0 {
+            self.accrue_treasury(fee_to_treasury);
+        }
+    }
+
+    /// Proceeds of a dispatched step, paid by the execution DEX. Returns the
+    /// amount not accepted.
+    fn handle_step_proceeds(
+        &mut self,
+        sender_id: AccountId,
+        token: AccountId,
+        amount: u128,
+        battle_id: u64,
+        step_index: u32,
+    ) -> u128 {
+        let Some(execution) = self.execution.clone() else {
+            return amount;
+        };
+        if sender_id != execution.dex {
+            return amount;
+        }
+        let Some(battle) = self.battles.get(&battle_id) else {
+            return amount;
+        };
+        let (Some(winner), Some(settlement)) = (battle.winner, battle.settlement.as_ref()) else {
+            return amount;
+        };
+        let index = step_index as usize;
+        let Some(step) = settlement.steps.get(index) else {
+            return amount;
+        };
+        let Some(min_out) = step.min_out else {
+            return amount;
+        };
+        let in_order = settlement.steps[..index].iter().all(|earlier| earlier.done);
+        let winner_token = match winner {
+            Side::A => &battle.token_a,
+            Side::B => &battle.token_b,
+        };
+        let expected = match step.kind {
+            StepKind::Dump => &self.usdc,
+            StepKind::Buy | StepKind::Burn => winner_token,
+            StepKind::Return => return amount,
+        };
+        let kind = step.kind;
+        let acceptable = battle.status == BattleStatus::Settling
+            && !step.done
+            && in_order
+            && &token == expected
+            && amount >= min_out;
+        if !acceptable {
+            return amount;
+        }
+
+        self.complete_step(battle_id, step_index, amount);
+        if kind == StepKind::Burn {
+            let _ = ext_ft::ext(token)
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(FT_TRANSFER_GAS)
+                .ft_transfer(execution.burn_account, U128(amount), None)
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(CALLBACK_GAS)
+                        .on_burn_sent(battle_id, U128(amount)),
+                );
+        }
+        0
+    }
+
     fn add_liquid(&mut self, account_id: &AccountId, token: &AccountId, amount: u128) {
         let key = (account_id.clone(), token.clone());
         let balance = self.liquid.get(&key).copied().unwrap_or(0);

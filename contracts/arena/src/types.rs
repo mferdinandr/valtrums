@@ -96,6 +96,9 @@ pub struct SettlementStep {
     pub amount: u128,
     pub done: bool,
     pub realized: u128,
+    /// Set when the step was sent to the DEX: the least output that counts as
+    /// this step's proceeds. Cleared again if the DEX refuses the swap.
+    pub min_out: Option<u128>,
 }
 
 /// Progress and results of a battle's settlement.
