@@ -1,3 +1,4 @@
+import type { BaselineStore } from "./baseline.js";
 import type { ArenaClient } from "./client.js";
 import type { DexPair, DexScreenerClient } from "./dexscreener.js";
 import type { BattleView } from "./types.js";
@@ -137,6 +138,7 @@ export async function auditAndAct(
   client: ArenaClient,
   auditor: MarketAuditor,
   battleId: number,
+  baselines?: BaselineStore,
 ): Promise<AuditOutcome> {
   const battle = await client.getBattle(battleId);
   if (!battle) return { action: "skipped", reason: "battle not found" };
@@ -145,6 +147,11 @@ export async function auditAndAct(
   }
   const result = await auditor.audit(battle);
   if (result.passed) {
+    // Recorded before approving: a baseline for a battle that never got approved is harmless.
+    await baselines?.set(
+      battleId,
+      Object.fromEntries(result.tokens.map((t) => [t.token, t.liquidityUsd])),
+    );
     await client.approveBattle(battleId);
     return { action: "approved", result };
   }
