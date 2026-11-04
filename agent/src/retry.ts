@@ -4,6 +4,8 @@ export interface BackoffOptions {
   baseDelayMs: number;
   maxDelayMs: number;
   sleep?: (ms: number) => Promise<void>;
+  /** Return false to stop retrying and rethrow at once. Defaults to always retrying. */
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 export const defaultSleep = (ms: number): Promise<void> =>
@@ -18,6 +20,7 @@ export async function withBackoff<T>(fn: () => Promise<T>, opts: BackoffOptions)
       return await fn();
     } catch (err) {
       lastError = err;
+      if (opts.shouldRetry && !opts.shouldRetry(err)) throw err;
       if (attempt < opts.attempts - 1) {
         await sleep(Math.min(opts.baseDelayMs * 2 ** attempt, opts.maxDelayMs));
       }

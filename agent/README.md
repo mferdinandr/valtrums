@@ -89,6 +89,10 @@ Assumptions and limits of this mode:
 - Confirmations protect against shallow reorganisations only.
 - Polling is every 5 seconds, up to 40 polls for a signature and 60 for a receipt per pass; then the pass stops for that battle and the next one resumes.
 
+## RPC endpoints
+
+`NEAR_RPC_URL` selects the node. Public endpoints rate-limit (HTTP 429): the agent retries read-only calls on 429, 5xx and network errors with exponential backoff (up to 5 attempts, 1 s to 15 s), but a busy public endpoint can still starve it. For anything longer than a quick test use a dedicated or less loaded provider, for example `https://test.rpc.fastnear.com` on testnet. Transactions are not retried blindly; the next pass rebuilds the work from on-chain state.
+
 ## Limits
 
 - The contract stores no liquidity baseline, so it is kept locally. If the file is lost, the watchdog takes the current liquidity as the new baseline (logged), and a drop before that point goes unnoticed.
