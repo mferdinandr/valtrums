@@ -1,4 +1,4 @@
-use crate::types::{Battle, BattleStatus, Side};
+use crate::types::{Battle, BattleStatus, Side, UserPosition};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
 
@@ -61,4 +61,44 @@ impl BattleView {
             winner: battle.winner,
         }
     }
+}
+
+/// A user's stake in one battle.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PositionView {
+    pub side: Side,
+    pub coin_amount: U128,
+    pub usdc_equiv: U128,
+    pub from_credit: U128,
+    pub claimed: bool,
+}
+
+impl PositionView {
+    pub fn new(position: &UserPosition) -> Self {
+        Self {
+            side: position.side,
+            coin_amount: U128(position.coin_amount),
+            usdc_equiv: U128(position.usdc_equiv),
+            from_credit: U128(position.from_credit),
+            claimed: position.claimed,
+        }
+    }
+}
+
+/// A user's arena balances. `credit_balance` only counts credit that is still valid.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccountView {
+    pub liquid_balance: U128,
+    pub credit_balance: U128,
+    pub credit_expires_at_ns: U64,
+}
+
+/// How a USDC deposit of a given size would be funded right now.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FundingPreview {
+    pub from_credit: U128,
+    pub from_wallet: U128,
 }

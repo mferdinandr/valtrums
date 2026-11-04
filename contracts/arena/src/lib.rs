@@ -12,8 +12,9 @@ pub mod math;
 pub mod types;
 pub mod views;
 
-use types::{Battle, BattleStatus, NS_PER_SECOND};
-use views::{BattleView, ConfigView};
+use credit::plan_funding;
+use types::{Account, Battle, BattleStatus, UserPosition, NS_PER_SECOND};
+use views::{AccountView, BattleView, ConfigView, FundingPreview, PositionView};
 
 /// Longest battle a proposer can request.
 const MAX_DURATION_SECS: u64 = 30 * 24 * 60 * 60;
@@ -28,6 +29,8 @@ const MAX_PAGE_SIZE: u64 = 100;
 enum StorageKey {
     Agents,
     Battles,
+    Accounts,
+    Positions,
 }
 
 #[ext_contract(ext_ft)]
@@ -63,6 +66,9 @@ pub struct Arena {
     treasury_accrued: u128,
     battles: LookupMap<u64, Battle>,
     battle_count: u64,
+    accounts: LookupMap<AccountId, Account>,
+    /// One position per (battle, account).
+    positions: LookupMap<(u64, AccountId), UserPosition>,
 }
 
 #[near]
@@ -87,6 +93,8 @@ impl Arena {
             treasury_accrued: 0,
             battles: LookupMap::new(StorageKey::Battles),
             battle_count: 0,
+            accounts: LookupMap::new(StorageKey::Accounts),
+            positions: LookupMap::new(StorageKey::Positions),
         }
     }
 
@@ -263,6 +271,39 @@ impl Arena {
         self.battles
             .get(&battle_id)
             .map(|battle| BattleView::new(battle_id, battle))
+    }
+
+    pub fn get_position(&self, battle_id: u64, account_id: AccountId) -> Option<PositionView> {
+        self.positions
+            .get(&(battle_id, account_id))
+            .map(PositionView::new)
+    }
+
+    pub fn get_account(&self, account_id: AccountId) -> AccountView {
+        let now = env::block_timestamp();
+        let account = self.accounts.get(&account_id).cloned().unwrap_or_default();
+        let credit = account.available_credit(now);
+        AccountView {
+            liquid_balance: U128(account.liquid_balance),
+            credit_balance: U128(credit),
+            credit_expires_at_ns: U64(if credit > 0 {
+                account.credit_expires_at_ns
+            } else {
+                0
+            }),
+        }
+    }
+
+    /// Shows how a USDC deposit of `total_usdc` would split between credit and wallet.
+    pub fn preview_funding(&self, account_id: AccountId, total_usdc: U128) -> FundingPreview {
+        let credit = self.accounts.get(&account_id).map_or(0, |account| {
+            account.available_credit(env::block_timestamp())
+        });
+        let plan = plan_funding(credit, total_usdc.0);
+        FundingPreview {
+            from_credit: U128(plan.from_credit),
+            from_wallet: U128(plan.from_wallet),
+        }
     }
 
     pub fn get_battle_count(&self) -> u64 {
@@ -943,6 +984,77 @@ mod tests {
             assert_eq!(battle.start_time_ns, U64(0));
             assert_eq!(arena.get_config().treasury_accrued, U128(5_000_000));
         }
+    }
+
+    fn grant_test_credit(arena: &mut Arena, name: &str, amount: u128, expires_at_ns: u64) {
+        arena.accounts.insert(
+            acc(name),
+            Account {
+                credit_balance: amount,
+                credit_expires_at_ns: expires_at_ns,
+                ..Account::default()
+            },
+        );
+    }
+
+    #[test]
+    fn unknown_account_has_empty_balances() {
+        let arena = new_arena();
+        let view = arena.get_account(acc("nobody"));
+        assert_eq!(view.liquid_balance, U128(0));
+        assert_eq!(view.credit_balance, U128(0));
+        assert_eq!(view.credit_expires_at_ns, U64(0));
+    }
+
+    #[test]
+    fn account_view_shows_only_valid_credit() {
+        let mut arena = new_arena();
+        let expiry = 7 * 24 * 3_600 * NS_PER_SECOND;
+        grant_test_credit(&mut arena, "alice", 35, expiry);
+
+        set_context("owner", expiry - 1);
+        let view = arena.get_account(acc("alice"));
+        assert_eq!(view.credit_balance, U128(35));
+        assert_eq!(view.credit_expires_at_ns, U64(expiry));
+
+        set_context("owner", expiry);
+        let view = arena.get_account(acc("alice"));
+        assert_eq!(view.credit_balance, U128(0));
+        assert_eq!(view.credit_expires_at_ns, U64(0));
+    }
+
+    #[test]
+    fn preview_splits_the_prd_example() {
+        let mut arena = new_arena();
+        grant_test_credit(&mut arena, "alice", 35, 1_000);
+        set_context("owner", 10);
+        let preview = arena.preview_funding(acc("alice"), U128(50));
+        assert_eq!(preview.from_credit, U128(35));
+        assert_eq!(preview.from_wallet, U128(15));
+    }
+
+    #[test]
+    fn preview_ignores_expired_credit() {
+        let mut arena = new_arena();
+        grant_test_credit(&mut arena, "alice", 35, 1_000);
+        set_context("owner", 1_000);
+        let preview = arena.preview_funding(acc("alice"), U128(50));
+        assert_eq!(preview.from_credit, U128(0));
+        assert_eq!(preview.from_wallet, U128(50));
+    }
+
+    #[test]
+    fn preview_for_account_without_credit_is_all_wallet() {
+        let arena = new_arena();
+        let preview = arena.preview_funding(acc("bob"), U128(50));
+        assert_eq!(preview.from_credit, U128(0));
+        assert_eq!(preview.from_wallet, U128(50));
+    }
+
+    #[test]
+    fn missing_position_is_none() {
+        let arena = new_arena();
+        assert!(arena.get_position(1, acc("alice")).is_none());
     }
 
     #[test]
