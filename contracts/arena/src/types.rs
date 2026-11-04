@@ -129,7 +129,6 @@ pub struct UserPosition {
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Account {
-    pub liquid_balance: u128,
     pub credit_balance: u128,
     pub credit_expires_at_ns: u64,
 }
@@ -171,7 +170,6 @@ mod tests {
         let account = Account {
             credit_balance: 35,
             credit_expires_at_ns: CREDIT_TTL_NS,
-            ..Account::default()
         };
         assert_eq!(
             account.available_credit(3 * 24 * 60 * 60 * NS_PER_SECOND),
@@ -184,7 +182,6 @@ mod tests {
         let account = Account {
             credit_balance: 35,
             credit_expires_at_ns: CREDIT_TTL_NS,
-            ..Account::default()
         };
         assert_eq!(
             account.available_credit(8 * 24 * 60 * 60 * NS_PER_SECOND),
@@ -195,7 +192,6 @@ mod tests {
     #[test]
     fn new_account_is_empty() {
         let account = Account::default();
-        assert_eq!(account.liquid_balance, 0);
         assert_eq!(account.available_credit(0), 0);
     }
 }
