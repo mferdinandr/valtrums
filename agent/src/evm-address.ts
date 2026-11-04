@@ -64,7 +64,8 @@ export class SignerViewAddressResolver implements EvmAddressResolver {
 
   constructor(
     private readonly transport: Pick<NearTransport, "view">,
-    private readonly signerAccountId: string,
+    /** The signer account, or a function that looks it up when first needed. */
+    private readonly signerAccountId: string | (() => Promise<string>),
     /** The account that calls `sign` on the signer: the arena contract. */
     private readonly predecessor: string,
     private readonly domainId = 0,
@@ -73,7 +74,8 @@ export class SignerViewAddressResolver implements EvmAddressResolver {
   async resolve(path: string): Promise<string> {
     const cached = this.cache.get(path);
     if (cached) return cached;
-    const key = await this.transport.view<string>(this.signerAccountId, "derived_public_key", {
+    const signer = typeof this.signerAccountId === "string" ? this.signerAccountId : await this.signerAccountId();
+    const key = await this.transport.view<string>(signer, "derived_public_key", {
       path,
       predecessor: this.predecessor,
       domain_id: this.domainId,

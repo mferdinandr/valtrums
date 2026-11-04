@@ -3,7 +3,11 @@ import { JsonFileBaselineStore } from "./baseline.js";
 import { loadConfig } from "./config.js";
 import { HealthState, attestationFromEnv, parseHealthPort, startHealthServer } from "./health.js";
 import { DexScreenerClient } from "./dexscreener.js";
-import { MockStepExecutor } from "./executor.js";
+import { SignerViewAddressResolver } from "./evm-address.js";
+import { UniswapV3QuoterSource } from "./evm-quote.js";
+import { FetchEvmRpc } from "./evm-rpc.js";
+import { MockStepExecutor, type StepExecutor } from "./executor.js";
+import { ForeignChainStepExecutor } from "./foreign-executor.js";
 import { OnChainStepExecutor } from "./onchain-executor.js";
 import { MockDexQuoteSource } from "./quote.js";
 import { createFetchHttpClient } from "./http.js";
@@ -24,6 +28,36 @@ async function main(): Promise<void> {
   const liquidity = new DexLiquiditySource(dex);
   const transport = createNearTransport(cfg);
   const client = new NearArenaClient(cfg.arenaContractId, transport);
+  let executor: StepExecutor = new MockStepExecutor();
+  if (rt.foreign) {
+    const f = rt.foreign;
+    const rpc = new FetchEvmRpc(f.rpcUrl);
+    executor = new ForeignChainStepExecutor(
+      {
+        chainId: f.chainId,
+        usdc: f.usdc,
+        tokenMap: f.tokenMap,
+        feeTier: f.feeTier,
+        confirmations: f.confirmations,
+      },
+      {
+        client,
+        rpc,
+        // The signer account comes from the arena's own configuration, read when first needed.
+        resolver: new SignerViewAddressResolver(
+          transport,
+          async () => {
+            const foreignCfg = await client.getForeignConfig();
+            if (!foreignCfg) throw new Error("the arena has no foreign signing configuration");
+            return foreignCfg.mpc_contract;
+          },
+          cfg.arenaContractId,
+        ),
+        quotes: new UniswapV3QuoterSource(rpc, f.quoter, rt.slippageBps),
+        log,
+      },
+    );
+  }
   const deps = {
     client,
     auditor: new MarketAuditor(liquidity, new DexHeuristicHoneypotSimulator(dex)),
@@ -31,7 +65,7 @@ async function main(): Promise<void> {
     twap: new TwapFetcher(priceSource),
     sampler: priceSource,
     liquidity,
-    executor: new MockStepExecutor(),
+    executor,
     onChainExecutor:
       rt.executionMode === "onchain"
         ? new OnChainStepExecutor(client, new MockDexQuoteSource(transport), {
@@ -72,9 +106,14 @@ async function main(): Promise<void> {
     intervalSecs: rt.intervalSecs,
     watchdogIntervalSecs: rt.watchdogIntervalSecs,
     executionMode: rt.executionMode,
-    slippageBps: rt.executionMode === "onchain" ? rt.slippageBps : undefined,
+    slippageBps: rt.executionMode === "mock" ? undefined : rt.slippageBps,
     stepTimeoutSecs: rt.executionMode === "onchain" ? rt.stepTimeoutSecs : undefined,
+    foreignChainId: rt.foreign?.chainId,
+    foreignConfirmations: rt.foreign?.confirmations,
   });
+  if (rt.foreign) {
+    log.warn(`foreign-chain execution is on: this moves real value on chain ${rt.foreign.chainId}`);
+  }
 
   // Startup check; runOnce repeats it every pass and pauses settlement on a mismatch.
   try {
