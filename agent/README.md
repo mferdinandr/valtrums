@@ -23,7 +23,8 @@ Optional:
 | `EXECUTION_MODE` | `mock` | `mock`: the agent reports each step as realized = planned. `onchain`: the arena swaps on its execution DEX and the agent only dispatches steps. `foreign`: the agent executes the steps on an EVM chain through the MPC signer and reports the realized amounts (see below) |
 | `EXECUTION_SLIPPAGE_BPS` | `500` | onchain and foreign: tolerance below the quote used for `min_out`, integer 0 to 9999 |
 | `STEP_TIMEOUT_SECS` | `600` | onchain: a dispatched step older than this is logged as stuck |
-| `MARKET_DATA` | `dexscreener` | `dexscreener`: prices, liquidity and the honeypot heuristic come from DexScreener. `mockdex`: they come from the arena's execution DEX (see "Testnet demo") |
+| `MARKET_DATA` | `dexscreener` | `dexscreener`: prices, liquidity and the honeypot heuristic come from DexScreener. `mockdex`: they come from the arena's execution DEX (see "Testnet demo"). `ref`: they come from the exchange pools the swap adapter routes through (see "Exchange pools") |
+| `REF_EXCHANGE_ID` | unset | required with `MARKET_DATA=ref`: the exchange contract account, for example `ref-finance-101.testnet` |
 | `TWAP_WINDOW_SECS` | `1800` | TWAP window for initial and final prices, integer 30 to 604800 and at least `2 * AGENT_INTERVAL_SECS` |
 | `MIN_LIQUIDITY_USD` | `10000` | an audited token needs more than this much liquidity, whole USD, integer 1 to 10^12 |
 | `HEALTH_PORT` | `8080` | port of the health server, `0` disables it |
@@ -99,7 +100,20 @@ Assumptions and limits of this mode:
 - Price history for TWAPs accrues from the agent's own samples; after a long outage the fetcher refuses to write prices until enough history exists.
 - Final prices use the 30 minutes before the pass that settles, so settle promptly after `end_time`.
 - The contract has no reset method for a dispatched step that never gets proceeds. The agent logs `STUCK STEP` (battle id, step index) once per timeout period and does not retry. The timer starts when the agent first sees the dispatch, so it restarts after an agent restart.
-- `min_out` protects against DEX rate changes only; quotes are read from the mock DEX, so a different DEX needs another `QuoteSource` implementation.
+- `min_out` protects against price moves between the quote and the swap. Quotes come from the mock DEX's `get_rate`, or from the exchange's `get_return` when `MARKET_DATA=ref`; another DEX needs another `QuoteSource` implementation.
+
+## Exchange pools (`MARKET_DATA=ref`)
+
+With the swap adapter as the arena's execution DEX, the agent reads the pools it routes through. The adapter is `get_config().execution_dex`, USDC is `get_config().usdc`, and `REF_EXCHANGE_ID` names the exchange.
+
+- Pool: `get_pool { token_in: <usdc>, token_out: <coin> }` on the adapter gives the pool id; `get_pool { pool_id }` on the exchange gives the reserves.
+- Price: USD per whole coin scaled by 1e18, the spot ratio of the reserves, `usdc * 10^(decimals + 12) / coin`, floored. A coin with no routed pool, or an empty one, is unpriced and retried, never treated as worthless.
+- Liquidity: twice the pool's USDC side, in whole USD.
+- Honeypot check: passes only if the coin has a routed USDC pool with reserves on both sides. This is a heuristic, not a simulated sale.
+- Quotes: `get_return` on the exchange (fee included) for `min_out`.
+- Settlement steps get the full 300 Tgas because the swap runs arena, adapter, exchange and back.
+
+Run only one agent per arena key. Two agents with the same key and different market data lock and settle the same battle with different prices, which can void it.
 
 ## Testnet demo (`MARKET_DATA=mockdex`)
 
