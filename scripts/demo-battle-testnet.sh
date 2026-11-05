@@ -36,7 +36,15 @@ SIGN=(sign-with-legacy-keychain send)
 WORK="$(mktemp -d)"
 AGENT_PID=""
 
-cleanup() { [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true; rm -rf "$WORK"; }
+cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ -f "$WORK/agent.log" ]; then
+    echo "--- agent log (last 40 lines) ---" >&2
+    tail -n 40 "$WORK/agent.log" | cut -c1-300 >&2
+  fi
+  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 say() { printf '\n== %s\n' "$*"; }
