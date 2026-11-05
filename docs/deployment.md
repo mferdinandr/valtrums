@@ -9,7 +9,9 @@ The stack is deployed on testnet with mock tokens, a mock DEX and on-chain settl
 | Owner | `valtrum-8875bb.testnet` |
 | Arena | `valtrum-arena-8875bb.testnet` |
 | Router | `valtrum-router-8875bb.testnet` |
-| Mock DEX | `valtrum-dex-8875bb.testnet` |
+| Mock DEX (sandbox and fallback) | `valtrum-dex-8875bb.testnet` |
+| Swap adapter | `valtrum-refdex-8875bb.testnet` |
+| Liquidity account | `lp.valtrum-8875bb.testnet` |
 | Mock USDC (6 decimals) | `valtrum-usdc-8875bb.testnet` |
 | Mock PEPE (18 decimals) | `valtrum-pepe-8875bb.testnet` |
 | Mock SHIB (18 decimals) | `valtrum-shib-8875bb.testnet` |
@@ -35,11 +37,24 @@ near contract call-function as-transaction valtrum-usdc-8875bb.testnet mint \
 
 An account must be registered with a token (`storage_deposit`) before it can receive it; `mint` registers the account it mints to.
 
+## Swaps on the testnet exchange
+
+Settlement and the USDC deposit route swap on the Ref Finance v1 exchange on testnet (`ref-finance-101.testnet`) through the swap adapter. The router and the arena send the adapter the same swap message they used to send the mock DEX, so only their `dex` account differs: `set_dex` on the router and `set_execution` on the arena point at the adapter.
+
+- The adapter forwards each swap to the exchange with the caller's minimum as the floor. The exchange pays the output to the adapter with a plain transfer and does not call it back, so the adapter measures the output by its balance change, then pays the receiver. Only one swap runs at a time; a second one is refused and refunded.
+- Pools are made by `scripts/setup-ref-pools.sh <suffix>` from the liquidity account: PEPE/USDC at 0.001 USDC per PEPE and SHIB/USDC at 0.25 USDC per SHIB, each with 100,000 USDC. The script prints the pool ids and routes both pairs in the adapter (`get_pool { token_in, token_out }`). The pools made for the current deployment are 2899 (PEPE) and 2900 (SHIB).
+- The adapter and the liquidity account must be registered with the exchange (`storage_deposit`, then `register_tokens` for each coin), and the exchange itself must be registered with each token. Without the exchange registration a deposit is silently not credited. Every account that receives a coin (arena, router, treasury, burn account, adapter) must be registered with that token.
+- The agent reads prices, depth and quotes from the pools with `MARKET_DATA=ref` and `REF_EXCHANGE_ID=ref-finance-101.testnet`.
+- A settlement step can take the full 300 Tgas of a transaction (arena, adapter, exchange and back). The agent attaches that much to `execute_step`; with 200 Tgas the step is rolled back.
+- Pools have a 0.3% fee and finite depth, so the amounts a demo prints are not round numbers.
+
+The sandbox tests still use the mock DEX because the sandbox cannot host the exchange.
+
 ## Demo battle
 
-`scripts/demo-battle-testnet.sh <suffix>` plays one full battle on the deployment above and prints where the value went. It starts the agent locally (on-chain execution, market data from the mock DEX, a 40-second price window and 10-second passes), creates three players, proposes a 120-second battle between PEPE and SHIB, deposits on both sides, lets the agent lock it, moves the PEPE price up 25% through the DEX rate, waits for settlement, then claims and withdraws.
+`scripts/demo-battle-testnet.sh <suffix>` plays one full battle on the deployment above and prints where the value went. By default the swaps run on the exchange pools (`DEX_MODE=mock` uses the mock DEX instead). It starts the agent locally (on-chain execution, market data from the pools, a 40-second price window and 10-second passes), creates three players, proposes a 120-second battle between PEPE and SHIB, deposits on both sides, lets the agent lock it, moves the PEPE price up 25% with a real buy in the PEPE pool, waits for settlement, then claims and withdraws.
 
-A complete run on this deployment (battle 1):
+A complete run on the mock DEX (battle 1):
 
 | Step | Result |
 | --- | --- |
