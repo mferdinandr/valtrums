@@ -8,13 +8,14 @@ Two meme-coin tribes battle. When the clock runs out, the losing vault is taken 
 - An agent audits proposals, sets prices, watches liquidity, and drives settlement.
 - A web app with an AI prompt terminal turns "Deposit 50 USDC to $WIF" into one validated transaction.
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/flow.md](docs/flow.md) for the flow with war bonds and the furnace, [docs/war.md](docs/war.md) for the WAR war bonds, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/flow.md](docs/flow.md) for the flow with war bonds and the furnace, [docs/war.md](docs/war.md) for the WAR war bonds, [docs/furnace.md](docs/furnace.md) for the furnace, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
 
 ## Repository layout
 
 ```
 contracts/
   arena/         battles, vaults, positions, credit, settlement, signing requests
+  furnace/       keyless sink that keeps burned coins forever and records every burn
   router/        swaps USDC into a side's coin and deposits it
   mock-dex/      fixed-rate DEX for testnet and the sandbox
   mock-ft/       open-mint NEP-141 token for testnet and the sandbox

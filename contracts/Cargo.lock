@@ -4053,6 +4053,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-furnace"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-integration"
 version = "0.1.0"
 dependencies = [
