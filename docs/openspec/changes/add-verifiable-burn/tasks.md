@@ -2,10 +2,10 @@
 
 ## 1. Furnace contract
 
-- [ ] 1.1 Add `contracts/furnace` with `ft_on_transfer` that keeps the full amount and no method that moves coins; verify `cargo build --target wasm32-unknown-unknown -p valtrum-furnace` succeeds and a unit test confirms `ft_on_transfer` returns zero
-- [ ] 1.2 Record totals per coin, per battle and per sender, and emit `furnace_burned`; verify unit tests for a battle burn, a burn without a battle and two coins
-- [ ] 1.3 Add paged views for coins, battle burns and sender totals; verify unit tests for paging limits
-- [ ] 1.4 Document the furnace, what it counts and what it does not, in `docs/furnace.md`; verify the README links to it
+- [x] 1.1 Add `contracts/furnace` with `ft_on_transfer` that keeps the full amount and no method that moves coins; verify `cargo build --target wasm32-unknown-unknown -p valtrum-furnace` succeeds and a unit test confirms `ft_on_transfer` returns zero
+- [x] 1.2 Record totals per coin, per battle and per sender, and emit `furnace_burned`; verify unit tests for a battle burn, a burn without a battle and two coins
+- [x] 1.3 Add paged views for coins, battle burns and sender totals; verify unit tests for paging limits
+- [x] 1.4 Document the furnace, what it counts and what it does not, in `docs/furnace.md`; verify the README links to it
 
 ## 2. Arena changes
 
