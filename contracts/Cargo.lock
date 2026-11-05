@@ -4087,6 +4087,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-ref-adapter"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-router"
 version = "0.1.0"
 dependencies = [
