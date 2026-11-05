@@ -92,6 +92,9 @@ sequenceDiagram
     participant W as WAR
     participant T as Treasury
     actor P as Winner
+    G->>W: release_melt (refused if nothing melted, the agent goes on)
+    W->>U: ft_transfer_call(arena, melted USDC, {"action":"prize_reserve"})
+    U->>A: ft_on_transfer, the prize reserve grows
     G->>A: approve_battle (audit passed)
     A->>A: bonus = draw_bps of the prize reserve, locked in the battle
     Note over A: The battle page shows the bonus during the deposit window.<br/>Deposits happen here (section 2).
@@ -132,7 +135,7 @@ flowchart LR
     H -->|deposit into a battle| R[Arena redeems WAR for USDC]
     R --> B[Battle]
     H -.->|melted value| MB[Melted backing in WAR]
-    MB -->|release_melt, anyone| PR[Prize reserve in the arena]
+    MB -->|release_melt: the agent before each approval, or anyone| PR[Prize reserve in the arena]
     PR -->|draw_bps of the reserve, locked when a battle is approved| BON[Battle bonus, shown during deposits]
     BON -->|added at settlement| S[Profit before the split]
     BON -.->|returned if no winner| PR
@@ -159,7 +162,7 @@ Assumptions: the reserve starts empty, and `draw_bps` is 20%. The draw share is 
 | --- | --- |
 | WAR balance | 14 × (1 − 0.00438)^72 = **10.206294 WAR** |
 | Melted | 3.793706 USDC (about; the supply rounds up by up to 2 units) |
-| After `release_melt` | the prize reserve holds about 3.79 USDC |
+| After `release_melt` (the agent calls it before approving battle 2) | the prize reserve holds about 3.79 USDC |
 
 **Battle 2**, approved after the release:
 - **Approval.** The battle locks 20% of the reserve, **0.758741 USDC**, as its bonus. The battle page shows "+0.758741 USDC bonus" for the whole deposit window.
