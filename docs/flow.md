@@ -23,7 +23,7 @@ The numbers below follow the specs.
 
 ## 1. Battle lifecycle
 
-The statuses do not change. What is new is where the reserve, WAR and the furnace come in.
+The statuses do not change. What is new is where the prize bonus, WAR and the furnace come in. A battle locks its bonus when it is approved, so players see the bonus before they deposit.
 
 ```mermaid
 stateDiagram-v2
@@ -39,8 +39,12 @@ stateDiagram-v2
     Settling --> Settled: every step booked
     Settled --> [*]: winners claim
 
+    note right of Approved
+      Bonus locked: draw_bps of the prize reserve,
+      shown on the battle for the whole deposit window.
+    end note
     note right of Settling
-      Dump booked: draw from the prize reserve, split 55/35/5/5.
+      Dump booked: proceeds plus the battle's bonus, split 55/35/5/5.
       Burn: winner coin into the furnace.
     end note
     note right of Settled
@@ -48,8 +52,8 @@ stateDiagram-v2
       plus the 35% share minted as WAR.
     end note
     note left of Voided
-      Voided, tie and halted battles
-      draw nothing from the reserve.
+      Empty side, tie and halted battles return their bonus
+      to the reserve. Audit failures never lock one.
     end note
 ```
 
@@ -88,11 +92,14 @@ sequenceDiagram
     participant W as WAR
     participant T as Treasury
     actor P as Winner
+    G->>A: approve_battle (audit passed)
+    A->>A: bonus = draw_bps of the prize reserve, locked in the battle
+    Note over A: The battle page shows the bonus during the deposit window.<br/>Deposits happen here (section 2).
     G->>A: settle_battle(final prices)
     G->>A: execute_step(Dump)
     A->>D: sell the loser vault
     D->>A: USDC proceeds
-    A->>A: profit = proceeds + draw from the prize reserve
+    A->>A: profit = proceeds + the battle's bonus
     A->>A: split 55 / 35 / 5 / 5
     G->>A: execute_step(Buy 55%)
     A->>D: USDC to winner coin (liquid pool)
@@ -115,7 +122,7 @@ sequenceDiagram
 
 ## 4. The melt loop
 
-WAR melts 4380 ppm every hour (10% per day). The USDC behind the melted value is not lost: anyone moves it to the prize reserve, and the next battles that settle draw a fixed share of it into their profit.
+WAR melts 4380 ppm every hour (10% per day). The USDC behind the melted value is not lost: anyone moves it to the prize reserve, and every battle that is approved locks a fixed share of the reserve as its bonus. The bonus is shown during deposits and joins the profit at settlement.
 
 ```mermaid
 flowchart LR
@@ -126,7 +133,9 @@ flowchart LR
     R --> B[Battle]
     H -.->|melted value| MB[Melted backing in WAR]
     MB -->|release_melt, anyone| PR[Prize reserve in the arena]
-    PR -->|draw_bps of the reserve, per settling battle| S[Profit before the split]
+    PR -->|draw_bps of the reserve, locked when a battle is approved| BON[Battle bonus, shown during deposits]
+    BON -->|added at settlement| S[Profit before the split]
+    BON -.->|returned if no winner| PR
     B --> S
     S --> C
 ```
@@ -135,7 +144,7 @@ flowchart LR
 
 Assumptions: the reserve starts empty, and `draw_bps` is 20%. The draw share is still open (to be picked by the simulation), so 20% is only for illustration.
 
-**Battle 1:** PEPE beats SHIB. The dump realizes 40 USDC and the reserve adds nothing.
+**Battle 1:** PEPE beats SHIB. It was approved while the reserve was empty, so its bonus is 0. The dump realizes 40 USDC.
 
 | Share | Amount | Goes to |
 | --- | --- | --- |
@@ -152,14 +161,15 @@ Assumptions: the reserve starts empty, and `draw_bps` is 20%. The draw share is 
 | Melted | 3.793706 USDC (about; the supply rounds up by up to 2 units) |
 | After `release_melt` | the prize reserve holds about 3.79 USDC |
 
-**Battle 2:**
+**Battle 2**, approved after the release:
+- **Approval.** The battle locks 20% of the reserve, **0.758741 USDC**, as its bonus. The battle page shows "+0.758741 USDC bonus" for the whole deposit window.
 - **Deposit.** The winner deposits 25 USDC in one action: 10.206294 WAR plus 14.793706 USDC topped up from the internal balance.
-- **Settlement.** The battle settles with a dump of 40 USDC. The draw is 20% of the reserve, 0.758741 USDC, so the profit is **40.758741 USDC**:
+- **Settlement.** The battle settles with a dump of 40 USDC. With the bonus, the profit is **40.758741 USDC**:
   - 22.417307 liquid
   - 14.265559 WAR
   - 2.037937 burned
   - 2.037938 fee
-- **Reserve.** About 3.03 USDC stays in the reserve for the next battles.
+- **Reserve.** About 3.03 USDC stays in the reserve for the next battles that are approved. Had battle 2 been halted, its 0.758741 USDC would have gone back to the reserve.
 
 The 3.79 USDC that the winner let melt went back into prizes instead of staying stranded in the arena, which is what happens to expired credit today.
 
@@ -170,7 +180,7 @@ The 3.79 USDC that the winner let melt went back into prizes instead of staying 
   - the loss at the next hour, and a countdown to it
   - a deposit action that uses WAR first
 - **Battle page:**
-  - the reserve draw of that battle
+  - the battle's bonus, from approval on, so it is visible during the deposit window
   - the amount burned into the furnace
 - **Burn leaderboard:** coins ranked by `burned / ft_total_supply`, each with its battle history, the furnace account and its balance.
 - **Token pages:** WAR rules from `get_params`, supply, backing and melted backing from `get_state`.
@@ -179,4 +189,4 @@ The 3.79 USDC that the winner let melt went back into prizes instead of staying 
 
 - **Nobody can change** the WAR or furnace rules or code. Neither account has a key.
 - **The arena owner can still upgrade the arena.** A malicious upgrade could take the prize reserve and anything in flight inside the arena, or skip future burns. It cannot touch WAR that holders keep, WAR's backing, or coins already in the furnace.
-- **The agent still drives settlement.** The reserve draw and the burn happen when it settles. If it stops, WAR keeps melting and the melt can still be released, but no battle draws from the reserve.
+- **The agent still drives approval and settlement.** A bonus is locked when it approves, and the bonus and the burn are paid when it settles. If it stops, WAR keeps melting and the melt can still be released, but no new battle locks a bonus and locked bonuses wait in their battles.
