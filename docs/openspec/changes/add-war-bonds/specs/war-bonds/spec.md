@@ -49,7 +49,7 @@ WAR SHALL launch with a step length of one hour and a melt of 4380 parts per mil
 - **THEN** the account loses 0.438 WAR, not a whole day's melt
 
 ### Requirement: Every balance melts by the same share each step
-At every step boundary counted from launch, every WAR balance and the total supply SHALL lose the melt share of their value. The value after any number of steps SHALL be the exact compounded value, rounded down to the smallest unit. Between boundaries, values SHALL not change. The melt SHALL not depend on when an account last acted.
+At every step boundary counted from launch, every WAR balance SHALL lose the melt share of its value. A balance after any number of steps SHALL be the exact compounded value, rounded down to the smallest unit. The total supply SHALL melt the same way but round up, by at most 2 units, so it never falls below the sum of balances. Between boundaries, values SHALL not change. The melt SHALL not depend on when an account last acted.
 
 #### Scenario: One day of melt
 - **GIVEN** an account holding 100 WAR
@@ -91,7 +91,7 @@ The USDC held by the WAR contract SHALL always be at least the current total sup
 #### Scenario: Backing after a day of melt
 - **GIVEN** 100 WAR in circulation backed by 100 USDC
 - **WHEN** 24 hourly steps pass
-- **THEN** the total supply is 90.000866 WAR and the melted backing is 9.999134 USDC
+- **THEN** the balance is 90.000866 WAR, the total supply is 90.000868 WAR (rounded up) and the melted backing is 9.999132 USDC
 
 ### Requirement: Melted backing goes only to the prize reserve
 Anyone SHALL be able to trigger the release of the melted backing. The released USDC SHALL go only to the arena's prize reserve, and a release event SHALL record the amount.

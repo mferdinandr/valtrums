@@ -22,7 +22,7 @@ Launch it like VALT in mferdinandr/valtrum#33: deploy, initialise and delete the
 - Alternative: implement NEP-141 inside the arena. Rejected: the arena account has keys and owner setters, so its rules would not be immutable.
 
 **2. Lazy per-account melt.**
-Each account stores its value and the step (hour) it was last updated. Reading or touching a balance applies the melt for the steps since then as one exact power of `1 - 4380/1_000_000`, rounded down. The total supply is tracked the same way and is never lower than the sum of balances, so the backing check stays safe.
+Each account stores its value and the step (hour) it was last updated. Reading or touching a balance applies the melt for the steps since then as one exact power of `1 - 4380/1_000_000`, rounded down. The total supply is tracked the same way but rounded up by at most 2 units at each update (`melt_upper`), because balances that are updated at different times round down at different points. That keeps the total at or above the sum of balances, so the backing check stays safe. The dust this leaves is at most about 0.0005 WAR in total.
 - Alternative: a global rebasing index (shares times an index that shrinks daily). Simpler, but the index heads to zero over time and new mints would need ever larger share counts. Rejected for overflow risk.
 - Alternative: a 7-day timer per account (today's rule). Rejected: sending coins to a fresh account would restart the timer.
 
