@@ -1,6 +1,6 @@
 # Security review
 
-Scope: `contracts/arena`, `contracts/router`, `contracts/mock-dex` (testnet only) and `contracts/mock-ft` (testnet only, open mint).
+Scope: `contracts/arena`, `contracts/router`, `contracts/ref-adapter`, `contracts/mock-dex` (testnet only) and `contracts/mock-ft` (testnet only, open mint).
 Method: a detector checklist for NEAR contracts (access control, callbacks, reentrancy, one-yocto checks, storage prefixes, initialization, arithmetic, gas, storage cost) applied to the source, plus the unit tests and the sandbox scenarios in `contracts/integration`.
 
 This is a self-review done during development, not an external audit. Do not deploy the contracts with real funds on the strength of it.
@@ -35,9 +35,14 @@ This is a self-review done during development, not an external audit. Do not dep
 | 8 | Low | `battle_id` and `step_index` use native integers in JSON. They stay far below 2^53 | Accepted |
 | 9 | Low | A routed deposit that arrives after the agent locked the battle is refused and ends up as the beneficiary's stranded balance in the router | Documented. The user recovers it with `claim_stranded` |
 | 10 | Info | `mock-ft` mints to anyone and `mock-dex` uses fixed rates. They exist for testnet and sandbox use only | By design |
+| 11 | Medium | The swap adapter measures output by balance change. A transfer of the output coin to the adapter during a swap is counted as swap output | Accepted: it can only raise the payout, `min_out` still applies, and the sender gives the coin away. A production build should read the exchange's receipts instead |
+| 12 | Low | Only one swap is in flight in the adapter. A stuck swap blocks the next ones | Refused swaps are refunded in full. Anyone can retry a failed measurement; the owner can clear a stuck record |
+| 13 | Low | Coin that a receiver hands back after a payout stays in the adapter | Kept in its ledger and recoverable by the owner with `withdraw_held` |
+| 14 | Info | The testnet pools are made and funded by the project, so their prices are not market prices | By design for the demo. A production deployment needs real pools and a real price source |
 
 ## Trust assumptions
 
+- The swap adapter holds no user funds between swaps, apart from coin a receiver handed back. The owner sets which pool serves each pair.
 - The owner can pause deposits, rotate agents, and change the treasury, router and execution settings. Withdrawals, refunds and claims keep working while paused.
 - The agent decides audits, prices and settlement timing. Prices come from a 30-minute average of a public API.
 - A function-call session key scoped to the arena can at most spend the funded internal balance and valid credit on deposits.
