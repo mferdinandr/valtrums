@@ -1,7 +1,7 @@
 import { MIN_LIQUIDITY_USD } from "./auditor.js";
 import { TWAP_WINDOW_MS } from "./twap.js";
 
-export type MarketData = "dexscreener" | "mockdex";
+export type MarketData = "dexscreener" | "mockdex" | "ref";
 
 export interface MarketConfig {
   marketData: MarketData;
@@ -9,6 +9,8 @@ export interface MarketConfig {
   twapWindowSecs: number;
   /** An audited token needs more than this much liquidity, in whole USD. */
   minLiquidityUsd: number;
+  /** Exchange whose pools serve as market data. Set when `marketData` is "ref". */
+  refExchangeId?: string;
 }
 
 export const MIN_TWAP_WINDOW_SECS = 30;
@@ -42,8 +44,12 @@ export function loadMarketConfig(
   intervalSecs: number,
 ): MarketConfig {
   const source = env.MARKET_DATA?.trim() || "dexscreener";
-  if (source !== "dexscreener" && source !== "mockdex") {
-    throw new Error(`MARKET_DATA must be "dexscreener" or "mockdex"`);
+  if (source !== "dexscreener" && source !== "mockdex" && source !== "ref") {
+    throw new Error(`MARKET_DATA must be "dexscreener", "mockdex" or "ref"`);
+  }
+  const refExchangeId = env.REF_EXCHANGE_ID?.trim() || undefined;
+  if (source === "ref" && !refExchangeId) {
+    throw new Error("MARKET_DATA=ref needs REF_EXCHANGE_ID (the exchange contract account)");
   }
   const twapWindowSecs = boundedInt(
     env,
@@ -58,5 +64,5 @@ export function loadMarketConfig(
     );
   }
   const minLiquidityUsd = boundedInt(env, "MIN_LIQUIDITY_USD", MIN_LIQUIDITY_USD, 1, MAX_MIN_LIQUIDITY_USD);
-  return { marketData: source, twapWindowSecs, minLiquidityUsd };
+  return { marketData: source, twapWindowSecs, minLiquidityUsd, refExchangeId };
 }

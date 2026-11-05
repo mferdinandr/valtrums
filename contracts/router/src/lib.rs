@@ -18,7 +18,7 @@ use msgs::{ArenaMsg, SwapDeposit};
 use types::{ConfigView, PendingSwap};
 
 /// Gas for the USDC `ft_transfer_call` to the DEX. The DEX runs inside it.
-const DEX_TRANSFER_GAS: Gas = Gas::from_tgas(120);
+const DEX_TRANSFER_GAS: Gas = Gas::from_tgas(170);
 /// Gas for the coin `ft_transfer_call` to the arena. The arena runs inside it.
 const ARENA_TRANSFER_GAS: Gas = Gas::from_tgas(50);
 const CALLBACK_GAS: Gas = Gas::from_tgas(15);

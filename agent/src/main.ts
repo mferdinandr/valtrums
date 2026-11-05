@@ -11,6 +11,7 @@ import { loadMarketConfig } from "./market-config.js";
 import { createMarketData } from "./market-wiring.js";
 import { OnChainStepExecutor } from "./onchain-executor.js";
 import { MockDexQuoteSource } from "./quote.js";
+import { RefQuoteSource } from "./ref-market.js";
 import { runLoop } from "./loop.js";
 import { createJsonLogger, errorMessage } from "./logger.js";
 import { NearArenaClient, createNearTransport } from "./near-client.js";
@@ -75,7 +76,12 @@ async function main(): Promise<void> {
     executor,
     onChainExecutor:
       rt.executionMode === "onchain"
-        ? new OnChainStepExecutor(client, new MockDexQuoteSource(transport), {
+        ? new OnChainStepExecutor(
+            client,
+            market.marketData === "ref" && market.refExchangeId
+              ? new RefQuoteSource(transport, market.refExchangeId)
+              : new MockDexQuoteSource(transport),
+            {
             slippageBps: rt.slippageBps,
             stepTimeoutMs: rt.stepTimeoutSecs * 1000,
             log,
