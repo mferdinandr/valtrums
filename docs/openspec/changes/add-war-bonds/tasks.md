@@ -2,13 +2,13 @@
 
 ## 1. WAR contract
 
-- [ ] 1.1 Add `contracts/war` to the workspace with NEP-141, NEP-145 and NEP-148 and an init that fixes the melt per step (4380 ppm), the step length (3600 s), the arena and USDC ids; verify `cargo build --target wasm32-unknown-unknown -p valtrum-war` succeeds
-- [ ] 1.2 Implement the lazy per-account melt with an exact power and floor rounding, plus the total supply bound; verify unit tests for the spec values (90.000866 WAR after 24 steps, 81.001559 after 48), a receipt just before a step boundary, transfer round trips and supply ≥ sum of balances pass
-- [ ] 1.3 Implement mint from arena USDC (refuse other senders and tokens) and `redeem` for arena-held WAR; verify unit tests for both refusals and the 1:1 burn and release pass
-- [ ] 1.4 Implement `release_melt` to the arena and the backing ≥ supply check; verify a unit test that releases exactly backing minus supply and emits `melt_released`
-- [ ] 1.5 Convert unused amounts to current value in `ft_resolve_transfer`; verify a unit test where a transfer call crosses a step boundary refunds the melted value
-- [ ] 1.6 Add `get_params`, `get_state` and `get_account` views; verify unit tests read the next loss and next boundary
-- [ ] 1.7 Document WAR rules, trust assumptions and why minting needs no sybil check in `docs/war.md`; verify the README links to it
+- [x] 1.1 Add `contracts/war` to the workspace with NEP-141, NEP-145 and NEP-148 and an init that fixes the melt per step (4380 ppm), the step length (3600 s), the arena and USDC ids; verify `cargo build --target wasm32-unknown-unknown -p valtrum-war` succeeds
+- [x] 1.2 Implement the lazy per-account melt with an exact power and floor rounding, plus the total supply bound; verify unit tests for the spec values (90.000866 WAR after 24 steps, 81.001559 after 48), a receipt just before a step boundary, transfer round trips and supply ≥ sum of balances pass
+- [x] 1.3 Implement mint from arena USDC (refuse other senders and tokens) and `redeem` for arena-held WAR; verify unit tests for both refusals and the 1:1 burn and release pass
+- [x] 1.4 Implement `release_melt` to the arena and the backing ≥ supply check; verify a unit test that releases exactly backing minus supply and emits `melt_released`
+- [x] 1.5 Convert unused amounts to current value in `ft_resolve_transfer`; verify a unit test where a transfer call crosses a step boundary refunds the melted value
+- [x] 1.6 Add `get_params`, `get_state` and `get_account` views; verify unit tests read the next loss and next boundary
+- [x] 1.7 Document WAR rules, trust assumptions and why minting needs no sybil check in `docs/war.md`; verify the README links to it
 
 ## 2. Arena changes
 
