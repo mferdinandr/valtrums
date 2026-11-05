@@ -71,6 +71,24 @@ A complete run on the mock DEX (battle 1):
 
 The numbers add up: nothing was created or lost beyond the burn.
 
+A complete run on the exchange pools (battle 6):
+
+| Step | Result |
+| --- | --- |
+| Prices | PEPE 0.0015654 to 0.0019567 USD (+25.0%, read from its pool), SHIB flat: side A wins |
+| Vaults | 400 PEPE on side A, 160 SHIB on side B |
+| Dump | 160 SHIB sold in the SHIB pool for 39.832284 USDC (pool fee and price impact included) |
+| Buy | 21.907756 USDC (55%) bought 11,160.88 PEPE |
+| Burn | 1.991614 USDC (5%) bought 1,014.45 PEPE, sent to the burn account |
+| Return | 1.991615 USDC (5%) fee booked for the treasury |
+| Credit | 13.941299 USDC (35%) of locked credit for the winner, valid for 7 days |
+| Claim by the winner | 11,560.88 PEPE (400 principal + 11,160.88 reward) withdrawn |
+| Adapter afterwards | no swap in flight and no coin of this battle left in it |
+
+The four profit shares add up to the 39.832284 USDC the dump produced. The pool, not a fixed rate, decides the amounts, so they differ slightly from a mock run. Each battle also moves the PEPE pool price; the demo script sizes its buy from the pool as it stands.
+
+Run one agent per arena key. During this work a leftover agent from an earlier run (mock market data, same key) locked a battle with the wrong prices and voided another; the demo script now starts the agent as a single process and stops it on exit.
+
 The agent needs a node that does not rate-limit: the public `rpc.testnet.near.org` answered HTTP 429 during the first attempt and stalled the run. The script defaults to `https://test.rpc.fastnear.com`; set `NEAR_RPC_URL` to use another provider.
 
 ## Deploying your own copy
