@@ -24,6 +24,15 @@ agent/           TypeScript automation: auditor, settlement, watchdog
 web/             Next.js app and the AI prompt terminal
 deploy/          container and compose files for the agent
 docs/            architecture, deployment, security review
+  openspec/      specs of current behaviour and proposed changes (OpenSpec)
+```
+
+## Specs and proposed changes
+
+`docs/openspec` follows [OpenSpec](https://github.com/Fission-AI/OpenSpec): `specs/` describes how the system behaves today, and `changes/` holds proposals with their spec deltas, design and tasks. Validate them from `docs/`:
+
+```bash
+cd docs && npx @fission-ai/openspec validate --all --strict
 ```
 
 ## Requirements
