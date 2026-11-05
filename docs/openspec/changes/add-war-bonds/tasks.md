@@ -15,13 +15,13 @@
 - [ ] 2.1 Replace credit state with the WAR id, pending mints and the prize reserve with its fixed `draw_bps`; verify arena unit tests for init and views pass
 - [ ] 2.2 Mint the credit share as WAR at `claim`, with pending mints and a public retry on failure; verify unit tests for success, failure and retry pass
 - [ ] 2.3 Accept WAR deposits with an optional internal-balance top-up, redeem, route through the router, and re-mint plus restore on failure; verify unit tests for the hybrid deposit and the failed swap pass
-- [ ] 2.4 Accept `prize_reserve` releases only from WAR and add the draw to the profit before the split; verify unit tests for the boosted split, stranger refunds and halted battles drawing nothing
+- [ ] 2.4 Accept `prize_reserve` releases only from WAR, lock the bonus in `approve_battle`, show it in the battle view, add it to the profit before the split, and return it on void or halt; verify unit tests for the locked bonus, two approvals in a row, the boosted split, stranger refunds, and the return on halt and on an empty side
 - [ ] 2.5 Remove `deposit_with_credit` and the credit fields of the account view; verify `pnpm -F @valtrum/web test` and `pnpm -F @valtrum/agent test` still pass after their types are updated
 - [ ] 2.6 Update `docs/architecture.md` and the security review for WAR and the reserve; verify the docs describe each new method
 
 ## 3. Sandbox and deployment
 
-- [ ] 3.1 Add a sandbox scenario: battle won, WAR minted, a day passes, WAR deposit with top-up into a second battle, melt released, second battle draws from the reserve; verify `cargo test -p valtrum-integration` passes in CI
+- [ ] 3.1 Add a sandbox scenario: battle won, WAR minted, a day passes, WAR deposit with top-up into a second battle, melt released, a second battle locks a bonus at approval that is added to its profit; verify `cargo test -p valtrum-integration` passes in CI
 - [ ] 3.2 Extend the deploy script to launch WAR without keys and wire it to a fresh arena; verify `list-keys` shows no key on the WAR account on testnet
 
 ## 4. Web and terminal
