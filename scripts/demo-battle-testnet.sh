@@ -5,6 +5,10 @@
 #
 #   scripts/demo-battle-testnet.sh <suffix>
 #
+# Swaps run on the testnet exchange through the swap adapter and the pools made by
+# setup-ref-pools.sh. The price moves by a real trade in the PEPE pool. Set
+# DEX_MODE=mock to use the fixed-rate mock DEX instead.
+#
 # Needs the `near` CLI, node and pnpm, and the credentials the deploy script stored.
 # The agent uses NEAR_RPC_URL (default: a FastNEAR testnet endpoint); the public
 # rpc.testnet.near.org rate-limits and can stall a run.
@@ -15,6 +19,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OWNER="valtrum-${SUFFIX}.testnet"
 ARENA="valtrum-arena-${SUFFIX}.testnet"
 DEX="valtrum-dex-${SUFFIX}.testnet"
+ADAPTER="valtrum-refdex-${SUFFIX}.testnet"
+EXCHANGE="${EXCHANGE_ID:-ref-finance-101.testnet}"
+DEX_MODE="${DEX_MODE:-ref}"
+LP="lp.valtrum-${SUFFIX}.testnet"
+ROUTER="valtrum-router-${SUFFIX}.testnet"
 USDC="valtrum-usdc-${SUFFIX}.testnet"
 PEPE="valtrum-pepe-${SUFFIX}.testnet"
 SHIB="valtrum-shib-${SUFFIX}.testnet"
@@ -27,7 +36,15 @@ SIGN=(sign-with-legacy-keychain send)
 WORK="$(mktemp -d)"
 AGENT_PID=""
 
-cleanup() { [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true; rm -rf "$WORK"; }
+cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ -f "$WORK/agent.log" ]; then
+    echo "--- agent log (last 40 lines) ---" >&2
+    tail -n 40 "$WORK/agent.log" | cut -c1-300 >&2
+  fi
+  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 say() { printf '\n== %s\n' "$*"; }
@@ -76,6 +93,13 @@ user() { # <account>
   echo "created $1"
 }
 
+if [ "$DEX_MODE" = "ref" ]; then MARKET_DATA=ref; else MARKET_DATA=mockdex; fi
+
+say "Pointing the router and the arena at the $DEX_MODE exchange"
+if [ "$DEX_MODE" = "ref" ]; then ACTIVE_DEX="$ADAPTER"; else ACTIVE_DEX="$DEX"; fi
+call "$OWNER" "$ROUTER" set_dex "{\"dex\":\"$ACTIVE_DEX\"}"
+call "$OWNER" "$ARENA" set_execution "{\"dex\":\"$ACTIVE_DEX\",\"burn_account\":\"burn.${OWNER}\"}"
+
 say "Agent"
 CRED="$HOME/.near-credentials/testnet/${AGENT}.json"
 [ -f "$CRED" ] || { echo "missing $CRED" >&2; exit 1; }
@@ -85,7 +109,7 @@ chmod 600 "$WORK/agent.key"
 (cd "$ROOT_DIR" &&
   ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
   NEAR_RPC_URL="${NEAR_RPC_URL:-https://test.rpc.fastnear.com}" NEAR_NETWORK=testnet \
-  EXECUTION_MODE=onchain MARKET_DATA=mockdex TWAP_WINDOW_SECS=40 AGENT_INTERVAL_SECS=10 \
+  EXECUTION_MODE=onchain MARKET_DATA="$MARKET_DATA" REF_EXCHANGE_ID="$EXCHANGE" TWAP_WINDOW_SECS=40 AGENT_INTERVAL_SECS=10 \
   HEALTH_PORT=0 BASELINE_STORE_PATH="$WORK/baselines.json" \
   pnpm -F @valtrum/agent start > "$WORK/agent.log" 2>&1) &
 AGENT_PID=$!
@@ -101,8 +125,18 @@ mint "$USDC" "$ALICE" 5000000                       # the 5 USDC bond
 mint "$PEPE" "$BOB" 400000000000000000000           # 400 PEPE
 mint "$SHIB" "$CAROL" 160000000000000000000         # 160 SHIB
 
+if [ "$DEX_MODE" = "ref" ]; then
+  say "Pool prices before the battle"
+  pool_price() { # <pool id>: USDC reserve and PEPE reserve
+    view "$EXCHANGE" get_pool "{\"pool_id\":$1}" | python3 -c '
+import json,sys; p=json.load(sys.stdin); print("reserves:", p["amounts"])'
+  }
+  PEPE_POOL="$(view "$ADAPTER" get_pool "{\"token_in\":\"$USDC\",\"token_out\":\"$PEPE\"}")"
+  echo "PEPE pool $PEPE_POOL"; pool_price "$PEPE_POOL"
+else
 say "Reset the PEPE price to the deployment rate (1 PEPE = 0.001 USDC)"
 call "$OWNER" "$DEX" set_rate "{\"token_in\":\"$PEPE\",\"token_out\":\"$USDC\",\"num\":\"1\",\"den\":\"1000000000000000\"}"
+fi
 
 say "Proposal"
 BEFORE="$(view "$ARENA" get_battle_count '{}')"
@@ -124,8 +158,35 @@ import json,sys; b=json.load(sys.stdin); print("vault A:", b["vault_a"], " vault
 say "Waiting for the agent to lock the battle with TWAP prices"
 wait_status "$ID" Live 240
 
+if [ "$DEX_MODE" = "ref" ]; then
+  say "Move the price: buy PEPE in its pool until it is about 25% dearer"
+  # Size the buy from the pool as it is now (the exchange keeps its fee in the pool).
+  PUMP="$(view "$EXCHANGE" get_pool "{\"pool_id\":$PEPE_POOL}" | python3 -c '
+import json, sys
+pool = json.load(sys.stdin)
+usdc = int(pool["amounts"][pool["token_account_ids"].index(sys.argv[1])])
+coin = int(pool["amounts"][pool["token_account_ids"].index(sys.argv[2])])
+fee = pool["total_fee"]
+def price_after(a):
+    net = a * (10000 - fee) // 10000
+    out = coin * net // (usdc + net)
+    return (usdc + a) * 10**36 // (coin - out)
+target = usdc * 10**36 // coin * 5 // 4
+lo, hi = 0, usdc
+while lo < hi:
+    mid = (lo + hi) // 2
+    if price_after(mid) >= target: hi = mid
+    else: lo = mid + 1
+print(lo)' "$USDC" "$PEPE")"
+  echo "buying with $PUMP USDC base units"
+  mint "$USDC" "$LP" "$PUMP"
+  MSG="{\"force\":0,\"actions\":[{\"pool_id\":$PEPE_POOL,\"token_in\":\"$USDC\",\"token_out\":\"$PEPE\",\"amount_in\":\"$PUMP\",\"min_amount_out\":\"1\"}]}"
+  transfer_call "$LP" "$USDC" "$EXCHANGE" "$PUMP" "$MSG"
+  pool_price "$PEPE_POOL"
+else
 say "Move the price: PEPE +25% (1 PEPE = 0.00125 USDC)"
 call "$OWNER" "$DEX" set_rate "{\"token_in\":\"$PEPE\",\"token_out\":\"$USDC\",\"num\":\"5\",\"den\":\"4000000000000000\"}"
+fi
 
 say "Waiting for the battle to end and the agent to settle it"
 wait_status "$ID" Settled 420
@@ -148,6 +209,7 @@ say "Where the value went"
 echo "burned PEPE:     $(view "$PEPE" ft_balance_of "{\"account_id\":\"burn.${OWNER}\"}")"
 echo "arena PEPE left: $(view "$PEPE" ft_balance_of "{\"account_id\":\"$ARENA\"}")"
 echo "arena USDC left: $(view "$USDC" ft_balance_of "{\"account_id\":\"$ARENA\"}")"
+[ "$DEX_MODE" = "ref" ] && { echo "adapter leftovers: PEPE $(view "$ADAPTER" get_held "{\"token\":\"$PEPE\"}") USDC $(view "$ADAPTER" get_held "{\"token\":\"$USDC\"}") SHIB $(view "$ADAPTER" get_held "{\"token\":\"$SHIB\"}")"; pool_price "$PEPE_POOL"; }
 echo "treasury accrued: $(view "$ARENA" get_config '{}' | field "['treasury_accrued']")"
-say "Agent log (last lines)"
-tail -n 12 "$WORK/agent.log" | cut -c1-200
+say "Agent log (market data, lock and settlement lines)"
+grep -E "agent starting|locked|dispatched|settled" "$WORK/agent.log" | cut -c1-300 | tail -n 14 || true
