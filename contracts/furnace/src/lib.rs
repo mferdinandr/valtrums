@@ -184,3 +184,5 @@ fn emit(event: &str, data: Value) {
     env::log_str(&format!("EVENT_JSON:{payload}"));
 }
 
+#[cfg(test)]
+mod tests;
