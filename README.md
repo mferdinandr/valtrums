@@ -8,7 +8,7 @@ Two meme-coin tribes battle. When the clock runs out, the losing vault is taken 
 - An agent audits proposals, sets prices, watches liquidity, and drives settlement.
 - A web app with an AI prompt terminal turns "Deposit 50 USDC to $WIF" into one validated transaction.
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/flow.md](docs/flow.md) for the flow with war bonds and the furnace, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/flow.md](docs/flow.md) for the flow with war bonds and the furnace, [docs/war.md](docs/war.md) for the WAR war bonds, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
 
 ## Repository layout
 
@@ -19,6 +19,7 @@ contracts/
   mock-dex/      fixed-rate DEX for testnet and the sandbox
   mock-ft/       open-mint NEP-141 token for testnet and the sandbox
   mock-mpc/      stand-in MPC signer for the sandbox
+  war/           WAR war bonds: USDC-backed NEP-141 that melts 10% a day, minted and redeemed by the arena
   integration/   sandbox tests (near-workspaces)
 agent/           TypeScript automation: auditor, settlement, watchdog
 web/             Next.js app and the AI prompt terminal
