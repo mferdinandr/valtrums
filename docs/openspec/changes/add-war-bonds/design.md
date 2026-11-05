@@ -22,9 +22,13 @@ Launch it like VALT in mferdinandr/valtrum#33: deploy, initialise and delete the
 - Alternative: implement NEP-141 inside the arena. Rejected: the arena account has keys and owner setters, so its rules would not be immutable.
 
 **2. Lazy per-account melt.**
-Each account stores its value and the day it was last updated. Reading or touching a balance applies the melt for the days since then as one exact power, rounded down. The total supply is tracked the same way and is never lower than the sum of balances, so the backing check stays safe.
+Each account stores its value and the step (hour) it was last updated. Reading or touching a balance applies the melt for the steps since then as one exact power of `1 - 4380/1_000_000`, rounded down. The total supply is tracked the same way and is never lower than the sum of balances, so the backing check stays safe.
 - Alternative: a global rebasing index (shares times an index that shrinks daily). Simpler, but the index heads to zero over time and new mints would need ever larger share counts. Rejected for overflow risk.
 - Alternative: a 7-day timer per account (today's rule). Rejected: sending coins to a fresh account would restart the timer.
+
+**2a. Hourly steps of 4380 ppm instead of one daily step of 10%.**
+A daily step would take a full 10% from anyone who received WAR just before the day boundary. 24 hourly steps of `1 - 0.9^(1/24)` give the same daily effect without that cliff. The exact hourly share is 0.43804%. Rounded to whole parts per million, 4380 ppm gives 9.9991% per day and 4381 ppm gives 10.0013%. 4380 is chosen so that a day never costs more than 10%. Basis points are too coarse: 44 bps per hour would be 10.04% per day.
+- Alternative: a continuous melt per second. Rejected: no visible benefit over hourly steps, and the power has to be computed over far larger exponents.
 
 **3. Mint path: the arena pays USDC into WAR.**
 At `claim`, the arena sends the credit share in USDC to WAR with an `ft_transfer_call` whose message names the winner. WAR checks that the sender is the arena and the token is USDC, registers the winner if needed, and mints. If the mint fails, the arena keeps the USDC as a pending mint for that winner, and anyone can retry it. The share never turns into liquid USDC.
@@ -51,7 +55,7 @@ Arena state changes shape (credit fields removed, reserve added, WAR id added). 
 
 ## Risks / Trade-offs
 
-- [In-flight transfer calls cross a day boundary] → The resolve step converts the unused amount back to current value before refunding, so a refund never restores melt.
+- [In-flight transfer calls cross a step boundary] → The resolve step converts the unused amount back to current value before refunding, so a refund never restores melt.
 - [Wallets show a balance that falls without transfers] → The token page and docs explain the melt; `get_account` shows the next loss and when it happens.
 - [WAR pays registration storage for winners] → Registration happens only on mint, which needs a real win. Fund WAR's NEAR at launch and monitor it.
 - [10% per day is gentle: 48% of the value is left after a week, so the push to fight again is softer than the old 7-day cliff] → Chosen on purpose, so a winner who waits a few days is not punished hard. The prize reserve fills more slowly as a result; the simulation shows by how much.
@@ -67,4 +71,4 @@ Rollback: point the agent and the web app back at the old arena. WAR on the new 
 
 ## Open Questions
 
-- The melt is decided: 10% per day. Still open, from the simulation: `draw_bps`, and whether the 10% is applied once a day or in hourly steps. Hourly steps avoid losing a full day's melt right after receiving WAR. Either way, the daily effect stays 10%.
+- `draw_bps`, to be taken from the simulation. The melt is decided: 4380 parts per million per hourly step, 10% per day.

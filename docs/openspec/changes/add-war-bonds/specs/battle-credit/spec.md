@@ -30,4 +30,4 @@ If a deposit funded with WAR does not complete, the arena SHALL return the WAR t
 
 ### Requirement: Credit expires seven days after the last grant
 **Reason**: Replaced by the daily melt of WAR, which applies to every balance the same way and cannot be reset by a new grant.
-**Migration**: See the `war-bonds` requirement "Every balance melts by the same share each day". The melt is 10% per day, so 47.8% of the value is left after 7 days and 22.9% after 14 days.
+**Migration**: See the `war-bonds` requirement "Every balance melts by the same share each step". The melt is 10% per day in hourly steps, so 47.8% of the value is left after 7 days and 22.9% after 14 days.
