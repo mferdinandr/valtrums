@@ -160,10 +160,28 @@ wait_status "$ID" Live 240
 
 if [ "$DEX_MODE" = "ref" ]; then
   say "Move the price: buy PEPE in its pool until it is about 25% dearer"
-  # With 100,000 USDC in the pool, about 11,800 USDC of buying lifts the price 25%.
-  mint "$USDC" "$LP" 11900000000
-  MSG="{\"force\":0,\"actions\":[{\"pool_id\":$PEPE_POOL,\"token_in\":\"$USDC\",\"token_out\":\"$PEPE\",\"amount_in\":\"11900000000\",\"min_amount_out\":\"1\"}]}"
-  transfer_call "$LP" "$USDC" "$EXCHANGE" 11900000000 "$MSG"
+  # Size the buy from the pool as it is now (the exchange keeps its fee in the pool).
+  PUMP="$(view "$EXCHANGE" get_pool "{\"pool_id\":$PEPE_POOL}" | python3 -c '
+import json, sys
+pool = json.load(sys.stdin)
+usdc = int(pool["amounts"][pool["token_account_ids"].index(sys.argv[1])])
+coin = int(pool["amounts"][pool["token_account_ids"].index(sys.argv[2])])
+fee = pool["total_fee"]
+def price_after(a):
+    net = a * (10000 - fee) // 10000
+    out = coin * net // (usdc + net)
+    return (usdc + a) * 10**36 // (coin - out)
+target = usdc * 10**36 // coin * 5 // 4
+lo, hi = 0, usdc
+while lo < hi:
+    mid = (lo + hi) // 2
+    if price_after(mid) >= target: hi = mid
+    else: lo = mid + 1
+print(lo)' "$USDC" "$PEPE")"
+  echo "buying with $PUMP USDC base units"
+  mint "$USDC" "$LP" "$PUMP"
+  MSG="{\"force\":0,\"actions\":[{\"pool_id\":$PEPE_POOL,\"token_in\":\"$USDC\",\"token_out\":\"$PEPE\",\"amount_in\":\"$PUMP\",\"min_amount_out\":\"1\"}]}"
+  transfer_call "$LP" "$USDC" "$EXCHANGE" "$PUMP" "$MSG"
   pool_price "$PEPE_POOL"
 else
 say "Move the price: PEPE +25% (1 PEPE = 0.00125 USDC)"
@@ -193,5 +211,5 @@ echo "arena PEPE left: $(view "$PEPE" ft_balance_of "{\"account_id\":\"$ARENA\"}
 echo "arena USDC left: $(view "$USDC" ft_balance_of "{\"account_id\":\"$ARENA\"}")"
 [ "$DEX_MODE" = "ref" ] && { echo "adapter leftovers: PEPE $(view "$ADAPTER" get_held "{\"token\":\"$PEPE\"}") USDC $(view "$ADAPTER" get_held "{\"token\":\"$USDC\"}") SHIB $(view "$ADAPTER" get_held "{\"token\":\"$SHIB\"}")"; pool_price "$PEPE_POOL"; }
 echo "treasury accrued: $(view "$ARENA" get_config '{}' | field "['treasury_accrued']")"
-say "Agent log (last lines)"
-tail -n 12 "$WORK/agent.log" | cut -c1-200
+say "Agent log (market data, lock and settlement lines)"
+grep -E "agent starting|locked|dispatched|settled" "$WORK/agent.log" | cut -c1-300 | tail -n 14 || true
