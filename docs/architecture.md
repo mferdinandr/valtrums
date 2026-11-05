@@ -1,5 +1,7 @@
 # Architecture
 
+> This describes the system as it runs today. The flow after the war bonds and furnace changes is in [flow.md](flow.md).
+
 ## The game in one page
 
 Two meme coins, A and B, fight over a period. Players put coins in the vault of the side they believe in. Prices are compared at the start and the end; the side whose coin gained more (in percent) wins.
