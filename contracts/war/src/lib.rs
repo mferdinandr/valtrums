@@ -665,3 +665,5 @@ impl StorageManagement for War {
     }
 }
 
+#[cfg(test)]
+mod tests;
