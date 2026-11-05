@@ -19,6 +19,10 @@
 - [ ] 2.5 Remove `deposit_with_credit` and the credit fields of the account view; verify `pnpm -F @valtrum/web test` and `pnpm -F @valtrum/agent test` still pass after their types are updated
 - [ ] 2.6 Update `docs/architecture.md` and the security review for WAR and the reserve; verify the docs describe each new method
 
+## 2b. Agent
+
+- [ ] 2.7 Call `release_melt` on WAR before each `approve_battle`, ignoring "Nothing has melted yet" and logging other failures, and add the WAR id to the agent config; verify agent tests show the release before the approval, and the approval still sent when the release is refused
+
 ## 3. Sandbox and deployment
 
 - [ ] 3.1 Add a sandbox scenario: battle won, WAR minted, a day passes, WAR deposit with top-up into a second battle, melt released, a second battle locks a bonus at approval that is added to its profit; verify `cargo test -p valtrum-integration` passes in CI

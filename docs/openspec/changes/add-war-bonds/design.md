@@ -45,6 +45,10 @@ A holder sends WAR to the arena with a deposit message (battle, side, optional t
 - Alternative: lock it when the battle goes Live. Rejected: the bonus would appear only after deposits close.
 - Trade-off: battles approved right after a large release get a larger bonus, and the share shrinks for each battle approved after it. That is intended: the reserve spreads over the next battles instead of going to one.
 
+**6a. The agent releases the melt right before approving.**
+Locking the bonus from a stale reserve would hand melted value to later battles instead of this one. The agent already sends `approve_battle`, so it sends `release_melt` to WAR first, waits for it to finish, and approves either way. "Nothing has melted yet" and other release failures are logged and ignored.
+- Alternative: the arena pulls the release itself inside `approve_battle`. Rejected: the bonus would then be locked in a callback, after the release resolves, which splits approval over two receipts for no gain. `release_melt` stays permissionless, so anyone can still call it at any time.
+
 **7. Fresh deployment.**
 Arena state changes shape (credit fields removed, reserve added, WAR id added). Testnet moves to new accounts instead of migrating state.
 

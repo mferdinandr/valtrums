@@ -32,7 +32,7 @@ The 35% locked credit is Valtrum's retention loop, but today it is only a number
     - new prize reserve
     - credit state removed
   - `contracts/router` unchanged
-- **Agent:** none for the coin. Approval already calls the arena, which locks the bonus, and settlement adds it to the profit.
+- **Agent:** calls `release_melt` on WAR before each `approve_battle`, so the bonus comes from an up-to-date reserve. A release with nothing melted is ignored. Approval itself locks the bonus in the arena, and settlement adds it to the profit.
 - **Web and terminal:** show WAR balance and melt instead of credit and expiry. The intent source "credit" means WAR.
 - **Docs:**
   - PRD section 4 (decaying loop)

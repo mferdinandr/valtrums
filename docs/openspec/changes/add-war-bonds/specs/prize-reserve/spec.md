@@ -35,6 +35,19 @@ When a battle is approved, the arena SHALL move a fixed share of the prize reser
 - **WHEN** two battles are approved one after the other
 - **THEN** the first locks 20 USDC, the second locks 16 USDC, and the reserve keeps 64 USDC
 
+### Requirement: The agent releases the melt before each approval
+Before it approves a battle, the agent SHALL trigger the release of melted WAR backing, so that the bonus is locked from an up-to-date reserve. A release that finds nothing melted, or that fails, SHALL not block the approval.
+
+#### Scenario: Melt waiting at approval time
+- **GIVEN** 10 USDC of melted backing in WAR and an empty reserve
+- **WHEN** the agent approves a battle with a draw of 20%
+- **THEN** it releases the 10 USDC first, and the battle locks a bonus of 2 USDC
+
+#### Scenario: Nothing has melted
+- **GIVEN** no melted backing in WAR
+- **WHEN** the agent approves a battle
+- **THEN** the release is refused and the agent still approves the battle
+
 ### Requirement: The bonus is visible during the deposit window
 From approval on, the arena SHALL show each battle's bonus in its battle view, so players see it before they deposit.
 
