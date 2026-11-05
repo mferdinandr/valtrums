@@ -55,15 +55,22 @@ call() { # <signer> <contract> <method> <json> [deposit]
     attached-deposit "${5:-0 NEAR}" sign-as "$1" "${NET[@]}" "${SIGN[@]}" >/dev/null
 }
 
-view() { # <contract> <method> <json>  -> prints the JSON return value only
-  near contract call-function as-read-only "$1" "$2" json-args "$3" "${NET[@]}" now 2>/dev/null |
-    python3 -c '
-import sys, re
+view() { # <contract> <method> <json>  -> prints the JSON return value only (retries a flaky read)
+  local out attempt
+  for attempt in 1 2 3 4; do
+    out="$(near contract call-function as-read-only "$1" "$2" json-args "$3" "${NET[@]}" now 2>/dev/null |
+      python3 -c '
+import sys
 text = sys.stdin.read()
 start = text.find("Function execution return value (printed to stdout):")
-body = text[start:].split("\n", 1)[1] if start >= 0 else text
+if start < 0:
+    sys.exit(1)
+body = text[start:].split("\n", 1)[1]
 end = body.find("Here is your console command")
-print(body[: end if end >= 0 else len(body)].strip())'
+print(body[: end if end >= 0 else len(body)].strip())')" && { printf '%s\n' "$out"; return 0; }
+    sleep 2
+  done
+  echo "view $1.$2 failed after retries" >&2; return 1
 }
 
 field() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
@@ -71,7 +78,7 @@ field() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 wait_status() { # <battle id> <status> <timeout secs>
   local deadline=$((SECONDS + $3)) current=""
   while [ $SECONDS -lt $deadline ]; do
-    current="$(view "$ARENA" get_battle "{\"battle_id\":$1}" | field "['status']")"
+    current="$(view "$ARENA" get_battle "{\"battle_id\":$1}" | field "['status']")" || current="unreadable"
     [ "$current" = "$2" ] && { echo "battle $1 is $2"; return 0; }
     sleep 5
   done
@@ -106,12 +113,12 @@ CRED="$HOME/.near-credentials/testnet/${AGENT}.json"
 python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["private_key"], end="")' "$CRED" > "$WORK/agent.key"
 chmod 600 "$WORK/agent.key"
 (cd "$ROOT_DIR" && pnpm install --frozen-lockfile >/dev/null && pnpm -F @valtrum/agent build >/dev/null)
-(cd "$ROOT_DIR" &&
-  ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
+(cd "$ROOT_DIR/agent" &&
+  exec env ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
   NEAR_RPC_URL="${NEAR_RPC_URL:-https://test.rpc.fastnear.com}" NEAR_NETWORK=testnet \
   EXECUTION_MODE=onchain MARKET_DATA="$MARKET_DATA" REF_EXCHANGE_ID="$EXCHANGE" TWAP_WINDOW_SECS=40 AGENT_INTERVAL_SECS=10 \
   HEALTH_PORT=0 BASELINE_STORE_PATH="$WORK/baselines.json" \
-  pnpm -F @valtrum/agent start > "$WORK/agent.log" 2>&1) &
+  node dist/main.js > "$WORK/agent.log" 2>&1) &
 AGENT_PID=$!
 sleep 5; echo "agent started (pid $AGENT_PID), log: $WORK/agent.log"
 
