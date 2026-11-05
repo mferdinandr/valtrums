@@ -19,8 +19,12 @@ export interface NearTransport {
 }
 
 const AGENT_CALL_GAS = "100 Tgas";
-/** execute_step starts a cross-contract swap, so it gets a larger budget (unused gas is refunded). */
-const EXECUTE_STEP_GAS = "200 Tgas";
+/**
+ * execute_step starts a swap that runs through the adapter, the exchange and back to
+ * the arena, so it gets the largest budget a transaction can carry (unused gas is
+ * refunded). 200 Tgas was not enough for that chain: the step was rolled back.
+ */
+const EXECUTE_STEP_GAS = "300 Tgas";
 /** request_signature / retry_signature call the MPC signer (about 280 Tgas needed). */
 const SIGN_GAS = "300 Tgas";
 
