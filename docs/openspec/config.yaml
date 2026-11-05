@@ -1,0 +1,15 @@
+schema: spec-driven
+
+context: |
+  Valtrum runs on NEAR (testnet first). Contracts are Rust with near-sdk 5 in contracts/,
+  the agent is TypeScript in agent/, the web app is Next.js in web/.
+  Token amounts are integers in the token's smallest unit; USDC has 6 decimals.
+  Write all artifacts in English.
+  Any rule a memecoin mechanic depends on must be fixed at launch and readable on chain,
+  with no admin method that changes it (NEAR "Memecoins With Mechanics" track).
+
+rules:
+  proposal:
+    - State which product rule from the PRD (valtrum_near_migration_prd_tech_spec.md) changes, if any
+  design:
+    - List every trust assumption on the owner, the agent and other contracts
