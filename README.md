@@ -7,8 +7,9 @@ Two meme-coin tribes battle. When the clock runs out, the losing vault is taken 
 - Contracts in Rust (`near-sdk` 5) hold the battles, vaults, credit and settlement math.
 - An agent audits proposals, sets prices, watches liquidity, and drives settlement.
 - A web app with an AI prompt terminal turns "Deposit 50 USDC to $WIF" into one validated transaction.
+- **VALT**, the war-drum coin: an NEP-141 memecoin with a daily muster ritual in the contract. Days that meet the community target mint a small reward to everyone who checked in; missed days burn a slice of the war chest and reset the streak. The rules are fixed at launch, there is no owner, and the contract account has no keys. See [docs/valt.md](docs/valt.md), including the limits of its sybil resistance.
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/valt.md](docs/valt.md) for the VALT rules, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
 
 ## Repository layout
 
@@ -19,6 +20,7 @@ contracts/
   mock-dex/      fixed-rate DEX for testnet and the sandbox
   mock-ft/       open-mint NEP-141 token for testnet and the sandbox
   mock-mpc/      stand-in MPC signer for the sandbox
+  valt/          VALT: NEP-141 coin with the daily muster, streak and war-chest burn
   integration/   sandbox tests (near-workspaces)
 agent/           TypeScript automation: auditor, settlement, watchdog
 web/             Next.js app and the AI prompt terminal

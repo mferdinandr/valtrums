@@ -1,6 +1,6 @@
 # Security review
 
-Scope: `contracts/arena`, `contracts/router`, `contracts/ref-adapter`, `contracts/mock-dex` (testnet only) and `contracts/mock-ft` (testnet only, open mint).
+Scope: `contracts/arena`, `contracts/router`, `contracts/ref-adapter`, `contracts/valt`, `contracts/mock-dex` (testnet only) and `contracts/mock-ft` (testnet only, open mint).
 Method: a detector checklist for NEAR contracts (access control, callbacks, reentrancy, one-yocto checks, storage prefixes, initialization, arithmetic, gas, storage cost) applied to the source, plus the unit tests and the sandbox scenarios in `contracts/integration`.
 
 This is a self-review done during development, not an external audit. Do not deploy the contracts with real funds on the strength of it.
@@ -39,6 +39,9 @@ This is a self-review done during development, not an external audit. Do not dep
 | 12 | Low | Only one swap is in flight in the adapter. A stuck swap blocks the next ones | Refused swaps are refunded in full. Anyone can retry a failed measurement; the owner can clear a stuck record |
 | 13 | Low | Coin that a receiver hands back after a payout stays in the adapter | Kept in its ledger and recoverable by the owner with `withdraw_held` |
 | 14 | Info | The testnet pools are made and funded by the project, so their prices are not market prices | By design for the demo. A production deployment needs real pools and a real price source |
+| 15 | Medium | VALT's sybil resistance is capital-based: N musters a day need N × `min_balance`, but nothing ties an account to a person | Accepted for the demo and written up in [valt.md](valt.md). A real launch needs a personhood or holding-age check |
+| 16 | Low | VALT pays storage for each account's unclaimed muster record | Accepted: one small record per active musterer, removed on claim. Monitor the contract balance |
+| 17 | Low | The arena's burn account is an ordinary account owned by the deployer, so the arena's 5% burn is a transfer, not a supply burn | Open. VALT's own `burn` and its missed-day burn do reduce supply |
 
 ## Trust assumptions
 
