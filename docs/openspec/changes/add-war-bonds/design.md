@@ -22,7 +22,7 @@ Launch it like VALT in mferdinandr/valtrum#33: deploy, initialise and delete the
 - Alternative: implement NEP-141 inside the arena. Rejected: the arena account has keys and owner setters, so its rules would not be immutable.
 
 **2. Lazy per-account melt.**
-Each account stores its value and the step (hour) it was last updated. Reading or touching a balance applies the melt for the steps since then as one exact power of `1 - 4380/1_000_000`, rounded down. The total supply is tracked the same way and is never lower than the sum of balances, so the backing check stays safe.
+Each account stores its value and the step (hour) it was last updated. Reading or touching a balance applies the melt for the steps since then as one exact power of `1 - 4380/1_000_000`, rounded down. The total supply is tracked the same way but rounded up by at most 2 units at each update (`melt_upper`), because balances that are updated at different times round down at different points. That keeps the total at or above the sum of balances, so the backing check stays safe. The dust this leaves is at most about 0.0005 WAR in total.
 - Alternative: a global rebasing index (shares times an index that shrinks daily). Simpler, but the index heads to zero over time and new mints would need ever larger share counts. Rejected for overflow risk.
 - Alternative: a 7-day timer per account (today's rule). Rejected: sending coins to a fresh account would restart the timer.
 
@@ -39,8 +39,15 @@ A holder sends WAR to the arena with a deposit message (battle, side, optional t
 **5. Melt release is permissionless and has one destination.**
 `release_melt` sends the backing minus the total supply to the arena with a `prize_reserve` message. The arena accepts that message only from the WAR account. The WAR and arena account ids are fixed in each other's init; account names are chosen before deployment, so there is no cycle.
 
-**6. Reserve draw when the dump is booked.**
-`draw = floor(reserve * draw_bps / 10000)` is added to the realized dump amount before `split_profit`. Buy, burn and fee steps already spend USDC held by the arena. Void, tie and halt never reach this point.
+**6. Bonus locked at approval, paid at settlement.**
+`approve_battle` moves `bonus = floor(reserve * draw_bps / 10000)` from the reserve into the battle, and the battle view shows it for the whole deposit window. When the dump is booked, the bonus is added to the realized amount before `split_profit`. Buy, burn and fee steps already spend USDC held by the arena. A void for an empty side or a tie, or a halt, sends the bonus back to the reserve.
+- Alternative: draw when the dump is booked. Rejected: players would not see the bonus while deciding whether to deposit.
+- Alternative: lock it when the battle goes Live. Rejected: the bonus would appear only after deposits close.
+- Trade-off: battles approved right after a large release get a larger bonus, and the share shrinks for each battle approved after it. That is intended: the reserve spreads over the next battles instead of going to one.
+
+**6a. The agent releases the melt right before approving.**
+Locking the bonus from a stale reserve would hand melted value to later battles instead of this one. The agent already sends `approve_battle`, so it sends `release_melt` to WAR first, waits for it to finish, and approves either way. "Nothing has melted yet" and other release failures are logged and ignored.
+- Alternative: the arena pulls the release itself inside `approve_battle`. Rejected: the bonus would then be locked in a callback, after the release resolves, which splits approval over two receipts for no gain. `release_melt` stays permissionless, so anyone can still call it at any time.
 
 **7. Fresh deployment.**
 Arena state changes shape (credit fields removed, reserve added, WAR id added). Testnet moves to new accounts instead of migrating state.
@@ -49,7 +56,7 @@ Arena state changes shape (credit fields removed, reserve added, WAR id added). 
 
 - **WAR deployer**: none after launch; the account has no key.
 - **Arena owner**: can still upgrade the arena. A malicious upgrade could take the prize reserve and any WAR or USDC in flight inside the arena. It cannot touch WAR that holders keep or the backing held by WAR.
-- **Agent**: no role in WAR. It still drives settlement, so the reserve draw happens only when the agent settles.
+- **Agent**: no role in WAR. It still approves and settles battles, so a bonus is locked only when the agent approves and paid only when it settles. If it stops, locked bonuses wait in their battles until settlement, void or halt.
 - **USDC contract**: the backing is only as good as the USDC token. On testnet that is the open-mint mock USDC, so backing there proves the mechanics, not value.
 - **Sybil resistance**: WAR is minted only from real battle profit, so splitting accounts earns nothing extra.
 
