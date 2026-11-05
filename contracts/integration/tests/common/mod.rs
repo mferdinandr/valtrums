@@ -42,6 +42,8 @@ pub fn wasm(name: &str) -> Vec<u8> {
                 "valtrum-mock-ft",
                 "-p",
                 "valtrum-mock-mpc",
+                "-p",
+                "valtrum-valt",
             ])
             .status()
             .expect("cargo build");
