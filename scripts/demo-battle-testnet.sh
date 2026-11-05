@@ -106,12 +106,12 @@ CRED="$HOME/.near-credentials/testnet/${AGENT}.json"
 python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["private_key"], end="")' "$CRED" > "$WORK/agent.key"
 chmod 600 "$WORK/agent.key"
 (cd "$ROOT_DIR" && pnpm install --frozen-lockfile >/dev/null && pnpm -F @valtrum/agent build >/dev/null)
-(cd "$ROOT_DIR" &&
-  ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
+(cd "$ROOT_DIR/agent" &&
+  exec env ARENA_CONTRACT_ID="$ARENA" AGENT_ACCOUNT_ID="$AGENT" AGENT_PRIVATE_KEY_FILE="$WORK/agent.key" \
   NEAR_RPC_URL="${NEAR_RPC_URL:-https://test.rpc.fastnear.com}" NEAR_NETWORK=testnet \
   EXECUTION_MODE=onchain MARKET_DATA="$MARKET_DATA" REF_EXCHANGE_ID="$EXCHANGE" TWAP_WINDOW_SECS=40 AGENT_INTERVAL_SECS=10 \
   HEALTH_PORT=0 BASELINE_STORE_PATH="$WORK/baselines.json" \
-  pnpm -F @valtrum/agent start > "$WORK/agent.log" 2>&1) &
+  node dist/main.js > "$WORK/agent.log" 2>&1) &
 AGENT_PID=$!
 sleep 5; echo "agent started (pid $AGENT_PID), log: $WORK/agent.log"
 
