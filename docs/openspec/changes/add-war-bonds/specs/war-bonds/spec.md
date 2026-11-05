@@ -36,6 +36,13 @@ WAR SHALL be minted only when the arena delivers USDC to the WAR contract, in th
 - **WHEN** an account other than the arena transfers USDC to the WAR contract to mint
 - **THEN** no WAR is minted and the USDC is refunded
 
+### Requirement: The melt rate is 10% per day
+WAR SHALL launch with a melt rate of 1000 basis points (10%) per day.
+
+#### Scenario: Launch configuration
+- **WHEN** anyone reads `get_params` after launch
+- **THEN** the melt rate is 1000 basis points per day
+
 ### Requirement: Every balance melts by the same share each day
 At every day boundary counted from launch, every WAR balance and the total supply SHALL lose the fixed melt share of their value, rounded down. Between boundaries, values SHALL not change. The melt SHALL not depend on when an account last acted.
 

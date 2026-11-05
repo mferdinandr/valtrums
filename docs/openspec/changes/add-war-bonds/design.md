@@ -54,7 +54,7 @@ Arena state changes shape (credit fields removed, reserve added, WAR id added). 
 - [In-flight transfer calls cross a day boundary] → The resolve step converts the unused amount back to current value before refunding, so a refund never restores melt.
 - [Wallets show a balance that falls without transfers] → The token page and docs explain the melt; `get_account` shows the next loss and when it happens.
 - [WAR pays registration storage for winners] → Registration happens only on mint, which needs a real win. Fund WAR's NEAR at launch and monitor it.
-- [A melt that is too fast feels punitive, too slow gives no urgency] → Pick the rate from the 60-day simulation before launch; it cannot be changed later.
+- [10% per day is gentle: 48% of the value is left after a week, so the push to fight again is softer than the old 7-day cliff] → Chosen on purpose, so a winner who waits a few days is not punished hard. The prize reserve fills more slowly as a result; the simulation shows by how much.
 
 ## Migration Plan
 
@@ -67,4 +67,4 @@ Rollback: point the agent and the web app back at the old arena. WAR on the new 
 
 ## Open Questions
 
-- Exact `melt_bps` per day, `day_length_secs` and `draw_bps`, to be taken from the simulation.
+- The melt is decided: 10% per day. Still open, from the simulation: `draw_bps`, and whether the 10% is applied once a day or in hourly steps. Hourly steps avoid losing a full day's melt right after receiving WAR. Either way, the daily effect stays 10%.

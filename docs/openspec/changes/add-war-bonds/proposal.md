@@ -7,10 +7,10 @@ The 35% locked credit is Valtrum's retention loop, but today it is only a number
 ## What Changes
 
 - **New coin `WAR` (NEP-141, 6 decimals).** Winners receive their 35% profit share as WAR instead of internal credit. At mint, 1 WAR is backed by 1 USDC held by the WAR contract.
-- **Daily melt.** Every WAR balance loses the same fixed share of its value each day. The melt rate is fixed at launch, readable by anyone, and has no admin key.
+- **Daily melt of 10%.** Every WAR balance loses 10% of its value each day (48% is left after 7 days, 23% after 14). The rate is fixed at launch, readable by anyone, and has no admin key.
 - **Battle-only redemption.** WAR can be transferred freely, but only the arena can turn it back into USDC, and only to fund a battle deposit. Holders cannot cash out directly.
 - **Melted value feeds the prize reserve.** The USDC backing that melted away is released to the arena's prize reserve. A share of the reserve is added to the profit of every battle that settles.
-- **BREAKING (product rule):** the PRD rule "credit expires after 7 days, a new grant restarts the timer" becomes "WAR melts a fixed share per day". Internal credit balances, `deposit_with_credit`, and the credit fields of the account view are removed.
+- **BREAKING (product rule):** the PRD rule "credit expires after 7 days, a new grant restarts the timer" becomes "WAR melts 10% per day". Internal credit balances, `deposit_with_credit`, and the credit fields of the account view are removed.
 - **Hybrid deposits stay possible.** A WAR transfer can be combined with the sender's internal USDC balance in one deposit (PRD example: 35 from WAR + 15 from the wallet).
 
 ## Capabilities

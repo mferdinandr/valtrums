@@ -31,7 +31,7 @@
 
 ## 5. Parameters
 
-- [ ] 5.1 Simulate 60 days of battles and holder behaviour under several melt and draw values, and record supply and reserve over time in `docs/war-simulation.md`; verify the chosen values are the ones in the deploy script
+- [ ] 5.1 Simulate 60 days of battles and holder behaviour with the 10% daily melt under several draw values and both step lengths (daily, hourly), and record supply and reserve over time in `docs/war-simulation.md`; verify the chosen values are the ones in the deploy script
 
 ## Workflow follow-up
 
