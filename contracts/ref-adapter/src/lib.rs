@@ -24,14 +24,14 @@ use events::emit;
 use msgs::TransferMsg;
 
 /// Gas for the swap on Ref (`ft_transfer_call`, swap, output transfer, resolve).
-const REF_SWAP_GAS: Gas = Gas::from_tgas(90);
+const REF_SWAP_GAS: Gas = Gas::from_tgas(35);
 /// Gas for `on_ref_swap`, which also starts the balance read and its callback.
 const ON_REF_SWAP_GAS: Gas = Gas::from_tgas(110);
 const BALANCE_GAS: Gas = Gas::from_tgas(10);
 /// Gas for `on_measured`, which also starts the payout and its callback.
-const ON_MEASURED_GAS: Gas = Gas::from_tgas(80);
+const ON_MEASURED_GAS: Gas = Gas::from_tgas(95);
 /// Gas for the payout `ft_transfer_call`. The receiver runs inside this budget.
-const PAYOUT_GAS: Gas = Gas::from_tgas(50);
+const PAYOUT_GAS: Gas = Gas::from_tgas(80);
 const ON_PAYOUT_GAS: Gas = Gas::from_tgas(10);
 const TRANSFER_GAS: Gas = Gas::from_tgas(15);
 
