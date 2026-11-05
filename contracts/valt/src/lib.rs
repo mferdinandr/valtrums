@@ -751,3 +751,5 @@ impl FungibleTokenMetadataProvider for Valt {
     }
 }
 
+#[cfg(test)]
+mod tests;
