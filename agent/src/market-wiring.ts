@@ -5,6 +5,7 @@ import { createFetchHttpClient } from "./http.js";
 import type { MarketConfig } from "./market-config.js";
 import { MockDexHoneypotSimulator } from "./mockdex-honeypot.js";
 import { MockDexMarket, MockDexPriceSource } from "./mockdex-market.js";
+import { RefHoneypotSimulator, RefMarket, RefPriceSource } from "./ref-market.js";
 import type { NearTransport } from "./near-client.js";
 import type { PriceSampler } from "./runtime.js";
 import { DexScreenerPriceSource, type PriceSource } from "./twap.js";
@@ -36,6 +37,22 @@ export async function createMarketData(
       sampler: source,
       liquidity: market,
       honeypot: new MockDexHoneypotSimulator(market),
+    };
+  }
+  if (cfg.marketData === "ref") {
+    const { execution_dex, usdc } = await client.getConfig();
+    if (!execution_dex) {
+      throw new Error("MARKET_DATA=ref needs get_config().execution_dex, but the arena has none set");
+    }
+    if (!usdc) throw new Error("MARKET_DATA=ref needs get_config().usdc, but it is empty");
+    if (!cfg.refExchangeId) throw new Error("MARKET_DATA=ref needs REF_EXCHANGE_ID");
+    const market = new RefMarket(transport, cfg.refExchangeId, execution_dex, usdc);
+    const source = new RefPriceSource(market);
+    return {
+      priceSource: source,
+      sampler: source,
+      liquidity: market,
+      honeypot: new RefHoneypotSimulator(market),
     };
   }
   const dex = new DexScreenerClient({ http: createFetchHttpClient(), apiKey: dexscreenerApiKey });
