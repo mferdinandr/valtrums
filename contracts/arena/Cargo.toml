@@ -7,6 +7,10 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Sandbox fixtures are private to the contract account and never enabled in normal builds.
+sandbox-fixtures = []
+
 [dependencies]
 near-sdk = { workspace = true }
 uint = { workspace = true }
