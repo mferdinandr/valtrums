@@ -86,3 +86,7 @@ No target Robinhood deploy or MCP command exists yet.
 ## License
 
 MIT
+
+## Revenue policy update
+
+Revenue percentages above are defaults. Protocol authority can configure total fee and creator share, each in integer basis points from 0 to 10000, without an extra business cap. Default values are 10 and 5000. Every battle snapshots values, version and beneficiaries at creation before deposits; later updates apply only to new battles. The entire fee of protocol-created battles goes to protocol. See [token economics](docs/token-economics.md).

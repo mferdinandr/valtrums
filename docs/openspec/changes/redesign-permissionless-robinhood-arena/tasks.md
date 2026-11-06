@@ -35,7 +35,7 @@ All implementation work below is unfinished. Completing documentation does not c
 
 ## 6. Settlement and payout
 
-- [ ] 6.1 Implement per-token 99.9/0.05/0.05 and protocol 99.9/0.1 with deterministic rounding
+- [ ] 6.1 Implement configurable per-token revenue, authority-only versioned updates, creation-time snapshots, default 10/5000 bps, and deterministic rounding
 - [ ] 6.2 Implement stable payout IDs, reservation-bound payload/nonce signing and original-token transfers
 - [ ] 6.3 Test final receipts, replacement/revert/timeout/crash retries and no double payment
 
@@ -57,3 +57,5 @@ All implementation work below is unfinished. Completing documentation does not c
 - [ ] 9.2 Implement finalized event replay, deficit/stuck-data alerts and recovery runbook
 - [ ] 9.3 Record two/three-community, protocol creator, negative/zero scores, repeated ties, rounding, incomplete audit and payout retry demos
 - [ ] 9.4 Run target tests and independent review; preserve implementation tracker until acceptance complete
+
+- [ ] 6.4 Test custom fee/split, zero/full boundaries, invalid and unauthorized updates, creation-time snapshot stability during gathering/overtime, and event/version consistency

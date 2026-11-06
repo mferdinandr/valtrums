@@ -94,3 +94,7 @@ Approval requires GoPlus checks that reject critical risks, plus an independent 
 | OQ-INTEGRATIONS | GoPlus Robinhood testnet coverage, Intents routes, NEAR AI access and signer compatibility | Record actual evidence; unsupported integrations block the corresponding live acceptance claim |
 
 The [roadmap](implementation-roadmap.md) orders these gates. This proposal replaces earlier swap settlement, TWAP, bond and credit plans for the target arena. Existing deployments retain their existing rules until an explicitly implemented migration; this PR performs none.
+
+## Revenue policy update
+
+Revenue percentages above are defaults. Protocol authority can configure total fee and creator share, each in integer basis points from 0 to 10000, without an extra business cap. Default values are 10 and 5000. Every battle snapshots values, version and beneficiaries at creation before deposits; later updates apply only to new battles. The entire fee of protocol-created battles goes to protocol. See [token economics](token-economics.md).

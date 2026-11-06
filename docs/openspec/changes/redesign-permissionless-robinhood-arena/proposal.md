@@ -36,3 +36,7 @@ Future work affects arena state/APIs, asset contracts/custody, foreign signing, 
 The parent-folder OpenSpec archive remains historical and is not copied here. Its Ref swap, TWAP, bond and credit plans are superseded for this target. Existing repository WAR/furnace proposals retain historical task status; this change is not archived as completed.
 
 Product source: [product-spec.md](../../../product-spec.md). Implementation tracker: [parent issue draft](../../../implementation-tracker.md).
+
+## Revenue policy amendment
+
+Replace fixed revenue with protocol-configurable total fee and creator share, versioned and snapshotted at battle creation. Preserve 0.1% and 50:50 as defaults, with only mathematical 0–100% bounds. Existing battle policies remain immutable.

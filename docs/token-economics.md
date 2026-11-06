@@ -2,6 +2,18 @@
 
 Status: **planned**. All balances are integers in the asset's declared smallest unit. No conversion of losing-token rewards to USDC or the winner token is part of this design. [Current-state economics](current-state.md) remain historical implementation behavior.
 
+## Configurable revenue policy
+
+Only protocol authority can set `total_fee_bps` (default 10) and `creator_share_bps` (default 5000). Both are integers in [0, 10000]; there is no extra business cap such as 10%. The 100% ceiling is mathematical: distributions cannot exceed available assets.
+
+Snapshot both values, policy version and authenticated beneficiaries when creating each battle; expose them before deposit. Later global updates never affect existing battles, including gathering and overtime. Emit actor, old/new values and incremented version on each update.
+
+Per losing token: `fee = floor(L_j * total_fee_bps / 10000)`, `Q_j = L_j - fee`. For user-created battles: `creator_fee = floor(fee * creator_share_bps / 10000)` and `protocol_fee = fee - creator_fee`. For protocol-created battles the full fee goes to protocol. Winner-pool allocation remains proportional with deterministic largest remainder.
+
+For example, total fee 2% and creator share 25% on 100000 units yields winner pool 98000, creator 500 and protocol 1500. Fee 0% or 100%, and creator share 0% or 100%, are valid boundaries.
+
+The following tables and rounding examples describe the **default policy** (0.1% total fee, 50:50 fee split); they are not fixed rates for every battle.
+
 ## Per-token distribution
 
 For final winner community W, let `C_W > 0` be its locked token units and `d_u` the units of participant u in W. The participant weight is `d_u / C_W`, using actual credited winning-token deposits, not USD value, vote weight or an agent's nominal transfer amount.
@@ -18,7 +30,7 @@ The creator's fee is separate from any reward earned by their winning position. 
 
 All original nonwinning communities are losing vaults, including communities eliminated in earlier overtime rounds. Allocate only after a unique final winner. No fee is charged to winning principal by this rule.
 
-## Integer rounding and conservation
+## Default-policy rounding and conservation
 
 Use checked wide arithmetic. Take the **total 0.1% fee first**, then divide that fee equally between creator and protocol. Each receives an ideal 0.05% of the losing vault, not 0.5%. For a protocol creator, the protocol receives the whole fee.
 

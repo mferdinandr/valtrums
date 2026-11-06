@@ -47,3 +47,7 @@ DAO membership, weights, quorum, deadline, execution/fallback; tax thresholds an
 Dependency details and acceptance scenarios are in the roadmap. In particular, backing precedes deposits; audit gates live rounds; scoring precedes settlement; DAO disposition waits for governance design; UI cannot claim payment from a signature or broadcast alone.
 
 The documentation PR must use **Refs #N**, not an auto-closing keyword. Keep this implementation issue open until its acceptance criteria are delivered.
+
+## Revenue policy update
+
+Revenue percentages above are defaults. Protocol authority can configure total fee and creator share, each in integer basis points from 0 to 10000, without an extra business cap. Default values are 10 and 5000. Every battle snapshots values, version and beneficiaries at creation before deposits; later updates apply only to new battles. The entire fee of protocol-created battles goes to protocol. See [token economics](token-economics.md).

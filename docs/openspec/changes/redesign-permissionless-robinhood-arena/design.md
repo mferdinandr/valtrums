@@ -56,3 +56,7 @@ Use isolated new testnet deployments after implementation. Existing deployment b
 ## Open Questions
 
 DAO mechanism including membership, weight, quorum, deadlines and fallback; audit tax/admin admissibility and freshness policy (critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../../../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.
+
+## Configurable revenue amendment
+
+Revenue is adjustable by protocol authority: total fee and creator share default to 10/5000 bps, each within [0,10000] with no additional business cap. Creation-time snapshots override earlier fixed-fee wording and lock-time policy selection: existing battles never inherit later updates. Use the generalized settlement formula; previous 0.1% and equal-split examples remain default-policy examples. Emit versioned policy updates and expose snapshots before deposit.

@@ -33,3 +33,7 @@ DAO design discussion may begin earlier; a live principal-disposition implementa
 ## Delivery policy
 
 Implement in dependency-sized PRs with evidence. Reuse legacy code only after reviewing its assumptions against the target. Earlier Ref swap settlement, TWAP, bonds, credit and WAR/furnace integration proposals are historical context, not target acceptance criteria. Do not archive this proposal or check implementation tasks merely because the documentation merged.
+
+## Revenue policy update
+
+Revenue percentages above are defaults. Protocol authority can configure total fee and creator share, each in integer basis points from 0 to 10000, without an extra business cap. Default values are 10 and 5000. Every battle snapshots values, version and beneficiaries at creation before deposits; later updates apply only to new battles. The entire fee of protocol-created battles goes to protocol. See [token economics](token-economics.md).

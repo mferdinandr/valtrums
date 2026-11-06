@@ -21,3 +21,10 @@ The system SHALL lock communities, deposits, mode, fee identity and policies bef
 #### Scenario: Repeated lock
 - **WHEN** a scheduler repeats the same lock request
 - **THEN** the original snapshot remains unchanged
+
+### Requirement: Creation-time revenue snapshot
+Every battle SHALL snapshot total fee, creator share, policy version and authenticated fee beneficiaries at creation, expose them before deposit, and retain them through lock, all rounds and settlement.
+
+#### Scenario: Update during gathering
+- **WHEN** global policy changes while an existing battle gathers deposits
+- **THEN** its displayed and enforced revenue policy remains unchanged; only subsequently created battles receive the new policy

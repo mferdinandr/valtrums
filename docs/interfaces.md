@@ -9,11 +9,11 @@ Amounts and nanosecond timestamps are decimal strings, never JavaScript numbers.
 | Planned record | Required fields |
 | --- | --- |
 | AssetId | Robinhood chain ID, token contract, representation account, decimals, custody domain, mapping version |
-| BattleConfig | Creator/type, authenticated fee recipients, communities, mode, audit/observation policy hashes, gathering policy |
+| BattleConfig | Creator/type, snapshotted total_fee_bps, creator_share_bps, revenue_policy_version, authenticated fee recipients, communities, mode, audit/observation policy hashes, gathering policy |
 | LockedSnapshot | Battle, original communities, positive vault totals, beneficiary deposits, creator position, destinations, config hash |
 | Round | Index, candidates, start/end, mode, policy hash, evidence references, status |
 | Position | Beneficiary, community, actual credited units, consumed deposit receipts, snapshot |
-| Allocation | Battle/final round, winner, per-token total fee (floor(vault / 1000)), fee split, winner-pool remainder order, immutable allocation ID |
+| Allocation | Battle/final round, winner, per-token total fee (floor(vault * snapshotted_total_fee_bps / 10000)), fee split, winner-pool remainder order, immutable allocation ID |
 | Payout | Payout/entitlement IDs, asset, amount, recipient, path, nonce, payload hash, attempts, receipt, status |
 | BackingView | B, M, E, P, D, U amounts, source block/hash, finality, reconciliation status |
 | Escrow | Winning asset/amount, participant attribution, backing, decision/execution references; no assumed vote parameters |
@@ -93,3 +93,7 @@ A player policy binds user, contracts/methods, chain/asset/community filters, pe
 MCP endpoint, transport and deployment remain planned; there is no implemented MCP command here. Bind previews to a canonical hash and recheck balances, audit, round openness and limits before signing. Changed/expired previews require fresh authorization unless an existing grant explicitly covers the new action. Treat provider/metadata prompt text as untrusted. Reject infrastructure credentials at player-spending APIs.
 
 Existing terminal funding code does not prove Intents supports Robinhood testnet; unsupported routes must fail explicitly. See [ecosystem.md](ecosystem.md).
+
+## Planned revenue configuration
+
+`set_revenue_policy { total_fee_bps, creator_share_bps }` is protocol-authority-only; validate integer ranges [0,10000], increment version and emit `revenue_policy_updated` with actor and old/new values. `get_revenue_policy` exposes current defaults and version. Creation snapshots policy and beneficiaries; views and previews expose the immutable snapshot before deposit. Updates never rewrite an existing battle.
