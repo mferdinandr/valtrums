@@ -2,6 +2,10 @@
 
 Status: **planned, unimplemented**. This is the selected field mapping for the Robinhood testnet arena, not a claim that the API supports every test token. The [product specification](product-spec.md) governs battle behavior. Tax limits, admissibility of admin privileges and evidence freshness remain OPEN; the field mapping and critical rejection rules below are defined.
 
+On 2026-11-06 22:50 UTC, an unauthenticated request to the Token Security v1 endpoint for chain `46630` and `0x0000000000000000000000000000000000000001` returned code `2022`, `The main chain is not supported`, and a null result. This is evidence that this request did not provide coverage, not proof about every GoPlus product, credential, future response, or token. The agent's normalization and liquidity checks are isolated adapter work; they do not connect to lifecycle approval or establish live liquidity. Unit-test responses are fixtures.
+
+On the same date, a request for chain `4663` and the same address returned code `1` with an empty result. The endpoint accepted that chain ID but returned no token evidence, so this does not establish coverage of a particular token. The [Robinhood network configuration](https://docs.robinhood.com/chain/connecting/) identifies `4663` as mainnet and `46630` as testnet; their responses cannot be substituted for one another.
+
 ## Evidence and normalization
 
 Source: [GoPlus Token Security Response Details](https://docs.gopluslabs.io/reference/response-details), reviewed 2026-11-06; request schema: [Token Security API](https://docs.gopluslabs.io/reference/tokensecurityusingget_1). Preserve the raw response and its hash so later API/schema changes can be detected.

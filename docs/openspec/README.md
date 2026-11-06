@@ -1,6 +1,6 @@
 # OpenSpec coordination
 
-These ten changes supersede `redesign-permissionless-robinhood-arena`; it is not archived as completed. Each change gets a branch, implementation PR and review; all tasks start unchecked. The mixed implementation on `feat/openspec-redesign-arena` is reference only.
+These ten changes supersede `redesign-permissionless-robinhood-arena`; it is not archived as completed. Each change gets a branch, implementation PR and review. Check individual tasks only after implementation and verification; see each task list for current progress. The mixed implementation on `feat/openspec-redesign-arena` is reference only.
 
 | Order | Change | Dependencies and parallel work |
 | --- | --- | --- |
