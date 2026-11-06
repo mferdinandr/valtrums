@@ -21,3 +21,14 @@ The system SHALL lock communities, deposits, mode, fee identity and policies bef
 #### Scenario: Repeated lock
 - **WHEN** a scheduler repeats the same lock request
 - **THEN** the original snapshot remains unchanged
+
+#### Scenario: Audit refresh after lock
+- **WHEN** new audit or liquidity evidence arrives after lock
+- **THEN** it cannot change live status, frozen snapshot, round or result
+
+### Requirement: Safe principal escrow before DAO design
+Winning principal SHALL remain isolated until an authorized DAO mechanism is explicitly designed and implemented. Owner or worker alone SHALL NOT record a binding DAO decision, dispose principal or claim source disposal confirmed.
+
+#### Scenario: Governance unresolved
+- **WHEN** there is a unique winner but governance is unresolved
+- **THEN** principal stays escrowed and losing-token rewards remain independent
