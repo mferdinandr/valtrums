@@ -11,7 +11,7 @@ Deliver the permissionless multi-community game with correct original-token cust
 1. Freeze community, deposit, creator participation, policy and fee identity before round 1. No bond; every community and creator has a positive backed position.
 2. Use fixed 30-second intervals and point observations. Exact formulas, rational comparisons and validity rules are in [battle rules](../../../battle-rules.md). Missing data holds resolution pending.
 3. Repeat tied leaders only with fresh score inputs indefinitely; keep all original vaults locked.
-4. Allocate each losing token independently using deterministic largest remainder. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
+4. Collect each losing token's total fee as floor(vault / 1000), split that fee 50:50 with an odd unit assigned to protocol, and allocate only the winner pool using deterministic largest remainder. A protocol creator receives the whole fee. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
 5. Separate availability from foreign execution. Reserve before requesting a signature, bind nonce/payload to payout identity, reconcile before retry, confirm only matching final receipt.
 6. Separate infrastructure evidence/scheduling/relay roles from user-specific token-spending grants. Model text is never authorization.
 7. Require critical GoPlus rejection, unknown-data hold and independent LP > USD 10,000. Tax/admin policies remain OPEN.

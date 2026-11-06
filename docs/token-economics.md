@@ -20,15 +20,15 @@ All original nonwinning communities are losing vaults, including communities eli
 
 ## Integer rounding and conservation
 
-Use checked wide arithmetic. The following deterministic largest-remainder procedure is the proposed implementation rule; it preserves every token unit without adding an undisclosed dust fee.
+Use checked wide arithmetic. Take the **total 0.1% fee first**, then divide that fee equally between creator and protocol. Each receives an ideal 0.05% of the losing vault, not 0.5%. For a protocol creator, the protocol receives the whole fee.
 
-1. At vault level use weights `[9990, 5, 5]` out of 10,000 for reward, creator and protocol. For a protocol creator use `[9990, 10]`.
-2. Floor each ideal allocation `L_j * weight / 10000`.
-3. Assign remaining units in descending fractional-remainder order. Break equal remainders in the fixed order reward, creator, protocol (omit creator for protocol-created battles).
-4. Allocate the resulting integer reward pool `Q_j` among winning beneficiaries using `Q_j * d_u / C_W`, again flooring and distributing remaining units by descending remainder. Break equal remainders by canonical NEAR beneficiary account ID bytes in ascending order.
+1. Compute `fee_j = floor(L_j / 1000)` once for each losing token. The fractional fee remainder stays with winners: `Q_j = L_j - fee_j`.
+2. For a user-created battle, `creator_fee_j = floor(fee_j / 2)` and `protocol_fee_j = fee_j - creator_fee_j`. If the fee is odd, its one indivisible remaining unit goes to the protocol. For a protocol-created battle, `creator_fee_j = 0` and `protocol_fee_j = fee_j`.
+3. Do not use largest remainder to apportion reward versus revenue: it must never increase the total fee above `floor(L_j / 1000)`.
+4. Within `Q_j` only, allocate among winning beneficiaries using `floor(Q_j * d_u / C_W)`, then distribute remaining units by descending fractional remainder. Break equal remainders by canonical NEAR beneficiary account ID bytes in ascending order.
 5. Aggregate a beneficiary's winning deposits before calculating their share. Snapshot the ordered beneficiary list so pagination or claim order cannot affect dust.
 
-Percentages describe ideal amounts; indivisible units necessarily approximate them. A tiny vault can round a fee to zero. Do not round each claim independently or allocate all dust to the last caller. Recipient mapping to Robinhood must be authorized and frozen before a payout is signed.
+Percentages describe ideal amounts; indivisible units approximate them. A vault below 1,000 atomic units pays zero fee. Do not round each claim independently or allocate all dust to the last caller. Recipient mapping to Robinhood must be authorized and frozen before a payout is signed.
 
 For every losing token independently:
 
@@ -70,7 +70,16 @@ B and C remain different assets through allocation and Robinhood payment. No swa
 
 For a protocol-created battle with 100,000 losing units, winners collectively receive 99,900 and protocol revenue is 100, not 100 plus another 50.
 
-For a user-created vault of **10,003** base units, ideal category shares are 9,992.997 / 5.0015 / 5.0015. Floors sum to 10,002, so the remaining unit goes to rewards: **9,993 / 5 / 5**.
+The fee is taken once per token, before participant allocation:
+
+| Losing vault units | Total fee | Winner pool | User creator | Protocol (user-created) | Protocol (protocol-created) |
+| --- | --- | --- | --- | --- | --- |
+| 999 | 0 | 999 | 0 | 0 | 0 |
+| 1,000 | 1 | 999 | 0 | 1 | 1 |
+| 10,003 | 10 | 9,993 | 5 | 5 | 10 |
+| 100,000 | 100 | 99,900 | 50 | 50 | 100 |
+
+For 1,000 units, independently flooring two nominal 0.05% fees would incorrectly collect zero. Taking 0.1% first collects exactly one unit. For 999 units, category largest remainder must not round the total fee up to one unit.
 
 For a 9,993-unit reward pool and Alice/Bob/Carol weights 1:2:3, ideals are 1,665.5 / 3,331 / 4,996.5. One remaining unit goes to Alice by the account-ID tie order: **1,666 / 3,331 / 4,996**, totaling 9,993. Implementations must use canonical account IDs rather than these display names.
 

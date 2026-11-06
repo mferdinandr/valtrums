@@ -16,7 +16,7 @@ For each losing vault the system SHALL allocate 99.9% to final-winner participan
 - **THEN** winners receive 99900 and protocol receives 100 with no extra creator fee
 
 ### Requirement: Deterministic conserving rounding
-The system SHALL apply the category and beneficiary largest-remainder algorithm and stable tie ordering in docs/token-economics.md independent of claim order.
+The system SHALL first collect `fee = floor(loser_vault / 1000)` per losing token and assign `loser_vault - fee` to the winner pool. For user-created battles it SHALL allocate `floor(fee / 2)` to the creator and the rest to protocol; protocol-created battles SHALL allocate all fee to protocol. Largest remainder SHALL apply only within the winner pool with stable beneficiary tie ordering, independent of claim order.
 
 #### Scenario: Uneven vault
 - **WHEN** a user-created losing vault holds 10003 units
@@ -27,8 +27,16 @@ The system SHALL apply the category and beneficiary largest-remainder algorithm 
 - **THEN** allocations are 1666, 3331 and 4996
 
 #### Scenario: Tiny vault
-- **WHEN** fees are smaller than one base unit
-- **THEN** integer allocation conserves the vault without inventing a dust fee
+- **WHEN** a losing vault holds 999 base units
+- **THEN** the winner pool is 999 and total fee is zero for either creator type
+
+#### Scenario: Odd fee split
+- **WHEN** a user-created losing vault holds 1000 base units
+- **THEN** total fee is 1, winner pool is 999, creator receives 0 and protocol receives 1
+
+#### Scenario: Protocol receives the entire odd fee
+- **WHEN** a protocol-created losing vault holds 1000 base units
+- **THEN** winner pool is 999 and protocol receives the entire fee of 1
 
 ### Requirement: Original-token asynchronous payout
 Rewards SHALL remain each original losing token on Robinhood. The system SHALL distinguish available entitlement from reserved, broadcast and confirmed payment, without waiting for DAO disposition.
