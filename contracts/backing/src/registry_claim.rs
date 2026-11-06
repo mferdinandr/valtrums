@@ -4,6 +4,15 @@ use crate::Asset;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
 
+/// JSON shape of the registry's global receipt key.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegistryKey {
+    pub chain_id: U64,
+    pub transaction_hash: [u8; 32],
+    pub log_index: u32,
+}
+
 /// JSON shape of the shared registry's immutable claim.
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]

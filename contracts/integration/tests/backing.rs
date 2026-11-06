@@ -13,7 +13,7 @@ async fn unverified_receipts_and_internal_reservations_are_not_contract_api() ->
     contract.call("new").args_json(json!({
         "owner": owner.id(),
         "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
-        "name": "Representation fixture", "symbol": "TEST"
+        "name": "Representation fixture", "symbol": "TEST", "registry": owner.id(), "mapping_version": "1"
     })).max_gas().transact().await?.into_result()?;
     for method in [
         "observe_receipt",
@@ -100,7 +100,7 @@ async fn fixture_receipt_mint_reservations_and_reorg_preserve_liabilities() -> a
     contract.call("new").args_json(json!({
         "owner": owner.id(),
         "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
-        "name": "Representation fixture", "symbol": "TEST"
+        "name": "Representation fixture", "symbol": "TEST", "registry": owner.id(), "mapping_version": "1"
     })).max_gas().transact().await?.into_result()?;
     let hash = format!("0x{}", "ab".repeat(32));
     let upper_hash = format!("0X{}", "AB".repeat(32));

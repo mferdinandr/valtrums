@@ -16,7 +16,8 @@ use near_contract_standards::storage_management::{
 use near_sdk::json_types::{U128, U64};
 use near_sdk::store::LookupMap;
 use near_sdk::{
-    env, near, require, AccountId, BorshStorageKey, NearToken, PanicOnDefault, PromiseOrValue,
+    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
+    Promise, PromiseError, PromiseOrValue,
 };
 
 pub mod ledger;
@@ -26,6 +27,18 @@ pub mod registry_claim;
 pub mod reservation;
 
 use ledger::Ledger;
+use registry_claim::{RegistryClaim, RegistryKey};
+
+/// Upper bound on storage a first claim can add (receipt plus two account maps).
+const CLAIM_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(20);
+const REGISTRY_GAS: Gas = Gas::from_tgas(10);
+const CALLBACK_GAS: Gas = Gas::from_tgas(30);
+
+#[ext_contract(ext_registry)]
+#[allow(dead_code)]
+trait SharedRegistry {
+    fn get_active_claim(&self, key: RegistryKey) -> Option<RegistryClaim>;
+}
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
@@ -82,6 +95,9 @@ pub struct CustodyLedgerView {
 pub struct Backing {
     owner: AccountId,
     asset: Asset,
+    /// Shared receipt registry and mapping version are immutable instance identity.
+    registry: AccountId,
+    mapping_version: u64,
     paused: bool,
     token: FungibleToken,
     metadata: FungibleTokenMetadata,
@@ -98,7 +114,15 @@ pub struct Backing {
 #[near]
 impl Backing {
     #[init]
-    pub fn new(owner: AccountId, asset: Asset, name: String, symbol: String) -> Self {
+    pub fn new(
+        owner: AccountId,
+        asset: Asset,
+        name: String,
+        symbol: String,
+        registry: AccountId,
+        mapping_version: U64,
+    ) -> Self {
+        require!(mapping_version.0 > 0, "Invalid mapping version");
         let mut asset = asset;
         require!(asset.chain_id.0 > 0, "Invalid chain ID");
         let address = asset
@@ -144,6 +168,8 @@ impl Backing {
         Self {
             owner,
             asset,
+            registry,
+            mapping_version: mapping_version.0,
             paused: false,
             token: FungibleToken::new(StorageKey::Token),
             metadata,
@@ -156,6 +182,84 @@ impl Backing {
             reservations: LookupMap::new(StorageKey::Reservations),
             confirmed_debits: LookupMap::new(StorageKey::ConfirmedDebits),
         }
+    }
+
+
+    /// Pull a registry-attested, finalized receipt into attributed unallocated
+    /// custody. Anyone may call; the registry claim is the only authority and
+    /// credits only the claim's beneficiary. The attached deposit pays storage
+    /// and the unused part is refunded.
+    #[payable]
+    pub fn claim_receipt(&mut self, transaction_hash: String, log_index: u32) -> Promise {
+        require!(
+            !self.paused && !self.reconciliation_required,
+            "Asset paused"
+        );
+        require!(
+            env::attached_deposit() >= CLAIM_STORAGE_DEPOSIT,
+            "Insufficient storage deposit"
+        );
+        let id = receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
+            .unwrap_or_else(|_| env::panic_str("Invalid receipt hash"));
+        let key = RegistryKey {
+            chain_id: self.asset.chain_id,
+            transaction_hash: id.transaction_hash,
+            log_index,
+        };
+        ext_registry::ext(self.registry.clone())
+            .with_static_gas(REGISTRY_GAS)
+            .get_active_claim(key)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .with_attached_deposit(env::attached_deposit())
+                    .on_claim_receipt(
+                        env::predecessor_account_id(),
+                        transaction_hash,
+                        log_index,
+                    ),
+            )
+    }
+
+    /// Returns true only when this call credited new custody. Every other
+    /// outcome (unavailable, disputed, mismatched, replayed, paused) credits
+    /// nothing and refunds the full deposit to the caller.
+    #[private]
+    #[payable]
+    pub fn on_claim_receipt(
+        &mut self,
+        caller: AccountId,
+        transaction_hash: String,
+        log_index: u32,
+        #[callback_result] claim: Result<Option<RegistryClaim>, PromiseError>,
+    ) -> bool {
+        let attached = env::attached_deposit().as_yoctonear();
+        let before = env::storage_usage();
+        let credited = match (claim, self.paused || self.reconciliation_required) {
+            (Ok(Some(claim)), false) => {
+                self.apply_registry_claim(&transaction_hash, log_index, &claim)
+            }
+            _ => false,
+        };
+        let cost = if credited {
+            env::storage_byte_cost()
+                .as_yoctonear()
+                .checked_mul(u128::from(
+                    env::storage_usage()
+                        .checked_sub(before)
+                        .unwrap_or_else(|| env::panic_str("Storage accounting failed")),
+                ))
+                .unwrap_or_else(|| env::panic_str("Storage cost overflow"))
+        } else {
+            0
+        };
+        require!(attached >= cost, "Insufficient storage deposit");
+        if attached > cost {
+            Promise::new(caller)
+                .transfer(NearToken::from_yoctonear(attached - cost))
+                .detach();
+        }
+        credited
     }
 
     /// The owner can halt affected transfers; this does not alter liabilities.
@@ -307,6 +411,34 @@ pub enum ReceiptProcessingError {
 }
 
 impl Backing {
+    fn apply_registry_claim(
+        &mut self,
+        transaction_hash: &str,
+        log_index: u32,
+        claim: &RegistryClaim,
+    ) -> bool {
+        let Ok(id) = receipt::ReceiptId::from_hex(self.asset.chain_id.0, transaction_hash, log_index)
+        else {
+            return false;
+        };
+        if !registry_claim::matches_asset(
+            claim,
+            &self.asset,
+            &env::current_account_id(),
+            self.mapping_version,
+        ) {
+            return false;
+        }
+        let candidate = receipt::Receipt {
+            id: id.clone(),
+            beneficiary: claim.beneficiary.clone(),
+            actual_source_amount: claim.actual_received.0,
+            source_block_hash: claim.block_hash,
+            status: receipt::ReceiptStatus::Provisional,
+        };
+        self.observe_receipt(candidate).is_ok() && self.finalize_receipt(&id) == Ok(true)
+    }
+
     pub fn observe_receipt(
         &mut self,
         candidate: receipt::Receipt,
@@ -762,6 +894,8 @@ mod tests {
             asset(),
             "Test asset".into(),
             "TEST".into(),
+            account("registry.testnet"),
+            U64(1),
         )
     }
     fn observed(amount: u128, index: u32) -> receipt::Receipt {
@@ -812,6 +946,8 @@ mod tests {
             configured,
             "Test".into(),
             "TEST".into(),
+            account("registry.testnet"),
+            U64(1),
         );
         let item = observed(9_876, 1);
         assert_eq!(contract.observe_receipt(item.clone()), Ok(true));
@@ -858,6 +994,8 @@ mod tests {
             configured,
             "Test".into(),
             "TEST".into(),
+            account("registry.testnet"),
+            U64(1),
         );
         contract.ledger.custody = 10;
         contract.ledger.minted = 1;
@@ -1085,6 +1223,8 @@ mod tests {
             configured,
             "Test".into(),
             "TEST".into(),
+            account("registry.testnet"),
+            U64(1),
         );
         let item = observed(98, 1);
         contract.observe_receipt(item.clone()).expect("observe");
@@ -1173,5 +1313,77 @@ mod tests {
         let mut contract = contract();
         context("alice.testnet", 1);
         contract.storage_unregister(Some(false));
+    }
+
+    fn registry_claim(amount: u128) -> RegistryClaim {
+        RegistryClaim {
+            representation: account("alice.near"),
+            token_address: asset().token_address,
+            custody_domain: "fixture".into(),
+            mapping_version: U64(1),
+            beneficiary: account("bob.testnet"),
+            battle_id: U64(1),
+            actual_received: U128(amount),
+            block_number: U64(3),
+            block_hash: [2; 32],
+            finalized_head_number: U64(4),
+            finalized_head_hash: [3; 32],
+            evidence_hash: [4; 32],
+        }
+    }
+    fn claim_callback(
+        contract: &mut Backing,
+        claim: Result<Option<RegistryClaim>, PromiseError>,
+    ) -> bool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(account("alice.near"))
+            .predecessor_account_id(account("alice.near"))
+            .attached_deposit(CLAIM_STORAGE_DEPOSIT)
+            .build());
+        contract.on_claim_receipt(
+            account("caller.testnet"),
+            format!("0x{}", "ab".repeat(32)),
+            1,
+            claim,
+        )
+    }
+
+    #[test]
+    fn registry_claim_credits_actual_received_once() {
+        let mut contract = contract();
+        assert!(claim_callback(&mut contract, Ok(Some(registry_claim(98)))));
+        assert!(!claim_callback(&mut contract, Ok(Some(registry_claim(98)))));
+        assert_eq!(contract.get_ledger().unallocated, U128(98));
+        assert_eq!(
+            contract.unallocated_balance_of(account("bob.testnet")),
+            U128(98)
+        );
+        assert_eq!(contract.ft_total_supply(), U128(0));
+        assert!(contract.get_ledger().accounting_balanced);
+    }
+
+    #[test]
+    fn unavailable_disputed_or_mismatched_claims_credit_nothing() {
+        let mut contract = contract();
+        assert!(!claim_callback(&mut contract, Ok(None)));
+        assert!(!claim_callback(&mut contract, Err(PromiseError::Failed)));
+        let mut wrong = registry_claim(98);
+        wrong.custody_domain = "other".into();
+        assert!(!claim_callback(&mut contract, Ok(Some(wrong))));
+        let mut wrong = registry_claim(98);
+        wrong.mapping_version = U64(2);
+        assert!(!claim_callback(&mut contract, Ok(Some(wrong))));
+        let mut wrong = registry_claim(98);
+        wrong.representation = account("other.testnet");
+        assert!(!claim_callback(&mut contract, Ok(Some(wrong))));
+        assert_eq!(contract.get_ledger().custody, U128(0));
+    }
+
+    #[test]
+    fn paused_asset_does_not_credit_registry_claims() {
+        let mut contract = contract();
+        contract.paused = true;
+        assert!(!claim_callback(&mut contract, Ok(Some(registry_claim(98)))));
+        assert_eq!(contract.get_ledger().custody, U128(0));
     }
 }

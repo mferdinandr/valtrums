@@ -82,3 +82,92 @@ async fn registry_rejects_cross_representation_replay_and_retains_disputes() -> 
     assert_eq!(recorded.unwrap()["representation"], first.id().as_str());
     Ok(())
 }
+
+/// The attestation below is a synthetic operator assertion, not live finality.
+#[tokio::test]
+async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiary(
+) -> anyhow::Result<()> {
+    let worker = near_workspaces::sandbox().await?;
+    let registry = worker
+        .dev_deploy(&common::wasm("valtrum_receipt_registry"))
+        .await?;
+    let backing = worker.dev_deploy(&common::wasm("valtrum_backing")).await?;
+    let owner = worker.dev_create_account().await?;
+    let verifier = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let relayer = worker.dev_create_account().await?;
+    registry
+        .call("new")
+        .args_json(json!({"owner": owner.id(), "verifier": verifier.id()}))
+        .transact()
+        .await?
+        .into_result()?;
+    backing.call("new").args_json(json!({
+        "owner": owner.id(),
+        "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
+        "name": "Representation fixture", "symbol": "TEST",
+        "registry": registry.id(), "mapping_version": "1"
+    })).max_gas().transact().await?.into_result()?;
+    owner
+        .call(registry.id(), "set_representation")
+        .args_json(json!({"representation": backing.id(), "allowed": true}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let tx = format!("0x{}", "01".repeat(32));
+    let args = |log_index: u32| json!({"transaction_hash": tx, "log_index": log_index});
+    // No attestation yet: nothing is credited and the deposit comes back.
+    let missing = relayer
+        .call(backing.id(), "claim_receipt")
+        .args_json(args(1))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(!missing.into_result()?.json::<bool>()?);
+    let key = json!({"chain_id": "46630", "transaction_hash": vec![1u8;32], "log_index": 1});
+    let claim = json!({"representation": backing.id(), "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "mapping_version": "1", "beneficiary": alice.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8;32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8;32], "evidence_hash": vec![4u8;32]});
+    verifier
+        .call(registry.id(), "attest")
+        .args_json(json!({"key": key, "claim": claim}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let first = relayer
+        .call(backing.id(), "claim_receipt")
+        .args_json(args(1))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(first.into_result()?.json::<bool>()?);
+    let replay = relayer
+        .call(backing.id(), "claim_receipt")
+        .args_json(args(1))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(!replay.into_result()?.json::<bool>()?);
+    let held: String = backing
+        .view("unallocated_balance_of")
+        .args_json(json!({"account": alice.id()}))
+        .await?
+        .json()?;
+    assert_eq!(held, "98");
+    let relayer_held: String = backing
+        .view("unallocated_balance_of")
+        .args_json(json!({"account": relayer.id()}))
+        .await?
+        .json()?;
+    assert_eq!(relayer_held, "0");
+    let supply: String = backing
+        .view("ft_total_supply")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(supply, "0");
+    Ok(())
+}
