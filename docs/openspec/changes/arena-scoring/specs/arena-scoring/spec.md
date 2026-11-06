@@ -44,3 +44,7 @@ Tied best candidates SHALL enter fresh 30-second rounds with reset scores, volum
 #### Scenario: Fresh negative round
 - **WHEN** A then scores -4% and B -5% in a fresh overtime round
 - **THEN** A wins without cumulative earlier scores
+
+#### Scenario: Evidence provenance and zero volume
+- **WHEN** round data is submitted
+- **THEN** it binds battle, round, source, observation times and frozen coverage policy; complete zero volume is valid while missing evidence is not

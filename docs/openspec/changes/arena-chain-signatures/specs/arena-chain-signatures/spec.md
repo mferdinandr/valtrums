@@ -21,3 +21,7 @@ The system SHALL verify successful matching finalized execution before consuming
 #### Scenario: Restart
 - **WHEN** a worker restarts with a pending transaction
 - **THEN** it reconciles the durable payout and replacement history without paying twice
+
+#### Scenario: Per-asset payout ID collision
+- **WHEN** two backing contracts issue the same local payout ID
+- **THEN** their payout identities, payloads, statuses and confirmations cannot overwrite each other

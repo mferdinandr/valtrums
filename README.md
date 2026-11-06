@@ -12,7 +12,7 @@ A creator selects two or more communities and Price % Gain, Market Cap % Growth,
 
 Rounds last 30 seconds without TWAP. Tied leaders compete again with reset inputs, without an overtime cap. Deposits remain closed and all original vaults remain locked.
 
-Each losing vault pays 99.9% of its own token to final-winner participants proportionally, 0.05% to creator and 0.05% to protocol. Protocol-created battles pay the full 0.1% fee to protocol. Rewards are paid as original tokens on Robinhood. An available entitlement and a confirmed transfer are distinct.
+At default settings each losing vault pays 99.9% of its own token to final-winner participants proportionally, 0.05% to creator and 0.05% to protocol. Protocol-created battles pay the full configured fee to protocol. Protocol can adjust fee and creator share for future battles; each battle snapshots its settings at creation. Rewards are paid as original tokens on Robinhood. An available entitlement and a confirmed transfer are distinct.
 
 Winning principal enters DAO escrow for a burn/return decision; rewards do not wait for it. DAO voting mechanics remain OPEN. NEP-141 representations require 1:1 actual-received backing and exclusive redemption/payout/burn reservations.
 
@@ -46,7 +46,7 @@ Technical workstreams remain chain abstraction, scoring/settlement, player AI, a
 | [Roadmap](docs/implementation-roadmap.md) | Dependencies and acceptance gates |
 | [Current state](docs/current-state.md) | Base-commit implementation and historical demos |
 | [Implementation tracker](docs/implementation-tracker.md) | Parent issue content; GitHub URL pending verified publication |
-| [OpenSpec proposal](docs/openspec/changes/redesign-permissionless-robinhood-arena/proposal.md) | Unimplemented spec-driven target change |
+| [OpenSpec proposal](docs/openspec/README.md) | Unimplemented spec-driven target change |
 
 Swap settlement, TWAP, bond and credit plans from the earlier two-side arena no longer apply; the product specification above is the only source of truth for the game.
 

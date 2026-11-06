@@ -66,4 +66,4 @@ The current /attestation endpoint reports operator metadata, not cryptographic r
 - Review deployed artifacts/account powers, provenance, monitoring and recovery runbooks.
 - Independently review the implemented target; historical risk acceptance does not carry forward automatically.
 
-[Roadmap](implementation-roadmap.md) and [OpenSpec tasks](openspec/changes/redesign-permissionless-robinhood-arena/tasks.md) track unfinished work. This PR moves no funds and deploys no contracts.
+[Roadmap](implementation-roadmap.md) and [OpenSpec tasks](openspec/README.md) track unfinished work. This PR moves no funds and deploys no contracts.

@@ -21,3 +21,7 @@ The system SHALL execute an approved return or underlying burn/sink at most once
 #### Scenario: Representation-only burn
 - **WHEN** NEAR units are destroyed without verified source disposal
 - **THEN** the UI cannot claim Robinhood tokens were burned
+
+#### Scenario: Split disposition
+- **WHEN** a future authorized DAO decision specifies burn and return portions
+- **THEN** each is independently bound to the decision and verified underlying execution; the sum cannot exceed the escrow
