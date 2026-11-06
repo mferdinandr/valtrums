@@ -99,7 +99,10 @@ pub fn market_cap_growth(
     end_supply: u128,
 ) -> Score {
     require!(start_price > 0 && end_price > 0, "Nonpositive price");
-    require!(start_supply > 0 && end_supply > 0, "Invalid circulating supply");
+    require!(
+        start_supply > 0 && end_supply > 0,
+        "Invalid circulating supply"
+    );
     let start_mc = U256::from(start_price) * U256::from(start_supply);
     let end_mc = U256::from(end_price) * U256::from(end_supply);
     let negative = end_mc < start_mc;

@@ -29,7 +29,7 @@ pub mod views;
 
 use audit::{evaluate_audit, AuditDecision};
 use mpc::{ForeignConfig, ForeignConfigInput, SignRequest, SignStatus};
-use scoring::{best_is_highest, max_drawdown, market_cap_growth, price_gain, volume_ratio, Score};
+use scoring::{best_is_highest, market_cap_growth, max_drawdown, price_gain, volume_ratio, Score};
 use settlement::{distribute_winner_pool, split_loser_vault};
 use types::{
     Battle, BattleStatus, Community, DaoDecision, DaoEscrow, DisposalKind, EscrowStatus, Grant,
@@ -273,7 +273,10 @@ impl Arena {
         }
         let creator = env::predecessor_account_id();
         if protocol_created {
-            require!(creator == self.protocol, "Only the protocol can create its battles");
+            require!(
+                creator == self.protocol,
+                "Only the protocol can create its battles"
+            );
         }
 
         let id = self.battle_count.checked_add(1).expect("battle count");
@@ -332,7 +335,10 @@ impl Arena {
         self.assert_active();
         let mut battle = self.get_battle(battle_id);
         require!(
-            !matches!(battle.status, BattleStatus::Settled | BattleStatus::Rejected),
+            !matches!(
+                battle.status,
+                BattleStatus::Settled | BattleStatus::Rejected
+            ),
             "Battle over"
         );
         let community = battle
@@ -453,11 +459,16 @@ impl Arena {
             .iter_mut()
             .find(|community| community.index == community_index)
             .expect("community");
-        community.vault = community.vault.checked_add(amount.0).expect("vault overflow");
+        community.vault = community
+            .vault
+            .checked_add(amount.0)
+            .expect("vault overflow");
         let position_key = (battle_id, community_index, sender_id.clone());
         let held = self.positions.get(&position_key).copied().unwrap_or(0);
-        self.positions
-            .insert(position_key, held.checked_add(amount.0).expect("position overflow"));
+        self.positions.insert(
+            position_key,
+            held.checked_add(amount.0).expect("position overflow"),
+        );
         self.battles.insert(battle_id, battle);
 
         events::emit(
@@ -512,11 +523,13 @@ impl Arena {
         let mut creator_stake = 0u128;
         for community in &battle.communities {
             let key = (battle_id, community.index, creator.clone());
-            creator_stake = creator_stake.saturating_add(
-                self.positions.get(&key).copied().unwrap_or(0),
-            );
+            creator_stake =
+                creator_stake.saturating_add(self.positions.get(&key).copied().unwrap_or(0));
         }
-        require!(creator_stake > 0, "Creator has no real participating position");
+        require!(
+            creator_stake > 0,
+            "Creator has no real participating position"
+        );
 
         battle.policy_ref = Some(self.policy.clone());
         battle.status = BattleStatus::Live;
@@ -786,7 +799,8 @@ impl Arena {
         let parsed = mpc::parse_address(&address)
             .unwrap_or_else(|_| env::panic_str("Invalid Robinhood address"));
         require!(!parsed.iter().all(|b| *b == 0), "Zero address not allowed");
-        self.recipients.insert(env::predecessor_account_id(), address);
+        self.recipients
+            .insert(env::predecessor_account_id(), address);
     }
 
     /// Reserves `q` units of a beneficiary's losing-token entitlement for a
@@ -801,7 +815,10 @@ impl Arena {
         self.assert_active();
         let battle = self.get_battle(battle_id);
         require!(battle.status == BattleStatus::Settled, "Not settled");
-        require!(battle.winner != Some(community_index), "Winner vault pays no reward");
+        require!(
+            battle.winner != Some(community_index),
+            "Winner vault pays no reward"
+        );
         let community = battle
             .communities
             .iter()
@@ -809,7 +826,10 @@ impl Arena {
             .expect("community");
         let backing = community.token.backing.clone();
         let caller = env::predecessor_account_id();
-        require!(caller == beneficiary, "Only the beneficiary may request its payout");
+        require!(
+            caller == beneficiary,
+            "Only the beneficiary may request its payout"
+        );
         require!(
             self.recipients.contains_key(&beneficiary),
             "Register a Robinhood recipient first"
@@ -864,12 +884,7 @@ impl Arena {
     /// Records an explicit DAO decision for a battle's escrowed principal.
     /// Governance (membership/weights/quorum/deadline) stays OPEN; nothing
     /// is invented here. The owner records decisions until a DAO is designed.
-    pub fn record_decision(
-        &mut self,
-        battle_id: u64,
-        kind: DisposalKind,
-        decision_ref: String,
-    ) {
+    pub fn record_decision(&mut self, battle_id: u64, kind: DisposalKind, decision_ref: String) {
         self.assert_owner();
         let battle = self.get_battle(battle_id);
         require!(battle.status == BattleStatus::Settled, "Not settled");
@@ -943,10 +958,7 @@ impl Arena {
                 escrow.status = EscrowStatus::Escrowed;
             }
             self.battles.insert(battle_id, battle);
-            events::emit(
-                "disposal_reserve_failed",
-                json!({ "battle_id": battle_id }),
-            );
+            events::emit("disposal_reserve_failed", json!({ "battle_id": battle_id }));
             return;
         }
         let _ = kind;
@@ -1016,7 +1028,8 @@ impl Arena {
             .cloned()
             .unwrap_or_else(|| env::panic_str("Unknown grant"));
         require!(
-            grant.grantor == env::predecessor_account_id() || env::predecessor_account_id() == self.owner,
+            grant.grantor == env::predecessor_account_id()
+                || env::predecessor_account_id() == self.owner,
             "Grantor only"
         );
         grant.revoked = true;
@@ -1049,7 +1062,10 @@ impl Arena {
         let to = self
             .recipients
             .get(&beneficiary)
-            .map(|address| mpc::parse_address(address).unwrap_or_else(|_| env::panic_str("Invalid recipient address")))
+            .map(|address| {
+                mpc::parse_address(address)
+                    .unwrap_or_else(|_| env::panic_str("Invalid recipient address"))
+            })
             .unwrap_or_else(|| env::panic_str("Beneficiary has no recipient mapping"));
         let spec = mpc::PayoutSpec {
             token,
@@ -1171,14 +1187,20 @@ impl Arena {
     }
 
     pub fn battle(&self, battle_id: u64) -> Option<BattleView> {
-        self.battles.get(&battle_id).map(|battle| BattleView::from(&battle))
+        self.battles
+            .get(&battle_id)
+            .map(|battle| BattleView::from(&battle))
     }
 
     pub fn battles(&self, from: Option<u64>, limit: Option<u64>) -> Vec<BattleView> {
         let start = from.unwrap_or(1).max(1);
         let limit = limit.unwrap_or(MAX_PAGE_SIZE).min(MAX_PAGE_SIZE);
         (start..start + limit)
-            .filter_map(|id| self.battles.get(&id).map(|battle| BattleView::from(&battle)))
+            .filter_map(|id| {
+                self.battles
+                    .get(&id)
+                    .map(|battle| BattleView::from(&battle))
+            })
             .collect()
     }
 
@@ -1221,7 +1243,9 @@ impl Arena {
     }
 
     pub fn escrow(&self, battle_id: u64) -> Option<DaoEscrow> {
-        self.battles.get(&battle_id).and_then(|battle| battle.escrow.clone())
+        self.battles
+            .get(&battle_id)
+            .and_then(|battle| battle.escrow.clone())
     }
 
     pub fn decision(&self, battle_id: u64) -> Option<DaoDecision> {
@@ -1337,7 +1361,11 @@ fn score_for(
     evidence: &RoundEvidence,
     requirements: types::ModeRequirements,
 ) -> Score {
-    let start_price = required(evidence.start_price, requirements.start_price, "start price");
+    let start_price = required(
+        evidence.start_price,
+        requirements.start_price,
+        "start price",
+    );
     let end_price = required(evidence.end_price, requirements.end_price, "end price");
     let start_supply = required(evidence.start_supply, requirements.supply, "start supply");
     let end_supply = required(evidence.end_supply, requirements.supply, "end supply");
@@ -1360,7 +1388,9 @@ fn score_for(
 
 fn required(value: Option<U128>, needed: bool, what: &str) -> u128 {
     if needed {
-        value.unwrap_or_else(|| env::panic_str(&format!("Missing evidence: {what}"))).0
+        value
+            .unwrap_or_else(|| env::panic_str(&format!("Missing evidence: {what}")))
+            .0
     } else {
         value.unwrap_or(U128(0)).0
     }

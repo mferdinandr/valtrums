@@ -36,8 +36,8 @@ pub mod types;
 
 use events::emit;
 use types::{
-    AssetIdentity, Disposal, DisposalKind, Evidence, LedgerView, Payout, PayoutKind,
-    PayoutStatus, ReceiptId,
+    AssetIdentity, Disposal, DisposalKind, Evidence, LedgerView, Payout, PayoutKind, PayoutStatus,
+    ReceiptId,
 };
 
 #[near(serializers = [borsh])]
@@ -108,12 +108,14 @@ impl Backing {
             name: format!("Valtrum-backed {name}"),
             symbol,
             icon: None,
-            reference: Some(json!({
-                "chain_id": identity.chain_id,
-                "token_address": identity.token_address,
-                "custody_domain": identity.custody_domain,
-            })
-            .to_string()),
+            reference: Some(
+                json!({
+                    "chain_id": identity.chain_id,
+                    "token_address": identity.token_address,
+                    "custody_domain": identity.custody_domain,
+                })
+                .to_string(),
+            ),
             reference_hash: None,
             decimals: identity.decimals,
         };
@@ -181,21 +183,34 @@ impl Backing {
         );
         self.receipts.insert(receipt.clone());
 
-        let (representable, residue) = normalize(received_src.0, src_decimals, self.identity.decimals);
+        let (representable, residue) =
+            normalize(received_src.0, src_decimals, self.identity.decimals);
         let custody = self.ledger_custody();
-        self.set_custody(custody.checked_add(representable).expect("custody overflow"));
+        self.set_custody(
+            custody
+                .checked_add(representable)
+                .expect("custody overflow"),
+        );
 
         if representable > 0 {
             let key = origin.clone();
             let current = self.unallocated.get(&key).copied().unwrap_or(0);
-            self.unallocated.insert(key, current.checked_add(representable).expect("U overflow"));
-            self.unallocated_total = self.unallocated_total.checked_add(representable).expect("U overflow");
+            self.unallocated
+                .insert(key, current.checked_add(representable).expect("U overflow"));
+            self.unallocated_total = self
+                .unallocated_total
+                .checked_add(representable)
+                .expect("U overflow");
         }
         if residue > 0 {
             let key = origin.clone();
             let current = self.residual.get(&key).copied().unwrap_or(0);
-            self.residual.insert(key, current.checked_add(residue).expect("residue overflow"));
-            self.residual_total = self.residual_total.checked_add(residue).expect("residue overflow");
+            self.residual
+                .insert(key, current.checked_add(residue).expect("residue overflow"));
+            self.residual_total = self
+                .residual_total
+                .checked_add(residue)
+                .expect("residue overflow");
         }
 
         emit(
@@ -273,9 +288,13 @@ impl Backing {
             require!(q.0 > 0, "Zero allocation");
             let key = (battle_id, beneficiary.clone());
             let current = self.entitlements.get(&key).copied().unwrap_or(0);
-            self.entitlements.insert(key, current.checked_add(q.0).expect("E overflow"));
+            self.entitlements
+                .insert(key, current.checked_add(q.0).expect("E overflow"));
         }
-        self.entitlements_total = self.entitlements_total.checked_add(total).expect("E overflow");
+        self.entitlements_total = self
+            .entitlements_total
+            .checked_add(total)
+            .expect("E overflow");
         self.allocated_battles.insert(battle_id);
 
         emit(
@@ -334,7 +353,11 @@ impl Backing {
     /// remains unconfirmed until final matching execution evidence.
     pub fn mark_broadcast(&mut self, payout_id: u64, tx_hash: String) {
         self.assert_verifier();
-        let mut payout = self.payouts.get(&payout_id).cloned().expect("Unknown payout");
+        let mut payout = self
+            .payouts
+            .get(&payout_id)
+            .cloned()
+            .expect("Unknown payout");
         require!(
             matches!(payout.status, PayoutStatus::Reserved),
             "Payout not reserved"
@@ -354,12 +377,26 @@ impl Backing {
     pub fn confirm_payout(&mut self, payout_id: u64, evidence: Evidence) {
         self.assert_verifier();
         self.assert_active();
-        let payout = self.payouts.get(&payout_id).cloned().expect("Unknown payout");
-        require!(!matches!(payout.status, PayoutStatus::Confirmed), "Already confirmed");
+        let payout = self
+            .payouts
+            .get(&payout_id)
+            .cloned()
+            .expect("Unknown payout");
+        require!(
+            !matches!(payout.status, PayoutStatus::Confirmed),
+            "Already confirmed"
+        );
         require!(evidence.success, "Evidence does not confirm execution");
 
-        self.set_custody(self.ledger_custody().checked_sub(payout.amount.0).expect("B underflow"));
-        self.payouts_pending = self.payouts_pending.checked_sub(payout.amount.0).expect("P underflow");
+        self.set_custody(
+            self.ledger_custody()
+                .checked_sub(payout.amount.0)
+                .expect("B underflow"),
+        );
+        self.payouts_pending = self
+            .payouts_pending
+            .checked_sub(payout.amount.0)
+            .expect("P underflow");
         let mut payout = payout;
         payout.status = PayoutStatus::Confirmed;
         payout.confirmed = Some(evidence);
@@ -379,15 +416,34 @@ impl Backing {
     pub fn fail_payout(&mut self, payout_id: u64, evidence: Evidence) {
         self.assert_verifier();
         self.assert_active();
-        let payout = self.payouts.get(&payout_id).cloned().expect("Unknown payout");
-        require!(!matches!(payout.status, PayoutStatus::Confirmed), "Confirmed payout");
-        require!(!evidence.success || evidence.executed_movement == false, "Movement happened");
+        let payout = self
+            .payouts
+            .get(&payout_id)
+            .cloned()
+            .expect("Unknown payout");
+        require!(
+            !matches!(payout.status, PayoutStatus::Confirmed),
+            "Confirmed payout"
+        );
+        require!(
+            !evidence.success || evidence.executed_movement == false,
+            "Movement happened"
+        );
 
         let key = (payout.battle_id, payout.beneficiary.clone());
         let entitled = self.entitlements.get(&key).copied().unwrap_or(0);
-        self.entitlements.insert(key, entitled.checked_add(payout.amount.0).expect("E overflow"));
-        self.entitlements_total = self.entitlements_total.checked_add(payout.amount.0).expect("E overflow");
-        self.payouts_pending = self.payouts_pending.checked_sub(payout.amount.0).expect("P underflow");
+        self.entitlements.insert(
+            key,
+            entitled.checked_add(payout.amount.0).expect("E overflow"),
+        );
+        self.entitlements_total = self
+            .entitlements_total
+            .checked_add(payout.amount.0)
+            .expect("E overflow");
+        self.payouts_pending = self
+            .payouts_pending
+            .checked_sub(payout.amount.0)
+            .expect("P underflow");
 
         let mut payout = payout;
         payout.status = PayoutStatus::Failed;
@@ -442,12 +498,7 @@ impl Backing {
 
     /// Reserves escrowed representations for a verified underlying disposal:
     /// `M -> D`. The same backing can then not be returned or redeemed.
-    pub fn reserve_disposal(
-        &mut self,
-        battle_id: u64,
-        q: U128,
-        kind: DisposalKind,
-    ) -> Disposal {
+    pub fn reserve_disposal(&mut self, battle_id: u64, q: U128, kind: DisposalKind) -> Disposal {
         self.assert_arena();
         self.assert_active();
         let q = q.0;
@@ -480,12 +531,23 @@ impl Backing {
     pub fn confirm_disposal(&mut self, disposal_id: u64, evidence: Evidence) {
         self.assert_verifier();
         self.assert_active();
-        let disposal = self.disposals.get(&disposal_id).cloned().expect("Unknown disposal");
+        let disposal = self
+            .disposals
+            .get(&disposal_id)
+            .cloned()
+            .expect("Unknown disposal");
         require!(disposal.confirmed.is_none(), "Already confirmed");
         require!(evidence.success, "Evidence does not confirm disposal");
 
-        self.set_custody(self.ledger_custody().checked_sub(disposal.amount.0).expect("B underflow"));
-        self.disposals_pending = self.disposals_pending.checked_sub(disposal.amount.0).expect("D underflow");
+        self.set_custody(
+            self.ledger_custody()
+                .checked_sub(disposal.amount.0)
+                .expect("B underflow"),
+        );
+        self.disposals_pending = self
+            .disposals_pending
+            .checked_sub(disposal.amount.0)
+            .expect("D underflow");
         let mut disposal = disposal;
         disposal.confirmed = Some(evidence);
         self.disposals.insert(disposal_id, disposal.clone());
@@ -513,7 +575,10 @@ impl Backing {
             unallocated: U128(u),
             residual: U128(self.residual_total),
             invariant_holds: self.ledger_custody()
-                == m.saturating_add(e).saturating_add(p).saturating_add(d).saturating_add(u),
+                == m.saturating_add(e)
+                    .saturating_add(p)
+                    .saturating_add(d)
+                    .saturating_add(u),
         }
     }
 
@@ -586,7 +651,10 @@ impl Backing {
     }
 
     fn assert_verifier(&self) {
-        require!(env::predecessor_account_id() == self.verifier, "Verifier only");
+        require!(
+            env::predecessor_account_id() == self.verifier,
+            "Verifier only"
+        );
     }
 
     fn assert_arena(&self) {
@@ -699,11 +767,11 @@ impl FungibleTokenMetadataProvider for Backing {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
-        use super::*;
+    use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use near_sdk::NearToken;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn acc(name: &str) -> AccountId {
         format!("{name}.testnet").parse().unwrap()
@@ -787,7 +855,12 @@ mod tests {
     fn decimal_residue_never_minted() {
         testing_env!(context("verifier", NearToken::from_near(1)).build());
         let mut contract = Backing::new(acc("owner"), acc("verifier"), identity());
-        contract.verify_receipt(receipt("0x2"), U128(123_456_789_000_000_000), 18, acc("bob"));
+        contract.verify_receipt(
+            receipt("0x2"),
+            U128(123_456_789_000_000_000),
+            18,
+            acc("bob"),
+        );
         assert_eq!(contract.ledger().custody, U128(12_345_678));
         assert_eq!(contract.residual_of(acc("bob")), U128(9_000_000_000));
 
@@ -808,12 +881,15 @@ mod tests {
 
         testing_env!(context("arena", NearToken::from_near(1)).build());
         contract.claim_deposit(acc("arena"), U128(100_000_000));
-        contract.allocate_to_entitlements(1, vec![
-            (acc("alice"), U128(59_940_000)),
-            (acc("bob"), U128(39_960_000)),
-            (acc("creator"), U128(50_000)),
-            (acc("protocol"), U128(50_000)),
-        ]);
+        contract.allocate_to_entitlements(
+            1,
+            vec![
+                (acc("alice"), U128(59_940_000)),
+                (acc("bob"), U128(39_960_000)),
+                (acc("creator"), U128(50_000)),
+                (acc("protocol"), U128(50_000)),
+            ],
+        );
 
         assert_eq!(contract.entitlement_of(1, acc("alice")), U128(59_940_000));
         assert_eq!(contract.ft_balance_of(acc("arena")), U128(0));

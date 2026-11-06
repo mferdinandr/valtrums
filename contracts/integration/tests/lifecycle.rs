@@ -14,17 +14,26 @@ async fn a_full_battle_pays_the_winning_community_and_conserves_funds() -> anyho
     let carol = env.user("carol").await?; // losing community
 
     // custody on the backing contracts: 1000 units each
-    env.grant_representation(&alice, &env.backing_a, 1000, 1).await?;
-    env.grant_representation(&bob, &env.backing_a, 1000, 2).await?;
-    env.grant_representation(&carol, &env.backing_b, 1000, 3).await?;
+    env.grant_representation(&alice, &env.backing_a, 1000, 1)
+        .await?;
+    env.grant_representation(&bob, &env.backing_a, 1000, 2)
+        .await?;
+    env.grant_representation(&carol, &env.backing_b, 1000, 3)
+        .await?;
 
     let id = env.create_and_audit(&alice).await?;
     assert_eq!(env.status(id).await?, "Approved");
 
     // deposits: winner community 0 gets 1000 (500/500), loser 1000
-    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&bob, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&carol, &env.backing_b, 1000, id, 1).await?.into_result()?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&bob, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&carol, &env.backing_b, 1000, id, 1)
+        .await?
+        .into_result()?;
     assert_eq!(
         env.battle(id).await?["communities"][0]["vault"].as_str(),
         Some("1000")
@@ -45,11 +54,19 @@ async fn a_full_battle_pays_the_winning_community_and_conserves_funds() -> anyho
 
     // the losing vault (community 1, 1000 units) becomes the reward pool:
     // fee = floor(1000/1000) = 1, winner pool 999, creator 0, protocol 1.
-    env.arena_call(&env.auditor, "allocate_loser", json!({ "battle_id": id, "community_index": 1 }))
-        .await?
-        .into_result()?;
+    env.arena_call(
+        &env.auditor,
+        "allocate_loser",
+        json!({ "battle_id": id, "community_index": 1 }),
+    )
+    .await?
+    .into_result()?;
     let ledger = env.ledger(&env.backing_b).await?;
-    assert_eq!(ledger["entitlements"].as_str(), Some("1000"), "ledger: {ledger}");
+    assert_eq!(
+        ledger["entitlements"].as_str(),
+        Some("1000"),
+        "ledger: {ledger}"
+    );
     assert_eq!(ledger["disposals_reserved"].as_str(), Some("0"));
     assert!(env.invariant_holds(&env.backing_b).await?);
     // the arena's representations were burned: M dropped by the vault
@@ -163,7 +180,8 @@ async fn a_full_battle_pays_the_winning_community_and_conserves_funds() -> anyho
 async fn custody_receipts_cannot_be_replayed() -> anyhow::Result<()> {
     let env = Env::new().await?;
     let alice = env.user("alice").await?;
-    env.grant_representation(&alice, &env.backing_a, 500, 1).await?;
+    env.grant_representation(&alice, &env.backing_a, 500, 1)
+        .await?;
     assert_eq!(env.balance(&env.backing_a, &alice.id().clone()).await?, 500);
 
     let replay = env
@@ -190,17 +208,26 @@ async fn deposits_after_lock_are_refunded() -> anyhow::Result<()> {
     let env = Env::new().await?;
     let alice = env.user("alice").await?;
     let bob = env.user("bob").await?;
-    env.grant_representation(&alice, &env.backing_a, 1000, 1).await?;
-    env.grant_representation(&bob, &env.backing_a, 1000, 2).await?;
-    env.grant_representation(&alice, &env.backing_b, 1000, 3).await?;
+    env.grant_representation(&alice, &env.backing_a, 1000, 1)
+        .await?;
+    env.grant_representation(&bob, &env.backing_a, 1000, 2)
+        .await?;
+    env.grant_representation(&alice, &env.backing_b, 1000, 3)
+        .await?;
 
     let id = env.create_and_audit(&alice).await?;
-    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&alice, &env.backing_b, 500, id, 1).await?.into_result()?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&alice, &env.backing_b, 500, id, 1)
+        .await?
+        .into_result()?;
     env.lock(id).await?;
 
     let before = env.balance(&env.backing_a, &bob.id().clone()).await?;
-    env.deposit(&bob, &env.backing_a, 700, id, 0).await?.into_result()?;
+    env.deposit(&bob, &env.backing_a, 700, id, 0)
+        .await?
+        .into_result()?;
     let after = env.balance(&env.backing_a, &bob.id().clone()).await?;
     assert_eq!(before, after, "late deposit must be fully refunded");
     assert!(env.invariant_holds(&env.backing_a).await?);
@@ -213,12 +240,18 @@ async fn deposits_after_lock_are_refunded() -> anyhow::Result<()> {
 async fn tied_rounds_extend_until_a_single_winner() -> anyhow::Result<()> {
     let env = Env::new().await?;
     let alice = env.user("alice").await?;
-    env.grant_representation(&alice, &env.backing_a, 500, 1).await?;
-    env.grant_representation(&alice, &env.backing_b, 500, 2).await?;
+    env.grant_representation(&alice, &env.backing_a, 500, 1)
+        .await?;
+    env.grant_representation(&alice, &env.backing_b, 500, 2)
+        .await?;
 
     let id = env.create_and_audit(&alice).await?;
-    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&alice, &env.backing_b, 500, id, 1).await?.into_result()?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&alice, &env.backing_b, 500, id, 1)
+        .await?
+        .into_result()?;
     env.lock(id).await?;
 
     // round 1: identical scores -> tie, no winner

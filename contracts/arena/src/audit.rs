@@ -111,8 +111,8 @@ pub fn evaluate_audit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::U64;
     use crate::types::{AuditEvidence, LpEvidence};
+    use near_sdk::json_types::U64;
 
     const TTL: u64 = 60 * 60 * 1_000_000_000;
 
@@ -209,25 +209,46 @@ mod tests {
 
     #[test]
     fn tax_of_one_rejects() {
-        let g = goplus(TriState::False, TriState::False, TriState::False, Some(1_000_000));
+        let g = goplus(
+            TriState::False,
+            TriState::False,
+            TriState::False,
+            Some(1_000_000),
+        );
         assert_eq!(eval(&g, &lp(50_000 * 1_000_000)), AuditDecision::Reject);
     }
 
     #[test]
     fn nonzero_tax_holds_pending_until_policy_resolved() {
-        let g = goplus(TriState::False, TriState::False, TriState::False, Some(50_000));
+        let g = goplus(
+            TriState::False,
+            TriState::False,
+            TriState::False,
+            Some(50_000),
+        );
         assert_eq!(eval(&g, &lp(50_000 * 1_000_000)), AuditDecision::Pending);
         let resolved = GoPlusEvidence {
             tax_policy_resolved: true,
-            ..goplus(TriState::False, TriState::False, TriState::False, Some(50_000))
+            ..goplus(
+                TriState::False,
+                TriState::False,
+                TriState::False,
+                Some(50_000),
+            )
         };
-        assert_eq!(eval(&resolved, &lp(50_000 * 1_000_000)), AuditDecision::Pass);
+        assert_eq!(
+            eval(&resolved, &lp(50_000 * 1_000_000)),
+            AuditDecision::Pass
+        );
     }
 
     #[test]
     fn stale_evidence_holds_pending() {
         let g = goplus(TriState::False, TriState::False, TriState::False, Some(0));
-        assert_eq!(evaluate_audit(&g, &lp(50_000 * 1_000_000), 1_000 + TTL + 1, TTL), AuditDecision::Pending);
+        assert_eq!(
+            evaluate_audit(&g, &lp(50_000 * 1_000_000), 1_000 + TTL + 1, TTL),
+            AuditDecision::Pending
+        );
     }
 
     #[test]

@@ -57,7 +57,11 @@ fn u64_to_be_bytes(mut value: u64) -> Vec<u8> {
 
 /// Encodes a big-endian number with leading zeros dropped (RLP integer rule).
 pub fn rlp_uint_bytes(be: &[u8]) -> Vec<u8> {
-    let trimmed = be.iter().skip_while(|byte| **byte == 0).cloned().collect::<Vec<_>>();
+    let trimmed = be
+        .iter()
+        .skip_while(|byte| **byte == 0)
+        .cloned()
+        .collect::<Vec<_>>();
     if trimmed.is_empty() {
         vec![0x80]
     } else {
@@ -107,12 +111,30 @@ fn rol(value: u64, shift: u32) -> u64 {
 
 fn keccak_f1600(a: &mut [u64; 25]) {
     const RC: [u64; 24] = [
-        0x0000000000000001, 0x0000000000008082, 0x800000000000808a, 0x8000000080008000,
-        0x000000000000808b, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
-        0x000000000000008a, 0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-        0x000000008000808b, 0x800000000000008b, 0x8000000000008089, 0x8000000000008003,
-        0x8000000000008002, 0x8000000000000080, 0x000000000000800a, 0x800000008000000a,
-        0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+        0x0000000000000001,
+        0x0000000000008082,
+        0x800000000000808a,
+        0x8000000080008000,
+        0x000000000000808b,
+        0x0000000080000001,
+        0x8000000080008081,
+        0x8000000000008009,
+        0x000000000000008a,
+        0x0000000000000088,
+        0x0000000080008009,
+        0x000000008000000a,
+        0x000000008000808b,
+        0x800000000000008b,
+        0x8000000000008089,
+        0x8000000000008003,
+        0x8000000000008002,
+        0x8000000000000080,
+        0x000000000000800a,
+        0x800000008000000a,
+        0x8000000080008081,
+        0x8000000000008080,
+        0x0000000080000001,
+        0x8000000080008008,
     ];
     const ROT: [[u32; 5]; 5] = [
         [0, 36, 3, 41, 18],
@@ -290,9 +312,8 @@ pub fn tx_hash(signed: &[u8]) -> [u8; 32] {
 }
 
 const SECP256K1_N: [u8; 32] = [
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xfe, 0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36,
-    0x41, 0x41,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+    0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b, 0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
 ];
 
 // ─── Reservation-bound signing policy ────────────────────────────────────
@@ -665,7 +686,8 @@ mod tests {
     #[test]
     fn a_tampered_recipient_is_rejected() {
         let mut tampered = base_tx();
-        tampered.data = erc20_transfer(&addr("00000000000000000000000000000000000bad01"), 1_000_000);
+        tampered.data =
+            erc20_transfer(&addr("00000000000000000000000000000000000bad01"), 1_000_000);
         assert_eq!(
             verify_payout_tx(&config(), &spec(), &tampered),
             Err(CallError::WrongAmount)
@@ -686,16 +708,28 @@ mod tests {
     fn a_different_token_or_nonce_or_chain_is_rejected() {
         let mut tx = base_tx();
         tx.to = addr("4200000000000000000000000000000000000006");
-        assert_eq!(verify_payout_tx(&config(), &spec(), &tx), Err(CallError::WrongToken));
+        assert_eq!(
+            verify_payout_tx(&config(), &spec(), &tx),
+            Err(CallError::WrongToken)
+        );
         let mut tx = base_tx();
         tx.nonce = 8;
-        assert_eq!(verify_payout_tx(&config(), &spec(), &tx), Err(CallError::WrongNonce));
+        assert_eq!(
+            verify_payout_tx(&config(), &spec(), &tx),
+            Err(CallError::WrongNonce)
+        );
         let mut tx = base_tx();
         tx.chain_id = 8453;
-        assert_eq!(verify_payout_tx(&config(), &spec(), &tx), Err(CallError::WrongChain));
+        assert_eq!(
+            verify_payout_tx(&config(), &spec(), &tx),
+            Err(CallError::WrongChain)
+        );
         let mut tx = base_tx();
         tx.value = U128(1);
-        assert_eq!(verify_payout_tx(&config(), &spec(), &tx), Err(CallError::UnexpectedValue));
+        assert_eq!(
+            verify_payout_tx(&config(), &spec(), &tx),
+            Err(CallError::UnexpectedValue)
+        );
     }
 
     #[test]

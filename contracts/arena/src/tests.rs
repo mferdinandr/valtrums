@@ -4,9 +4,7 @@ use near_sdk::testing_env;
 use near_sdk::{NearToken, PromiseOrValue};
 
 use crate::types::*;
-use crate::{
-    Arena, BackingPayout, BackingPayoutKind, ObservationKind, ROUND_SECS,
-};
+use crate::{Arena, BackingPayout, BackingPayoutKind, ObservationKind, ROUND_SECS};
 
 fn acc(name: &str) -> near_sdk::AccountId {
     format!("{name}.testnet").parse().unwrap()
@@ -81,9 +79,7 @@ fn lp_pass() -> crate::types::LpEvidence {
 }
 
 fn deposit(arena: &mut Arena, battle_id: u64, community: u16, who: &str, amount: u128, now: u64) {
-    let msg = format!(
-        "{{\"battle_id\": {battle_id}, \"community_index\": {community}}}"
-    );
+    let msg = format!("{{\"battle_id\": {battle_id}, \"community_index\": {community}}}");
     let backing = if community == 0 {
         "backing_a"
     } else if community == 1 {
@@ -91,26 +87,21 @@ fn deposit(arena: &mut Arena, battle_id: u64, community: u16, who: &str, amount:
     } else {
         "backing_c"
     };
-    testing_env!(ctx(who, now)
-        .predecessor_account_id(acc(backing))
-        .build());
-    let returned = arena.ft_on_transfer(
-        acc(who),
-        U128(amount),
-        msg,
-    );
+    testing_env!(ctx(who, now).predecessor_account_id(acc(backing)).build());
+    let returned = arena.ft_on_transfer(acc(who), U128(amount), msg);
     assert_eq!(as_value(returned).0, 0, "deposit not accepted");
 }
 
 fn submit_audit(arena: &mut Arena, battle_id: u64, community: u16, now: u64) {
     testing_env!(ctx("worker", now).build());
-    let address = if community == 0 { "0xa" } else if community == 1 { "0xb" } else { "0xc" };
-    arena.submit_audit(
-        battle_id,
-        community,
-        goplus_for(address),
-        lp_pass(),
-    );
+    let address = if community == 0 {
+        "0xa"
+    } else if community == 1 {
+        "0xb"
+    } else {
+        "0xc"
+    };
+    arena.submit_audit(battle_id, community, goplus_for(address), lp_pass());
 }
 
 #[test]
@@ -224,7 +215,11 @@ fn lock_requires_creator_stake_and_positive_vaults() {
 fn resolve_round_advances_tied_leaders_only() {
     let mut arena = new_arena(0);
     testing_env!(ctx("alice", 0).build());
-    let id = arena.create_battle(ScoringMode::PriceGain, vec![token("a"), token("b"), token("c")], false);
+    let id = arena.create_battle(
+        ScoringMode::PriceGain,
+        vec![token("a"), token("b"), token("c")],
+        false,
+    );
     submit_audit(&mut arena, id, 0, 1_000);
     submit_audit(&mut arena, id, 1, 1_000);
     submit_audit(&mut arena, id, 2, 1_000);
@@ -284,9 +279,8 @@ fn resolve_round_refuses_incomplete_evidence() {
     arena.submit_observation(id, 0, ObservationKind::StartPrice { price: U128(100) });
     arena.submit_observation(id, 1, ObservationKind::StartPrice { price: U128(100) });
     testing_env!(ctx("worker", 2_000 + ROUND_SECS * 1_000_000_000).build());
-    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        arena.resolve_round(id)
-    }));
+    let refused =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| arena.resolve_round(id)));
     assert!(refused.is_err());
     assert_eq!(arena.battle(id).unwrap().status, BattleStatus::Live);
 }
@@ -295,7 +289,11 @@ fn resolve_round_refuses_incomplete_evidence() {
 fn drawdown_mode_selects_lowest_drawdown() {
     let mut arena = new_arena(0);
     testing_env!(ctx("alice", 0).build());
-    let id = arena.create_battle(ScoringMode::LowestDrawdown, vec![token("a"), token("b")], false);
+    let id = arena.create_battle(
+        ScoringMode::LowestDrawdown,
+        vec![token("a"), token("b")],
+        false,
+    );
     submit_audit(&mut arena, id, 0, 1_000);
     submit_audit(&mut arena, id, 1, 1_000);
     deposit(&mut arena, id, 0, "alice", 500, 2_000);
@@ -304,8 +302,20 @@ fn drawdown_mode_selects_lowest_drawdown() {
     arena.lock(id);
 
     testing_env!(ctx("worker", 2_000).build());
-    arena.submit_observation(id, 0, ObservationKind::Path { prices: vec![U128(100), U128(95), U128(105), U128(100)] });
-    arena.submit_observation(id, 1, ObservationKind::Path { prices: vec![U128(100), U128(95), U128(90), U128(100)] });
+    arena.submit_observation(
+        id,
+        0,
+        ObservationKind::Path {
+            prices: vec![U128(100), U128(95), U128(105), U128(100)],
+        },
+    );
+    arena.submit_observation(
+        id,
+        1,
+        ObservationKind::Path {
+            prices: vec![U128(100), U128(95), U128(90), U128(100)],
+        },
+    );
     testing_env!(ctx("worker", 2_000 + ROUND_SECS * 1_000_000_000).build());
     arena.resolve_round(id);
     let battle = arena.battle(id).unwrap();
@@ -417,9 +427,8 @@ fn dao_decision_gates_disposal_state() {
     // disposal reservation is requested against the backing contract.
     arena.record_decision(id, DisposalKind::Burn, "fixture-governance-1".to_string());
     assert!(arena.decision(id).is_some());
-    let promise = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        arena.dispose_principal(id)
-    }));
+    let promise =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| arena.dispose_principal(id)));
     // dispose_principal starts a cross-contract promise; with no mock
     // backing deployed the promise is returned and state flips to Disposing.
     assert!(promise.is_ok());

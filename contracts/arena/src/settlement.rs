@@ -113,7 +113,8 @@ mod tests {
         assert_eq!(split.protocol_fee, 50);
         assert!(split.conserves(100_000));
 
-        let shares = distribute_winner_pool(99_900, &[(acc("alice"), 600), (acc("bob"), 400)], 1000);
+        let shares =
+            distribute_winner_pool(99_900, &[(acc("alice"), 600), (acc("bob"), 400)], 1000);
         let map: std::collections::BTreeMap<_, _> = shares.into_iter().collect();
         assert_eq!(map[&acc("alice")], 59_940);
         assert_eq!(map[&acc("bob")], 39_960);
@@ -123,7 +124,10 @@ mod tests {
     fn uneven_vault_example() {
         // 10,003 units: reward 9,993; creator 5; protocol 5.
         let split = split_loser_vault(10_003, false);
-        assert_eq!((split.winner_pool, split.creator_fee, split.protocol_fee), (9_993, 5, 5));
+        assert_eq!(
+            (split.winner_pool, split.creator_fee, split.protocol_fee),
+            (9_993, 5, 5)
+        );
     }
 
     #[test]
@@ -138,15 +142,24 @@ mod tests {
     fn odd_fee_goes_to_protocol() {
         // 1,000 units: fee 1, creator 0, protocol 1.
         let split = split_loser_vault(1_000, false);
-        assert_eq!((split.winner_pool, split.creator_fee, split.protocol_fee), (999, 0, 1));
+        assert_eq!(
+            (split.winner_pool, split.creator_fee, split.protocol_fee),
+            (999, 0, 1)
+        );
     }
 
     #[test]
     fn protocol_created_receives_whole_fee() {
         let split = split_loser_vault(1_000, true);
-        assert_eq!((split.winner_pool, split.creator_fee, split.protocol_fee), (999, 0, 1));
+        assert_eq!(
+            (split.winner_pool, split.creator_fee, split.protocol_fee),
+            (999, 0, 1)
+        );
         let split = split_loser_vault(100_000, true);
-        assert_eq!((split.winner_pool, split.creator_fee, split.protocol_fee), (99_900, 0, 100));
+        assert_eq!(
+            (split.winner_pool, split.creator_fee, split.protocol_fee),
+            (99_900, 0, 100)
+        );
     }
 
     #[test]

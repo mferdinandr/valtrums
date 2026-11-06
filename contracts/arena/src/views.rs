@@ -1,5 +1,5 @@
 use crate::mpc::ForeignConfig;
-use crate::types::{Battle, BattleStatus, PolicyRef, RoundEvidence, ScoringMode, DaoEscrow};
+use crate::types::{Battle, BattleStatus, DaoEscrow, PolicyRef, RoundEvidence, ScoringMode};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
 
@@ -60,10 +60,7 @@ impl BattleView {
                 .map(|community| CommunityView {
                     index: community.index,
                     token: community.token.clone(),
-                    audit_decision: community
-                        .audit
-                        .as_ref()
-                        .map(|evidence| evidence.decision),
+                    audit_decision: community.audit.as_ref().map(|evidence| evidence.decision),
                     vault: U128(community.vault),
                     eliminated: community.eliminated,
                 })

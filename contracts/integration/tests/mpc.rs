@@ -95,26 +95,37 @@ fn payout_tx(nonce: u64, amount: u128) -> Value {
 
 /// Runs a battle to the point where community 1's vault is allocated and
 /// `beneficiary` holds a `q`-unit payout reservation on backing_b.
-async fn settled_payout(
-    env: &Env,
-) -> anyhow::Result<(u64, u64, near_workspaces::Account)> {
+async fn settled_payout(env: &Env) -> anyhow::Result<(u64, u64, near_workspaces::Account)> {
     let alice = env.user("alice").await?;
     let bob = env.user("bob").await?;
     let carol = env.user("carol").await?;
-    env.grant_representation(&alice, &env.backing_a, 500, 1).await?;
-    env.grant_representation(&bob, &env.backing_a, 500, 2).await?;
-    env.grant_representation(&carol, &env.backing_b, 1000, 3).await?;
+    env.grant_representation(&alice, &env.backing_a, 500, 1)
+        .await?;
+    env.grant_representation(&bob, &env.backing_a, 500, 2)
+        .await?;
+    env.grant_representation(&carol, &env.backing_b, 1000, 3)
+        .await?;
     let id = env.create_and_audit_with(&alice, TOKEN_A, TOKEN_B).await?;
-    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&bob, &env.backing_a, 500, id, 0).await?.into_result()?;
-    env.deposit(&carol, &env.backing_b, 1000, id, 1).await?.into_result()?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&bob, &env.backing_a, 500, id, 0)
+        .await?
+        .into_result()?;
+    env.deposit(&carol, &env.backing_b, 1000, id, 1)
+        .await?
+        .into_result()?;
     env.lock(id).await?;
     env.submit_prices(id, 110, 105).await?;
     env.resolve(id).await?;
     assert_eq!(env.battle(id).await?["winner"], json!(0));
-    env.arena_call(&env.auditor, "allocate_loser", json!({ "battle_id": id, "community_index": 1 }))
-        .await?
-        .into_result()?;
+    env.arena_call(
+        &env.auditor,
+        "allocate_loser",
+        json!({ "battle_id": id, "community_index": 1 }),
+    )
+    .await?
+    .into_result()?;
     alice
         .call(env.arena.id(), "register_recipient")
         .args_json(json!({ "address": RECIPIENT }))
@@ -145,19 +156,29 @@ async fn settled_payout(
 }
 
 #[tokio::test]
-async fn a_constrained_payout_signature_yields_a_well_formed_signed_transaction() -> anyhow::Result<()> {
+async fn a_constrained_payout_signature_yields_a_well_formed_signed_transaction(
+) -> anyhow::Result<()> {
     let env = Env::new().await?;
     let (battle_id, nonce, _alice) = settled_payout(&env).await?;
 
-    env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0,
-        "tx": payout_tx(nonce, 500),
-    }))
+    env.arena_call(
+        &env.auditor,
+        "request_signature",
+        json!({
+            "payout_id": 0,
+            "tx": payout_tx(nonce, 500),
+        }),
+    )
     .await?
     .into_result()?;
 
-    let view = env.arena_view("sign_request", json!({ "request_id": 1 })).await?;
-    assert_eq!(view["status"], "Signed", "the MPC round trip must finish in-gas");
+    let view = env
+        .arena_view("sign_request", json!({ "request_id": 1 }))
+        .await?;
+    assert_eq!(
+        view["status"], "Signed",
+        "the MPC round trip must finish in-gas"
+    );
     assert_eq!(view["path"], "valtrum-payout-0");
     assert_eq!(view["attempts"], 0);
     assert_eq!(view["payout_id"], 0);
@@ -175,9 +196,17 @@ async fn a_constrained_payout_signature_yields_a_well_formed_signed_transaction(
     assert_eq!(be(&signed[2]), 1_000_000, "priority fee");
     assert_eq!(be(&signed[3]), 2_000_000_000, "max fee");
     assert_eq!(be(&signed[4]), 120_000, "gas limit");
-    assert_eq!(signed[5], addr_bytes(TOKEN_B), "the transfer goes to the token");
+    assert_eq!(
+        signed[5],
+        addr_bytes(TOKEN_B),
+        "the transfer goes to the token"
+    );
     assert_eq!(be(&signed[6]), 0, "no value");
-    assert_eq!(&signed[7][..4], &[0xa9, 0x05, 0x9c, 0xbb], "transfer selector");
+    assert_eq!(
+        &signed[7][..4],
+        &[0xa9, 0x05, 0x9c, 0xbb],
+        "transfer selector"
+    );
     assert_eq!(
         &signed[7][4 + 12..4 + 32],
         addr_bytes(RECIPIENT),
@@ -190,13 +219,19 @@ async fn a_constrained_payout_signature_yields_a_well_formed_signed_transaction(
     // the mock signs deterministically: a fresh request for the same payout
     // produces the same transaction
     let first = view["signed_tx"].clone();
-    env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0,
-        "tx": payout_tx(nonce, 500),
-    }))
+    env.arena_call(
+        &env.auditor,
+        "request_signature",
+        json!({
+            "payout_id": 0,
+            "tx": payout_tx(nonce, 500),
+        }),
+    )
     .await?
     .into_result()?;
-    let again = env.arena_view("sign_request", json!({ "request_id": 2 })).await?;
+    let again = env
+        .arena_view("sign_request", json!({ "request_id": 2 }))
+        .await?;
     assert_eq!(again["signed_tx"], first, "same reservation signs the same");
     let _ = battle_id;
     Ok(())
@@ -209,29 +244,71 @@ async fn a_signature_request_that_deviates_from_the_reservation_is_refused() -> 
 
     let mut tampered = payout_tx(nonce, 500);
     tampered["data"] = json!(transfer_calldata(RECIPIENT, 499));
-    assert!(env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0, "tx": tampered,
-    })).await?.into_result().is_err(), "a different amount must be refused");
+    assert!(
+        env.arena_call(
+            &env.auditor,
+            "request_signature",
+            json!({
+                "payout_id": 0, "tx": tampered,
+            })
+        )
+        .await?
+        .into_result()
+        .is_err(),
+        "a different amount must be refused"
+    );
 
     let mut tampered = payout_tx(nonce, 500);
     tampered["nonce"] = json!(nonce + 1);
-    assert!(env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0, "tx": tampered,
-    })).await?.into_result().is_err(), "a different nonce must be refused");
+    assert!(
+        env.arena_call(
+            &env.auditor,
+            "request_signature",
+            json!({
+                "payout_id": 0, "tx": tampered,
+            })
+        )
+        .await?
+        .into_result()
+        .is_err(),
+        "a different nonce must be refused"
+    );
 
     let mut tampered = payout_tx(nonce, 500);
     tampered["to"] = json!(addr_bytes(TOKEN_A));
-    assert!(env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0, "tx": tampered,
-    })).await?.into_result().is_err(), "a different token must be refused");
+    assert!(
+        env.arena_call(
+            &env.auditor,
+            "request_signature",
+            json!({
+                "payout_id": 0, "tx": tampered,
+            })
+        )
+        .await?
+        .into_result()
+        .is_err(),
+        "a different token must be refused"
+    );
 
     // a transaction for a reservation that does not exist is refused too
-    assert!(env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 999, "tx": payout_tx(nonce, 500),
-    })).await?.into_result().is_err(), "an unknown payout must be refused");
+    assert!(
+        env.arena_call(
+            &env.auditor,
+            "request_signature",
+            json!({
+                "payout_id": 999, "tx": payout_tx(nonce, 500),
+            })
+        )
+        .await?
+        .into_result()
+        .is_err(),
+        "an unknown payout must be refused"
+    );
 
     // nothing was recorded for any refused request
-    let count = env.arena_view("sign_request", json!({ "request_id": 1 })).await?;
+    let count = env
+        .arena_view("sign_request", json!({ "request_id": 1 }))
+        .await?;
     assert!(count.is_null());
     Ok(())
 }
@@ -247,12 +324,18 @@ async fn a_signing_failure_can_be_retried_until_it_works() -> anyhow::Result<()>
         .transact()
         .await?
         .into_result()?;
-    env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0, "tx": payout_tx(nonce, 500),
-    }))
+    env.arena_call(
+        &env.auditor,
+        "request_signature",
+        json!({
+            "payout_id": 0, "tx": payout_tx(nonce, 500),
+        }),
+    )
     .await?
     .into_result()?;
-    let view = env.arena_view("sign_request", json!({ "request_id": 1 })).await?;
+    let view = env
+        .arena_view("sign_request", json!({ "request_id": 1 }))
+        .await?;
     assert_eq!(view["status"], "Failed");
     assert_eq!(view["attempts"], 1);
     assert!(view["signed_tx"].is_null());
@@ -261,7 +344,11 @@ async fn a_signing_failure_can_be_retried_until_it_works() -> anyhow::Result<()>
     env.arena_call(&env.auditor, "retry_signature", json!({ "request_id": 1 }))
         .await?
         .into_result()?;
-    assert_eq!(env.arena_view("sign_request", json!({ "request_id": 1 })).await?["attempts"], 2);
+    assert_eq!(
+        env.arena_view("sign_request", json!({ "request_id": 1 }))
+            .await?["attempts"],
+        2
+    );
 
     env.mpc
         .call("set_fail")
@@ -272,19 +359,30 @@ async fn a_signing_failure_can_be_retried_until_it_works() -> anyhow::Result<()>
     env.arena_call(&env.auditor, "retry_signature", json!({ "request_id": 1 }))
         .await?
         .into_result()?;
-    let view = env.arena_view("sign_request", json!({ "request_id": 1 })).await?;
+    let view = env
+        .arena_view("sign_request", json!({ "request_id": 1 }))
+        .await?;
     println!("retried view: {view}");
     assert_eq!(view["status"], "Signed");
     assert!(view["signed_tx"].is_array(), "the retry eventually signs");
 
     // the mock is deterministic: the retried signature matches a fresh one
-    env.arena_call(&env.auditor, "request_signature", json!({
-        "payout_id": 0, "tx": payout_tx(nonce, 500),
-    }))
+    env.arena_call(
+        &env.auditor,
+        "request_signature",
+        json!({
+            "payout_id": 0, "tx": payout_tx(nonce, 500),
+        }),
+    )
     .await?
     .into_result()?;
-    let fresh = env.arena_view("sign_request", json!({ "request_id": 2 })).await?;
-    assert_eq!(fresh["signed_tx"], view["signed_tx"], "same payload signs the same");
+    let fresh = env
+        .arena_view("sign_request", json!({ "request_id": 2 }))
+        .await?;
+    assert_eq!(
+        fresh["signed_tx"], view["signed_tx"],
+        "same payload signs the same"
+    );
     Ok(())
 }
 
@@ -295,9 +393,13 @@ async fn only_workers_may_request_signatures_and_callbacks_are_private() -> anyh
 
     let bob = env.user("dave").await?;
     let outsider = env
-        .arena_call(&bob, "request_signature", json!({
-            "payout_id": 0, "tx": payout_tx(nonce, 500),
-        }))
+        .arena_call(
+            &bob,
+            "request_signature",
+            json!({
+                "payout_id": 0, "tx": payout_tx(nonce, 500),
+            }),
+        )
         .await?;
     assert!(outsider.into_result().is_err(), "only workers may sign");
 

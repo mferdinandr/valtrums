@@ -134,7 +134,11 @@ impl Env {
             .transact()
             .await?
             .into_result()?;
-        mpc.call("new").args_json(json!({})).transact().await?.into_result()?;
+        mpc.call("new")
+            .args_json(json!({}))
+            .transact()
+            .await?
+            .into_result()?;
         for (backing, symbol) in [(&backing_a, "a"), (&backing_b, "b")] {
             backing
                 .call("new")
@@ -545,9 +549,13 @@ impl Env {
             .and_then(|text| text.parse::<u64>().ok())
             .unwrap_or_default();
         self.advance_to(round_end_ns + 1).await?;
-        self.arena_call(&self.auditor, "resolve_round", json!({ "battle_id": battle_id }))
-            .await?
-            .into_result()?;
+        self.arena_call(
+            &self.auditor,
+            "resolve_round",
+            json!({ "battle_id": battle_id }),
+        )
+        .await?
+        .into_result()?;
         Ok(())
     }
 
@@ -571,9 +579,13 @@ impl Env {
         self.resolve(id).await?;
 
         // community 0 wins: community 1's 500 units become the reward pool.
-        self.arena_call(&self.auditor, "allocate_loser", json!({ "battle_id": id, "community_index": 1 }))
-            .await?
-            .into_result()?;
+        self.arena_call(
+            &self.auditor,
+            "allocate_loser",
+            json!({ "battle_id": id, "community_index": 1 }),
+        )
+        .await?
+        .into_result()?;
 
         beneficiary
             .call(self.arena.id(), "register_recipient")

@@ -136,27 +136,42 @@ mod tests {
 
     #[test]
     fn expired_or_revoked_rejected() {
-        assert_eq!(authorize(&grant(), &action(100), 10_000), Err(GrantError::Expired));
+        assert_eq!(
+            authorize(&grant(), &action(100), 10_000),
+            Err(GrantError::Expired)
+        );
         let revoked = Grant {
             revoked: true,
             ..grant()
         };
-        assert_eq!(authorize(&revoked, &action(100), 5_000), Err(GrantError::Revoked));
+        assert_eq!(
+            authorize(&revoked, &action(100), 5_000),
+            Err(GrantError::Revoked)
+        );
     }
 
     #[test]
     fn method_and_chain_and_asset_checks() {
         let mut g = grant();
         g.methods = vec!["resolve_round".to_string()];
-        assert_eq!(authorize(&g, &action(100), 5_000), Err(GrantError::MethodNotAllowed));
+        assert_eq!(
+            authorize(&g, &action(100), 5_000),
+            Err(GrantError::MethodNotAllowed)
+        );
 
         let mut g = grant();
         g.chains = vec![1];
-        assert_eq!(authorize(&g, &action(100), 5_000), Err(GrantError::ChainNotAllowed));
+        assert_eq!(
+            authorize(&g, &action(100), 5_000),
+            Err(GrantError::ChainNotAllowed)
+        );
 
         let mut g = grant();
         g.assets = vec![acc("other")];
-        assert_eq!(authorize(&g, &action(100), 5_000), Err(GrantError::AssetNotAllowed));
+        assert_eq!(
+            authorize(&g, &action(100), 5_000),
+            Err(GrantError::AssetNotAllowed)
+        );
     }
 
     #[test]
