@@ -1928,6 +1928,54 @@ impl Arena {
     }
 }
 
+// Only a dedicated sandbox build includes these self-call-only fixtures. They
+// are not an audit, custody, scoring, or governance integration.
+#[cfg(feature = "sandbox-fixtures")]
+#[near]
+impl Arena {
+    #[private]
+    pub fn fixture_approve_lifecycle(&mut self, battle_id: u64, community: u32) {
+        let view = self
+            .get_lifecycle_battle(battle_id)
+            .unwrap_or_else(|| env::panic_str("Unknown battle"));
+        let item = view
+            .communities
+            .get(community as usize)
+            .unwrap_or_else(|| env::panic_str("Unknown community"));
+        let asset = lifecycle::AssetIdentity {
+            chain_id: item.chain_id.0,
+            token_address: item.token_address.clone(),
+            representation: item.representation.clone(),
+            custody_domain: item.custody_domain.clone(),
+        };
+        self.lifecycle_set_audit(
+            battle_id,
+            community as usize,
+            Some(lifecycle::AuditApproval {
+                asset: asset.clone(),
+                policy_hash: "fixture-policy".into(),
+                evidence_hash: "fixture-audit".into(),
+            }),
+        )
+        .unwrap_or_else(|_| env::panic_str("Fixture audit rejected"));
+        self.lifecycle_set_backing(
+            battle_id,
+            community as usize,
+            Some(lifecycle::BackingApproval {
+                asset,
+                evidence_hash: "fixture-backing".into(),
+            }),
+        )
+        .unwrap_or_else(|_| env::panic_str("Fixture backing rejected"));
+    }
+
+    #[private]
+    pub fn fixture_hold_lifecycle_principal(&mut self, battle_id: u64, winner: u32) {
+        self.lifecycle_hold_principal(battle_id, winner)
+            .unwrap_or_else(|_| env::panic_str("Fixture winner rejected"));
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
