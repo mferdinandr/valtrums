@@ -15,10 +15,10 @@ Check tasks only after implementation and verification. Custody verification, fi
 
 - [x] Implement exact reversible decimal normalization and attribute unrepresentable residual to unallocated custody.
 - [x] Mint controlled NEP-141 units only for finalized actual received units and consume each receipt once.
-- [ ] Track B, M, E, P, D and U per asset in canonical custody units and expose reconciliation status.
+- [x] Track B, M, E, P, D and U per asset in canonical custody units and expose reconciliation status.
 - [x] Transition locked losing representations into settlement entitlements without creating or losing backing.
-- [ ] Reserve payout, redemption and DAO disposal liabilities exclusively before authorizing external spends.
-- [ ] Disable or burn representations when reserving redemption and retain the reservation while execution is unresolved.
+- [x] Reserve payout, redemption and DAO disposal liabilities exclusively before authorizing external spends.
+- [x] Disable or burn representations when reserving redemption and retain the reservation while execution is unresolved.
 - [ ] Reconcile finalized payment or disposal evidence before consuming backing; restore only after definitive no-spend proof.
 - [ ] Suspend affected minting and payouts on deficit, reorg or unresolved reconciliation.
 
@@ -26,6 +26,6 @@ Check tasks only after implementation and verification. Custody verification, fi
 
 - [x] Test short receipts, replay, unrelated transfers, wrong source and provisional receipt reorgs.
 - [x] Test minimum and maximum values, decimal mismatch and attributed residual without rounding up.
-- [ ] Test concurrent redemption, payout and disposal against the same backing.
+- [x] Test concurrent redemption, payout and disposal against the same backing.
 - [ ] Test lost callbacks after actual debit and restoration only after definitive no-spend evidence.
-- [ ] Verify B = M + E + P + D + U across transitions and partial payout completion.
+- [x] Verify B = M + E + P + D + U across transitions and partial payout completion.

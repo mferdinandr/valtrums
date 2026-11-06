@@ -21,6 +21,7 @@ async fn unverified_receipts_and_internal_reservations_are_not_contract_api() ->
         "reorganize_receipt",
         "reserve_representation",
         "record_reservation_broadcast",
+        "reserve_entitlement",
         "confirm_redemption",
         "fixture_observe",
         "fixture_finalize",

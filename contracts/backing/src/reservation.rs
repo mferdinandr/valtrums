@@ -7,6 +7,8 @@ use near_sdk::{near, AccountId};
 pub enum ReservationKind {
     Redemption,
     Disposal,
+    /// Settlement entitlement paid out in the original token.
+    Payout,
 }
 
 #[near(serializers = [borsh])]

@@ -204,7 +204,6 @@ impl Backing {
         }
     }
 
-
     /// Pull a registry-attested, finalized receipt into attributed unallocated
     /// custody. Anyone may call; the registry claim is the only authority and
     /// credits only the claim's beneficiary. The attached deposit pays storage
@@ -233,11 +232,7 @@ impl Backing {
                 Self::ext(env::current_account_id())
                     .with_static_gas(CALLBACK_GAS)
                     .with_attached_deposit(env::attached_deposit())
-                    .on_claim_receipt(
-                        env::predecessor_account_id(),
-                        transaction_hash,
-                        log_index,
-                    ),
+                    .on_claim_receipt(env::predecessor_account_id(), transaction_hash, log_index),
             )
     }
 
@@ -312,7 +307,8 @@ impl Backing {
         log_index: u32,
         #[callback_result] disputed: Result<bool, PromiseError>,
     ) -> bool {
-        let Ok(id) = receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
+        let Ok(id) =
+            receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
         else {
             return false;
         };
@@ -574,7 +570,8 @@ impl Backing {
         log_index: u32,
         claim: &RegistryClaim,
     ) -> bool {
-        let Ok(id) = receipt::ReceiptId::from_hex(self.asset.chain_id.0, transaction_hash, log_index)
+        let Ok(id) =
+            receipt::ReceiptId::from_hex(self.asset.chain_id.0, transaction_hash, log_index)
         else {
             return false;
         };
@@ -745,6 +742,7 @@ impl Backing {
         let target = match kind {
             ReservationKind::Redemption => ledger::Bucket::Payouts,
             ReservationKind::Disposal => ledger::Bucket::Disposal,
+            ReservationKind::Payout => return Err(ReservationError::WrongKind),
         };
         let mut next = self.ledger.clone();
         next.move_liability(ledger::Bucket::Minted, target, amount)
@@ -766,6 +764,78 @@ impl Backing {
                 source_amount,
                 destination,
                 kind,
+                status: ReservationStatus::Reserved,
+            },
+        );
+        Ok(true)
+    }
+
+    /// Internal-only. Reserve part of a beneficiary's settlement entitlement for
+    /// one original-token payout, removing it from the available entitlement
+    /// before any signature is requested. A caller must authenticate the
+    /// beneficiary (or a bounded delegate) and bind the destination; a
+    /// reservation is never released by timeout or a missing response.
+    pub fn reserve_entitlement(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        amount: u128,
+        destination: [u8; 20],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{Reservation, ReservationError, ReservationKind, ReservationStatus};
+        if self.paused || self.reconciliation_required {
+            return Err(ReservationError::Paused);
+        }
+        if amount == 0 {
+            return Err(ReservationError::ZeroAmount);
+        }
+        if destination == [0; 20] || request_id == [0; 32] {
+            return Err(ReservationError::InvalidDestination);
+        }
+        let source_amount = normalization::to_source_exact(
+            amount,
+            self.asset.source_decimals,
+            self.asset.representation_decimals,
+        )
+        .map_err(|_| ReservationError::UnrepresentableAmount)?;
+        let key = (beneficiary.clone(), request_id);
+        if let Some(existing) = self.reservations.get(&key) {
+            return if existing.amount == amount
+                && existing.kind == ReservationKind::Payout
+                && existing.destination == destination
+            {
+                Ok(false)
+            } else {
+                Err(ReservationError::ConflictingRequest)
+            };
+        }
+        let available = self
+            .entitlement_balances
+            .get(&beneficiary)
+            .copied()
+            .ok_or(ReservationError::UnknownHolder)?;
+        let remaining = available
+            .checked_sub(amount)
+            .ok_or(ReservationError::InsufficientBalance)?;
+        let mut next = self.ledger.clone();
+        next.move_liability(
+            ledger::Bucket::Entitlements,
+            ledger::Bucket::Payouts,
+            amount,
+        )
+        .map_err(|_| ReservationError::InvalidLedger)?;
+        self.entitlement_balances
+            .insert(beneficiary.clone(), remaining);
+        self.ledger = next;
+        self.reservations.insert(
+            key,
+            Reservation {
+                request_id,
+                holder: beneficiary,
+                amount,
+                source_amount,
+                destination,
+                kind: ReservationKind::Payout,
                 status: ReservationStatus::Reserved,
             },
         );
@@ -814,7 +884,10 @@ impl Backing {
             .get(&key)
             .cloned()
             .ok_or(ReservationError::MissingReservation)?;
-        if item.kind != ReservationKind::Redemption {
+        if !matches!(
+            item.kind,
+            ReservationKind::Redemption | ReservationKind::Payout
+        ) {
             return Err(ReservationError::WrongKind);
         }
         if evidence.chain_id != self.asset.chain_id.0
@@ -1594,7 +1667,10 @@ mod tests {
         assert!(contract.allocate_entitlement(id, bob.clone(), U128(60)));
         assert!(!contract.allocate_entitlement(id, bob.clone(), U128(60)));
         let ledger = contract.get_ledger();
-        assert_eq!((ledger.minted, ledger.entitlements, ledger.custody), (U128(40), U128(60), U128(100)));
+        assert_eq!(
+            (ledger.minted, ledger.entitlements, ledger.custody),
+            (U128(40), U128(60), U128(100))
+        );
         assert!(ledger.accounting_balanced);
         assert_eq!(contract.entitlement_of(bob.clone()), U128(60));
         assert_eq!(contract.ft_total_supply(), U128(40));
@@ -1628,5 +1704,117 @@ mod tests {
         funded_arena(&mut contract, 100);
         context("arena.testnet", 10_u128.pow(23));
         contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(101));
+    }
+
+    fn debit(amount: u128, tx: u8) -> reservation::FinalizedDebit {
+        reservation::FinalizedDebit {
+            chain_id: 46630,
+            token_address: asset().token_address,
+            custody_domain: "fixture".into(),
+            destination: [9; 20],
+            source_amount: amount,
+            recipient_received: amount,
+            transaction_hash: [tx; 32],
+            log_index: 0,
+            block_hash: [8; 32],
+        }
+    }
+
+    #[test]
+    fn entitlement_payouts_reserve_exclusively_and_complete_partially() {
+        use reservation::ReservationError;
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 60, [9; 20]),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 60, [9; 20]),
+            Ok(false)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 60, [8; 20]),
+            Err(ReservationError::ConflictingRequest)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [2; 32], 41, [9; 20]),
+            Err(ReservationError::InsufficientBalance)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [2; 32], 40, [9; 20]),
+            Ok(true)
+        );
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(0));
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.entitlements, ledger.payouts), (U128(0), U128(100)));
+        // Confirming one payout leaves the other reserved and the ledger balanced.
+        assert_eq!(
+            contract.record_reservation_broadcast(bob.clone(), [1; 32], [7; 32]),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.confirm_redemption(bob.clone(), [1; 32], debit(60, 7)),
+            Ok(true)
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.payouts), (U128(40), U128(40)));
+        assert!(ledger.accounting_balanced);
+        let canonical = contract.get_custody_ledger().expect("exact source units");
+        assert_eq!(
+            (canonical.custody, canonical.payouts, canonical.unallocated),
+            (U128(40), U128(40), U128(0))
+        );
+        assert!(canonical.accounting_balanced && !canonical.reconciliation_required);
+        // A debit that was never broadcast for the second payout cannot confirm it.
+        assert_eq!(
+            contract.confirm_redemption(bob, [2; 32], debit(40, 6)),
+            Err(ReservationError::EvidenceMismatch)
+        );
+    }
+
+    #[test]
+    fn payout_redemption_and_entitlement_use_separate_backing() {
+        use reservation::{ReservationError, ReservationKind};
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        // Alice also holds minted units that are not part of any entitlement.
+        let item = observed(30, 11);
+        contract.observe_receipt(item.clone()).expect("observe");
+        contract.finalize_receipt(&item.id).expect("finalize");
+        let alice = account("alice.testnet");
+        contract.token.internal_register_account(&alice);
+        context("alice.testnet", 1);
+        contract.claim_representation(alice.clone(), U128(30));
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        assert_eq!(
+            contract.reserve_representation(
+                alice.clone(),
+                [3; 32],
+                30,
+                ReservationKind::Redemption,
+                [9; 20]
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(alice, [4; 32], 1, [9; 20]),
+            Err(ReservationError::UnknownHolder)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob, [4; 32], 100, [9; 20]),
+            Ok(true)
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.minted, ledger.entitlements, ledger.payouts),
+            (U128(0), U128(0), U128(130))
+        );
+        assert!(ledger.accounting_balanced);
     }
 }
