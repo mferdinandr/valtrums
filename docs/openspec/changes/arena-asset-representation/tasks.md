@@ -4,7 +4,7 @@ Check tasks only after implementation and verification. Custody verification, fi
 
 ## Identity and receipt verification
 
-- [ ] Specify verifier, custody domain, source chain/token, representation account, decimals and mapping version with lifecycle.
+- [x] Specify verifier, custody domain, source chain/token, representation account, decimals and mapping version with lifecycle.
 - [x] Define finalized receipt evidence, actual balance attribution and unique chain/transaction/log identity.
 - [x] Decide and document source finality, reorg handling and verifier authority before accepting live receipts.
 - [ ] Reject wrong-asset, unfinalized, duplicate or unattributed receipt evidence.
