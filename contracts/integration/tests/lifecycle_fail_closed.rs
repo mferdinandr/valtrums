@@ -39,6 +39,7 @@ async fn unapproved_representation_transfer_returns_to_sender() -> anyhow::Resul
         "lifecycle_set_audit",
         "lifecycle_set_backing",
         "lifecycle_hold_principal",
+        "lifecycle_losing_vault",
         "fixture_approve_lifecycle",
         "fixture_hold_lifecycle_principal",
         "fixture_credit_lifecycle",

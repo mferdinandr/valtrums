@@ -197,6 +197,17 @@ pub struct PrincipalHold {
     pub amount: u128,
 }
 
+/// Read-only settlement input. This is not an allocation, entitlement, or
+/// exclusive backing reservation; those are owned by later integrations.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LosingVault {
+    pub community: u32,
+    pub winner: u32,
+    pub asset: AssetIdentity,
+    pub amount: u128,
+    pub fee: FeePolicy,
+}
+
 /// Positions are stored separately by (battle, community, account). Once
 /// locked, the same state guard that rejects deposits must guard every write
 /// to those keys. Locking does not iterate over or copy every player's position.
@@ -230,6 +241,8 @@ pub enum LifecycleError {
     CreatorHasNoPosition,
     NotLocked,
     ConflictingWinner,
+    WinnerNotResolved,
+    WinningVault,
     PositionNotRegistered,
     PositionAlreadyRegistered,
 }
@@ -463,6 +476,30 @@ impl Battle {
             .ok_or(LifecycleError::NotLocked)
     }
 
+    /// Expose frozen losing-vault inputs without consulting any DAO decision.
+    /// The future settlement adapter must enforce exclusive allocation.
+    pub fn losing_vault(&self, community: u32) -> Result<LosingVault, LifecycleError> {
+        let snapshot = self.snapshot.as_ref().ok_or(LifecycleError::NotLocked)?;
+        let hold = self
+            .principal_hold
+            .as_ref()
+            .ok_or(LifecycleError::WinnerNotResolved)?;
+        if community == hold.community {
+            return Err(LifecycleError::WinningVault);
+        }
+        let entry = snapshot
+            .communities
+            .get(community as usize)
+            .ok_or(LifecycleError::InvalidCommunity)?;
+        Ok(LosingVault {
+            community,
+            winner: hold.community,
+            asset: entry.asset.clone(),
+            amount: entry.vault,
+            fee: snapshot.fee.clone(),
+        })
+    }
+
     /// The adapter must revalidate approval and backing before lock. Once
     /// frozen, duplicate lock calls return the original snapshot unchanged.
     pub fn lock(&mut self, observation: ObservationPolicy) -> Result<&Snapshot, LifecycleError> {
@@ -614,6 +651,18 @@ impl crate::Arena {
         let hold = battle.hold_principal(winner)?.clone();
         self.lifecycle_battles.insert(id, battle);
         Ok(hold)
+    }
+
+    /// Rust-only read boundary for the future settlement integration.
+    pub fn lifecycle_losing_vault(
+        &self,
+        id: u64,
+        community: u32,
+    ) -> Result<LosingVault, LifecycleError> {
+        self.lifecycle_battles
+            .get(&id)
+            .ok_or(LifecycleError::UnknownBattle)?
+            .losing_vault(community)
     }
 
     pub fn lifecycle_position(&self, id: u64, community: u32, account: &AccountId) -> u128 {
@@ -904,6 +953,26 @@ mod tests {
             ),
             Err(LifecycleError::InvalidPolicy)
         );
+    }
+
+    #[test]
+    fn losing_vault_inputs_are_available_without_a_dao_decision() {
+        let mut b = battle();
+        approve(&mut b);
+        deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
+        deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
+        b.lock(policy("p")).expect("lock");
+        assert_eq!(b.losing_vault(1), Err(LifecycleError::WinnerNotResolved));
+        b.hold_principal(0).expect("hold");
+        let first = b.losing_vault(1).expect("loser");
+        assert_eq!(first.amount, 11);
+        assert_eq!(first.asset, asset(2));
+        assert_eq!(first.fee, fee());
+        assert_eq!(b.losing_vault(2).expect("loser").amount, 13);
+        assert_eq!(b.losing_vault(0), Err(LifecycleError::WinningVault));
+        assert_eq!(b.losing_vault(1), Ok(first));
+        assert_eq!(b.principal_hold.as_ref().expect("hold").amount, 7);
     }
 
     #[test]
