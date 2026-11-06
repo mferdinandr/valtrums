@@ -12,6 +12,10 @@ Build a permissionless arena on NEAR testnet with original-token custody and pay
 
 When publishing to GitHub, expand these relative links to repository blob links on docs/near-hackathon-arena-spec so they resolve from the issue.
 
+## Selected hackathon tracks
+
+Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms. Map evidence to each track; the AI Swarms demo uses multiple independently user-funded player agents, and Social Money preserves the OPEN governance design.
+
 ## Final decisions
 
 - At least two communities; freeze communities/deposits before round 1; real positive creator participation including protocol creators; no bond.

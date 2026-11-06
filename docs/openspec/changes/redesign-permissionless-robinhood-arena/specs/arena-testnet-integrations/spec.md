@@ -21,3 +21,14 @@ The demo SHALL record two/three-community flows, protocol creator, all scoring m
 #### Scenario: Indexer replay
 - **WHEN** events are replayed after restart
 - **THEN** the same projection results without duplicate allocation or payment
+
+### Requirement: Four-track demonstration mapping
+The documentation and acceptance evidence SHALL identify Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms as the selected hackathon tracks without claiming completed integrations or award eligibility.
+
+#### Scenario: AI Swarms evidence
+- **WHEN** demonstrating the AI Swarms track
+- **THEN** at least two independently user-funded player agents interact with the shared arena through MCP within their own grants; a lone prompt parser or infrastructure workers alone do not satisfy the demonstration
+
+#### Scenario: Social Money evidence
+- **WHEN** describing community entitlements and principal escrow
+- **THEN** the demonstration distinguishes these from the still OPEN DAO voting rules

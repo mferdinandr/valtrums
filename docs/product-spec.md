@@ -2,18 +2,22 @@
 
 Status: **planned, not implemented**. Target networks: **NEAR testnet and Robinhood Chain testnet**. This is the product source of truth for the redesign. [Current state](current-state.md) describes the code at the PR base; [OpenSpec](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md) is the proposed implementation contract. No mainnet launch, application change, deployment or migration is included here.
 
-## Product and four demo tracks
+## Product and four hackathon tracks
 
 Valtrum lets two or more token communities compete in short rounds. Players stake a community's token, the creator chooses one of four scoring modes, and participants on the final winning community receive the original losing tokens on Robinhood. The winner's own principal goes to DAO escrow for a burn or return decision.
 
-The four product tracks below organize the hackathon demo; they do not assert eligibility for an organizer's award category.
+The selected [NEAR Hackathon tracks](https://nearhackathon.com/#tracks) are:
 
-| Track | Demonstrable result | Target status |
-| --- | --- | --- |
-| Memecoin mechanics | Permissionless multi-community creation, four scores, unlimited overtime and per-token rewards | Planned |
-| Chain abstraction | NEAR records ownership and rules; backed representations and Chain Signatures connect Robinhood custody and payouts | Planned; legacy signing code is only a starting point |
-| User-owned player AI | A NEAR AI powered player agent can inspect battles and act within a user's funded budget and permissions | Planned |
-| Intent terminal and MCP | Human and agent clients share validated previews, explicit authorization and observable execution | Existing terminal targets the legacy arena; redesign and MCP planned |
+| Hackathon track | Target demonstration |
+| --- | --- |
+| Memecoins With Mechanics | Token-community battles, explicit prize rules and DAO-directed source-token burn |
+| Games With Real Economies | Four scoring modes, locked vaults, native-token rewards and unlimited overtime |
+| Social Money | Proportional community entitlements and collective disposition of winning principal |
+| AI Swarms | Multiple user-funded NEAR AI player agents competing under bounded policies through shared MCP tools |
+
+All target demonstrations are planned. Track selection does not assert award eligibility or completed functionality. Demonstrate AI Swarms with at least two independently user-funded player agents interacting with the shared arena through MCP under their own budgets and permissions. Strategy can differ; infrastructure workers are not counted as player agents.
+
+Technical workstreams (chain abstraction, scoring/settlement, player AI, and intent terminal/MCP) are implementation groupings supporting these tracks. Social Money does not resolve the OPEN DAO membership, voting or execution rules.
 
 ## Actors and authority
 

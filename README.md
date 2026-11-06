@@ -14,16 +14,18 @@ Each losing vault pays 99.9% of its own token to final-winner participants propo
 
 Winning principal enters DAO escrow for a burn/return decision; rewards do not wait for it. DAO voting mechanics remain OPEN. NEP-141 representations require 1:1 actual-received backing and exclusive redemption/payout/burn reservations.
 
-## Four demo tracks
+## Four hackathon tracks
 
-| Product track | Target demonstration |
+| Hackathon track | Target demonstration |
 | --- | --- |
-| Memecoin mechanics | Multi-community battles, four modes and unlimited overtime |
-| Chain abstraction | NEAR state, backed representations and constrained Robinhood payouts |
-| User-owned player AI | NEAR AI strategy under enforceable user budgets/permissions |
-| Intent terminal and MCP | Canonical previews, authorized actions and observable execution |
+| Memecoins With Mechanics | Token-community battles, explicit prize rules and DAO-directed source-token burn |
+| Games With Real Economies | Four scoring modes, locked vaults, native-token rewards and unlimited overtime |
+| Social Money | Proportional community entitlements and collective disposition of winning principal |
+| AI Swarms | Multiple user-funded NEAR AI player agents competing under bounded policies through shared MCP tools |
 
-These are product workstreams, not a claim of organizer award eligibility. Infrastructure agents never gain authority to spend player funds.
+These are the project's selected [NEAR Hackathon tracks](https://nearhackathon.com/#tracks), not a claim of completed integration or award eligibility. AI Swarms acceptance needs multiple independently funded player agents; one prompt parser or an infrastructure scheduler alone is insufficient. Infrastructure agents never gain authority to spend player funds.
+
+Technical workstreams remain chain abstraction, scoring/settlement, player AI, and terminal/MCP; they support the tracks rather than replace their names. Governance details remain OPEN.
 
 ## Documentation and implementation tracker
 
