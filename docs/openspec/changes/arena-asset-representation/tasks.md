@@ -7,14 +7,14 @@ Check tasks only after implementation and verification. Custody verification, fi
 - [x] Specify verifier, custody domain, source chain/token, representation account, decimals and mapping version with lifecycle.
 - [x] Define finalized receipt evidence, actual balance attribution and unique chain/transaction/log identity.
 - [x] Decide and document source finality, reorg handling and verifier authority before accepting live receipts.
-- [ ] Reject wrong-asset, unfinalized, duplicate or unattributed receipt evidence.
+- [x] Reject wrong-asset, unfinalized, duplicate or unattributed receipt evidence.
 - [x] Build and test a deposit-only source-chain custody prototype with attributed balance-delta events; keep it out of live deployment.
-- [ ] Verify actual custody increase rather than trusting declared amounts or unrelated donations.
+- [x] Verify actual custody increase rather than trusting declared amounts or unrelated donations.
 
 ## Representation and ledger
 
 - [x] Implement exact reversible decimal normalization and attribute unrepresentable residual to unallocated custody.
-- [ ] Mint controlled NEP-141 units only for finalized actual received units and consume each receipt once.
+- [x] Mint controlled NEP-141 units only for finalized actual received units and consume each receipt once.
 - [ ] Track B, M, E, P, D and U per asset in canonical custody units and expose reconciliation status.
 - [ ] Transition locked losing representations into settlement entitlements without creating or losing backing.
 - [ ] Reserve payout, redemption and DAO disposal liabilities exclusively before authorizing external spends.
