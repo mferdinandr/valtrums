@@ -1,15 +1,18 @@
 schema: spec-driven
 
 context: |
-  Valtrum runs on NEAR (testnet first). Contracts are Rust with near-sdk 5 in contracts/,
-  the agent is TypeScript in agent/, the web app is Next.js in web/.
-  Token amounts are integers in the token's smallest unit; USDC has 6 decimals.
-  Write all artifacts in English.
-  Any rule a memecoin mechanic depends on must be fixed at launch and readable on chain,
-  with no admin method that changes it (NEAR "Memecoins With Mechanics" track).
+  Valtrum's current source is described in docs/current-state.md.
+  Target requirements are docs/product-spec.md and the unimplemented change
+  redesign-permissionless-robinhood-arena. Target networks are NEAR testnet and
+  Robinhood Chain testnet. Write artifacts in English. Amounts are integer units.
+  Legacy specs and WAR/furnace changes are historical context, not target completion.
+  DAO mechanism and audit tax/admin policy remain OPEN; do not invent parameters.
 
 rules:
   proposal:
-    - State which product rule from the PRD (valtrum_near_migration_prd_tech_spec.md) changes, if any
+    - Distinguish target changes from implemented behavior and list breaking changes.
   design:
-    - List every trust assumption on the owner, the agent and other contracts
+    - Document custody, oracle, signer, operator and player authorization trust boundaries.
+    - Preserve unresolved DAO and audit decisions as OPEN.
+  tasks:
+    - Leave implementation tasks unchecked until implementation and verification are complete.
