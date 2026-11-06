@@ -8,6 +8,7 @@ Check tasks only after implementation and verification. Custody verification, fi
 - [x] Define finalized receipt evidence, actual balance attribution and unique chain/transaction/log identity.
 - [x] Decide and document source finality, reorg handling and verifier authority before accepting live receipts.
 - [ ] Reject wrong-asset, unfinalized, duplicate or unattributed receipt evidence.
+- [x] Build and test a deposit-only source-chain custody prototype with attributed balance-delta events; keep it out of live deployment.
 - [ ] Verify actual custody increase rather than trusting declared amounts or unrelated donations.
 
 ## Representation and ledger
