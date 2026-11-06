@@ -12,6 +12,8 @@ pub mod math;
 pub mod mpc;
 pub mod types;
 pub mod views;
+pub mod v2_revenue;
+pub mod v2_scoring;
 
 use credit::plan_funding;
 use math::Outcome;
@@ -151,6 +153,8 @@ pub struct Arena {
     foreign: Option<ForeignConfig>,
     sign_requests: LookupMap<u64, SignRequest>,
     sign_request_count: u64,
+    /// Target-arena configuration; added state requires a fresh isolated deployment.
+    v2_revenue: v2_revenue::RevenuePolicy,
 }
 
 #[near]
@@ -186,6 +190,7 @@ impl Arena {
             foreign: None,
             sign_requests: LookupMap::new(StorageKey::SignRequests),
             sign_request_count: 0,
+            v2_revenue: v2_revenue::RevenuePolicy::default(),
         }
     }
 
