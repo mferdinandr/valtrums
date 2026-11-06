@@ -16,7 +16,7 @@ Check tasks only after implementation and verification. Custody verification, fi
 - [x] Implement exact reversible decimal normalization and attribute unrepresentable residual to unallocated custody.
 - [x] Mint controlled NEP-141 units only for finalized actual received units and consume each receipt once.
 - [ ] Track B, M, E, P, D and U per asset in canonical custody units and expose reconciliation status.
-- [ ] Transition locked losing representations into settlement entitlements without creating or losing backing.
+- [x] Transition locked losing representations into settlement entitlements without creating or losing backing.
 - [ ] Reserve payout, redemption and DAO disposal liabilities exclusively before authorizing external spends.
 - [ ] Disable or burn representations when reserving redemption and retain the reservation while execution is unresolved.
 - [ ] Reconcile finalized payment or disposal evidence before consuming backing; restore only after definitive no-spend proof.

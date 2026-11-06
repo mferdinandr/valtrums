@@ -50,6 +50,8 @@ enum StorageKey {
     Residual,
     Reservations,
     ConfirmedDebits,
+    Allocations,
+    EntitlementBalances,
 }
 
 /// Identity and precision are immutable for this contract instance.
@@ -91,6 +93,14 @@ pub struct CustodyLedgerView {
     pub reconciliation_required: bool,
 }
 
+/// Immutable record of one settlement allocation converted into an entitlement.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Allocation {
+    pub beneficiary: AccountId,
+    pub amount: U128,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Backing {
@@ -99,6 +109,8 @@ pub struct Backing {
     /// Shared receipt registry and mapping version are immutable instance identity.
     registry: AccountId,
     mapping_version: u64,
+    /// The only account allowed to convert its locked representations into entitlements.
+    arena: AccountId,
     paused: bool,
     token: FungibleToken,
     metadata: FungibleTokenMetadata,
@@ -110,11 +122,14 @@ pub struct Backing {
     reconciliation_required: bool,
     reservations: LookupMap<(AccountId, [u8; 32]), reservation::Reservation>,
     confirmed_debits: LookupMap<receipt::ReceiptId, (AccountId, [u8; 32])>,
+    allocations: LookupMap<[u8; 32], Allocation>,
+    entitlement_balances: LookupMap<AccountId, u128>,
 }
 
 #[near]
 impl Backing {
     #[init]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         owner: AccountId,
         asset: Asset,
@@ -122,6 +137,7 @@ impl Backing {
         symbol: String,
         registry: AccountId,
         mapping_version: U64,
+        arena: AccountId,
     ) -> Self {
         require!(mapping_version.0 > 0, "Invalid mapping version");
         let mut asset = asset;
@@ -171,6 +187,7 @@ impl Backing {
             asset,
             registry,
             mapping_version: mapping_version.0,
+            arena,
             paused: false,
             token: FungibleToken::new(StorageKey::Token),
             metadata,
@@ -182,6 +199,8 @@ impl Backing {
             reconciliation_required: false,
             reservations: LookupMap::new(StorageKey::Reservations),
             confirmed_debits: LookupMap::new(StorageKey::ConfirmedDebits),
+            allocations: LookupMap::new(StorageKey::Allocations),
+            entitlement_balances: LookupMap::new(StorageKey::EntitlementBalances),
         }
     }
 
@@ -302,6 +321,102 @@ impl Backing {
         }
         let fresh = !self.reconciliation_required;
         self.reorganize_receipt(&id).is_ok() && fresh
+    }
+
+    /// Settlement hand-off. Only the configured arena may call it: the
+    /// arena's locked representations are burned and the same backing becomes an
+    /// asset-bound entitlement for `beneficiary`. Idempotent per `allocation_id`;
+    /// a repeat with different data fails. Returns true only on first execution.
+    #[payable]
+    pub fn allocate_entitlement(
+        &mut self,
+        allocation_id: [u8; 32],
+        beneficiary: AccountId,
+        amount: U128,
+    ) -> bool {
+        require!(env::predecessor_account_id() == self.arena, "Only arena");
+        require!(
+            !self.paused && !self.reconciliation_required,
+            "Asset paused"
+        );
+        require!(
+            allocation_id != [0; 32] && amount.0 > 0,
+            "Invalid allocation"
+        );
+        let requested = Allocation {
+            beneficiary: beneficiary.clone(),
+            amount,
+        };
+        if let Some(existing) = self.allocations.get(&allocation_id) {
+            require!(existing == &requested, "Conflicting allocation");
+            return false;
+        }
+        require!(
+            self.ledger.minted == self.token.total_supply,
+            "Supply mismatch"
+        );
+        let held = self
+            .token
+            .accounts
+            .get(&self.arena)
+            .unwrap_or_else(|| env::panic_str("Arena not registered"));
+        require!(held >= amount.0, "Insufficient locked representation");
+        let available = self
+            .entitlement_balances
+            .get(&beneficiary)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(amount.0)
+            .unwrap_or_else(|| env::panic_str("Entitlement overflow"));
+        let mut ledger = self.ledger.clone();
+        ledger
+            .move_liability(
+                ledger::Bucket::Minted,
+                ledger::Bucket::Entitlements,
+                amount.0,
+            )
+            .unwrap_or_else(|_| env::panic_str("Invalid ledger transition"));
+        let storage_before = env::storage_usage();
+        let arena = self.arena.clone();
+        self.token.internal_withdraw(&arena, amount.0);
+        self.ledger = ledger;
+        self.allocations.insert(allocation_id, requested);
+        self.entitlement_balances.insert(beneficiary, available);
+        self.allocations.flush();
+        self.entitlement_balances.flush();
+        let cost = env::storage_byte_cost()
+            .as_yoctonear()
+            .checked_mul(u128::from(
+                env::storage_usage().saturating_sub(storage_before),
+            ))
+            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= cost, "Insufficient storage deposit");
+        if attached > cost {
+            Promise::new(env::predecessor_account_id())
+                .transfer(NearToken::from_yoctonear(attached - cost))
+                .detach();
+        }
+        FtBurn {
+            owner_id: &arena,
+            amount,
+            memo: Some("settlement entitlement"),
+        }
+        .emit();
+        true
+    }
+
+    pub fn entitlement_of(&self, account: AccountId) -> U128 {
+        U128(
+            self.entitlement_balances
+                .get(&account)
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
+    pub fn get_allocation(&self, allocation_id: [u8; 32]) -> Option<Allocation> {
+        self.allocations.get(&allocation_id).cloned()
     }
 
     /// The owner can halt affected transfers; this does not alter liabilities.
@@ -938,6 +1053,7 @@ mod tests {
             "TEST".into(),
             account("registry.testnet"),
             U64(1),
+            account("arena.testnet"),
         )
     }
     fn observed(amount: u128, index: u32) -> receipt::Receipt {
@@ -990,6 +1106,7 @@ mod tests {
             "TEST".into(),
             account("registry.testnet"),
             U64(1),
+            account("arena.testnet"),
         );
         let item = observed(9_876, 1);
         assert_eq!(contract.observe_receipt(item.clone()), Ok(true));
@@ -1038,6 +1155,7 @@ mod tests {
             "TEST".into(),
             account("registry.testnet"),
             U64(1),
+            account("arena.testnet"),
         );
         contract.ledger.custody = 10;
         contract.ledger.minted = 1;
@@ -1267,6 +1385,7 @@ mod tests {
             "TEST".into(),
             account("registry.testnet"),
             U64(1),
+            account("arena.testnet"),
         );
         let item = observed(98, 1);
         contract.observe_receipt(item.clone()).expect("observe");
@@ -1451,5 +1570,63 @@ mod tests {
         assert!(contract.paused && contract.reconciliation_required);
         assert_eq!(contract.get_ledger().unallocated, U128(98));
         assert!(!report(&mut contract, &hash, Ok(true)));
+    }
+
+    fn funded_arena(contract: &mut Backing, amount: u128) {
+        let item = observed(amount, 9);
+        contract.observe_receipt(item.clone()).expect("observe");
+        contract.finalize_receipt(&item.id).expect("finalize");
+        let arena = account("arena.testnet");
+        contract.token.internal_register_account(&arena);
+        context("arena.testnet", 1);
+        // Attributed to alice.testnet; she mints to the arena as the locked vault.
+        context("alice.testnet", 1);
+        contract.claim_representation(arena, U128(amount));
+    }
+
+    #[test]
+    fn only_arena_converts_locked_representation_into_conserved_entitlement() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let id = [5; 32];
+        let bob = account("bob.testnet");
+        assert!(contract.allocate_entitlement(id, bob.clone(), U128(60)));
+        assert!(!contract.allocate_entitlement(id, bob.clone(), U128(60)));
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.minted, ledger.entitlements, ledger.custody), (U128(40), U128(60), U128(100)));
+        assert!(ledger.accounting_balanced);
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(60));
+        assert_eq!(contract.ft_total_supply(), U128(40));
+        assert!(contract.allocate_entitlement([6; 32], bob, U128(40)));
+        assert_eq!(contract.get_ledger().minted, U128(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only arena")]
+    fn non_arena_cannot_allocate_entitlements() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("bob.testnet", 10_u128.pow(23));
+        contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(60));
+    }
+
+    #[test]
+    #[should_panic(expected = "Conflicting allocation")]
+    fn allocation_id_cannot_be_reused_with_different_data() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(60));
+        contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(61));
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient locked representation")]
+    fn allocation_cannot_exceed_locked_representation() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(101));
     }
 }
