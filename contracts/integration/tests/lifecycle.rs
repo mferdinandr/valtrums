@@ -1,203 +1,279 @@
 mod common;
 
 use common::*;
-use serde_json::json;
+use serde_json::{json, Value};
 
-const PRICE: u128 = COIN; // 1.00 USD per coin, scaled by 1e18
+/// The full happy path: two communities, one round, a winner, and a losing
+/// vault that becomes entitlements and is paid out. The backing ledger
+/// invariant must hold at every checkpoint.
+#[tokio::test]
+async fn a_full_battle_pays_the_winning_community_and_conserves_funds() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let alice = env.user("alice").await?; // creator, winner community
+    let bob = env.user("bob").await?; // winner community
+    let carol = env.user("carol").await?; // losing community
 
-async fn exec_step(env: &Env, index: u32, min_out: u128) -> anyhow::Result<()> {
-    env.arena_call(
-        &env.agent,
-        "execute_step",
-        json!({ "battle_id": 1, "step_index": index, "min_out": min_out.to_string() }),
-    )
-    .await?
-    .into_result()?;
+    // custody on the backing contracts: 1000 units each
+    env.grant_representation(&alice, &env.backing_a, 1000, 1).await?;
+    env.grant_representation(&bob, &env.backing_a, 1000, 2).await?;
+    env.grant_representation(&carol, &env.backing_b, 1000, 3).await?;
+
+    let id = env.create_and_audit(&alice).await?;
+    assert_eq!(env.status(id).await?, "Approved");
+
+    // deposits: winner community 0 gets 1000 (500/500), loser 1000
+    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
+    env.deposit(&bob, &env.backing_a, 500, id, 0).await?.into_result()?;
+    env.deposit(&carol, &env.backing_b, 1000, id, 1).await?.into_result()?;
+    assert_eq!(
+        env.battle(id).await?["communities"][0]["vault"].as_str(),
+        Some("1000")
+    );
+    assert_eq!(
+        env.battle(id).await?["communities"][1]["vault"].as_str(),
+        Some("1000")
+    );
+    assert!(env.invariant_holds(&env.backing_a).await?);
+    assert!(env.invariant_holds(&env.backing_b).await?);
+
+    env.lock(id).await?;
+    assert_eq!(env.status(id).await?, "Live");
+    env.submit_prices(id, 110, 105).await?;
+    env.resolve(id).await?;
+    assert_eq!(env.status(id).await?, "Settled");
+    assert_eq!(env.battle(id).await?["winner"], json!(0));
+
+    // the losing vault (community 1, 1000 units) becomes the reward pool:
+    // fee = floor(1000/1000) = 1, winner pool 999, creator 0, protocol 1.
+    env.arena_call(&env.auditor, "allocate_loser", json!({ "battle_id": id, "community_index": 1 }))
+        .await?
+        .into_result()?;
+    let ledger = env.ledger(&env.backing_b).await?;
+    assert_eq!(ledger["entitlements"].as_str(), Some("1000"), "ledger: {ledger}");
+    assert_eq!(ledger["disposals_reserved"].as_str(), Some("0"));
+    assert!(env.invariant_holds(&env.backing_b).await?);
+    // the arena's representations were burned: M dropped by the vault
+    assert_eq!(env.balance(&env.backing_b, env.arena.id()).await?, 0);
+    assert_eq!(env.balance(&env.backing_b, &carol.id().clone()).await?, 0);
+
+    // winner shares by locked units (500/500): largest remainder gives the
+    // unit to the canonically smaller account (alice).
+    let alice_entitled = env
+        .backing_b
+        .view("entitlement_of")
+        .args_json(json!({ "battle_id": id, "account_id": alice.id() }))
+        .await?
+        .json::<String>()?
+        .parse::<u128>()?;
+    let bob_entitled = env
+        .backing_b
+        .view("entitlement_of")
+        .args_json(json!({ "battle_id": id, "account_id": bob.id() }))
+        .await?
+        .json::<String>()?
+        .parse::<u128>()?;
+    assert_eq!((alice_entitled, bob_entitled), (500, 499));
+    // protocol fee entitlement
+    let protocol_entitled = env
+        .backing_b
+        .view("entitlement_of")
+        .args_json(json!({ "battle_id": id, "account_id": env.protocol.id() }))
+        .await?
+        .json::<String>()?
+        .parse::<u128>()?;
+    assert_eq!(protocol_entitled, 1);
+
+    // both winners register recipients and request their payouts
+    for (who, q) in [(&alice, 500u128), (&bob, 499)] {
+        who.call(env.arena.id(), "register_recipient")
+            .args_json(json!({ "address": format!("0x{}", "cd".repeat(20)) }))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+        env.arena_call(
+            who,
+            "request_payout",
+            json!({
+                "battle_id": id,
+                "community_index": 1,
+                "beneficiary": who.id(),
+                "q": q.to_string(),
+            }),
+        )
+        .await?
+        .into_result()?;
+    }
+
+    let payout_1: Value = env
+        .backing_b
+        .view("payout")
+        .args_json(json!({ "payout_id": 0 }))
+        .await?
+        .json()?;
+    let payout_2: Value = env
+        .backing_b
+        .view("payout")
+        .args_json(json!({ "payout_id": 1 }))
+        .await?
+        .json()?;
+    assert_eq!(payout_1["amount"].as_str(), Some("500"));
+    assert_eq!(payout_2["amount"].as_str(), Some("499"));
+    assert_eq!(payout_1["kind"].as_str(), Some("Reward"));
+    assert!(env.invariant_holds(&env.backing_b).await?);
+
+    // the verifier broadcasts and confirms the on-chain execution evidence
+    for payout in [&payout_1, &payout_2] {
+        let payout_id = payout["id"].as_u64().unwrap_or_default();
+        env.auditor
+            .call(env.backing_b.id(), "mark_broadcast")
+            .args_json(json!({ "payout_id": payout_id, "tx_hash": format!("0x{payout_id}") }))
+            .transact()
+            .await?
+            .into_result()?;
+        env.auditor
+            .call(env.backing_b.id(), "confirm_payout")
+            .args_json(json!({
+                "payout_id": payout_id,
+                "evidence": {
+                    "success": true,
+                    "executed_movement": true,
+                    "chain_id": CHAIN_ID,
+                    "tx_hash": format!("0x{payout_id}"),
+                    "finality": "final",
+                },
+            }))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+
+    // custody consumed exactly the paid amounts; P empty; invariant holds
+    let ledger = env.ledger(&env.backing_b).await?;
+    assert_eq!(ledger["custody"].as_str(), Some("1"), "ledger: {ledger}");
+    assert_eq!(ledger["payouts_reserved"].as_str(), Some("0"));
+    // only the protocol's 1-unit fee entitlement remains un-reserved
+    assert_eq!(ledger["entitlements"].as_str(), Some("1"));
+    assert!(env.invariant_holds(&env.backing_b).await?);
     Ok(())
 }
 
+/// A custody receipt can only be verified once; replays are refused.
 #[tokio::test]
-async fn a_full_battle_runs_end_to_end_and_conserves_funds() -> anyhow::Result<()> {
-    let env = Env::new(5, true).await?;
-    // DEX: 1 USDC buys 1000 PEPE, and 160 SHIB sell for 40 USDC; liquidity both ways
-    env.set_rate(&env.usdc, &env.pepe, USDC_TO_COIN_NUM, 1)
-        .await?;
-    env.set_rate(&env.shib, &env.usdc, 1, 4_000_000_000_000)
-        .await?;
-    env.add_liquidity(&env.pepe, 1_000_000 * COIN).await?;
-    env.add_liquidity(&env.usdc, 1_000 * USDC).await?;
+async fn custody_receipts_cannot_be_replayed() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let alice = env.user("alice").await?;
+    env.grant_representation(&alice, &env.backing_a, 500, 1).await?;
+    assert_eq!(env.balance(&env.backing_a, &alice.id().clone()).await?, 500);
 
-    let alice = env.user("alice").await?; // creator
-    let bob = env.user("bob").await?; // side A, deposits PEPE directly
-    let carol = env.user("carol").await?; // side B, deposits SHIB directly
-    let dave = env.user("dave").await?; // side A, deposits USDC through router and DEX
-
-    // ── proposal and audit ──
-    assert_eq!(env.propose(&alice, 10).await?, 1);
-    assert_eq!(env.status(1).await?, "Proposed");
-    env.arena_call(&env.agent, "approve_battle", json!({ "battle_id": 1 }))
+    let replay = env
+        .auditor
+        .call(env.backing_a.id(), "verify_receipt")
+        .args_json(json!({
+            "receipt": { "chain_id": CHAIN_ID, "tx_hash": format!("0x{}-1", alice.id()), "log_index": 1 },
+            "received_src": "500",
+            "src_decimals": DECIMALS,
+            "origin": alice.id(),
+        }))
+        .transact()
         .await?
-        .into_result()?;
-    assert_eq!(env.status(1).await?, "Approved");
+        .into_result();
+    assert!(replay.is_err(), "replayed receipt must be refused");
+    assert!(env.invariant_holds(&env.backing_a).await?);
+    Ok(())
+}
 
-    // ── deposits ──
-    env.mint(&env.pepe, bob.id(), 400 * COIN).await?;
-    env.transfer_call(
-        &bob,
-        &env.pepe,
-        env.arena.id(),
-        400 * COIN,
-        json!({ "action": "deposit", "battle_id": 1, "side": "A" }),
-    )
-    .await?
-    .into_result()?;
-    env.mint(&env.shib, carol.id(), 160 * COIN).await?;
-    env.transfer_call(
-        &carol,
-        &env.shib,
-        env.arena.id(),
-        160 * COIN,
-        json!({ "action": "deposit", "battle_id": 1, "side": "B" }),
-    )
-    .await?
-    .into_result()?;
+/// Deposits after lock are refused and the representations are refunded to
+/// the sender.
+#[tokio::test]
+async fn deposits_after_lock_are_refunded() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let alice = env.user("alice").await?;
+    let bob = env.user("bob").await?;
+    env.grant_representation(&alice, &env.backing_a, 1000, 1).await?;
+    env.grant_representation(&bob, &env.backing_a, 1000, 2).await?;
+    env.grant_representation(&alice, &env.backing_b, 1000, 3).await?;
 
-    // the four-hop swap: user -> usdc -> arena -> router -> dex -> router -> arena
-    env.mint(&env.usdc, dave.id(), 50 * USDC).await?;
-    env.transfer_call(
-        &dave,
-        &env.usdc,
-        env.arena.id(),
-        50 * USDC,
+    let id = env.create_and_audit(&alice).await?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
+    env.deposit(&alice, &env.backing_b, 500, id, 1).await?.into_result()?;
+    env.lock(id).await?;
+
+    let before = env.balance(&env.backing_a, &bob.id().clone()).await?;
+    env.deposit(&bob, &env.backing_a, 700, id, 0).await?.into_result()?;
+    let after = env.balance(&env.backing_a, &bob.id().clone()).await?;
+    assert_eq!(before, after, "late deposit must be fully refunded");
+    assert!(env.invariant_holds(&env.backing_a).await?);
+    Ok(())
+}
+
+/// A tied round extends into a fresh round with reset inputs; only the tied
+/// leaders advance. A second, decisive round ends the battle.
+#[tokio::test]
+async fn tied_rounds_extend_until_a_single_winner() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let alice = env.user("alice").await?;
+    env.grant_representation(&alice, &env.backing_a, 500, 1).await?;
+    env.grant_representation(&alice, &env.backing_b, 500, 2).await?;
+
+    let id = env.create_and_audit(&alice).await?;
+    env.deposit(&alice, &env.backing_a, 500, id, 0).await?.into_result()?;
+    env.deposit(&alice, &env.backing_b, 500, id, 1).await?.into_result()?;
+    env.lock(id).await?;
+
+    // round 1: identical scores -> tie, no winner
+    env.submit_tied_prices(id).await?;
+    env.resolve(id).await?;
+    let battle = env.battle(id).await?;
+    assert_eq!(battle["status"].as_str(), Some("Live"));
+    assert_eq!(battle["round"].as_u64(), Some(2));
+    assert!(battle["winner"].is_null());
+
+    // round 2: decisive -> settled
+    env.submit_prices(id, 120, 110).await?;
+    env.resolve(id).await?;
+    assert_eq!(env.status(id).await?, "Settled");
+    assert_eq!(env.battle(id).await?["winner"], json!(0));
+    Ok(())
+}
+
+/// A battle whose audit is rejected can never lock.
+#[tokio::test]
+async fn audit_rejection_blocks_locking() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let alice = env.user("alice").await?;
+    let id = env.create_and_audit(&alice).await?;
+
+    let critical = json!({
+        "chain_id": CHAIN_ID,
+        "token_address": "0xa",
+        "provider_version": "v1",
+        "policy_version": 1,
+        "queried_at_ns": env.now().await?.to_string(),
+        "is_honeypot": "True",
+        "cannot_sell_all": "False",
+        "cannot_buy": "False",
+        "buy_tax": 0,
+        "sell_tax": 0,
+        "transfer_tax": 0,
+        "coverage_complete": true,
+        "tax_policy_resolved": false,
+        "evidence_hash": "h",
+    });
+    env.arena_call(
+        &env.auditor,
+        "submit_audit",
         json!({
-            "action": "deposit_usdc",
-            "battle_id": 1,
-            "side": "A",
-            "total_usdc": (50 * USDC).to_string(),
-            "min_token_out": "1",
+            "battle_id": id,
+            "community_index": 0,
+            "goplus": critical,
+            "lp": env.lp_pass().await?,
         }),
     )
     .await?
     .into_result()?;
-    let position = env
-        .arena_view(
-            "get_position",
-            json!({ "battle_id": 1, "account_id": dave.id() }),
-        )
-        .await?;
-    assert_eq!(amount(&position["coin_amount"]), 50_000 * COIN);
-    assert_eq!(amount(&position["usdc_equiv"]), 50 * USDC);
-    assert_eq!(env.balance(&env.usdc, dave.id()).await?, 0);
-
-    let battle = env.battle(1).await?;
-    assert_eq!(amount(&battle["vault_a"]), 50_400 * COIN);
-    assert_eq!(amount(&battle["vault_b"]), 160 * COIN);
-
-    // ── lock, live, settle ──
-    env.advance_to(amount(&battle["deposit_deadline_ns"]) as u64)
-        .await?;
-    env.arena_call(
-        &env.agent,
-        "set_initial_prices",
-        json!({ "battle_id": 1, "price_a": PRICE.to_string(), "price_b": PRICE.to_string() }),
-    )
-    .await?
-    .into_result()?;
-    assert_eq!(env.status(1).await?, "Live");
-
-    let end = amount(&env.battle(1).await?["end_time_ns"]) as u64;
-    env.advance_to(end).await?;
-    env.arena_call(
-        &env.agent,
-        "settle_battle",
-        json!({
-            "battle_id": 1,
-            "final_price_a": (PRICE * 12 / 10).to_string(), // +20%
-            "final_price_b": (PRICE * 105 / 100).to_string(), // +5%
-        }),
-    )
-    .await?
-    .into_result()?;
-    assert_eq!(env.status(1).await?, "Settling");
-    assert_eq!(env.battle(1).await?["winner"], "A");
-
-    // ── execution through the DEX ──
-    exec_step(&env, 0, 30 * USDC).await?; // dump 160 SHIB -> 40 USDC
-    let plan = env
-        .arena_view("get_settlement_plan", json!({ "battle_id": 1 }))
-        .await?;
-    assert_eq!(plan.as_array().map(Vec::len), Some(4));
-    assert_eq!(amount(&plan[0]["realized"]), 40 * USDC);
-    assert_eq!(amount(&plan[1]["amount"]), 22 * USDC); // 55%
-    assert_eq!(amount(&plan[2]["amount"]), 2 * USDC); // 5% burn
-    assert_eq!(amount(&plan[3]["amount"]), 2 * USDC); // 5% fee
-    exec_step(&env, 1, 1).await?;
-    exec_step(&env, 2, 1).await?;
-    exec_step(&env, 3, 1).await?;
-    assert_eq!(env.status(1).await?, "Settled");
-    assert_eq!(env.balance(&env.pepe, env.burn.id()).await?, 2_000 * COIN);
-
-    // ── claims and withdrawals ──
-    let winner_vault = 50_400 * COIN;
-    let liquid_pool = 22_000 * COIN; // 22 USDC bought at 1000 PEPE each
-    let credit_pool = 14 * USDC;
-    let mut paid = 0;
-    let mut credit_total = 0;
-    for (user, stake) in [(&bob, 400 * COIN), (&dave, 50_000 * COIN)] {
-        env.arena_call(user, "claim", json!({ "battle_id": 1 }))
-            .await?
-            .into_result()?;
-        let expected = stake + mul_div(stake, liquid_pool, winner_vault);
-        assert_eq!(env.liquid(user.id(), &env.pepe).await?, expected);
-        let account = env
-            .arena_view("get_account", json!({ "account_id": user.id() }))
-            .await?;
-        let credit = mul_div(stake, credit_pool, winner_vault);
-        assert_eq!(amount(&account["credit_balance"]), credit);
-        credit_total += credit;
-
-        env.arena_call_yocto(
-            user,
-            "withdraw_liquid",
-            json!({ "token": env.pepe.id(), "amount": expected.to_string() }),
-        )
-        .await?
-        .into_result()?;
-        assert_eq!(env.balance(&env.pepe, user.id()).await?, expected);
-        assert_eq!(env.liquid(user.id(), &env.pepe).await?, 0);
-        paid += expected;
-    }
-
-    // the loser cannot claim
-    let loser_claim = env
-        .arena_call(&carol, "claim", json!({ "battle_id": 1 }))
-        .await?;
-    assert!(loser_claim.into_result().is_err());
-
-    // PEPE: only rounding dust is left in the arena
-    let dust = env.balance(&env.pepe, env.arena.id()).await?;
-    assert_eq!(dust, winner_vault + liquid_pool - paid);
-    assert!(dust <= 2, "dust was {dust}");
-
-    // USDC: bond (liquid) + credit pool + fee; then the bond and fee leave
-    assert_eq!(
-        env.balance(&env.usdc, env.arena.id()).await?,
-        BOND + credit_pool + 2 * USDC
-    );
-    env.arena_call_yocto(
-        &alice,
-        "withdraw_liquid",
-        json!({ "token": env.usdc.id(), "amount": BOND.to_string() }),
-    )
-    .await?
-    .into_result()?;
-    assert_eq!(env.balance(&env.usdc, alice.id()).await?, BOND);
-    env.arena_call(&alice, "flush_treasury", json!({}))
-        .await?
-        .into_result()?;
-    assert_eq!(env.balance(&env.usdc, env.treasury.id()).await?, 2 * USDC);
-    let left = env.balance(&env.usdc, env.arena.id()).await?;
-    assert_eq!(left, credit_pool, "the arena keeps exactly the credit pool");
-    assert!(credit_pool - credit_total <= 2);
+    assert_eq!(env.status(id).await?, "Rejected");
+    let refused = env.lock(id).await;
+    assert!(refused.is_err(), "lock on a rejected battle must fail");
     Ok(())
 }

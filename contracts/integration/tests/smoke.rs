@@ -1,29 +1,19 @@
 mod common;
 
-use serde_json::json;
+use common::*;
+use serde_json::{json, Value};
 
+/// A minimal deployment sanity check: contracts deploy, the configuration is
+/// set and the arena starts empty.
 #[tokio::test]
-async fn sandbox_runs_and_accepts_the_contract_wasm() -> anyhow::Result<()> {
-    let worker = near_workspaces::sandbox().await?;
-    let ft = worker.dev_deploy(&common::wasm("valtrum_mock_ft")).await?;
-    ft.call("new")
-        .args_json(json!({ "name": "Mock USDC", "symbol": "USDC", "decimals": 6 }))
-        .transact()
-        .await?
-        .into_result()?;
-
-    let alice = worker.dev_create_account().await?;
-    ft.call("mint")
-        .args_json(json!({ "account_id": alice.id(), "amount": "1000000" }))
-        .transact()
-        .await?
-        .into_result()?;
-
-    let balance: String = ft
-        .view("ft_balance_of")
-        .args_json(json!({ "account_id": alice.id() }))
-        .await?
-        .json()?;
-    assert_eq!(balance, "1000000");
+async fn the_network_deploys_and_reports_its_configuration() -> anyhow::Result<()> {
+    let env = Env::new().await?;
+    let config: Value = env.arena_view("config", json!({})).await?;
+    assert_eq!(config["owner"].as_str(), Some(env.owner.id().as_str()));
+    assert_eq!(config["protocol"].as_str(), Some(env.protocol.id().as_str()));
+    assert_eq!(config["foreign"]["chain_id"], CHAIN_ID);
+    assert_eq!(config["foreign"]["mpc_contract"].as_str(), Some(env.mpc.id().as_str()));
+    assert_eq!(config["policy"]["version"], 1);
+    assert_eq!(env.arena_view("battles", json!({ "from": 0, "limit": 100 })).await?, json!([]));
     Ok(())
 }
