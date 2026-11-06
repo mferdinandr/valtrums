@@ -118,4 +118,31 @@ mod tests {
             u128::MAX
         );
     }
+
+    #[test]
+    fn boundary_values_round_trip_without_losing_attributed_residue() {
+        for source_decimals in 0..=4 {
+            for representation_decimals in 0..=4 {
+                for amount in [0, 1, 9, 10, 99, 100, u64::MAX as u128, u128::MAX] {
+                    if let Ok(normalized) =
+                        normalize(amount, source_decimals, representation_decimals)
+                    {
+                        let recovered = to_source_exact(
+                            normalized.representation_units,
+                            source_decimals,
+                            representation_decimals,
+                        )
+                        .expect("normalized units must be reversible");
+                        assert_eq!(
+                            recovered.checked_add(normalized.source_residue),
+                            Some(amount)
+                        );
+                        if representation_decimals >= source_decimals {
+                            assert_eq!(normalized.source_residue, 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

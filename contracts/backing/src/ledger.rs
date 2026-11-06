@@ -162,4 +162,44 @@ mod tests {
         );
         assert_eq!(ledger, original);
     }
+
+    #[test]
+    fn partial_entitlement_payout_and_disposal_conserve_each_bucket() {
+        let mut ledger = Ledger::default();
+        ledger.add_receipt(1_000).expect("receipt");
+        ledger
+            .move_liability(Bucket::Unallocated, Bucket::Minted, 900)
+            .expect("mint");
+        ledger
+            .move_liability(Bucket::Minted, Bucket::Entitlements, 500)
+            .expect("allocation");
+        ledger
+            .move_liability(Bucket::Entitlements, Bucket::Payouts, 300)
+            .expect("payout reservation");
+        ledger
+            .move_liability(Bucket::Minted, Bucket::Disposal, 100)
+            .expect("disposal reservation");
+        assert_eq!(
+            (
+                ledger.custody,
+                ledger.minted,
+                ledger.entitlements,
+                ledger.payouts,
+                ledger.disposal,
+                ledger.unallocated
+            ),
+            (1000, 300, 200, 300, 100, 100)
+        );
+        assert!(ledger.is_balanced());
+        ledger
+            .confirm_debit(Bucket::Payouts, 125)
+            .expect("partial confirmation");
+        assert_eq!((ledger.custody, ledger.payouts), (875, 175));
+        assert!(ledger.is_balanced());
+        ledger
+            .confirm_debit(Bucket::Disposal, 100)
+            .expect("disposal confirmation");
+        assert_eq!((ledger.custody, ledger.disposal), (775, 0));
+        assert!(ledger.is_balanced());
+    }
 }

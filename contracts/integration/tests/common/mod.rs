@@ -37,6 +37,8 @@ pub fn wasm(name: &str) -> Vec<u8> {
                 "-p",
                 "valtrum-backing",
                 "-p",
+                "valtrum-receipt-registry",
+                "-p",
                 "valtrum-router",
                 "-p",
                 "valtrum-mock-dex",

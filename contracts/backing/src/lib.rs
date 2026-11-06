@@ -22,6 +22,7 @@ use near_sdk::{
 pub mod ledger;
 pub mod normalization;
 pub mod receipt;
+pub mod registry_claim;
 pub mod reservation;
 
 use ledger::Ledger;
@@ -61,6 +62,19 @@ pub struct LedgerView {
     pub paused: bool,
     pub reconciliation_required: bool,
     pub source_residue: U128,
+}
+
+/// Locally accounted values in source atomic units, not a live custody proof.
+#[near(serializers = [json])]
+pub struct CustodyLedgerView {
+    pub custody: U128,
+    pub minted: U128,
+    pub entitlements: U128,
+    pub payouts: U128,
+    pub disposal: U128,
+    pub unallocated: U128,
+    pub accounting_balanced: bool,
+    pub reconciliation_required: bool,
 }
 
 #[near(contract_state)]
@@ -241,6 +255,40 @@ impl Backing {
             reconciliation_required: self.reconciliation_required,
             source_residue: U128(self.residual_total),
         }
+    }
+
+    /// Returns None when a liability bucket cannot be represented exactly in
+    /// source atomic units. Residual source units belong to unallocated custody.
+    pub fn get_custody_ledger(&self) -> Option<CustodyLedgerView> {
+        let convert = |amount| {
+            normalization::to_source_exact(
+                amount,
+                self.asset.source_decimals,
+                self.asset.representation_decimals,
+            )
+            .ok()
+        };
+        let custody = convert(self.ledger.custody)?.checked_add(self.residual_total)?;
+        let minted = convert(self.ledger.minted)?;
+        let entitlements = convert(self.ledger.entitlements)?;
+        let payouts = convert(self.ledger.payouts)?;
+        let disposal = convert(self.ledger.disposal)?;
+        let unallocated = convert(self.ledger.unallocated)?.checked_add(self.residual_total)?;
+        let total = minted
+            .checked_add(entitlements)?
+            .checked_add(payouts)?
+            .checked_add(disposal)?
+            .checked_add(unallocated)?;
+        Some(CustodyLedgerView {
+            custody: U128(custody),
+            minted: U128(minted),
+            entitlements: U128(entitlements),
+            payouts: U128(payouts),
+            disposal: U128(disposal),
+            unallocated: U128(unallocated),
+            accounting_balanced: total == custody && self.ledger.minted == self.token.total_supply,
+            reconciliation_required: self.reconciliation_required,
+        })
     }
 }
 
@@ -791,6 +839,30 @@ mod tests {
             Some(&76)
         );
         assert!(ledger.accounting_balanced);
+        let source = contract
+            .get_custody_ledger()
+            .expect("source units are exact");
+        assert_eq!(source.custody, U128(9_876));
+        assert_eq!(source.unallocated, U128(9_876));
+        assert!(source.accounting_balanced);
+    }
+
+    #[test]
+    fn canonical_view_refuses_fractional_source_liability_buckets() {
+        let mut configured = asset();
+        configured.source_decimals = 2;
+        configured.representation_decimals = 3;
+        context("owner.testnet", 0);
+        let mut contract = Backing::new(
+            account("owner.testnet"),
+            configured,
+            "Test".into(),
+            "TEST".into(),
+        );
+        contract.ledger.custody = 10;
+        contract.ledger.minted = 1;
+        contract.ledger.unallocated = 9;
+        assert!(contract.get_custody_ledger().is_none());
     }
     #[test]
     fn mint_consumes_only_attributed_actual_received_units() {

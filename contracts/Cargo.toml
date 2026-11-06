@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["backing", "arena", "furnace", "integration", "mock-dex", "mock-ft", "mock-mpc", "ref-adapter", "router", "war"]
+members = ["backing", "receipt-registry", "arena", "furnace", "integration", "mock-dex", "mock-ft", "mock-mpc", "ref-adapter", "router", "war"]
 
 [workspace.package]
 version = "0.1.0"
