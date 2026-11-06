@@ -57,7 +57,7 @@ Mode-specific fields:
 
 Expose exact signed numerator/positive denominator separately from display precision. Derive market cap and scores from authenticated normalized inputs or verify equivalent computation; a worker's winner label is insufficient.
 
-Audit envelope: `asset_id, provider, raw_response_hash, queried_chain_id, queried_token, observed_at, policy_version, critical_findings, mandatory_unknowns, tax_fields, privilege_fields, lp_evidence, result, reasons`. Unknown/null differs from false/zero. Independent LP evidence includes pool identity, reserves, valuation source/time and USD value. GoPlus availability does not prove LP > USD 10,000.
+Audit envelope: `asset_id, provider, raw_response_hash, queried_chain_id, queried_token, observed_at, policy_version, critical_findings, mandatory_unknowns, tax_fields, privilege_fields, lp_evidence, result, reasons`. Unknown/null differs from false/zero. Independent LP evidence includes pool identity, reserves, valuation source/time and USD value. GoPlus availability does not prove LP > USD 10,000. Normalize fields and apply decision precedence from the [GoPlus audit policy](goplus-audit.md); persist raw values, normalized known/unknown states, per-field reasons and required-policy gaps.
 
 ## Planned events
 

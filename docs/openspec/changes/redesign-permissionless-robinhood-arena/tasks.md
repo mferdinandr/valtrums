@@ -6,8 +6,8 @@ All implementation work below is unfinished. Completing documentation does not c
 
 - [ ] 1.1 Verify NEAR/Robinhood testnet identity, signer key/domain/path, gas and receipt evidence
 - [ ] 1.2 Verify GoPlus Robinhood testnet support and required fields; label fixtures
-- [ ] 1.4 Prove the planned Intents funding route and Bitte orchestration on the configured testnets; track unsupported coverage explicitly
 - [ ] 1.3 Specify price, circulating supply, volume, LP, cadence and boundary/finality policy
+- [ ] 1.4 Prove the planned Intents funding route and Bitte orchestration on the configured testnets; track unsupported coverage explicitly
 
 ## 2. Backing and representations
 
@@ -23,8 +23,8 @@ All implementation work below is unfinished. Completing documentation does not c
 
 ## 4. Audit
 
-- [ ] 4.1 Implement critical-risk Reject and mandatory-unknown Pending states
-- [ ] 4.2 Resolve tax/admin/critical-field/freshness policy before enabling live approval
+- [ ] 4.1 Implement the selected GoPlus field mapping, strict flag/tax normalization, Reject-over-Pending precedence and per-field reasons
+- [ ] 4.2 Resolve tax/admin admissibility and freshness policy before enabling live approval
 - [ ] 4.3 Integrate separate LP check strictly above USD 10000; test equality and missing evidence
 
 ## 5. Scoring and overtime

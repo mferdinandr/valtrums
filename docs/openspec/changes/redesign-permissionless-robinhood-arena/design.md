@@ -14,7 +14,7 @@ Deliver the permissionless multi-community game with correct original-token cust
 4. Collect each losing token's total fee as floor(vault / 1000), split that fee 50:50 with an odd unit assigned to protocol, and allocate only the winner pool using deterministic largest remainder. A protocol creator receives the whole fee. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
 5. Separate availability from foreign execution. Reserve before requesting a signature, bind nonce/payload to payout identity, reconcile before retry, confirm only matching final receipt.
 6. Separate infrastructure evidence/scheduling/relay roles from user-specific token-spending grants. Model text is never authorization.
-7. Require critical GoPlus rejection, unknown-data hold and independent LP > USD 10,000. Tax/admin policies remain OPEN.
+7. Apply the selected [GoPlus mapping](../../../goplus-audit.md): critical flag/tax-path rejection, required unknown-data hold and independent LP > USD 10,000. Tax/admin admissibility and evidence freshness remain OPEN.
 
 ## Data flow
 
@@ -55,4 +55,4 @@ Use isolated new testnet deployments after implementation. Existing deployment b
 
 ## Open Questions
 
-DAO mechanism including membership, weight, quorum, deadlines and fallback; audit tax/admin/critical-field/freshness policy; source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../../../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.
+DAO mechanism including membership, weight, quorum, deadlines and fallback; audit tax/admin admissibility and freshness policy (critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../../../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.

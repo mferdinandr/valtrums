@@ -8,7 +8,7 @@ Build a permissionless arena on NEAR testnet with original-token custody and pay
 
 ## Specifications
 
-[Product](product-spec.md), [rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [ecosystem](ecosystem.md), [deployment](deployment.md), [security](security-review.md), [roadmap](implementation-roadmap.md), [current state](current-state.md), [OpenSpec](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md).
+[Product](product-spec.md), [rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [ecosystem](ecosystem.md), [GoPlus policy](goplus-audit.md), [deployment](deployment.md), [security](security-review.md), [roadmap](implementation-roadmap.md), [current state](current-state.md), [OpenSpec](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md).
 
 When publishing to GitHub, expand these relative links to repository blob links on docs/near-hackathon-arena-spec so they resolve from the issue.
 
@@ -30,7 +30,7 @@ Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms.
 
 ## OPEN QUESTION
 
-DAO membership, weights, quorum, deadline, execution/fallback; tax thresholds and token-admin policy; critical field map/freshness; oracle providers/cadence/boundaries/supply; custody proof/finality/reorgs/gas/tax/burn; pre-lock cancellation and outage response; protocol identity and position rules. Preserve the [full question register](product-spec.md#open-question-register); do not decide DAO rules implicitly.
+DAO membership, weights, quorum, deadline, execution/fallback; tax thresholds and token-admin policy; evidence freshness (field mapping is defined in [GoPlus policy](goplus-audit.md)); oracle providers/cadence/boundaries/supply; custody proof/finality/reorgs/gas/tax/burn; pre-lock cancellation and outage response; protocol identity and position rules. Preserve the [full question register](product-spec.md#open-question-register); do not decide DAO rules implicitly.
 
 ## Ordered implementation checklist
 

@@ -62,7 +62,7 @@ Use [battle-rules.md](battle-rules.md) for exact formulas, negative scores, ties
 
 Representations are NEP-141 tokens backed **1:1 by actual Robinhood assets received**, with documented decimal normalization. Claimed deposits, unconfirmed receipts or a transfer's nominal input cannot mint additional backing. Settlement, redemption and DAO burns share one liability ledger so the same backing cannot be redeemed and paid out again. See [token-economics.md](token-economics.md).
 
-Approval requires GoPlus checks that reject critical risks, plus an independent LP check **strictly greater than USD 10,000** for each community. Missing mandatory data, unsupported chain coverage, stale evidence or unresolved required policy yields **Pending**, never Pass. A critical finding yields Reject. Do not replace GoPlus with the existing DexScreener heuristic. Tax thresholds and the policy for privileged token administration are **OPEN**. The exact critical-field mapping and evidence freshness policy must be versioned before approval can be enabled.
+Approval requires GoPlus checks that reject critical risks, plus an independent LP check **strictly greater than USD 10,000** for each community. Missing mandatory data, unsupported chain coverage, stale evidence or unresolved required policy yields **Pending**, never Pass. A critical finding yields Reject. Do not replace GoPlus with the existing DexScreener heuristic. Tax thresholds and the policy for privileged token administration are **OPEN**. The selected [GoPlus field mapping and decision precedence](goplus-audit.md) define critical rejection and required evidence. Version that mapping and resolve evidence freshness plus tax/admin policies before live approval can be enabled.
 
 ## Acceptance scenarios
 
@@ -85,7 +85,7 @@ Approval requires GoPlus checks that reject critical risks, plus an independent 
 | ID | Question / gate | Consequence until decided |
 | --- | --- | --- |
 | OQ-DAO | DAO membership, voting weight, quorum, decision options, deadlines, execution and fallback | No invented voting rule or timeout; winning principal remains escrowed; any demo decision must be labeled a fixture |
-| OQ-AUDIT | Buy/sell tax thresholds, admin/upgrade/mint/blacklist privilege policy, critical-field mapping and evidence lifetime | Approval policy incomplete; unresolved required checks remain Pending |
+| OQ-AUDIT | Buy/sell/transfer tax thresholds, admin/upgrade/mint/blacklist privilege admissibility and evidence lifetime; field mapping is defined in [GoPlus audit policy](goplus-audit.md) | Approval policy incomplete; unresolved required checks remain Pending |
 | OQ-DATA | Providers for price, circulating supply, 30-second volume, LP valuation, sampling cadence, boundary tolerance and anti-manipulation checks | Freeze a reproducible policy before locking; missing data cannot determine a winner |
 | OQ-CUSTODY | Receipt verifier, custody contracts, confirmations/finality, reorg recovery, payout gas and tax handling, burn proof | No trusted bridge or Robinhood support may be assumed from signing compatibility alone |
 | OQ-LIFECYCLE | Gathering deadline, cancellation/refunds before lock, outage recovery and emergency authority | Do not auto-refund a live tie or release a vault on elapsed time |

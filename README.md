@@ -33,6 +33,7 @@ Technical workstreams remain chain abstraction, scoring/settlement, player AI, a
 | --- | --- |
 | [Product specification](docs/product-spec.md) | Requirements, lifecycle, acceptance and OPEN questions |
 | [Battle rules](docs/battle-rules.md) | Formulas, observations, comparison and overtime |
+| [GoPlus audit policy](docs/goplus-audit.md) | Selected fields, critical rejection, Pending states and independent LP checks |
 | [Token economics](docs/token-economics.md) | Fees, rounding, backing, redemption and DAO escrow |
 | [Architecture](docs/architecture.md) | Components, asset flows and trust boundaries |
 | [Interfaces](docs/interfaces.md) | Planned contract, event, oracle, agent and MCP APIs |

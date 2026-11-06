@@ -37,7 +37,7 @@ The target requires authenticated source receipts, versioned audit/observation p
 | Underbacking or duplicate spend | Per-asset B = M + E + P + D + U and exclusive reservations | Conservation/property/recovery tests |
 | 30-second oracle manipulation | Frozen sources, endpoint/cadence policy, provenance, exact scores, complete coverage | Supply trust, wash-volume and manipulation limits OPEN |
 | Late/duplicate scheduling | Immutable interval, expected round/state checks, once-only transitions | Outage/restart/repeated-overtime tests |
-| Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Coverage, field map, freshness, tax/admin policy OPEN |
+| Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Use the [selected field map](goplus-audit.md); coverage, freshness and tax/admin admissibility remain OPEN |
 | Creator/protocol spoofing | Actual mandatory creator stake and frozen authenticated fee identity | Protocol verification policy OPEN |
 | Arbitrary MPC transaction | Exact chain/token/recipient/amount/path/nonce from reservation | Tampering, signer, nonce/replacement/gas tests |
 | Lost response / duplicate payout | Durable identity and reserve; reconcile before new spend; finalized matching receipt | Broadcast crash, timeout, reverted/replaced tx, concurrency |
