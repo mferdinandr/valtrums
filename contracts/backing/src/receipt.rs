@@ -46,7 +46,8 @@ impl ReceiptId {
             return Err(ReceiptError::InvalidHash);
         }
         let mut bytes = [0_u8; 32];
-        for (output, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks_exact(2)) {
+        let (pairs, _) = hex.as_bytes().as_chunks::<2>();
+        for (output, pair) in bytes.iter_mut().zip(pairs.iter()) {
             let high = (pair[0] as char)
                 .to_digit(16)
                 .ok_or(ReceiptError::InvalidHash)?;
