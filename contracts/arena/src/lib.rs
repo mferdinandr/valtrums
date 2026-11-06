@@ -232,9 +232,10 @@ impl Arena {
     /// Set the observation policy used by future locks. Existing snapshots
     /// retain the policy that was committed when they locked.
     #[payable]
-    pub fn set_lifecycle_observation_policy(&mut self, policy: lifecycle::ObservationPolicy) {
+    pub fn set_lifecycle_observation_policy(&mut self, policy: lifecycle::ObservationPolicyInput) {
         self.assert_owner();
         near_sdk::assert_one_yocto();
+        let policy: lifecycle::ObservationPolicy = policy.into();
         require!(policy.is_valid(), "Observation policy is invalid");
         self.lifecycle_observation_policy = Some(policy);
     }
@@ -277,7 +278,7 @@ impl Arena {
     #[payable]
     pub fn create_lifecycle_battle(
         &mut self,
-        assets: Vec<lifecycle::AssetIdentity>,
+        assets: Vec<lifecycle::AssetInput>,
         mode: lifecycle::ScoringMode,
     ) -> u64 {
         require!(!self.paused, "Arena is paused");
@@ -298,6 +299,7 @@ impl Arena {
             creator: creator.clone(),
             protocol,
         };
+        let assets = assets.into_iter().map(Into::into).collect();
         let battle = lifecycle::Battle::new(assets, mode, fee)
             .unwrap_or_else(|_| env::panic_str("Invalid lifecycle battle"));
         let before = env::storage_usage();

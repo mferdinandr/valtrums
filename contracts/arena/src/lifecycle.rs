@@ -24,6 +24,39 @@ pub struct AssetIdentity {
     pub custody_domain: String,
 }
 
+/// JSON-facing identity keeps 64-bit chain IDs exact in JavaScript clients.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetInput {
+    pub chain_id: U64,
+    pub token_address: String,
+    pub representation: AccountId,
+    pub custody_domain: String,
+}
+
+impl From<AssetInput> for AssetIdentity {
+    fn from(value: AssetInput) -> Self {
+        Self {
+            chain_id: value.chain_id.0,
+            token_address: value.token_address,
+            representation: value.representation,
+            custody_domain: value.custody_domain,
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<AssetIdentity> for AssetInput {
+    fn from(value: AssetIdentity) -> Self {
+        Self {
+            chain_id: U64(value.chain_id),
+            token_address: value.token_address,
+            representation: value.representation,
+            custody_domain: value.custody_domain,
+        }
+    }
+}
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScoringMode {
@@ -48,6 +81,32 @@ pub struct FeePolicy {
 pub struct ObservationPolicy {
     pub version: u64,
     pub policy_hash: String,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservationPolicyInput {
+    pub version: U64,
+    pub policy_hash: String,
+}
+
+impl From<ObservationPolicyInput> for ObservationPolicy {
+    fn from(value: ObservationPolicyInput) -> Self {
+        Self {
+            version: value.version.0,
+            policy_hash: value.policy_hash,
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<ObservationPolicy> for ObservationPolicyInput {
+    fn from(value: ObservationPolicy) -> Self {
+        Self {
+            version: U64(value.version),
+            policy_hash: value.policy_hash,
+        }
+    }
 }
 
 impl ObservationPolicy {
@@ -760,6 +819,21 @@ mod tests {
     }
 
     #[test]
+    fn external_u64_values_are_lossless_json_strings() {
+        let raw = near_sdk::serde_json::json!({"chain_id": "9007199254740993", "token_address": "0x0000000000000000000000000000000000000001", "representation": "token.testnet", "custody_domain": "fixture"});
+        let input: AssetInput = near_sdk::serde_json::from_value(raw).expect("asset input");
+        assert_eq!(AssetIdentity::from(input).chain_id, 9_007_199_254_740_993);
+        let policy: ObservationPolicyInput = near_sdk::serde_json::from_value(
+            near_sdk::serde_json::json!({"version": "9007199254740993", "policy_hash": "p"}),
+        )
+        .expect("policy input");
+        assert_eq!(
+            ObservationPolicy::from(policy).version,
+            9_007_199_254_740_993
+        );
+    }
+
+    #[test]
     fn community_count_and_metadata_are_bounded() {
         let assets = (1..=16).map(asset).collect::<Vec<_>>();
         assert!(Battle::new(assets, ScoringMode::PriceGain, fee()).is_ok());
@@ -875,7 +949,7 @@ mod tests {
         context.attached_deposit(NearToken::from_yoctonear(1));
         testing_env!(context.build());
         arena.activate_lifecycle();
-        arena.set_lifecycle_observation_policy(policy("p"));
+        arena.set_lifecycle_observation_policy(policy("p").into());
         let id = arena.lifecycle_insert(battle()).expect("battle");
         let creator = account("creator.testnet");
         let other = account("other.testnet");
@@ -937,7 +1011,7 @@ mod tests {
             .predecessor_account_id(account("owner.testnet"))
             .attached_deposit(NearToken::from_yoctonear(1));
         testing_env!(context.build());
-        arena.set_lifecycle_observation_policy(policy("changed"));
+        arena.set_lifecycle_observation_policy(policy("changed").into());
         context.predecessor_account_id(account("worker.testnet"));
         testing_env!(context.build());
         arena.lock_lifecycle_battle(id);
@@ -989,7 +1063,10 @@ mod tests {
             .predecessor_account_id(account("creator.testnet"))
             .attached_deposit(NearToken::from_near(1));
         testing_env!(context.build());
-        let id = arena.create_lifecycle_battle(vec![asset(1), asset(2)], ScoringMode::PriceGain);
+        let id = arena.create_lifecycle_battle(
+            vec![asset(1).into(), asset(2).into()],
+            ScoringMode::PriceGain,
+        );
         let battle = arena.lifecycle_battles.get(&id).expect("stored");
         assert_eq!(battle.fee.creator, account("creator.testnet"));
         assert_eq!(battle.fee.protocol, account("protocol.testnet"));
@@ -1029,7 +1106,10 @@ mod tests {
             .predecessor_account_id(account("creator.testnet"))
             .attached_deposit(NearToken::from_yoctonear(0));
         testing_env!(context.build());
-        arena.create_lifecycle_battle(vec![asset(1), asset(2)], ScoringMode::PriceGain);
+        arena.create_lifecycle_battle(
+            vec![asset(1).into(), asset(2).into()],
+            ScoringMode::PriceGain,
+        );
     }
 
     #[test]

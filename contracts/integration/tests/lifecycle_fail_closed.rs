@@ -20,8 +20,8 @@ async fn unapproved_representation_transfer_returns_to_sender() -> anyhow::Resul
     .into_result()?;
     let created = alice.call(env.arena.id(), "create_lifecycle_battle")
         .args_json(json!({ "mode": "PriceGain", "assets": [
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000001", "representation": env.pepe.id(), "custody_domain": "fixture" },
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" }
+            { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "representation": env.pepe.id(), "custody_domain": "fixture" },
+            { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" }
         ] }))
         .deposit(NearToken::from_near(1)).max_gas().transact().await?.into_result()?;
     let id: u64 = created.json()?;
@@ -68,7 +68,7 @@ async fn unapproved_representation_transfer_returns_to_sender() -> anyhow::Resul
     env.arena_call_yocto(
         &env.owner,
         "set_lifecycle_observation_policy",
-        json!({"policy": {"version": 1, "policy_hash": "fixture-policy"}}),
+        json!({"policy": {"version": "1", "policy_hash": "fixture-policy"}}),
     )
     .await?
     .into_result()?;
@@ -161,15 +161,15 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     env.arena_call_yocto(
         &env.owner,
         "set_lifecycle_observation_policy",
-        json!({"policy": {"version": 1, "policy_hash": "fixture-policy"}}),
+        json!({"policy": {"version": "1", "policy_hash": "fixture-policy"}}),
     )
     .await?
     .into_result()?;
     let created = creator.call(env.arena.id(), "create_lifecycle_battle")
         .args_json(json!({ "mode": "PriceGain", "assets": [
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000001", "representation": env.pepe.id(), "custody_domain": "fixture" },
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" },
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000003", "representation": third.id(), "custody_domain": "fixture" }
+            { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "representation": env.pepe.id(), "custody_domain": "fixture" },
+            { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" },
+            { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000003", "representation": third.id(), "custody_domain": "fixture" }
         ] })).deposit(NearToken::from_near(1)).max_gas().transact().await?.into_result()?;
     let id: u64 = created.json()?;
     for (index, user) in [(0, &creator), (1, &player), (2, &player)] {
@@ -313,11 +313,11 @@ async fn fixture_sixteen_community_lock_fits_sandbox_gas() -> anyhow::Result<()>
     env.arena_call_yocto(
         &env.owner,
         "set_lifecycle_observation_policy",
-        json!({"policy": {"version": 1, "policy_hash": "p".repeat(256)}}),
+        json!({"policy": {"version": "1", "policy_hash": "p".repeat(256)}}),
     )
     .await?
     .into_result()?;
-    let assets: Vec<_> = (0..16).map(|i| json!({"chain_id": 46630, "token_address": format!("0x{:040x}", i + 1), "representation": format!("representation-{i}.test.near"), "custody_domain": "d".repeat(256)})).collect();
+    let assets: Vec<_> = (0..16).map(|i| json!({"chain_id": "46630", "token_address": format!("0x{:040x}", i + 1), "representation": format!("representation-{i}.test.near"), "custody_domain": "d".repeat(256)})).collect();
     let created = creator
         .call(env.arena.id(), "create_lifecycle_battle")
         .args_json(json!({"mode": "PriceGain", "assets": assets}))
