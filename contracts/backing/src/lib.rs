@@ -426,7 +426,7 @@ impl Backing {
             "Confirmed payout"
         );
         require!(
-            !evidence.success || evidence.executed_movement == false,
+            !evidence.success || !evidence.executed_movement,
             "Movement happened"
         );
 

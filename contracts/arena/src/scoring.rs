@@ -6,12 +6,18 @@
 
 use near_sdk::require;
 use std::cmp::Ordering;
-use uint::construct_uint;
 
-construct_uint! {
-    /// 256-bit unsigned integer for wide checked math.
-    pub struct U256(4);
+#[allow(clippy::manual_div_ceil)]
+mod wide_uint {
+    use uint::construct_uint;
+
+    construct_uint! {
+        /// 256-bit unsigned integer for wide checked math.
+        pub struct U256(4);
+    }
 }
+
+pub use wide_uint::U256;
 
 /// A rational `(-1)^negative * num / den` with `den > 0`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +47,7 @@ impl Rational {
     }
 
     /// Exact comparison: `a/b vs c/d` via cross multiplication, sign-aware.
-    pub fn cmp(&self, other: &Rational) -> Ordering {
+    fn compare(&self, other: &Rational) -> Ordering {
         let left = self.num * other.den;
         let right = other.num * self.den;
         match (self.negative, other.negative) {
@@ -65,7 +71,7 @@ impl PartialOrd for Rational {
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> Ordering {
-        Rational::cmp(self, other)
+        self.compare(other)
     }
 }
 

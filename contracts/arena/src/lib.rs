@@ -1187,20 +1187,14 @@ impl Arena {
     }
 
     pub fn battle(&self, battle_id: u64) -> Option<BattleView> {
-        self.battles
-            .get(&battle_id)
-            .map(|battle| BattleView::from(&battle))
+        self.battles.get(&battle_id).map(BattleView::from)
     }
 
     pub fn battles(&self, from: Option<u64>, limit: Option<u64>) -> Vec<BattleView> {
         let start = from.unwrap_or(1).max(1);
         let limit = limit.unwrap_or(MAX_PAGE_SIZE).min(MAX_PAGE_SIZE);
         (start..start + limit)
-            .filter_map(|id| {
-                self.battles
-                    .get(&id)
-                    .map(|battle| BattleView::from(&battle))
-            })
+            .filter_map(|id| self.battles.get(&id).map(BattleView::from))
             .collect()
     }
 

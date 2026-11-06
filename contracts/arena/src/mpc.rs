@@ -143,7 +143,7 @@ fn keccak_f1600(a: &mut [u64; 25]) {
         [28, 55, 25, 21, 56],
         [27, 20, 39, 8, 14],
     ];
-    for round in 0..24 {
+    for rc in RC {
         let mut c = [0u64; 5];
         for x in 0..5 {
             c[x] = a[x] ^ a[x + 5] ^ a[x + 10] ^ a[x + 15] ^ a[x + 20];
@@ -168,7 +168,7 @@ fn keccak_f1600(a: &mut [u64; 25]) {
                 a[x + 5 * y] = b[x + 5 * y] ^ ((!b[(x + 1) % 5 + 5 * y]) & b[(x + 2) % 5 + 5 * y]);
             }
         }
-        a[0] ^= RC[round];
+        a[0] ^= rc;
     }
 }
 
@@ -225,7 +225,7 @@ pub fn hex_encode(bytes: &[u8]) -> String {
 }
 
 pub fn hex_decode(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     let value = |byte: u8| -> Option<u8> {
@@ -267,16 +267,17 @@ pub struct EcdsaSignature {
 impl EvmTx {
     /// Type-2 (EIP-1559) unsigned payload.
     pub fn unsigned(&self) -> Vec<u8> {
-        let mut fields = Vec::new();
-        fields.push(rlp_u128(self.chain_id.into()));
-        fields.push(rlp_u128(self.nonce.into()));
-        fields.push(rlp_u128(self.max_priority_fee_per_gas.0));
-        fields.push(rlp_u128(self.max_fee_per_gas.0));
-        fields.push(rlp_u128(self.gas_limit.into()));
-        fields.push(rlp_bytes(&self.to));
-        fields.push(rlp_u128(self.value.0));
-        fields.push(rlp_bytes(&self.data));
-        fields.push(rlp_list(&[]));
+        let fields = vec![
+            rlp_u128(self.chain_id.into()),
+            rlp_u128(self.nonce.into()),
+            rlp_u128(self.max_priority_fee_per_gas.0),
+            rlp_u128(self.max_fee_per_gas.0),
+            rlp_u128(self.gas_limit.into()),
+            rlp_bytes(&self.to),
+            rlp_u128(self.value.0),
+            rlp_bytes(&self.data),
+            rlp_list(&[]),
+        ];
         let mut out = Vec::with_capacity(1 + 64);
         out.push(0x02);
         out.extend_from_slice(&rlp_list(&fields));
@@ -288,18 +289,19 @@ impl EvmTx {
     }
 
     pub fn signed(&self, signature: &EcdsaSignature) -> Vec<u8> {
-        let mut fields = Vec::new();
-        fields.push(rlp_u128(self.chain_id.into()));
-        fields.push(rlp_u128(self.nonce.into()));
-        fields.push(rlp_u128(self.max_priority_fee_per_gas.0));
-        fields.push(rlp_u128(self.max_fee_per_gas.0));
-        fields.push(rlp_u128(self.gas_limit.into()));
-        fields.push(rlp_bytes(&self.to));
-        fields.push(rlp_u128(self.value.0));
-        fields.push(rlp_bytes(&self.data));
-        fields.push(rlp_uint_bytes(&[signature.y_parity]));
-        fields.push(rlp_uint_bytes(&signature.r));
-        fields.push(rlp_uint_bytes(&signature.s));
+        let fields = vec![
+            rlp_u128(self.chain_id.into()),
+            rlp_u128(self.nonce.into()),
+            rlp_u128(self.max_priority_fee_per_gas.0),
+            rlp_u128(self.max_fee_per_gas.0),
+            rlp_u128(self.gas_limit.into()),
+            rlp_bytes(&self.to),
+            rlp_u128(self.value.0),
+            rlp_bytes(&self.data),
+            rlp_uint_bytes(&[signature.y_parity]),
+            rlp_uint_bytes(&signature.r),
+            rlp_uint_bytes(&signature.s),
+        ];
         let mut out = Vec::with_capacity(1 + 64);
         out.push(0x02);
         out.extend_from_slice(&rlp_list(&fields));
