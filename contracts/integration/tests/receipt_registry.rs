@@ -169,5 +169,31 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         .await?
         .json()?;
     assert_eq!(supply, "0");
+    // A registry dispute pauses the asset but keeps the attributed liability.
+    let not_yet = relayer
+        .call(backing.id(), "report_registry_dispute")
+        .args_json(args(1))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(!not_yet.into_result()?.json::<bool>()?);
+    verifier
+        .call(registry.id(), "dispute")
+        .args_json(json!({"key": key}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let paused = relayer
+        .call(backing.id(), "report_registry_dispute")
+        .args_json(args(1))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(paused.into_result()?.json::<bool>()?);
+    let ledger: serde_json::Value = backing.view("get_ledger").args_json(json!({})).await?.json()?;
+    assert_eq!(ledger["paused"], true);
+    assert_eq!(ledger["reconciliation_required"], true);
+    assert_eq!(ledger["unallocated"], "98");
     Ok(())
 }

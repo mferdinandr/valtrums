@@ -38,6 +38,7 @@ const CALLBACK_GAS: Gas = Gas::from_tgas(30);
 #[allow(dead_code)]
 trait SharedRegistry {
     fn get_active_claim(&self, key: RegistryKey) -> Option<RegistryClaim>;
+    fn is_disputed(&self, key: RegistryKey) -> bool;
 }
 
 #[near(serializers = [borsh])]
@@ -260,6 +261,47 @@ impl Backing {
                 .detach();
         }
         credited
+    }
+
+    /// Pull a registry dispute into this asset. Anyone may call; only a
+    /// registry-confirmed dispute of a receipt this contract credited pauses the
+    /// asset and requires reconciliation. Liabilities are retained, and there is
+    /// no automatic reversal or unpause.
+    pub fn report_registry_dispute(&mut self, transaction_hash: String, log_index: u32) -> Promise {
+        let id = receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
+            .unwrap_or_else(|_| env::panic_str("Invalid receipt hash"));
+        let key = RegistryKey {
+            chain_id: self.asset.chain_id,
+            transaction_hash: id.transaction_hash,
+            log_index,
+        };
+        ext_registry::ext(self.registry.clone())
+            .with_static_gas(REGISTRY_GAS)
+            .is_disputed(key)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_registry_dispute(transaction_hash, log_index),
+            )
+    }
+
+    /// Returns true only when this call newly paused the asset.
+    #[private]
+    pub fn on_registry_dispute(
+        &mut self,
+        transaction_hash: String,
+        log_index: u32,
+        #[callback_result] disputed: Result<bool, PromiseError>,
+    ) -> bool {
+        let Ok(id) = receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
+        else {
+            return false;
+        };
+        if disputed != Ok(true) {
+            return false;
+        }
+        let fresh = !self.reconciliation_required;
+        self.reorganize_receipt(&id).is_ok() && fresh
     }
 
     /// The owner can halt affected transfers; this does not alter liabilities.
@@ -1385,5 +1427,29 @@ mod tests {
         contract.paused = true;
         assert!(!claim_callback(&mut contract, Ok(Some(registry_claim(98)))));
         assert_eq!(contract.get_ledger().custody, U128(0));
+    }
+
+    #[test]
+    fn registry_dispute_of_a_credited_receipt_pauses_and_requires_reconciliation() {
+        let mut contract = contract();
+        assert!(claim_callback(&mut contract, Ok(Some(registry_claim(98)))));
+        let hash = format!("0x{}", "ab".repeat(32));
+        let report = |contract: &mut Backing, hash: &str, disputed| {
+            testing_env!(VMContextBuilder::new()
+                .current_account_id(account("alice.near"))
+                .predecessor_account_id(account("alice.near"))
+                .build());
+            contract.on_registry_dispute(hash.to_string(), 1, disputed)
+        };
+        assert!(!report(&mut contract, &hash, Ok(false)));
+        assert!(!report(&mut contract, &hash, Err(PromiseError::Failed)));
+        assert!(!contract.paused);
+        let unknown = format!("0x{}", "cd".repeat(32));
+        assert!(!report(&mut contract, &unknown, Ok(true)));
+        assert!(!contract.paused);
+        assert!(report(&mut contract, &hash, Ok(true)));
+        assert!(contract.paused && contract.reconciliation_required);
+        assert_eq!(contract.get_ledger().unallocated, U128(98));
+        assert!(!report(&mut contract, &hash, Ok(true)));
     }
 }
