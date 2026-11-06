@@ -84,6 +84,71 @@ pub enum RoundError {
     AlreadyOpen,
     WrongRound,
     StartsBeforePreviousEnd,
+    /// The revealed terms do not hash to the policy committed at lock.
+    PolicyMismatch,
+}
+
+/// Everything an observation round depends on besides the battle itself. The
+/// lifecycle commits only `digest`; these terms are revealed and checked
+/// against that commitment, so none of them can change after lock. The module
+/// chooses no values: provider, pools, tolerance and cadence are policy
+/// decisions. Data freshness is expressed through `boundary_tolerance_ns`
+/// (samples must sit near the recorded boundaries); a late resolver never
+/// invalidates evidence for a recorded interval.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservationTerms {
+    pub source: String,
+    pub quote_currency: String,
+    /// Eligible pools or markets used for price and volume.
+    pub eligible_pools: Vec<String>,
+    /// Source finality requirement, as an identifier the adapter enforces.
+    pub finality: String,
+    pub price_decimals: u8,
+    pub supply_decimals: u8,
+    pub volume_decimals: u8,
+    pub boundary_tolerance_ns: u64,
+    /// Longest allowed gap between consecutive drawdown samples.
+    pub max_gap_ns: u64,
+}
+
+impl ObservationTerms {
+    fn is_complete(&self) -> bool {
+        let named = |text: &str| !text.trim().is_empty() && text.len() <= 256;
+        named(&self.source)
+            && named(&self.quote_currency)
+            && named(&self.finality)
+            && !self.eligible_pools.is_empty()
+            && self.eligible_pools.len() <= 64
+            && self.eligible_pools.iter().all(|pool| named(pool))
+            && self.max_gap_ns > 0
+    }
+
+    /// Canonical, unambiguous commitment: every field is length-prefixed, pools
+    /// are sorted and the scoring mode is included. Lowercase hex SHA-256.
+    pub fn digest(&self, mode: ScoringMode) -> String {
+        let mut pools = self.eligible_pools.clone();
+        pools.sort();
+        let mut text = format!("valtrum/observation-policy/v1;mode={mode:?};");
+        let mut field = |value: &str| text.push_str(&format!("{}:{value};", value.len()));
+        field(&self.source);
+        field(&self.quote_currency);
+        field(&self.finality);
+        for pool in &pools {
+            field(pool);
+        }
+        field(&format!(
+            "{}/{}/{}/{}/{}",
+            self.price_decimals,
+            self.supply_decimals,
+            self.volume_decimals,
+            self.boundary_tolerance_ns,
+            self.max_gap_ns
+        ));
+        near_sdk::env::sha256_array(text.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,9 +174,42 @@ pub struct Rounds {
 }
 
 impl Rounds {
+    /// The only production constructor: rounds read their source, scales and
+    /// coverage from terms whose digest equals the policy hash frozen at lock.
+    pub fn from_frozen_policy(
+        battle_id: u64,
+        mode: ScoringMode,
+        frozen_policy_hash: &str,
+        terms: &ObservationTerms,
+        assets: Vec<String>,
+    ) -> Result<Self, RoundError> {
+        if !terms.is_complete() {
+            return Err(RoundError::InvalidConfiguration);
+        }
+        if terms.digest(mode) != frozen_policy_hash {
+            return Err(RoundError::PolicyMismatch);
+        }
+        Self::new(
+            battle_id,
+            mode,
+            frozen_policy_hash.to_string(),
+            terms.source.clone(),
+            assets,
+            SampleCoveragePolicy {
+                boundary_tolerance_ns: terms.boundary_tolerance_ns,
+                max_gap_ns: terms.max_gap_ns,
+            },
+            &ScalePolicy {
+                price_decimals: terms.price_decimals,
+                supply_decimals: terms.supply_decimals,
+                volume_decimals: terms.volume_decimals,
+            },
+        )
+    }
+
     /// `assets` holds one distinct asset identifier per original community,
     /// indexed by community. Every community starts as a candidate.
-    pub fn new(
+    pub(crate) fn new(
         battle_id: u64,
         mode: ScoringMode,
         policy_hash: String,
@@ -658,6 +756,73 @@ mod tests {
             Ok(Resolution::Pending(PendingReason::InvalidEvidence(0)))
         );
         assert_eq!(r.resolve_round(1, &obs), Ok(Resolution::Winner(1)));
+    }
+
+    fn terms() -> ObservationTerms {
+        ObservationTerms {
+            source: "source".into(),
+            quote_currency: "USD".into(),
+            eligible_pools: vec!["pool-b".into(), "pool-a".into()],
+            finality: "finalized".into(),
+            price_decimals: 6,
+            supply_decimals: 2,
+            volume_decimals: 8,
+            boundary_tolerance_ns: 1_000,
+            max_gap_ns: ROUND_NS,
+        }
+    }
+
+    #[test]
+    fn rounds_only_start_from_terms_matching_the_frozen_policy_hash() {
+        let mode = ScoringMode::VolumeRatio;
+        let frozen = terms().digest(mode);
+        let assets = || vec!["a".to_string(), "b".to_string()];
+        assert_eq!(frozen.len(), 64);
+        // Pool order is canonicalized; mode and every field change the commitment.
+        let mut reordered = terms();
+        reordered.eligible_pools.reverse();
+        assert_eq!(reordered.digest(mode), frozen);
+        assert_ne!(terms().digest(ScoringMode::PriceGain), frozen);
+        let altered: [fn(&mut ObservationTerms); 6] = [
+            |t| t.source = "other".into(),
+            |t| t.finality = "latest".into(),
+            |t| t.price_decimals = 7,
+            |t| t.boundary_tolerance_ns = 2_000,
+            |t| t.max_gap_ns = 1,
+            |t| t.eligible_pools.push("pool-c".into()),
+        ];
+        for change in altered {
+            let mut other = terms();
+            change(&mut other);
+            assert_ne!(other.digest(mode), frozen);
+            // Terms revealed after lock must match; the changed ones are refused.
+            assert_eq!(
+                Rounds::from_frozen_policy(1, mode, &frozen, &other, assets()).err(),
+                Some(RoundError::PolicyMismatch)
+            );
+        }
+        let r = Rounds::from_frozen_policy(1, mode, &frozen, &terms(), assets()).expect("rounds");
+        assert_eq!(r.mode(), mode);
+        // Field boundaries cannot be forged by shifting characters between fields.
+        let (mut a, mut b) = (terms(), terms());
+        (a.source, a.quote_currency) = ("ab".into(), "c".into());
+        (b.source, b.quote_currency) = ("a".into(), "bc".into());
+        assert_ne!(a.digest(mode), b.digest(mode));
+        // Incomplete terms and a mismatched volume scale are rejected even if hashed.
+        let mut incomplete = terms();
+        incomplete.eligible_pools.clear();
+        let hash = incomplete.digest(mode);
+        assert_eq!(
+            Rounds::from_frozen_policy(1, mode, &hash, &incomplete, assets()).err(),
+            Some(RoundError::InvalidConfiguration)
+        );
+        let mut scale = terms();
+        scale.volume_decimals = 3;
+        let hash = scale.digest(mode);
+        assert_eq!(
+            Rounds::from_frozen_policy(1, mode, &hash, &scale, assets()).err(),
+            Some(RoundError::InvalidConfiguration)
+        );
     }
 
     #[test]

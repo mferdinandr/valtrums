@@ -994,30 +994,42 @@ mod tests {
     #[test]
     fn only_a_scored_unique_winner_holds_principal_and_eliminated_vaults_stay_locked() {
         use crate::rounds::{
-            CandidateObservation, ModeData, Resolution, RoundError, Rounds, ScalePolicy, ROUND_NS,
+            CandidateObservation, ModeData, ObservationTerms, Resolution, RoundError, Rounds,
+            ROUND_NS,
         };
-        use crate::scoring::{ObservationContext, ObservationEvidence, SampleCoveragePolicy};
+        use crate::scoring::{ObservationContext, ObservationEvidence};
+        let terms = ObservationTerms {
+            source: "source".into(),
+            quote_currency: "USD".into(),
+            eligible_pools: vec!["pool".into()],
+            finality: "finalized".into(),
+            price_decimals: 6,
+            supply_decimals: 2,
+            volume_decimals: 8,
+            boundary_tolerance_ns: 0,
+            max_gap_ns: ROUND_NS,
+        };
         let mut b = battle();
         approve(&mut b);
         deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
-        b.lock(policy("p")).expect("lock");
-        let mut rounds = Rounds::new(
+        // Only the digest of the terms is committed at lock.
+        let frozen = b
+            .lock(ObservationPolicy {
+                version: 1,
+                policy_hash: terms.digest(ScoringMode::PriceGain),
+            })
+            .expect("lock")
+            .observation
+            .clone();
+        let assets = |count: usize| (0..count).map(|i| format!("asset-{i}")).collect::<Vec<_>>();
+        let mut rounds = Rounds::from_frozen_policy(
             1,
             ScoringMode::PriceGain,
-            "p".into(),
-            "source".into(),
-            (0..3).map(|i| format!("asset-{i}")).collect(),
-            SampleCoveragePolicy {
-                boundary_tolerance_ns: 0,
-                max_gap_ns: ROUND_NS,
-            },
-            &ScalePolicy {
-                price_decimals: 6,
-                supply_decimals: 2,
-                volume_decimals: 8,
-            },
+            &frozen.policy_hash,
+            &terms,
+            assets(3),
         )
         .expect("rounds");
         // No result yet: nothing is held and a wrong-shaped run is refused.
@@ -1025,23 +1037,28 @@ mod tests {
             b.hold_principal_from_scoring(&rounds),
             Err(LifecycleError::WinnerNotResolved)
         );
-        let two = Rounds::new(
+        let two = Rounds::from_frozen_policy(
             1,
             ScoringMode::PriceGain,
-            "p".into(),
-            "source".into(),
-            vec!["a".into(), "b".into()],
-            SampleCoveragePolicy {
-                boundary_tolerance_ns: 0,
-                max_gap_ns: ROUND_NS,
-            },
-            &ScalePolicy {
-                price_decimals: 6,
-                supply_decimals: 2,
-                volume_decimals: 8,
-            },
+            &frozen.policy_hash,
+            &terms,
+            assets(2),
         )
         .expect("two");
+        // Terms that were not the ones committed at lock cannot start rounds.
+        let mut swapped = terms.clone();
+        swapped.source = "other source".into();
+        assert_eq!(
+            Rounds::from_frozen_policy(
+                1,
+                ScoringMode::PriceGain,
+                &frozen.policy_hash,
+                &swapped,
+                assets(3)
+            )
+            .err(),
+            Some(RoundError::PolicyMismatch)
+        );
         assert_eq!(
             b.hold_principal_from_scoring(&two),
             Err(LifecycleError::InvalidPolicy)
@@ -1056,7 +1073,7 @@ mod tests {
                         round_id: round,
                         asset_id: format!("asset-{community}"),
                         source: "source".into(),
-                        policy_hash: "p".into(),
+                        policy_hash: frozen.policy_hash.clone(),
                         start_ns,
                         end_ns,
                     },
