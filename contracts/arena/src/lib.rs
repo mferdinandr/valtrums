@@ -8,6 +8,7 @@ use near_sdk::{
 
 pub mod credit;
 pub mod events;
+pub mod lifecycle;
 pub mod math;
 pub mod mpc;
 pub mod types;
@@ -55,6 +56,8 @@ enum StorageKey {
     Positions,
     Liquid,
     SignRequests,
+    LifecycleBattles,
+    LifecyclePositions,
 }
 
 #[ext_contract(ext_ft)]
@@ -84,6 +87,8 @@ enum TransferMsg {
         total_usdc: U128,
         min_token_out: U128,
     },
+    /// Deposit a registered position using its configured representation token.
+    LifecycleDeposit { battle_id: u64, community: u32 },
     /// Adds the transferred USDC to the sender's internal balance.
     FundBalance,
     /// Output of a settlement step, paid back by the execution DEX.
@@ -151,6 +156,13 @@ pub struct Arena {
     foreign: Option<ForeignConfig>,
     sign_requests: LookupMap<u64, SignRequest>,
     sign_request_count: u64,
+    /// Redesign state; existing deployments require a new deployment, not migration.
+    lifecycle_battles: LookupMap<u64, lifecycle::Battle>,
+    lifecycle_positions: LookupMap<(u64, u32, AccountId), u128>,
+    lifecycle_battle_count: u64,
+    lifecycle_protocol: Option<AccountId>,
+    lifecycle_observation_policy: Option<lifecycle::ObservationPolicy>,
+    lifecycle_exclusive: bool,
 }
 
 #[near]
@@ -186,6 +198,184 @@ impl Arena {
             foreign: None,
             sign_requests: LookupMap::new(StorageKey::SignRequests),
             sign_request_count: 0,
+            lifecycle_battles: LookupMap::new(StorageKey::LifecycleBattles),
+            lifecycle_positions: LookupMap::new(StorageKey::LifecyclePositions),
+            lifecycle_battle_count: 0,
+            lifecycle_protocol: None,
+            lifecycle_observation_policy: None,
+            lifecycle_exclusive: false,
+        }
+    }
+
+    /// Permanently isolate a fresh contract from legacy battles before enabling
+    /// lifecycle custody. Existing deployments and positions are not migrated.
+    #[payable]
+    pub fn activate_lifecycle(&mut self) {
+        self.assert_owner();
+        near_sdk::assert_one_yocto();
+        require!(
+            self.battle_count == 0,
+            "Legacy battles prevent lifecycle activation"
+        );
+        self.lifecycle_exclusive = true;
+    }
+
+    /// Configure the protocol identity for future lifecycle battles. Existing
+    /// battles retain their creation-time identity and fee policy.
+    #[payable]
+    pub fn set_lifecycle_protocol(&mut self, protocol: AccountId) {
+        self.assert_owner();
+        near_sdk::assert_one_yocto();
+        self.lifecycle_protocol = Some(protocol);
+    }
+
+    /// Set the observation policy used by future locks. Existing snapshots
+    /// retain the policy that was committed when they locked.
+    #[payable]
+    pub fn set_lifecycle_observation_policy(&mut self, policy: lifecycle::ObservationPolicy) {
+        self.assert_owner();
+        near_sdk::assert_one_yocto();
+        require!(
+            !policy.policy_hash.trim().is_empty(),
+            "Observation policy is required"
+        );
+        self.lifecycle_observation_policy = Some(policy);
+    }
+
+    /// Freeze the credited positions and policy. A repeated call preserves the
+    /// original snapshot. Starting rounds remains the scoring integration's job.
+    #[payable]
+    pub fn lock_lifecycle_battle(&mut self, battle_id: u64) {
+        self.assert_agent();
+        require!(!self.paused, "Arena is paused");
+        let policy = self
+            .lifecycle_observation_policy
+            .clone()
+            .unwrap_or_else(|| env::panic_str("Observation policy is not configured"));
+        let caller = env::predecessor_account_id();
+        let before = env::storage_usage();
+        self.lifecycle_lock(battle_id, policy)
+            .unwrap_or_else(|_| env::panic_str("Lifecycle battle cannot be locked"));
+        self.lifecycle_battles.flush();
+        let bytes = env::storage_usage()
+            .checked_sub(before)
+            .unwrap_or_else(|| env::panic_str("Storage accounting failed"));
+        let cost = env::storage_byte_cost()
+            .as_yoctonear()
+            .checked_mul(u128::from(bytes))
+            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= cost, "Insufficient storage deposit");
+        let refund = attached - cost;
+        if refund > 0 {
+            Promise::new(caller)
+                .transfer(NearToken::from_yoctonear(refund))
+                .detach();
+        }
+    }
+
+    /// Create an audit-pending battle without a proposal bond. The attached
+    /// NEAR pays for the record's actual storage; excess is returned. No token
+    /// deposit can be credited until the backing and audit adapters are wired.
+    #[payable]
+    pub fn create_lifecycle_battle(
+        &mut self,
+        assets: Vec<lifecycle::AssetIdentity>,
+        mode: lifecycle::ScoringMode,
+    ) -> u64 {
+        require!(!self.paused, "Arena is paused");
+        require!(self.lifecycle_exclusive, "Lifecycle is not activated");
+        require!(
+            assets.iter().all(|asset| asset.representation != self.usdc),
+            "USDC cannot be a lifecycle representation"
+        );
+        let protocol = self
+            .lifecycle_protocol
+            .clone()
+            .unwrap_or_else(|| env::panic_str("Lifecycle protocol is not configured"));
+        let creator = env::predecessor_account_id();
+        let fee = lifecycle::FeePolicy {
+            fee_bps: 10,
+            creator_share_bps: 5_000,
+            protocol_created: creator == protocol,
+            creator: creator.clone(),
+            protocol,
+        };
+        let battle = lifecycle::Battle::new(assets, mode, fee)
+            .unwrap_or_else(|_| env::panic_str("Invalid lifecycle battle"));
+        let before = env::storage_usage();
+        let id = self
+            .lifecycle_insert(battle)
+            .unwrap_or_else(|_| env::panic_str("Battle count overflow"));
+        self.lifecycle_battles.flush();
+        let bytes = env::storage_usage()
+            .checked_sub(before)
+            .unwrap_or_else(|| env::panic_str("Storage accounting failed"));
+        let cost = env::storage_byte_cost()
+            .as_yoctonear()
+            .checked_mul(u128::from(bytes))
+            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= cost, "Insufficient storage deposit");
+        let refund = attached - cost;
+        if refund > 0 {
+            Promise::new(creator.clone())
+                .transfer(NearToken::from_yoctonear(refund))
+                .detach();
+        }
+        events::emit(
+            "lifecycle_battle_created",
+            json!({ "battle_id": id, "creator": creator }),
+        );
+        id
+    }
+
+    /// Read the lifecycle state; evidence references are not proof of live backing.
+    pub fn get_lifecycle_battle(&self, battle_id: u64) -> Option<lifecycle::LifecycleView> {
+        self.lifecycle_battles
+            .get(&battle_id)
+            .map(lifecycle::Battle::view)
+    }
+
+    pub fn get_lifecycle_position(
+        &self,
+        battle_id: u64,
+        community: u32,
+        account: AccountId,
+    ) -> lifecycle::LifecyclePositionView {
+        let position = self
+            .lifecycle_positions
+            .get(&(battle_id, community, account))
+            .copied();
+        lifecycle::LifecyclePositionView {
+            registered: position.is_some(),
+            amount: U128(position.unwrap_or(0)),
+        }
+    }
+
+    /// Reserve storage for one position. This is storage payment, not a stake.
+    #[payable]
+    pub fn register_lifecycle_position(&mut self, battle_id: u64, community: u32) {
+        require!(!self.paused, "Arena is paused");
+        let account = env::predecessor_account_id();
+        let before = env::storage_usage();
+        self.lifecycle_register_position(battle_id, community, &account)
+            .unwrap_or_else(|_| env::panic_str("Cannot register position"));
+        self.lifecycle_positions.flush();
+        let bytes = env::storage_usage()
+            .checked_sub(before)
+            .unwrap_or_else(|| env::panic_str("Storage accounting failed"));
+        let cost = env::storage_byte_cost()
+            .as_yoctonear()
+            .checked_mul(u128::from(bytes))
+            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= cost, "Insufficient storage deposit");
+        let refund = attached - cost;
+        if refund > 0 {
+            Promise::new(account)
+                .transfer(NearToken::from_yoctonear(refund))
+                .detach();
         }
     }
 
@@ -950,6 +1140,24 @@ impl Arena {
                 };
                 self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
+            Ok(TransferMsg::LifecycleDeposit {
+                battle_id,
+                community,
+            }) => {
+                if self.lifecycle_exclusive
+                    && self
+                        .lifecycle_credit(battle_id, community, &token, &sender_id, amount.0)
+                        .is_ok()
+                {
+                    events::emit(
+                        "lifecycle_deposit",
+                        json!({ "battle_id": battle_id, "community": community, "account_id": sender_id, "amount": amount }),
+                    );
+                    0
+                } else {
+                    amount.0
+                }
+            }
             Ok(TransferMsg::FundBalance) if token == self.usdc => {
                 if amount.0 > 0 {
                     self.add_liquid(&sender_id, &token, amount.0);
@@ -1661,7 +1869,7 @@ impl Arena {
     ) -> u128 {
         let invalid_tokens = token_a == token_b || token_a == self.usdc || token_b == self.usdc;
         let invalid_duration = duration_secs == 0 || duration_secs > MAX_DURATION_SECS;
-        if invalid_tokens || invalid_duration || amount < self.bond {
+        if self.lifecycle_exclusive || invalid_tokens || invalid_duration || amount < self.bond {
             return amount;
         }
 
@@ -1896,6 +2104,53 @@ mod tests {
     fn propose(arena: &mut Arena, sender: &str, amount: u128, msg: String) -> u128 {
         set_context("usdc", 0);
         returned(arena.ft_on_transfer(acc(sender), U128(amount), msg))
+    }
+
+    #[test]
+    fn lifecycle_activation_rejects_future_legacy_proposals() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        let mut arena = new_arena();
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(acc("owner"))
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build();
+        testing_env!(context);
+        arena.activate_lifecycle();
+        let amount = 5_000_000;
+        assert_eq!(
+            propose(
+                &mut arena,
+                "creator",
+                amount,
+                propose_msg("tokena", "tokenb", 30)
+            ),
+            amount
+        );
+        assert_eq!(arena.battle_count, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Legacy battles prevent lifecycle activation")]
+    fn lifecycle_cannot_activate_with_legacy_battles() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        let mut arena = new_arena();
+        assert_eq!(
+            propose(
+                &mut arena,
+                "creator",
+                5_000_000,
+                propose_msg("tokena", "tokenb", 30)
+            ),
+            0
+        );
+        let context = VMContextBuilder::new()
+            .predecessor_account_id(acc("owner"))
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build();
+        testing_env!(context);
+        arena.activate_lifecycle();
     }
 
     #[test]
