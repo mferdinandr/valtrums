@@ -10,3 +10,5 @@ Existing specs/ and add-war-bonds / add-verifiable-burn changes describe the leg
 cd docs
 openspec validate --all --strict --no-interactive
 ```
+
+OpenSpec status may report isComplete when proposal artifacts exist. That means artifact readiness only; all redesign implementation checkboxes remain unfinished.

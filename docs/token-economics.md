@@ -132,4 +132,3 @@ Destroying only NEAR representations does not prove Robinhood tokens were burned
 ## Required accounting checks
 
 Implementation tests must cover per-token conservation, all fee recipients, creator participation on either outcome, two/three communities, protocol creation, tiny and uneven vaults, deterministic dust, decimal mismatch, taxed input versus policy, duplicate deposit receipts, concurrent redemption/settlement/burn attempts, partial payout completion, lost callbacks and broadcast retries without duplicate payment. See [OpenSpec assets](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-asset-representation/spec.md) and [settlement](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-settlement/spec.md).
-

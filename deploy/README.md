@@ -1,4 +1,6 @@
-# Deploying the agent
+# Deploying the legacy infrastructure agent
+
+These instructions operate the current NEAR arena. The [Robinhood rollout](../docs/deployment.md) and bounded player agents are planned. No target deployment or player authority is provided by this container.
 
 The agent is one container: `agent/Dockerfile` (multi-stage, Node 22 slim, non-root user `10001`). Its only writable path is the state volume `/var/lib/valtrum-agent` (liquidity baselines); the root filesystem can be read-only.
 
@@ -79,7 +81,7 @@ How a user or operator verifies it:
 - Price history for TWAPs accrues from the agent's own samples; after a long outage the fetcher refuses to write prices until enough history exists.
 - Final prices use the 30 minutes before the pass that settles, so settle promptly after `end_time`.
 - A dispatched settlement step that never gets proceeds is logged as `STUCK STEP` and not retried; the contract has no reset method.
-- Foreign-chain execution of settlement steps is not implemented.
-- Quotes come from the mock DEX; another DEX needs another `QuoteSource` implementation.
+- Legacy foreign EVM execution exists; live signer assumptions and receipt/reporting limits are documented in [agent/README.md](../agent/README.md). Target Robinhood custody and original-token payouts remain unimplemented.
+- Legacy quotes come from mock DEX rates or Ref exchange returns, depending on MARKET_DATA. Other sources require an adapter.
 
-See `agent/README.md` for the full list.
+See [agent/README.md](../agent/README.md) for the full list.

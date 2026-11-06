@@ -71,4 +71,3 @@ No community can re-enter after elimination. New deposits and changes to mode or
 ## Verification cases
 
 Implementation acceptance must cover two and three communities, negative signed comparisons, supply changing against price, initial rather than final market cap in the ratio, exact boundary trade inclusion, complete zero-volume/zero-drawdown observations, drawdown's interim peak, exact rational ties, repeated overtime, eliminated vault locking, late scheduler calls and incomplete data. [OpenSpec scoring](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-scoring/spec.md) makes these behavioral requirements explicit.
-

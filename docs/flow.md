@@ -1,10 +1,11 @@
 # Flow with war bonds and the furnace
 
+> Historical/legacy design: this page is not the Robinhood target. The [product specification](product-spec.md) supersedes earlier swap settlement, TWAP, bond and credit plans. Standalone WAR and furnace source exists at the [base snapshot](current-state.md); arena integration/deployment is not implied.
 This is the end-to-end flow once both OpenSpec changes are applied: `add-war-bonds` (WAR, the prize reserve) and `add-verifiable-burn` (the furnace, the burn leaderboard). For today's flow, see [architecture.md](architecture.md).
 
 **Status:**
 - WAR contract: built (mferdinandr/valtrum#35)
-- furnace: not built yet
+- furnace: standalone source built; arena integration not built
 - arena wiring for both: not built yet
 
 The numbers below follow the specs.

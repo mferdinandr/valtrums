@@ -50,4 +50,3 @@ The four Ref budgets sum to 39.832284 USDC. Test pools and open-mint tokens demo
 - WAR/furnace account key removal, deployment and arena integration cannot be inferred merely from their source code.
 
 See [deployment.md](deployment.md) for supported legacy commands and a separately labeled target rollout plan.
-

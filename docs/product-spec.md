@@ -90,4 +90,3 @@ Approval requires GoPlus checks that reject critical risks, plus an independent 
 | OQ-INTEGRATIONS | GoPlus Robinhood testnet coverage, Intents routes, NEAR AI access and signer compatibility | Record actual evidence; unsupported integrations block the corresponding live acceptance claim |
 
 The [roadmap](implementation-roadmap.md) orders these gates. This proposal replaces earlier swap settlement, TWAP, bond and credit plans for the target arena. Existing deployments retain their existing rules until an explicitly implemented migration; this PR performs none.
-
