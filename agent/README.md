@@ -139,3 +139,22 @@ Minimum battle timeline with `TWAP_WINDOW_SECS=60`, `AGENT_INTERVAL_SECS=30` (ti
 4. The battle ends `duration` after the lock. Final prices need the same 60 s of history, so settle after `end_time` with samples from the last minute; keep the agent running throughout.
 
 With the default window the same steps take roughly 25 minutes before a lock and 30 minutes of history before settlement.
+
+## Target-arena foundation modules
+
+The new arena foundations are separate from the legacy runtime above:
+
+- `arena-audit.ts`: source-bound GoPlus discovery/token evidence, strict eligibility policy, independent LP gate and explicit Pending results.
+- `arena-scoring.ts`: exact four-mode scoring and evidence validation over frozen 30-second intervals.
+- `arena-revenue.ts`: immutable creation-time revenue policy snapshots and conserved per-token distribution arithmetic.
+- `robinhood-receipt.ts`: authorized-verifier RPC transport and canonical transfer receipt checks. This does not authorize minting or authenticate a NEAR beneficiary.
+
+These modules are tested foundations, not evidence that target contracts, live cron, custody, payout or MCP are implemented. Fixture tests never establish public-service support.
+
+Read-only integration discovery from repository root:
+
+```bash
+node scripts/arena-integration-probe.mjs --out=/tmp/valtrum-arena-probe.json
+```
+
+The probe never signs, deposits or requests executable quotes. It records response hashes and explicit Unavailable/NotListed states; candidate assets are not proof of a testnet route. An Unavailable service makes the probe exit nonzero. Keep the report with test evidence; do not change it into a success fixture.
