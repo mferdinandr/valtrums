@@ -5,7 +5,6 @@ context: |
   Target requirements are docs/product-spec.md and the unimplemented change
   redesign-permissionless-robinhood-arena. Target networks are NEAR testnet and
   Robinhood Chain testnet. Write artifacts in English. Amounts are integer units.
-  Legacy specs and WAR/furnace changes are historical context, not target completion.
   DAO mechanism and audit tax/admin policy remain OPEN; do not invent parameters.
 
 rules:

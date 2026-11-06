@@ -27,7 +27,7 @@ The legacy two-side swap/credit arena cannot express the agreed permissionless R
 
 ### Modified Capabilities
 
-None in the canonical legacy specs in this PR. New arena capabilities describe a replacement target, not an implemented migration of existing battle-credit or settlement-burn specs.
+None. The earlier battle-credit and settlement-burn specs were removed; this change is the only spec for the arena.
 
 ## Impact
 

@@ -48,7 +48,7 @@ Technical workstreams remain chain abstraction, scoring/settlement, player AI, a
 | [Implementation tracker](docs/implementation-tracker.md) | Parent issue content; GitHub URL pending verified publication |
 | [OpenSpec proposal](docs/openspec/changes/redesign-permissionless-robinhood-arena/proposal.md) | Unimplemented spec-driven target change |
 
-The older [WAR/furnace flow](docs/flow.md), [WAR](docs/war.md), [furnace](docs/furnace.md) and earlier OpenSpec entries are historical context. Swap settlement, TWAP, bond and credit plans are superseded for the target. Parent-folder OpenSpec archives remain outside this repository.
+Swap settlement, TWAP, bond and credit plans from the earlier two-side arena no longer apply; the product specification above is the only source of truth for the game.
 
 ## Current repository and development
 
