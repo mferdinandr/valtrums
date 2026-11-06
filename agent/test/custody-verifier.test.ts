@@ -75,6 +75,12 @@ describe("finalized custody deposit verifier", () => {
     expect((await run(chain({ before: 1000n, after: 1050n }))).status).toBe("rejected");
   });
 
+  it("never treats a direct transfer or donation without a custody event as a deposit", async () => {
+    expect((await run(chain({ logs: [transferLog(98n)] }))).status).toBe("rejected");
+    const wrongEmitter = { ...depositLog(), address: other };
+    expect((await run(chain({ logs: [transferLog(98n), wrongEmitter] }))).status).toBe("rejected");
+  });
+
   it("rejects an already-consumed receipt key", async () => {
     const key = receiptKey(46630n, tx.toUpperCase().replace("0X", "0x"), 1);
     const v = await run(chain(), { isConsumed: async (k: string) => k === key });

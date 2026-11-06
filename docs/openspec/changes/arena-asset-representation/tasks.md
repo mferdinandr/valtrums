@@ -24,7 +24,7 @@ Check tasks only after implementation and verification. Custody verification, fi
 
 ## Verification
 
-- [ ] Test short receipts, replay, unrelated transfers, wrong source and provisional receipt reorgs.
+- [x] Test short receipts, replay, unrelated transfers, wrong source and provisional receipt reorgs.
 - [x] Test minimum and maximum values, decimal mismatch and attributed residual without rounding up.
 - [ ] Test concurrent redemption, payout and disposal against the same backing.
 - [ ] Test lost callbacks after actual debit and restoration only after definitive no-spend evidence.
