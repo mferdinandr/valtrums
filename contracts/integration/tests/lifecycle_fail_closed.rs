@@ -278,6 +278,17 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     assert_eq!(env.balance(&env.pepe, env.arena.id()).await?, 7);
     assert_eq!(env.balance(&env.shib, env.arena.id()).await?, 11);
     assert_eq!(env.balance(&third, env.arena.id()).await?, 13);
+    for actor in [&env.owner, &env.agent] {
+        let withdrawal = actor
+            .call(env.arena.id(), "withdraw_liquid")
+            .args_json(json!({"token": env.pepe.id(), "amount": "7"}))
+            .deposit(NearToken::from_yoctonear(1))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(withdrawal.into_result().is_err());
+    }
+    assert_eq!(env.balance(&env.pepe, env.arena.id()).await?, 7);
     let conflicting = env
         .arena
         .call("fixture_hold_lifecycle_principal")
