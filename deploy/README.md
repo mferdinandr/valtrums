@@ -4,6 +4,10 @@ These instructions operate the current NEAR arena. The [Robinhood rollout](../do
 
 The agent is one container: `agent/Dockerfile` (multi-stage, Node 22 slim, non-root user `10001`). Its only writable path is the state volume `/var/lib/valtrum-agent` (liquidity baselines); the root filesystem can be read-only.
 
+## Automatic image delivery
+
+After main passes every CI check, [CD](../docs/ci-cd.md) publishes an immutable SHA-tagged agent image to GHCR and records its digest. This publishes the artifact; starting/updating a running agent still requires its host and runtime configuration. The same workflow deploys the existing web to a configured Vercel testnet project.
+
 ## Build
 
 From the repository root:

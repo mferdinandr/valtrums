@@ -1,5 +1,7 @@
 # Valtrum
 
+[![CI](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml/badge.svg)](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml)
+
 A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain.
 
 **Status:** the Robinhood hackathon arena is a **planned redesign** for NEAR testnet and Robinhood Chain testnet. This repository currently implements an earlier two-side NEAR arena. [Current state](docs/current-state.md) records its source/deployment limits; this documentation does not implement or deploy the redesign.
@@ -38,6 +40,7 @@ Technical workstreams remain chain abstraction, scoring/settlement, player AI, a
 | [Architecture](docs/architecture.md) | Components, asset flows and trust boundaries |
 | [Interfaces](docs/interfaces.md) | Planned contract, event, oracle, agent and MCP APIs |
 | [Ecosystem](docs/ecosystem.md) | Partners, priorities, testnet evidence and unknowns |
+| [CI/CD and signatures](docs/ci-cd.md) | CI gates, automatic testnet web/image delivery, setup and rollback |
 | [Deployment](docs/deployment.md) | Existing commands versus planned rollout |
 | [Security review](docs/security-review.md) | Historical scope and unfinished target review |
 | [Roadmap](docs/implementation-roadmap.md) | Dependencies and acceptance gates |

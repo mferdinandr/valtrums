@@ -1,5 +1,9 @@
 # Deployment: existing system and target rollout
 
+## Automatic web and image delivery
+
+[CI/CD](ci-cd.md) gates Vercel testnet-web deployment and GHCR agent-image publication on all main CI checks. Hosting credentials and project variables require one-time configuration. This delivery does not deploy the target contracts or start an agent process.
+
 ## Existing implementation: supported operations
 
 These commands operate the **legacy NEAR arena**, whose rules and recorded accounts are in [current-state.md](current-state.md). This documentation PR did not run them or verify a live deployment.
