@@ -68,4 +68,4 @@ The cron cadence, evidence TTL, retry deadline and behavior after a live token-p
 - A recheck expires before lock or a new community is added: refresh affected evidence before locking.
 - Fixture-backed test succeeds: mark it as adapter verification, not a live integration.
 
-The corresponding [OpenSpec audit requirements](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-audit/spec.md) are acceptance criteria for future implementation. DAO rules remain independent and OPEN.
+The corresponding [OpenSpec audit requirements](openspec/changes/arena-audit/specs/arena-audit/spec.md) are acceptance criteria for future implementation. DAO rules remain independent and OPEN.

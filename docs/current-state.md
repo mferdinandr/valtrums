@@ -17,7 +17,7 @@ Base commit: **93eb024eb50f711662252a0e04fbcfe34610f7ca**, fetched from `origin/
 | Terminal | [web](../web/README.md): battle UI, portfolio, prompt parsing, deterministic transaction summary, funding adapters and function-call session keys |
 | WAR | Standalone [contract](../contracts/war/src/lib.rs) is present: USDC-backed decaying war bond. The arena still has internal credit and is not wired to WAR |
 | Furnace | Standalone [contract](../contracts/furnace/src/lib.rs) is present: NEP-141 sink and ledger. Arena wiring from the older proposal is not complete |
-| OpenSpec | One change, [redesign-permissionless-robinhood-arena](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md), specifies the target; none of its tasks is implemented |
+| OpenSpec | Ten planned changes in [OpenSpec](openspec/README.md) specify the target; tasks remain unchecked until implementation and verification |
 
 The economics in this source are **55/35/5/5**, seven-day credit, a USDC bond and TWAP-based price inputs. The [target specification](product-spec.md) replaces them for new arena work: no bond, no TWAP, no swap-based reward conversion or credit loop.
 

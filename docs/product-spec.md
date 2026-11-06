@@ -1,6 +1,6 @@
 # Permissionless Robinhood arena: product specification
 
-Status: **planned, not implemented**. Target networks: **NEAR testnet and Robinhood Chain testnet**. This is the product source of truth for the redesign. [Current state](current-state.md) describes the code at the PR base; [OpenSpec](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md) is the proposed implementation contract. No mainnet launch, application change, deployment or migration is included here.
+Status: **planned, not implemented**. Target networks: **NEAR testnet and Robinhood Chain testnet**. This is the product source of truth for the redesign. [Current state](current-state.md) describes the code at the PR base; [OpenSpec](openspec/README.md) is the proposed implementation contract. No mainnet launch, application change, deployment or migration is included here.
 
 ## Product and four hackathon tracks
 
@@ -25,7 +25,7 @@ Technical workstreams (chain abstraction, scoring/settlement, player AI, and int
 | --- | --- |
 | Creator | Any user or the protocol can create a battle, choose communities and one mode, and participate with a real positive token deposit before round 1 |
 | Player | Deposits an approved community token; earns losing-token rewards only through a position in the final winning community |
-| Protocol creator | Follows the same audit, deposit and locking rules; receives the full 0.1% fee instead of splitting it with a creator |
+| Protocol creator | Follows the same audit, deposit and locking rules; receives the full configured fee instead of splitting it with a creator |
 | Player agent | Acts for one user using explicitly delegated funds, methods, destinations, time and spending limits |
 | Infrastructure workers | Audit, collect observations, schedule rounds, index events and relay authorized payouts; cannot spend a player's wallet or delegated player budget |
 | Asset custody / representation contracts | Verify receipts, mint only backed amounts, reserve and consume backing once |
@@ -42,7 +42,7 @@ Permissionless creation does not mean permissionless oracle submissions or unres
 4. **Round live.** Capture valid start observations and run a **30-second** round. Prices are point observations; **no TWAP** is used. Late scheduler execution must not shift the already recorded interval or use its current price as the scheduled close.
 5. **Round resolution.** A unique best score produces the final winner. If the best score is tied, only those tied leaders enter another 30-second round. Reset all score inputs, including volume and drawdown peaks, for that new round. There is no overtime cap.
 6. **Overtime.** Deposits stay closed. All original vaults, including eliminated communities, remain locked until one final winner is determined. A tie does not refund, distribute fees or release an eliminated vault.
-7. **Settlement allocation.** Each losing vault is split independently: 99.9% to winning participants, 0.05% to the creator and 0.05% to the protocol. A protocol-created battle allocates the entire 0.1% fee to the protocol. Final-winner participants share each losing token in proportion to their locked winning-token units.
+7. **Settlement allocation.** Each losing vault uses the fee and creator share snapshotted at creation. Defaults are 99.9% to winners, 0.05% to creator and 0.05% to protocol. Protocol can adjust the total fee and creator share for future battles; a protocol-created battle allocates its entire configured fee to protocol. Final-winner participants share each losing token in proportion to their locked winning-token units.
 8. **Payout and escrow proceed independently.** Losing-token entitlements become available without waiting for the DAO. They are paid as those original assets on Robinhood, not swapped into the winner's token or USDC. Winning principal is placed in DAO escrow; no automatic return or burn is implied. Available entitlement, pending transfer and confirmed receipt are separate statuses.
 
 The pre-lock scheduling window, cancellation/refund policy and response to invalid live observations require implementation design (OPEN below). They cannot create an implicit tie refund or an overtime limit.
@@ -68,9 +68,9 @@ Approval requires GoPlus checks that reject critical risks, plus an independent 
 
 | Scenario | Required result |
 | --- | --- |
-| Two communities; A has the higher price gain | A wins; B's original token is allocated per the 99.9/0.05/0.05 rule; A principal enters DAO escrow |
+| Two communities; A has the higher price gain | A wins; B's original token is allocated under the snapshotted fee (99.9/0.05/0.05 at defaults); A principal enters DAO escrow |
 | Three communities; A wins over B and C | Both B and C are losing vaults; A participants receive two separate token entitlements |
-| Protocol creates a battle | A real protocol position is locked; every losing token charges 0.1% to the protocol and no additional creator fee |
+| Protocol creates a battle | A real protocol position is locked; every losing token charges its configured fee to the protocol and no additional creator fee |
 | Best price scores are -5%, -10%, -20% | -5% wins; losses are not clamped to zero |
 | All observed prices are nondecreasing | Maximum drawdown is zero; equal best zero scores enter overtime |
 | A/B tie twice; C was eliminated in round 1 | A/B compete with fresh inputs each time; C's vault stays locked; no new deposit is accepted |

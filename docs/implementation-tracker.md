@@ -8,7 +8,7 @@ Build a permissionless arena on NEAR testnet with original-token custody and pay
 
 ## Specifications
 
-[Product](product-spec.md), [rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [ecosystem](ecosystem.md), [GoPlus policy](goplus-audit.md), [deployment](deployment.md), [security](security-review.md), [roadmap](implementation-roadmap.md), [current state](current-state.md), [OpenSpec](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md).
+[Product](product-spec.md), [rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [ecosystem](ecosystem.md), [GoPlus policy](goplus-audit.md), [deployment](deployment.md), [security](security-review.md), [roadmap](implementation-roadmap.md), [current state](current-state.md), [OpenSpec](openspec/README.md).
 
 When publishing to GitHub, expand these relative links to repository blob links on docs/near-hackathon-arena-spec so they resolve from the issue.
 
@@ -21,8 +21,8 @@ Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms.
 - At least two communities; freeze communities/deposits before round 1; real positive creator participation including protocol creators; no bond.
 - Creator selects Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown. Market cap is price × circulating supply; volume is round quote-volume / initial market cap; drawdown is maximum peak-to-trough decline.
 - Every round is 30 seconds, no TWAP. Tied best candidates repeat with reset inputs without a cap. Deposits stay closed and every original vault stays locked.
-- Each losing token: 99.9% proportional winning-player reward, 0.05% creator and 0.05% protocol; protocol-created battles pay the full 0.1% to protocol.
-- Collect `floor(losing_vault / 1000)` first; split that fee 50:50 (odd unit to protocol), or all to protocol for a protocol creator. Largest remainder applies only to participant rewards.
+- At default settings, each losing token: 99.9% proportional winning-player reward, 0.05% creator and 0.05% protocol; protocol-created battles pay the full 0.1% to protocol.
+- Snapshot protocol-configured fee and creator share at battle creation. Collect `floor(losing_vault * fee_bps / 10000)` first; allocate `floor(fee * creator_share_bps / 10000)` to a user creator and the remainder to protocol, or all to protocol for a protocol creator. Largest remainder applies only to participant rewards.
 - Payouts remain original losing tokens on Robinhood; distinguish allocated rights from confirmed transfer. Winning principal goes to DAO; rewards do not wait.
 - NEP-141 backing is 1:1 actual received assets; exclusive reservations prevent redemption/payout/burn double use.
 - GoPlus critical risk rejects, unknown mandatory data holds approval; LP separately must exceed USD 10,000.

@@ -13,7 +13,7 @@ Amounts and nanosecond timestamps are decimal strings, never JavaScript numbers.
 | LockedSnapshot | Battle, original communities, positive vault totals, beneficiary deposits, creator position, destinations, config hash |
 | Round | Index, candidates, start/end, mode, policy hash, evidence references, status |
 | Position | Beneficiary, community, actual credited units, consumed deposit receipts, snapshot |
-| Allocation | Battle/final round, winner, per-token total fee (floor(vault / 1000)), fee split, winner-pool remainder order, immutable allocation ID |
+| Allocation | Battle/final round, winner, per-token total fee (floor(vault * snapshotted_fee_bps / 10000)), snapshotted creator share and protocol recipient, winner-pool remainder order, immutable allocation ID |
 | Payout | Payout/entitlement IDs, asset, amount, recipient, path, nonce, payload hash, attempts, receipt, status |
 | BackingView | B, M, E, P, D, U amounts, source block/hash, finality, reconciliation status |
 | Escrow | Winning asset/amount, participant attribution, backing, decision/execution references; no assumed vote parameters |

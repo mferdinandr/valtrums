@@ -6,7 +6,7 @@ Status: **planned**. All balances are integers in the asset's declared smallest 
 
 For final winner community W, let `C_W > 0` be its locked token units and `d_u` the units of participant u in W. The participant weight is `d_u / C_W`, using actual credited winning-token deposits, not USD value, vote weight or an agent's nominal transfer amount.
 
-For **each** losing community j with locked vault `L_j`:
+At default fee settings, for **each** losing community j with locked vault `L_j`:
 
 | Beneficiary | User-created battle | Protocol-created battle |
 | --- | --- | --- |
@@ -20,15 +20,15 @@ All original nonwinning communities are losing vaults, including communities eli
 
 ## Integer rounding and conservation
 
-Use checked wide arithmetic. Take the **total 0.1% fee first**, then divide that fee equally between creator and protocol. Each receives an ideal 0.05% of the losing vault, not 0.5%. For a protocol creator, the protocol receives the whole fee.
+Protocol configures total `fee_bps` and `creator_share_bps` independently between 0 and 10,000 inclusive. Defaults are 10 bps (0.1%) and 5,000 bps (50% of fee). Snapshot both values and protocol recipient when a battle is created; changes affect future battles only. Use checked wide arithmetic. Protocol-created battles pay the whole fee to protocol.
 
-1. Compute `fee_j = floor(L_j / 1000)` once for each losing token. The fractional fee remainder stays with winners: `Q_j = L_j - fee_j`.
-2. For a user-created battle, `creator_fee_j = floor(fee_j / 2)` and `protocol_fee_j = fee_j - creator_fee_j`. If the fee is odd, its one indivisible remaining unit goes to the protocol. For a protocol-created battle, `creator_fee_j = 0` and `protocol_fee_j = fee_j`.
-3. Do not use largest remainder to apportion reward versus revenue: it must never increase the total fee above `floor(L_j / 1000)`.
+1. Compute `fee_j = floor(L_j * fee_bps / 10000)` once for each losing token. The fractional fee remainder stays with winners: `Q_j = L_j - fee_j`.
+2. For a user-created battle, `creator_fee_j = floor(fee_j * creator_share_bps / 10000)` and `protocol_fee_j = fee_j - creator_fee_j`. The protocol receives the remainder after creator rounding. For a protocol-created battle, `creator_fee_j = 0` and `protocol_fee_j = fee_j`.
+3. Do not use largest remainder to apportion reward versus revenue: it must never increase the total fee above `floor(L_j * fee_bps / 10000)`.
 4. Within `Q_j` only, allocate among winning beneficiaries using `floor(Q_j * d_u / C_W)`, then distribute remaining units by descending fractional remainder. Break equal remainders by canonical NEAR beneficiary account ID bytes in ascending order.
 5. Aggregate a beneficiary's winning deposits before calculating their share. Snapshot the ordered beneficiary list so pagination or claim order cannot affect dust.
 
-Percentages describe ideal amounts; indivisible units approximate them. A vault below 1,000 atomic units pays zero fee. Do not round each claim independently or allocate all dust to the last caller. Recipient mapping to Robinhood must be authorized and frozen before a payout is signed.
+Percentages describe ideal amounts; indivisible units approximate them. At the default fee, a vault below 1,000 atomic units pays zero fee. Do not round each claim independently or allocate all dust to the last caller. Recipient mapping to Robinhood must be authorized and frozen before a payout is signed.
 
 For every losing token independently:
 
@@ -37,6 +37,8 @@ For every losing token independently:
 `Q_j = sum_u reward_(u,j)`.
 
 The final winning principal `C_W` is separately conserved in DAO escrow. There is no meaningful sum of different tokens without a valuation; never use a USD total as the custody conservation check.
+
+The examples below use the initial default fee settings.
 
 ### Two-community example
 
@@ -140,4 +142,4 @@ Destroying only NEAR representations does not prove Robinhood tokens were burned
 
 ## Required accounting checks
 
-Implementation tests must cover per-token conservation, all fee recipients, creator participation on either outcome, two/three communities, protocol creation, tiny and uneven vaults, deterministic dust, decimal mismatch, taxed input versus policy, duplicate deposit receipts, concurrent redemption/settlement/burn attempts, partial payout completion, lost callbacks and broadcast retries without duplicate payment. See [OpenSpec assets](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-asset-representation/spec.md) and [settlement](openspec/changes/redesign-permissionless-robinhood-arena/specs/arena-settlement/spec.md).
+Implementation tests must cover per-token conservation, all fee recipients, creator participation on either outcome, two/three communities, protocol creation, tiny and uneven vaults, deterministic dust, decimal mismatch, taxed input versus policy, duplicate deposit receipts, concurrent redemption/settlement/burn attempts, partial payout completion, lost callbacks and broadcast retries without duplicate payment. See [OpenSpec assets](openspec/changes/arena-asset-representation/specs/arena-asset-representation/spec.md) and [settlement](openspec/changes/arena-settlement/specs/arena-settlement/spec.md).

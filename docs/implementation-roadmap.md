@@ -2,7 +2,7 @@
 
 Status: **proposal; implementation tasks are unfinished**. The documentation PR changes no application code or deployment.
 
-Canonical requirements: [product](product-spec.md), [battle rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [security](security-review.md), [ecosystem](ecosystem.md). [OpenSpec proposal](openspec/changes/redesign-permissionless-robinhood-arena/proposal.md), [design](openspec/changes/redesign-permissionless-robinhood-arena/design.md) and [tasks](openspec/changes/redesign-permissionless-robinhood-arena/tasks.md) specify the target.
+Canonical requirements: [product](product-spec.md), [battle rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [security](security-review.md), [ecosystem](ecosystem.md). [OpenSpec change map](openspec/README.md) and [shared design](openspec/arena-design.md) specify the target.
 
 Implementation tracker: [publish-ready parent issue](implementation-tracker.md). GitHub issue URL is pending verified publication; do not infer that it exists from this document.
 
@@ -13,7 +13,7 @@ Implementation tracker: [publish-ready parent issue](implementation-tracker.md).
 | 3 | Multi-community lifecycle and creator deposit | 2 | Two/three nonempty communities; real creator/protocol stake; no bond; immutable snapshot; late deposits recoverable |
 | 4 | GoPlus and independent LP audit | 1; gates approval in 3 | Critical risk rejects, unknown holds Pending, LP strictly > USD 10,000; tax/admin policy resolved before live approval |
 | 5 | Four scores and overtime | 3, 4, observation policy | Exact signed/rational math, 30-second rounds, no TWAP; repeated ties reset leaders only, all vaults locked |
-| 6 | Per-token settlement, revenue and Robinhood payout | 2, 5 | 99.9/0.05/0.05 or 99.9/0.1; deterministic rounding; final native receipts and idempotent retries |
+| 6 | Per-token settlement, revenue and Robinhood payout | 2, 5 | Configurable snapshotted fee and creator share; deterministic rounding; final native receipts and idempotent retries |
 | 7 | Principal escrow and DAO design | 2, 6 for allocation; governance decision OPEN | Principal isolated; losing-token payouts independent; no invented quorum/weight/deadline/fallback |
 | 8 | NEAR AI player agents and MCP | 3–6, enforceable authorization | Bounded budget, destinations, expiry/revocation; preview integrity; infrastructure cannot spend user funds |
 | 9 | UI, observability and full demo | 1–8 | Separate entitlement/transfer/DAO status, event replay, alerts; recorded two/three-community and failure demos |
