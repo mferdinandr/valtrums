@@ -34,7 +34,7 @@ DAO membership, weights, quorum, deadline, execution/fallback; tax thresholds an
 
 ## Ordered implementation checklist
 
-- [ ] 1. Verify testnet integrations and all required data sources; record live versus fixture evidence.
+- [ ] 1. Verify testnet integrations and all required data sources, including planned Intents routing and Bitte orchestration; record live versus fixture evidence. Evaluate SputnikDAO/Trezu, OutLayer and Agent Market separately without marking candidates integrated.
 - [ ] 2. Implement backing, NEP-141 representation, redemption and burn with receipt replay protection and conservation.
 - [ ] 3. Implement multi-community lifecycle, locked snapshots and actual creator/protocol deposits.
 - [ ] 4. Integrate GoPlus and separate LP audit; keep unresolved required policy/data Pending.

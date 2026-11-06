@@ -32,3 +32,14 @@ The documentation and acceptance evidence SHALL identify Memecoins With Mechanic
 #### Scenario: Social Money evidence
 - **WHEN** describing community entitlements and principal escrow
 - **THEN** the demonstration distinguishes these from the still OPEN DAO voting rules
+
+### Requirement: Planned Intents and Bitte integration
+The target SHALL include NEAR Intents funding/routing and Bitte agent orchestration, with roles distinct from Chain Signatures authorization and source receipt verification. Unverified testnet support SHALL remain an explicit integration gap rather than silently making these dependencies optional.
+
+#### Scenario: Direct deposit only
+- **WHEN** a direct Robinhood testnet deposit and payout succeed without Intents or Bitte
+- **THEN** the custody subsystem can be evidenced but the planned Intents and Bitte acceptance remains incomplete
+
+#### Scenario: Intended service flow
+- **WHEN** a supported funding action is orchestrated through Bitte and routed through Intents
+- **THEN** evidence binds the preview, authorization, route status and final custody receipt to the same user action; fixture evidence remains labeled

@@ -6,6 +6,7 @@ All implementation work below is unfinished. Completing documentation does not c
 
 - [ ] 1.1 Verify NEAR/Robinhood testnet identity, signer key/domain/path, gas and receipt evidence
 - [ ] 1.2 Verify GoPlus Robinhood testnet support and required fields; label fixtures
+- [ ] 1.4 Prove the planned Intents funding route and Bitte orchestration on the configured testnets; track unsupported coverage explicitly
 - [ ] 1.3 Specify price, circulating supply, volume, LP, cadence and boundary/finality policy
 
 ## 2. Backing and representations

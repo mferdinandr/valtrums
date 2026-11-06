@@ -8,7 +8,7 @@ Implementation tracker: [publish-ready parent issue](implementation-tracker.md).
 
 | Order | Work | Depends on | Acceptance gate |
 | --- | --- | --- | --- |
-| 1 | Testnet integration and data sources | None | Actual chain/signer/GoPlus/market-data evidence; unsupported paths labeled; frozen observation policy feasible |
+| 1 | Testnet integration and data sources | None | Actual chain/signer/GoPlus/market-data evidence plus planned Intents routing and Bitte orchestration; unsupported paths labeled; frozen observation policy feasible |
 | 2 | Backing, NEP-141, redemption and burn | 1, custody/finality design | Actual-received mint; replay prevention; exact normalization; exclusive liabilities and recovery |
 | 3 | Multi-community lifecycle and creator deposit | 2 | Two/three nonempty communities; real creator/protocol stake; no bond; immutable snapshot; late deposits recoverable |
 | 4 | GoPlus and independent LP audit | 1; gates approval in 3 | Critical risk rejects, unknown holds Pending, LP strictly > USD 10,000; tax/admin policy resolved before live approval |
