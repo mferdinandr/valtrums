@@ -8,10 +8,10 @@ Deliver the permissionless multi-community game with correct original-token cust
 
 ## Decisions
 
-1. Freeze community, deposit, creator participation, policy and fee identity before round 1. No bond; every community and creator has a positive backed position.
+1. Snapshot revenue policy and fee recipients at battle creation; freeze community, deposit, creator participation and observation policy before round 1. No bond; every community and creator has a positive backed position.
 2. Use fixed 30-second intervals and point observations. Exact formulas, rational comparisons and validity rules are in [battle rules](../../../battle-rules.md). Missing data holds resolution pending.
 3. Repeat tied leaders only with fresh score inputs indefinitely; keep all original vaults locked.
-4. Collect each losing token's total fee as floor(vault / 1000), split that fee 50:50 with an odd unit assigned to protocol, and allocate only the winner pool using deterministic largest remainder. A protocol creator receives the whole fee. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
+4. Collect each losing token's fee as floor(vault * snapshotted_total_fee_bps / 10000); creator receives floor(fee * snapshotted_creator_share_bps / 10000), protocol the remainder, or all fee for protocol-created battles. Defaults are 10 and 5000 bps. Allocate only the winner pool using deterministic largest remainder. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
 5. Separate availability from foreign execution. Reserve before requesting a signature, bind nonce/payload to payout identity, reconcile before retry, confirm only matching final receipt.
 6. Separate infrastructure evidence/scheduling/relay roles from user-specific token-spending grants. Model text is never authorization.
 7. Apply the selected [GoPlus mapping](../../../goplus-audit.md): critical flag/tax-path rejection, required unknown-data hold and independent LP > USD 10,000. Tax/admin admissibility and evidence freshness remain OPEN.
@@ -60,3 +60,10 @@ DAO mechanism including membership, weight, quorum, deadlines and fallback; audi
 ## Configurable revenue amendment
 
 Revenue is adjustable by protocol authority: total fee and creator share default to 10/5000 bps, each within [0,10000] with no additional business cap. Creation-time snapshots override earlier fixed-fee wording and lock-time policy selection: existing battles never inherit later updates. Use the generalized settlement formula; previous 0.1% and equal-split examples remain default-policy examples. Emit versioned policy updates and expose snapshots before deposit.
+
+## Confirmed testnet implementation decisions
+
+- Use an authorized verifier with explicit RPC/finality trust; source receipt evidence alone does not authenticate a NEAR beneficiary or authorize minting.
+- Buy/sell tax limits are 5%; transfer tax must be zero. Active privileges to pause transfers, change holder balances/taxes or address lists are ineligible; unknown effective authority is Pending. Mint admissibility and evidence TTL still need explicit configuration.
+- Creator chooses the gathering deadline. No live halt/refund is triggered by falling prices or LP. Missing historical round evidence holds resolution Pending without shifting its interval.
+- Implement DAO escrow and adapter boundary first. Voting design and live disposition activation remain deferred, so tasks 7.2/7.3 cannot be marked complete solely from escrow tests.

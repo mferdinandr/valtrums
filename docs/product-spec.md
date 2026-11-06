@@ -98,3 +98,7 @@ The [roadmap](implementation-roadmap.md) orders these gates. This proposal repla
 ## Revenue policy update
 
 Revenue percentages above are defaults. Protocol authority can configure total fee and creator share, each in integer basis points from 0 to 10000, without an extra business cap. Default values are 10 and 5000. Every battle snapshots values, version and beneficiaries at creation before deposits; later updates apply only to new battles. The entire fee of protocol-created battles goes to protocol. See [token economics](token-economics.md).
+
+## Confirmed implementation policy
+
+The hackathon receipt verifier is authorized infrastructure with explicit RPC/finality trust. Approval uses buy/sell tax <=5%, zero transfer tax, and rejection of active authority to freeze transfers, alter balances, taxes or address lists; unknown effective authority remains Pending. Mint-capability admissibility and evidence freshness remain configurable acceptance gaps, not implicit approval. The creator chooses the gathering deadline. Falling price or liquidity after lock does not halt or refund the battle; missing historical evidence holds resolution Pending. DAO is scoped to escrow and adapter for now: voting and live disposition activation remain deferred.

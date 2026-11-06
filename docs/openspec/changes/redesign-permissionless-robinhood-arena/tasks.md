@@ -23,13 +23,13 @@ All implementation work below is unfinished. Completing documentation does not c
 
 ## 4. Audit
 
-- [ ] 4.1 Implement the selected GoPlus field mapping, strict flag/tax normalization, Reject-over-Pending precedence and per-field reasons
+- [x] 4.1 Implement the selected GoPlus field mapping, strict flag/tax normalization, Reject-over-Pending precedence and per-field reasons
 - [ ] 4.2 Resolve tax/admin admissibility and freshness policy before enabling live approval
 - [ ] 4.3 Integrate separate LP check strictly above USD 10000; test equality and missing evidence
 
 ## 5. Scoring and overtime
 
-- [ ] 5.1 Implement four exact formulas with signed/rational arithmetic
+- [x] 5.1 Implement four exact formulas with signed/rational arithmetic
 - [ ] 5.2 Implement 30-second point observations and mode-specific coverage checks without TWAP
 - [ ] 5.3 Implement unlimited leader-only reset rounds, closed deposits and all-vault lock; test repeated ties
 
@@ -38,6 +38,7 @@ All implementation work below is unfinished. Completing documentation does not c
 - [ ] 6.1 Implement configurable per-token revenue, authority-only versioned updates, creation-time snapshots, default 10/5000 bps, and deterministic rounding
 - [ ] 6.2 Implement stable payout IDs, reservation-bound payload/nonce signing and original-token transfers
 - [ ] 6.3 Test final receipts, replacement/revert/timeout/crash retries and no double payment
+- [ ] 6.4 Test custom fee/split, zero/full boundaries, invalid and unauthorized updates, creation-time snapshot stability during gathering/overtime, and event/version consistency
 
 ## 7. DAO escrow
 
@@ -58,4 +59,11 @@ All implementation work below is unfinished. Completing documentation does not c
 - [ ] 9.3 Record two/three-community, protocol creator, negative/zero scores, repeated ties, rounding, incomplete audit and payout retry demos
 - [ ] 9.4 Run target tests and independent review; preserve implementation tracker until acceptance complete
 
-- [ ] 6.4 Test custom fee/split, zero/full boundaries, invalid and unauthorized updates, creation-time snapshot stability during gathering/overtime, and event/version consistency
+
+## Implementation evidence (not completion of contract or live gates)
+
+Initial TypeScript scoring, revenue-policy arithmetic, GoPlus eligibility adapters and authorized source-receipt verification are being implemented under `agent/src/arena-*.ts` and `robinhood-receipt.ts`. Unit-test evidence does not complete mint, lifecycle, payout or public-service acceptance tasks. Public-service probes currently fail network access in the execution environment; no testnet integration is marked verified.
+
+DAO tasks 7.2 and live activation in 7.3 are explicitly deferred by the owner; escrow/adapter development can proceed independently. User-selected strict tax/admin rules and creator-chosen gathering deadline supersede earlier OPEN/default descriptions. Falling price/LP after lock does not halt the battle.
+
+Verified foundation evidence: 113 targeted TypeScript tests passed (audit, audit runner, scoring, revenue, receipt); 293 arena unit tests passed, including 22 v2 scoring/revenue tests. Tasks 4.1 and 5.1 are complete at their algorithm/adapter scope. Live integration, contract lifecycle, backing, payout, user agents, MCP and UI acceptance remain unfinished. Rust state extension requires a fresh isolated deployment; historical initialized accounts must not be upgraded without a migration.
