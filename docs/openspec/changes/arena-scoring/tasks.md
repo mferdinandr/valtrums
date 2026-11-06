@@ -5,13 +5,13 @@ Check tasks only after implementation and verification. Arithmetic alone does no
 ## Exact scoring
 
 - [x] Implement four exact signed rational formulas.
-- [ ] Specify and enforce canonical price, supply and quote-volume scales in the frozen observation policy.
+- [x] Specify and enforce canonical price, supply and quote-volume scales in the frozen observation policy.
 - [x] Verify negative gains, exact ties, supply changes, initial market cap, zero volume, interim peaks and wide-integer boundaries.
 - [x] Reject nonpositive prices or supply, malformed values and arithmetic overflow without assigning a default score.
 
 ## Round evidence
 
-- [ ] Define versioned source, quote, eligible pools, quantization, boundary tolerance, cadence, freshness and finality policy before lock.
+- [x] Define versioned source, quote, eligible pools, quantization, boundary tolerance, cadence, freshness and finality policy before lock.
 - [x] Bind each observation to battle, round, candidate asset, mode, source, policy, interval and evidence provenance.
 - [x] Record immutable 30-second start and end boundaries and prevent late scheduling from shifting them.
 - [x] Validate required endpoint price and circulating-supply evidence for the selected mode.
