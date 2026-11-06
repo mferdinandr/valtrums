@@ -1,33 +1,50 @@
-# Deployment
+# Deployment: existing system and target rollout
 
-## NEAR testnet
+## Web and image delivery (disabled)
 
-The stack is deployed on testnet with mock tokens, a mock DEX and on-chain settlement execution. The mock tokens are open-mint and the DEX uses fixed rates that its owner can change, so this deployment is for demos and testing only.
+[CD is disabled](ci-cd.md) at owner request; main CI does not deploy web or publish agent images. The workflow is retained only for future setup. Hosting credentials and project variables require one-time configuration. This delivery does not deploy the target contracts or start an agent process.
 
-| Role | Account |
-| --- | --- |
-| Owner | `valtrum-8875bb.testnet` |
-| Arena | `valtrum-arena-8875bb.testnet` |
-| Router | `valtrum-router-8875bb.testnet` |
-| Mock DEX (sandbox and fallback) | `valtrum-dex-8875bb.testnet` |
-| Swap adapter | `valtrum-refdex-8875bb.testnet` |
-| Liquidity account | `lp.valtrum-8875bb.testnet` |
-| Mock USDC (6 decimals) | `valtrum-usdc-8875bb.testnet` |
-| Mock PEPE (18 decimals) | `valtrum-pepe-8875bb.testnet` |
-| Mock SHIB (18 decimals) | `valtrum-shib-8875bb.testnet` |
-| Agent | `agent.valtrum-8875bb.testnet` |
-| Treasury | `treasury.valtrum-8875bb.testnet` |
-| Burn account | `burn.valtrum-8875bb.testnet` |
+## Existing implementation: supported operations
 
-Settings at deployment: bond 5 USDC, deposit window 300 seconds, on-chain execution through the mock DEX with the burn account above. DEX rates: 1 USDC = 1000 PEPE = 4 SHIB, with 100,000 USDC, 100,000,000 PEPE and 1,000,000 SHIB of liquidity.
+These commands operate the **legacy NEAR arena**, whose rules and recorded accounts are in [current-state.md](current-state.md). This documentation PR did not run them or verify a live deployment.
 
-Read the live configuration:
+Requirements: Rust stable with wasm32-unknown-unknown, near-cli-rs, Node >=22 and the pnpm version pinned in package.json. From repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm -F @valtrum/agent test
+pnpm -F @valtrum/web test
+```
+
+Contract checks, from contracts/:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test --workspace --exclude valtrum-integration
+cargo test -p valtrum-integration
+```
+
+Sandbox tests may download a binary. Existing deployment scripts create accounts, deploy and initialize the legacy arena/router/mock contracts; use a fresh suffix. Reinitialization of an already initialized account fails. They do not deploy the target Robinhood system.
+
+```bash
+scripts/deploy-testnet.sh <fresh-suffix>
+DEX_MODE=mock scripts/demo-battle-testnet.sh <suffix>
+```
+
+The default demo uses Ref exchange pools instead. It requires the Ref adapter already deployed, registered and wired, followed by scripts/setup-ref-pools.sh <suffix>. That script creates new pools on every run. Historical exchange: ref-finance-101.testnet, pools 2899/2900 for suffix 8875bb. Query configuration rather than assuming these remain current.
+
+The exchange adapter, exchange and every receiving account must have token storage registration; exchange internal token registration is also required. Ref settlement dispatch uses 300 Tgas. The demo uses a 40-second TWAP window, 10-second passes and a 120-second battle: these are legacy settings, not the target 30-second/no-TWAP rule. Run only one agent per arena key.
+
+Read the historically recorded arena configuration:
 
 ```bash
 near contract call-function as-read-only valtrum-arena-8875bb.testnet get_config json-args '{}' network-config testnet now
 ```
 
-Mint test tokens for an account (anyone can):
+Mock tokens are open-mint and have fixture values. Minting registers its recipient:
 
 ```bash
 near contract call-function as-transaction valtrum-usdc-8875bb.testnet mint \
@@ -35,78 +52,9 @@ near contract call-function as-transaction valtrum-usdc-8875bb.testnet mint \
   prepaid-gas '30 Tgas' attached-deposit '0 NEAR' sign-as you.testnet network-config testnet sign-with-legacy-keychain send
 ```
 
-An account must be registered with a token (`storage_deposit`) before it can receive it; `mint` registers the account it mints to.
+Keys from the legacy script use ~/.near-credentials. Contract storage needs funded NEAR; actual cost depends on deployed code/state. Historical arena storage was about 7.3 NEAR, not a target estimate.
 
-## Swaps on the testnet exchange
-
-Settlement and the USDC deposit route swap on the Ref Finance v1 exchange on testnet (`ref-finance-101.testnet`) through the swap adapter. The router and the arena send the adapter the same swap message they used to send the mock DEX, so only their `dex` account differs: `set_dex` on the router and `set_execution` on the arena point at the adapter.
-
-- The adapter forwards each swap to the exchange with the caller's minimum as the floor. The exchange pays the output to the adapter with a plain transfer and does not call it back, so the adapter measures the output by its balance change, then pays the receiver. Only one swap runs at a time; a second one is refused and refunded.
-- Pools are made by `scripts/setup-ref-pools.sh <suffix>` from the liquidity account: PEPE/USDC at 0.001 USDC per PEPE and SHIB/USDC at 0.25 USDC per SHIB, each with 100,000 USDC. The script prints the pool ids and routes both pairs in the adapter (`get_pool { token_in, token_out }`). The pools made for the current deployment are 2899 (PEPE) and 2900 (SHIB).
-- The adapter and the liquidity account must be registered with the exchange (`storage_deposit`, then `register_tokens` for each coin), and the exchange itself must be registered with each token. Without the exchange registration a deposit is silently not credited. Every account that receives a coin (arena, router, treasury, burn account, adapter) must be registered with that token.
-- The agent reads prices, depth and quotes from the pools with `MARKET_DATA=ref` and `REF_EXCHANGE_ID=ref-finance-101.testnet`.
-- A settlement step can take the full 300 Tgas of a transaction (arena, adapter, exchange and back). The agent attaches that much to `execute_step`; with 200 Tgas the step is rolled back.
-- Pools have a 0.3% fee and finite depth, so the amounts a demo prints are not round numbers.
-
-The sandbox tests still use the mock DEX because the sandbox cannot host the exchange.
-
-## Demo battle
-
-`scripts/demo-battle-testnet.sh <suffix>` plays one full battle on the deployment above and prints where the value went. By default the swaps run on the exchange pools (`DEX_MODE=mock` uses the mock DEX instead). It starts the agent locally (on-chain execution, market data from the pools, a 40-second price window and 10-second passes), creates three players, proposes a 120-second battle between PEPE and SHIB, deposits on both sides, lets the agent lock it, moves the PEPE price up 25% with a real buy in the PEPE pool, waits for settlement, then claims and withdraws.
-
-A complete run on the mock DEX (battle 1):
-
-| Step | Result |
-| --- | --- |
-| Audit and approval | by the agent, from the DEX's liquidity and rates |
-| Vaults | 400 PEPE on side A, 160 SHIB on side B |
-| Prices | PEPE 0.001 to 0.00125 USD (+25%), SHIB unchanged: side A wins |
-| Dump | 160 SHIB sold for 40 USDC |
-| Buy | 22 USDC (55%) bought 22,000 PEPE |
-| Burn | 2 USDC (5%) bought 2,000 PEPE, sent to the burn account |
-| Return | 2 USDC (5%) fee booked for the treasury |
-| Claim by the winner | 22,400 PEPE (400 principal + 22,000 reward) withdrawn, plus 14 USDC of credit (35%) valid for 7 days |
-| Creator | the 5 USDC bond returned |
-| Left in the arena | 0 PEPE and 16 USDC: the 14 USDC credit pool and the 2 USDC fee |
-
-The numbers add up: nothing was created or lost beyond the burn.
-
-A complete run on the exchange pools (battle 6):
-
-| Step | Result |
-| --- | --- |
-| Prices | PEPE 0.0015654 to 0.0019567 USD (+25.0%, read from its pool), SHIB flat: side A wins |
-| Vaults | 400 PEPE on side A, 160 SHIB on side B |
-| Dump | 160 SHIB sold in the SHIB pool for 39.832284 USDC (pool fee and price impact included) |
-| Buy | 21.907756 USDC (55%) bought 11,160.88 PEPE |
-| Burn | 1.991614 USDC (5%) bought 1,014.45 PEPE, sent to the burn account |
-| Return | 1.991615 USDC (5%) fee booked for the treasury |
-| Credit | 13.941299 USDC (35%) of locked credit for the winner, valid for 7 days |
-| Claim by the winner | 11,560.88 PEPE (400 principal + 11,160.88 reward) withdrawn |
-| Adapter afterwards | no swap in flight and no coin of this battle left in it |
-
-The four profit shares add up to the 39.832284 USDC the dump produced. The pool, not a fixed rate, decides the amounts, so they differ slightly from a mock run. Each battle also moves the PEPE pool price; the demo script sizes its buy from the pool as it stands.
-
-Run one agent per arena key. During this work a leftover agent from an earlier run (mock market data, same key) locked a battle with the wrong prices and voided another; the demo script now starts the agent as a single process and stops it on exit.
-
-The agent needs a node that does not rate-limit: the public `rpc.testnet.near.org` answered HTTP 429 during the first attempt and stalled the run. The script defaults to `https://test.rpc.fastnear.com`; set `NEAR_RPC_URL` to use another provider.
-
-## Deploying your own copy
-
-```bash
-cargo install near-cli-rs --locked
-scripts/deploy-testnet.sh <suffix>
-```
-
-The script builds the contracts, creates the accounts (the owner and the six contract accounts through the testnet faucet, the agent, treasury and burn accounts as sub-accounts of the owner), deploys and initialises everything, registers the holders with each token, wires the arena to the router and the DEX, and sets rates and liquidity. It prints the resulting accounts. Keys are stored by the CLI under `~/.near-credentials`.
-
-Storage is the main cost: about 1 NEAR per 100 KB of contract code, so the arena needs about 7.3 NEAR on its own. Each faucet account receives 10 NEAR.
-
-## The agent
-
-Run it locally or in a container (see [deploy/README.md](../deploy/README.md) and [agent/README.md](../agent/README.md)). It needs the arena id, the agent account id and the agent's private key. On testnet it needs the mock DEX as its market data source because the mock tokens are unknown to public market APIs.
-
-## The web app
+Run the web with deterministic demo data using pnpm -F @valtrum/web dev. To connect to the legacy arena:
 
 ```bash
 NEXT_PUBLIC_NEAR_NETWORK=testnet \
@@ -114,8 +62,19 @@ NEXT_PUBLIC_ARENA_CONTRACT_ID=valtrum-arena-8875bb.testnet \
 pnpm -F @valtrum/web dev
 ```
 
-Without `NEXT_PUBLIC_ARENA_CONTRACT_ID` the app runs on built-in demo data.
+The agent needs ARENA_CONTRACT_ID, AGENT_ACCOUNT_ID and exactly one private-key source. See [agent README](../agent/README.md) and [container instructions](../deploy/README.md). A TS start script does not automatically load the root .env file; export the values or use Compose's env_file. Public RPC throttling can stall work.
 
-## Before using real funds
+## Planned target rollout: no ready-to-run deploy command
 
-Read [security-review.md](security-review.md). In particular: the mock DEX, mock tokens and mock signer are not for mainnet, storage is paid by the contract, and settlement proceeds are authenticated by value.
+Target only NEAR testnet and Robinhood Chain testnet. No target custody, representation, four-mode arena, DAO or MCP deployment script exists yet.
+
+1. Verify [integration gates](ecosystem.md): chain 46630, signer identity/key, gas, tokens, GoPlus coverage and observation providers.
+2. Resolve custody/receipt/finality policy and audit approval policy. Deploy isolated test custody and backed representations with separate infrastructure/player credentials.
+3. Prove actual-received minting, duplicate-receipt rejection, redemption and reservation conservation.
+4. Deploy new arena lifecycle, 30-second observation scheduling, exact scoring and unlimited overtime.
+5. Implement per-token allocation and constrained Robinhood payout; demonstrate lost-response retry without double payment.
+6. Add principal escrow. Keep governance OPEN until explicitly decided; fixture decisions must be labeled.
+7. Add bounded player delegation, NEAR AI and MCP/terminal previews; verify revocation and infrastructure-role rejection.
+8. Record addresses, code hashes, policy versions, signer paths, finality, receipts and failures for a two/three-community demo.
+
+This rollout must not overwrite the historical deployment or claim an unsupported Intents/testnet route. [Security review](security-review.md) and [roadmap](implementation-roadmap.md) list unfinished checks.

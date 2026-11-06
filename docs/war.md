@@ -1,5 +1,6 @@
 # WAR, the war bonds
 
+> Historical/legacy design: this page is not the Robinhood target. The [product specification](product-spec.md) supersedes earlier swap settlement, TWAP, bond and credit plans. Standalone WAR and furnace source exists at the [base snapshot](current-state.md); arena integration/deployment is not implied.
 WAR (`contracts/war`) is an NEP-141 coin that carries a winner's locked profit share, the 35% of the 55/35/5/5 rule. It replaces the arena's internal credit. The spec is `docs/openspec/changes/add-war-bonds`.
 
 ## The rules

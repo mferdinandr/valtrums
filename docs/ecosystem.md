@@ -1,0 +1,37 @@
+# Ecosystem and testnet integration map
+
+Status checked against public documentation on **2026-11-06**. Documentation availability is not an end-to-end integration test. Priority P0 blocks the corresponding target acceptance; P1 is a planned enhancement; P2 is a candidate for evaluation. Priority, implementation status and verified testnet support are separate columns; a planned dependency is not made optional because its testnet compatibility is unverified.
+
+| Partner / component | Function | Priority | Testnet evidence and limits | Repository status |
+| --- | --- | --- | --- | --- |
+| NEAR Protocol / NEP-141 | Battle state and transferable asset representations | P0 | NEAR testnet exists; backing verification is application work, not a token-standard guarantee | Legacy NEAR contracts exist; target planned |
+| NEAR Chain Signatures | Constrained Robinhood transaction signatures | P0 | [Official implementation guide](https://docs.near.org/chain-abstraction/chain-signatures/implementation) lists v1.signer-prod.testnet; verify current key, domain, derivation and Robinhood transaction compatibility | Legacy EVM signer/relay source exists; target transfer policy unimplemented |
+| Robinhood Chain | Original-token custody, deposits and payouts | P0 | [Official connection guide](https://docs.robinhood.com/chain/connecting/) lists testnet chain ID 46630, ETH gas and public RPC https://rpc.testnet.chain.robinhood.com; endpoints are rate limited | No target deployment or verified payout |
+| GoPlus | Critical token-risk evidence | P0 | [Token Security API](https://docs.gopluslabs.io/reference/tokensecurityusingget_1) and [supported-chain discovery](https://docs.gopluslabs.io/reference/getchainslistusingget) must be checked specifically for Robinhood testnet; coverage is unverified | Planned; existing heuristic is not GoPlus |
+| Independent LP/market-data adapter | LP > USD 10,000, price, supply, interval volume and drawdown samples | P0 | Provider, eligible pools, circulating-supply source, coverage and cadence OPEN | Legacy Ref/mock/DexScreener adapters do not satisfy target requirements |
+| NEAR AI Cloud | Player strategy and intent interpretation | P0 | [Quickstart](https://docs.near.ai/cloud/quickstart) documents authenticated inference; service access is distinct from blockchain testnet support | Existing terminal has configurable inference parsing; autonomous bounded player agent planned |
+| NEAR Intents / 1Click | Planned cross-chain funding/routing | P0 | [Official docs](https://docs.near-intents.org/index) describe token discovery, quotes and execution status; Robinhood testnet routes are unverified and must not be assumed | Legacy terminal adapter exists; target route acceptance pending |
+| Bitte | Planned agent orchestration and intent UX | P0 | [Open Agents docs](https://docs.bitte.ai/) describe API/OpenAPI agents; chain/testnet execution compatibility unverified | Planned integration; orchestration does not itself supply a solver, bridge or receipt verifier |
+| FastNEAR | NEAR RPC and indexed data | P1 | [Provider reference](https://docs.fastnear.com/) separates canonical RPC from indexed APIs; verify selected testnet endpoint and rate limits | Legacy demo uses a FastNEAR testnet RPC |
+| Wallet connection | User signing and revocation | P0 | Existing HOT connector code must be tested against actual target grants; cannot infer token caps from gas allowance | Legacy web integration present |
+| SputnikDAO | Candidate community decision infrastructure | P2 evaluation; DAO design is P0 | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists DAO infrastructure; verify testnet contracts and compatibility with principal escrow | Evaluate after DAO requirements; not selected or integrated |
+| Trezu | Candidate treasury/multisig interface | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists treasury tooling; verify testnet availability and authority model | A treasury multisig is not automatically the community's DAO voting policy |
+| OutLayer | Candidate execution policy layer for AI transactions | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists agent transaction tooling; validate testnet policy/receipt flow | Candidate, not integrated; cannot replace arena grant enforcement without evidence |
+| Agent Market | Candidate player-agent discovery/distribution | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists agent marketplace; verify listing/API access and testnet workflow | Candidate, not integrated; listing does not prove funded-agent execution |
+
+## Evidence required before claiming integration
+
+Record chain ID, endpoint, token/custody addresses, code hashes, source commit, timestamp, request/response evidence, finality policy and transaction/receipt links. Keep credentials out of records. Explicitly label fixture versus public-service evidence.
+
+First prove deposit receipt attribution, 1:1 mint, redemption and a constrained original-token payout. Then test all market-data fields for a 30-second interval and GoPlus's mandatory fields. An unsupported chain or missing field holds approval Pending; a canned response may test adapters but cannot be presented as a live audit.
+
+Intents and Bitte are planned target integrations: Intents routes supported funding operations, Bitte orchestrates agent requests, and Chain Signatures authorizes constrained Robinhood transactions. Settlement distributes the original losing tokens without swaps. A direct Robinhood testnet deposit can exercise the custody subsystem, but it does not complete Intents/Bitte acceptance. Unsupported routes remain explicit integration gaps, with labeled fixtures only; do not silently reduce scope or claim unsupported execution.
+
+The owner reports Robinhood support. Attach network-specific evidence for the exact testnet route, assets and API used before claiming it verified in this repository. Record chain support, token coverage and service access separately. NEAR AI inference does not grant wallet authority; signatures do not provide a bridge or execution proof.
+
+## Planned integration acceptance
+
+- **Intents:** record asset discovery, quote, funding authorization, terminal execution/refund status and linkage to the actual custody receipt on the configured testnets. Use provider-returned asset IDs and identify the solver/route.
+- **Bitte:** demonstrate an API/OpenAPI agent request orchestrating a canonical arena preview and a user-authorized action; reconcile it with the same action/payout status used by MCP. Do not identify Bitte as the solver without route evidence.
+- **Chain Signatures:** bind chain ID, custody path, reservation, nonce and payload, then verify the foreign receipt; signing alone is not integration completion.
+- **Candidate partners:** record benefit, testnet availability, permissions and integration cost before selection. Selecting DAO infrastructure does not settle membership, quorum, voting weight or fallback.

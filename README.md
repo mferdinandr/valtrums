@@ -1,64 +1,87 @@
 # Valtrum
 
-Omnichain liquidity warfare for meme coins on NEAR.
+[![CI](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml/badge.svg)](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml)
 
-Two meme-coin tribes battle. When the clock runs out, the losing vault is taken and distributed to the winners: principal comes back liquid, and profit is split into liquid winner coin, locked USDC credit for the next battle, a burn, and a protocol fee.
+A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain.
 
-- Contracts in Rust (`near-sdk` 5) hold the battles, vaults, credit and settlement math.
-- An agent audits proposals, sets prices, watches liquidity, and drives settlement.
-- A web app with an AI prompt terminal turns "Deposit 50 USDC to $WIF" into one validated transaction.
+**Status:** the Robinhood hackathon arena is a **planned redesign** for NEAR testnet and Robinhood Chain testnet. This repository currently implements an earlier two-side NEAR arena. [Current state](docs/current-state.md) records its source/deployment limits; this documentation does not implement or deploy the redesign.
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit, [docs/flow.md](docs/flow.md) for the flow with war bonds and the furnace, [docs/war.md](docs/war.md) for the WAR war bonds, [docs/furnace.md](docs/furnace.md) for the furnace, [docs/deployment.md](docs/deployment.md) for the testnet deployment, and [docs/security-review.md](docs/security-review.md) for known risks.
+## Target game
 
-## Repository layout
+A creator selects two or more communities and Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown. Every community and the creator, including the protocol, must have real deposits before the snapshot locks. No proposal bond.
 
-```
-contracts/
-  arena/         battles, vaults, positions, credit, settlement, signing requests
-  furnace/       keyless sink that keeps burned coins forever and records every burn
-  router/        swaps USDC into a side's coin and deposits it
-  mock-dex/      fixed-rate DEX for testnet and the sandbox
-  mock-ft/       open-mint NEP-141 token for testnet and the sandbox
-  mock-mpc/      stand-in MPC signer for the sandbox
-  war/           WAR war bonds: USDC-backed NEP-141 that melts 10% a day, minted and redeemed by the arena
-  integration/   sandbox tests (near-workspaces)
-agent/           TypeScript automation: auditor, settlement, watchdog
-web/             Next.js app and the AI prompt terminal
-deploy/          container and compose files for the agent
-docs/            architecture, deployment, security review
-  openspec/      specs of current behaviour and proposed changes (OpenSpec)
-```
+Rounds last 30 seconds without TWAP. Tied leaders compete again with reset inputs, without an overtime cap. Deposits remain closed and all original vaults remain locked.
 
-## Specs and proposed changes
+Each losing vault pays 99.9% of its own token to final-winner participants proportionally, 0.05% to creator and 0.05% to protocol. Protocol-created battles pay the full 0.1% fee to protocol. Rewards are paid as original tokens on Robinhood. An available entitlement and a confirmed transfer are distinct.
 
-`docs/openspec` follows [OpenSpec](https://github.com/Fission-AI/OpenSpec): `specs/` describes how the system behaves today, and `changes/` holds proposals with their spec deltas, design and tasks. Validate them from `docs/`:
+Winning principal enters DAO escrow for a burn/return decision; rewards do not wait for it. DAO voting mechanics remain OPEN. NEP-141 representations require 1:1 actual-received backing and exclusive redemption/payout/burn reservations.
+
+## Four hackathon tracks
+
+| Hackathon track | Target demonstration |
+| --- | --- |
+| Memecoins With Mechanics | Token-community battles, explicit prize rules and DAO-directed source-token burn |
+| Games With Real Economies | Four scoring modes, locked vaults, native-token rewards and unlimited overtime |
+| Social Money | Proportional community entitlements and collective disposition of winning principal |
+| AI Swarms | Multiple user-funded NEAR AI player agents competing under bounded policies through shared MCP tools |
+
+These are the project's selected [NEAR Hackathon tracks](https://nearhackathon.com/#tracks), not a claim of completed integration or award eligibility. AI Swarms acceptance needs multiple independently funded player agents; one prompt parser or an infrastructure scheduler alone is insufficient. Infrastructure agents never gain authority to spend player funds.
+
+Technical workstreams remain chain abstraction, scoring/settlement, player AI, and terminal/MCP; they support the tracks rather than replace their names. Governance details remain OPEN.
+
+## Documentation and implementation tracker
+
+| Document | Purpose |
+| --- | --- |
+| [Product specification](docs/product-spec.md) | Requirements, lifecycle, acceptance and OPEN questions |
+| [Battle rules](docs/battle-rules.md) | Formulas, observations, comparison and overtime |
+| [GoPlus audit policy](docs/goplus-audit.md) | Selected fields, critical rejection, Pending states and independent LP checks |
+| [Token economics](docs/token-economics.md) | Fees, rounding, backing, redemption and DAO escrow |
+| [Architecture](docs/architecture.md) | Components, asset flows and trust boundaries |
+| [Interfaces](docs/interfaces.md) | Planned contract, event, oracle, agent and MCP APIs |
+| [Ecosystem](docs/ecosystem.md) | Partners, priorities, testnet evidence and unknowns |
+| [CI/CD and signatures](docs/ci-cd.md) | CI gates, disabled CD configuration, signatures and setup |
+| [Deployment](docs/deployment.md) | Existing commands versus planned rollout |
+| [Security review](docs/security-review.md) | Historical scope and unfinished target review |
+| [Roadmap](docs/implementation-roadmap.md) | Dependencies and acceptance gates |
+| [Current state](docs/current-state.md) | Base-commit implementation and historical demos |
+| [Implementation tracker](docs/implementation-tracker.md) | Parent issue content; GitHub URL pending verified publication |
+| [OpenSpec proposal](docs/openspec/changes/redesign-permissionless-robinhood-arena/proposal.md) | Unimplemented spec-driven target change |
+
+The older [WAR/furnace flow](docs/flow.md), [WAR](docs/war.md), [furnace](docs/furnace.md) and earlier OpenSpec entries are historical context. Swap settlement, TWAP, bond and credit plans are superseded for the target. Parent-folder OpenSpec archives remain outside this repository.
+
+## Current repository and development
+
+Rust contracts live in contracts/ (arena, router, Ref adapter, mock tokens/DEX/signer, standalone WAR/furnace and integration tests). TypeScript infrastructure is in [agent/](agent/README.md), Next.js UI/terminal in [web/](web/README.md), container configuration in [deploy/](deploy/README.md).
+
+Requirements: Rust stable with wasm32-unknown-unknown, Node >=22 and pnpm as pinned in package.json. These commands exercise the current implementation:
 
 ```bash
-cd docs && npx @fission-ai/openspec validate --all --strict
-```
-
-## Requirements
-
-- Rust (stable) with the `wasm32-unknown-unknown` target
-- Node.js 22+ and pnpm 11+
-- Docker (optional, for the agent image)
-
-## Development
-
-```bash
-# contracts: unit tests, then the sandbox tests (the first run downloads the sandbox binary)
-cd contracts
-cargo fmt --check && cargo clippy --all-targets -- -D warnings
-cargo test --workspace --exclude valtrum-integration
-cargo test -p valtrum-integration
-
-# agent and web
-pnpm install
-pnpm typecheck && pnpm build
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
 pnpm -F @valtrum/agent test
 pnpm -F @valtrum/web test
-pnpm -F @valtrum/web dev      # runs on demo data until a contract id is configured
+pnpm -F @valtrum/web dev
 ```
+
+Without an arena ID the web uses deterministic demo data. Contract checks from contracts/:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test --workspace --exclude valtrum-integration
+cargo test -p valtrum-integration
+```
+
+Validate documentation proposals using an installed OpenSpec CLI:
+
+```bash
+cd docs
+openspec validate --all --strict --no-interactive
+```
+
+No target Robinhood deploy or MCP command exists yet.
 
 ## License
 

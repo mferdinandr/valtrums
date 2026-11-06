@@ -1,5 +1,6 @@
 # The furnace
 
+> Historical/legacy design: this page is not the Robinhood target. The [product specification](product-spec.md) supersedes earlier swap settlement, TWAP, bond and credit plans. Standalone WAR and furnace source exists at the [base snapshot](current-state.md); arena integration/deployment is not implied.
 The furnace (`contracts/furnace`) is where Valtrum burns coins. The spec is `docs/openspec/changes/add-verifiable-burn`.
 
 ## What it does

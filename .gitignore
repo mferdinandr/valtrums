@@ -21,3 +21,6 @@ res/
 .DS_Store
 .vscode/
 .idea/
+
+# Vercel project metadata and downloaded environment
+.vercel/

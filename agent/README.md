@@ -1,8 +1,10 @@
-# Valtrum agent
+# Valtrum infrastructure agent
 
-Automation for the arena contract. Every pass reads on-chain state and acts on it, so restarts and duplicate passes never repeat completed work.
+Legacy automation reads arena state to resume audit, pricing and settlement. This is infrastructure, not a user-funded autonomous player agent. Durable reconciliation has limits described below.
 
 Pass order: sample prices, audit `Proposed` battles, lock `Approved` battles with initial 30-minute TWAPs, settle ended `Live` battles, drive pending settlement steps, then (hourly) the liquidity watchdog.
+
+The [Robinhood target](../docs/product-spec.md) is planned: 30-second rounds without TWAP, separate GoPlus/LP audit, per-token payouts and bounded player agents/MCP. Existing TWAP, swaps, bond and credit behavior below describes the current implementation only. Infrastructure credentials never authorize spending player funds. See [current state](../docs/current-state.md) and [planned interfaces](../docs/interfaces.md).
 
 ## Run
 
@@ -10,6 +12,8 @@ Pass order: sample prices, audit `Proposed` battles, lock `Approved` battles wit
 pnpm -F @valtrum/agent build
 pnpm -F @valtrum/agent start
 ```
+
+Export configuration into the process environment; the start script does not load a root .env automatically.
 
 Required: `ARENA_CONTRACT_ID`, `AGENT_ACCOUNT_ID`, and exactly one of `AGENT_PRIVATE_KEY` or `AGENT_PRIVATE_KEY_FILE` (see the root `.env.example`). The file variant reads a mounted secret and trims whitespace; setting both or neither is an error. The key is never logged or returned by any endpoint.
 

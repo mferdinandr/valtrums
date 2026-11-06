@@ -1,85 +1,120 @@
-# Architecture
+# Target architecture
 
-> This describes the system as it runs today. The flow after the war bonds and furnace changes is in [flow.md](flow.md).
+Status: **planned; no target component is deployed by this PR**. [Current-state.md](current-state.md) records the existing implementation. Product rules live in [product-spec.md](product-spec.md).
 
-## The game in one page
+## Components and chain boundaries
 
-Two meme coins, A and B, fight over a period. Players put coins in the vault of the side they believe in. Prices are compared at the start and the end; the side whose coin gained more (in percent) wins.
+NEAR coordinates battles and liabilities. Robinhood testnet holds original community assets and receives original-token payouts. "Native-token payout" means the original token contract on Robinhood, not necessarily ETH, the chain's gas coin.
 
-The losing vault is sold. What it fetches is the **profit pool** for the winners, split like this:
-
-| Share | What happens |
-| --- | --- |
-| 55% | bought as the winner coin and paid out liquid |
-| 35% | kept as USDC and granted as **credit**, valid for 7 days |
-| 5% | bought as the winner coin and burned |
-| 5% | protocol fee (also absorbs rounding dust) |
-
-Winners always get their **principal back, fully liquid**, including any part that was funded from credit. Only the profit is split. Credit is the retention loop: it can fund the next battle, and if that one is won the principal comes back liquid again while only the new profit creates new credit.
-
-Example: a 50 USDC deposit made of 35 credit and 15 wallet funds that wins and earns a profit of 40 gets all 50 back liquid, and the 40 splits into 22 liquid, 14 credit, 2 burned and 2 fee.
-
-Ties are voided and everyone is refunded. A rug-pull (liquidity drop over 50%) halts the battle and refunds every deposit; no reward, burn or fee is taken.
-
-## Battle lifecycle
-
+```mermaid
+flowchart TB
+    U["User wallet"] --> UI["Web terminal or MCP client"]
+    UI --> PA["Player agent with user budget"]
+    UI --> A
+    PA -->|"Scoped user authorization"| A
+    subgraph NEAR["NEAR testnet - planned"]
+        A["Arena: lock, rounds and allocation"]
+        R["NEP-141 representations and liability ledger"]
+        D["DAO principal escrow - mechanism OPEN"]
+        S["Constrained signing policy"]
+        A --> R
+        A --> D
+        R --> S
+    end
+    subgraph WORKERS["Infrastructure - separate credentials"]
+        AU["GoPlus and independent LP auditor"]
+        O["Observation collector and scheduler"]
+        I["Indexer and reconciler"]
+        REL["Payout relayer"]
+    end
+    AU -->|"Versioned evidence"| A
+    O -->|"Round-bound observations"| A
+    I -->|"Verified receipt evidence"| R
+    S --> MPC["NEAR Chain Signatures MPC"]
+    MPC --> REL
+    subgraph RH["Robinhood Chain testnet - planned"]
+        C["Custody of original tokens"]
+        P["Player and revenue recipients"]
+        C -->|"Authorized original-token transfers"| P
+    end
+    U -->|"Community asset deposit"| C
+    REL -->|"Broadcast constrained transaction"| C
+    C -->|"Receipt and balance evidence"| I
 ```
-Proposed --agent audit--> Approved --deposit window closes, agent sets prices--> Live
-   |                         |                                                     |
-   | audit fails             | empty side / halt                                   | end time, agent sends final prices
-   v                         v                                                     v
- Voided               Voided / EmergencyHalted                              Settling --all steps booked--> Settled
-```
 
-- **Proposed**: anyone sends the bond in USDC. The agent checks liquidity (above $10,000) and honeypot behaviour, then approves or voids (the bond is kept by the treasury).
-- **Approved**: deposits are open until the deposit deadline.
-- **Live**: deposits are locked and the 30-minute average prices at the start are recorded. A battle with an empty side is voided instead.
-- **Settling**: the winner is known and the plan of execution steps is being carried out.
-- **Settled**: winners claim.
-
-## Ways to deposit
-
-| Path | Wallet approvals | Notes |
+| Component | Planned responsibility | Boundary |
 | --- | --- | --- |
-| Send the side's coin | one `ft_transfer_call` | goes straight into the vault |
-| Send USDC | one `ft_transfer_call` | credit is spent first; the USDC is swapped into the side's coin by the router (user → arena → router → DEX → router → arena) and the position is credited to the sender |
-| Fund the internal balance, then deposit from it | one approval to fund, none afterwards | `deposit_from_balance` needs no attached deposit, so a scoped function-call key can run it |
-| Credit only | one call | `deposit_with_credit` when credit covers the whole amount |
+| Arena | Multi-community snapshots, creator stake, rounds, exact scoring and per-token allocations | Validate scores instead of trusting a worker's winner label |
+| Representation / ledger | Receipt uniqueness, 1:1 mint, exclusive backing reservations and redemption | NEP-141 alone is not a custody proof |
+| Robinhood custody | Hold approved assets; execute exact authorized transfers/disposals | Custody and receipt verification mechanism OPEN |
+| Audit adapter | Reject critical GoPlus findings; independently verify LP > USD 10,000 | Missing required data stays Pending |
+| Oracle collector | Point prices, circulating supply, round volume and drawdown samples | No TWAP or fabricated zero observations |
+| Scheduler | Submit eligible transitions and resume incomplete work | Late calls cannot move recorded round boundaries |
+| Indexer / reconciler | Replay events, track finality/reorgs, reconcile balances/liabilities | Indexer assertions alone cannot mint or confirm payment |
+| Relayer | Fund gas and broadcast authorized transactions | Cannot choose a new recipient, token, amount or player spend |
+| Player agent | Execute a user's bounded strategy | Separate identity and budget from infrastructure workers |
+| MCP / terminal | Reads, previews and authorized requests | Model output is untrusted input, never a signing grant |
+| DAO escrow | Keep winning principal until valid disposition | Governance and decision validation OPEN |
 
-Failed swaps are all-or-nothing: the credit and the user's USDC come back.
+## Deposit and representation flow
 
-## Settlement
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant C as Robinhood custody
+    participant V as Receipt verifier
+    participant R as Representation ledger on NEAR
+    participant A as Arena
+    U->>C: Transfer approved community token
+    C-->>V: Receipt and actual credited balance
+    V->>V: Check identity, uniqueness and finality
+    V->>R: Authenticated actual received units
+    R->>R: Consume receipt once and mint backed units
+    R->>A: Credit authorized position before lock
+    A->>A: Freeze community, creator and deposit snapshot
+```
 
-`settle_battle` decides the winner and creates a plan that starts with one `Dump` step (sell the loser vault). Reporting the dump fixes the split of its proceeds and adds `Buy`, `Burn` and `Return`. The steps are carried out in one of three modes:
+Arrival after lock cannot amend a live vault. Keep attributed funds recoverable outside that snapshot under a specified refund policy. Duplicate/reorganized receipts cannot create supply. [Token-economics.md](token-economics.md) defines the liability invariant and asynchronous transitions.
 
-1. **Agent-reported**: the agent does the work elsewhere and calls `report_execution` with the realized amounts (trusted agent).
-2. **On-chain (mock DEX)**: the arena sends each step to a DEX with `execute_step` and books the amounts the DEX actually paid back. Used on testnet and in the sandbox.
-3. **Foreign chain**: the arena builds an EVM transaction, asks the MPC signer (NEAR Chain Signatures) to sign it from the battle's own path, and the agent broadcasts it and reports the result.
+## Scheduler, observations and indexer
 
-Winners then `claim`: their principal and their share of the liquid reward land in a per-token liquid balance and the new credit is granted. `withdraw_liquid` pays tokens out.
+Identify each round by battle, index, candidate set, mode, policy version and start/end. Persist raw evidence references and normalized observations. Endpoints must match the recorded 30-second interval; volume counters and drawdown peaks reset in overtime.
 
-## Components
+The arena validates expected state and round ID and records transitions once. Candidate elimination is separate from custody release: eliminated communities' vaults stay locked. Missing data holds resolution pending. Recovery rules are OPEN; elapsed time cannot silently settle, refund or cap overtime.
 
-### Contracts
+The indexer needs finalized cursors, block hashes and event deduplication keys. On restart, reconcile chain state before submitting work. Detect reorgs, retract provisional projections and stop affected mint/payment confirmations until finality is re-established. Finality thresholds and the evidence-verification trust model are integration gates, not completed work.
 
-| Role | Methods |
-| --- | --- |
-| Anyone | `ft_transfer_call` messages (`propose`, `deposit`, `deposit_usdc`, `fund_balance`), `deposit_with_credit`, `deposit_from_balance`, `claim`, `withdraw_initial_deposit`, `withdraw_liquid`, `flush_treasury` |
-| Agent | `approve_battle`, `void_battle`, `set_initial_prices`, `settle_battle`, `report_execution`, `execute_step`, `emergency_halt`, `request_signature`, `retry_signature` |
-| Owner | `add_agent`, `remove_agent`, `set_router`, `set_execution`, `set_foreign`, `set_treasury`, `set_bond`, `set_deposit_window_secs`, `set_paused` |
+## Settlement and independent payout flow
 
-Callbacks are private. While paused, new proposals and deposits are refused; refunds, claims and withdrawals keep working.
+```mermaid
+sequenceDiagram
+    participant A as Arena
+    participant L as Liability ledger
+    participant D as DAO escrow
+    participant S as Signing policy and MPC
+    participant R as Robinhood relayer
+    actor P as Winning player
+    A->>L: Allocate each losing vault once
+    L->>L: Replace loser representations with entitlements
+    A->>D: Lock winning principal representations
+    P->>L: Request original-token payout
+    L->>L: Reserve entitlement under stable payout ID
+    L->>S: Exact chain, path, token, recipient, amount and nonce
+    S-->>R: Authorized signature
+    R->>R: Broadcast and reconcile final receipt
+    R->>L: Verified final transfer evidence
+    L->>L: Confirm once and consume reserved backing
+    Note over D,P: Losing-token payouts do not wait for a DAO decision
+```
 
-### Agent
+Chain Signatures provides signatures; relayers broadcast and verifiers check execution. It does not bridge assets, prove deposits or guarantee payment. Signer callbacks and RPC responses require durable reconciliation under the same payout ID.
 
-A loop that derives its work only from on-chain state, so restarts and duplicates are harmless: audit new proposals, lock approved battles after their deadline, settle ended battles, drive the plan, and check liquidity hourly. See [agent/README.md](../agent/README.md).
+## Authority separation
 
-### Web and the prompt terminal
+- Freeze asset identity, audit policy and evidence before lock. Tokens and liquidity can be malicious even when an API reports no risk.
+- Audit/oracle credentials can submit evidence only for their role. Signing policy reconstructs payloads from locked liabilities; infrastructure cannot request arbitrary transfers or use player keys.
+- Player grants bind user, budget, methods, assets, chains, destinations, expiry and revocation. Enforce token limits in the authorization/custody layer, not a prompt or browser timer.
+- Publish operator/upgrade and emergency powers before acceptance. No shortcut can bypass DAO escrow or exclusive backing reservations.
+- TEE provenance does not establish market truth or grant spending authority.
 
-Battles, positions, credit with its expiry countdown, claims and withdrawals. The terminal parses a sentence ("All-in $WIF with my 35 USDC credit and 15 from my Base wallet") into a structured intent, validates it against the chain, shows a summary, and only then builds the transaction. If the transaction differs from the summary it aborts. See [web/README.md](../web/README.md).
-
-## Testing
-
-- Unit tests per contract, including the settlement math, credit rules and every state-machine rejection.
-- Sandbox scenarios (`contracts/integration`): the full battle with the four-hop swap and on-chain settlement, halt, tie, void, access control, the credit loop across two battles, and the signing flow with retries.
-- Agent and web tests run offline with fakes.
+[Security-review.md](security-review.md) tracks threats and evidence gaps. [Interfaces.md](interfaces.md) defines illustrative planned APIs.

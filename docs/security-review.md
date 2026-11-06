@@ -1,48 +1,69 @@
-# Security review
+# Security review and target threat model
 
-Scope: `contracts/arena`, `contracts/router`, `contracts/ref-adapter`, `contracts/mock-dex` (testnet only) and `contracts/mock-ft` (testnet only, open mint).
-Method: a detector checklist for NEAR contracts (access control, callbacks, reentrancy, one-yocto checks, storage prefixes, initialization, arithmetic, gas, storage cost) applied to the source, plus the unit tests and the sandbox scenarios in `contracts/integration`.
+This documentation is **not an external audit or a new security certification**. Historical findings summarize the earlier development self-review of arena, router, Ref adapter, mock DEX and mock FT at the [base commit](current-state.md). Previously reported unit/sandbox checks were not rerun for this documentation PR and do not cover the planned Robinhood arena.
 
-This is a self-review done during development, not an external audit. Do not deploy the contracts with real funds on the strength of it.
+## Historical scope and findings
 
-## Checks that came out clean
+The earlier checklist covered caller checks, private callbacks, updates before cross-contract calls, one-yocto checks, storage prefixes, initialization, arithmetic, pagination and sandbox lifecycle/gas. Its statement about no panic paths is not a source-wide guarantee: the arena uses validation panics. No new callback/panic audit is asserted here.
 
-| Check | Result |
-| --- | --- |
-| Callbacks without `#[private]` | None: every `on_*` method is private. The sandbox test calls two of them from an outside account and they are refused |
-| State change after a cross-contract call | State is updated before the promise is created (credit spent, balance debited, step marked dispatched, claim flag set); callbacks restore it on failure |
-| Missing caller checks | Agent-only and owner-only methods are covered by unit tests and by the sandbox test |
-| Missing `assert_one_yocto` | Present on `withdraw_liquid`, `deposit_with_credit` and the router's `claim_stranded`. `deposit_from_balance` deliberately has none so a scoped key can call it; it can only spend the caller's own internal balance and credit |
-| Storage prefix collisions | Every collection has its own `StorageKey` variant |
-| Initialization | `#[init]` plus `PanicOnDefault` on all three contracts |
-| Arithmetic | `overflow-checks = true` in the release profile, checked math on amounts, 256-bit multiplication for 18-decimal values, no floating point, no `unwrap` or `panic!` in contract code paths |
-| Panics inside callbacks | Callbacks restore state and emit events; they do not rely on panics |
-| Unbounded loops | Page size capped at 100; plans have at most four steps; the agent list is owner-controlled |
-| Randomness | Not used |
-| Gas | The four-hop USDC swap and the on-chain settlement run in the sandbox with the maximum prepaid gas. Smaller prepaid amounts were not profiled |
+| ID | Historical severity | Finding and historical disposition |
+| --- | --- | --- |
+| H1 | Low | Missing deposit-window bounds; reported fixed with 1-second to 30-day bound/tests |
+| H2 | Medium | Contract-funded storage lets dust positions consume NEAR. Accepted for legacy testnet; storage funding/minima/monitoring still needed |
+| H3 | Medium | DEX/router proceeds authenticated by value rather than exclusive message identity. Legacy min_out bounds displacement; stronger receipt/balance reconciliation needed |
+| H4 | Medium | Malicious selected token can fake deposit reports; heuristic audit is not a sell simulation |
+| H5 | Medium | Agent-reported execution trusts realized amounts; compromised key can inflate rewards |
+| H6 | Low | Dispatched DEX step that never pays has no arena reset; agent logs stuck step |
+| H7 | Low | Unregistered burn recipient can fail legacy burn; funds remain in arena with event |
+| H8 | Low | Native JSON integer IDs assume values below 2^53 |
+| H9 | Low | Late routed deposits become stranded; beneficiary uses claim_stranded |
+| H10 | Informational | Open-mint mock FT and fixed-rate DEX are demo fixtures |
+| H11 | Medium | Ref adapter balance-delta measurement can count concurrent donations as output; previously accepted, stronger attribution needed |
+| H12 | Low | Serialized adapter swaps can stall later swaps; retry/owner-clear needs operational review |
+| H13 | Low | Receiver-returned adapter coins require owner recovery |
+| H14 | Informational | Project-funded testnet prices are fixtures, not independent market prices |
 
-## Findings
+Legacy owner controls agents/configuration; agent controls audit/prices/timing; foreign execution reporting is trusted; TWAP/baselines use local history. Legacy session expiry is client-side. Method/receiver/gas restrictions do not bound token losses.
 
-| # | Severity | Finding | Status |
-| --- | --- | --- | --- |
-| 1 | Low | The deposit window had no upper bound. A mistaken owner setting could make `approve_battle` overflow and fail until corrected | Fixed: the window must be between 1 second and 30 days, enforced in `new` and in the setter, with tests |
-| 2 | Medium | Storage is paid by the contract. Anyone can create positions, balances and proposals by sending small token amounts, which slowly spends the contract's NEAR. Proposals cost a bond, so the practical exposure is dust deposits and dust balance funding | Accepted for the testnet build. Mitigations before real funds: per-account storage deposits or minimum amounts, and monitoring of the contract balance |
-| 3 | Medium | Settlement proceeds are authenticated by value, not by message. A DEX forwards whatever message its caller supplies, so a stranger can route their own tokens to the arena with a `step_proceeds` message. The agent's `min_out` floor bounds what this can displace to the accepted slippage, and the stranger pays for it. The router has the same property for its swap receipts | Accepted for the mock DEX. A production integration should also reconcile against balance snapshots |
-| 4 | Medium | Battle tokens are chosen by the proposer. A malicious token contract could report deposits it never made. The agent's audit (liquidity and honeypot checks) is the only gate | Accepted: the audit must stay strict, and the honeypot check is a heuristic until a real sell simulation exists |
-| 5 | Medium | With on-chain execution off, the amounts the agent reports are trusted. A compromised agent key could inflate rewards | Accepted: use on-chain execution (the default for demos), keep the agent account minimal, and rotate it with the owner key |
-| 6 | Low | A swap the DEX accepted but never paid out leaves a settlement step dispatched with no reset method | Known gap. The agent logs it loudly after a timeout |
-| 7 | Low | The burn account must be registered with the coin or the burn transfer fails and the coin stays in the arena (`burn_failed` event) | Documented |
-| 8 | Low | `battle_id` and `step_index` use native integers in JSON. They stay far below 2^53 | Accepted |
-| 9 | Low | A routed deposit that arrives after the agent locked the battle is refused and ends up as the beneficiary's stranded balance in the router | Documented. The user recovers it with `claim_stranded` |
-| 10 | Info | `mock-ft` mints to anyone and `mock-dex` uses fixed rates. They exist for testnet and sandbox use only | By design |
-| 11 | Medium | The swap adapter measures output by balance change. A transfer of the output coin to the adapter during a swap is counted as swap output | Accepted: it can only raise the payout, `min_out` still applies, and the sender gives the coin away. A production build should read the exchange's receipts instead |
-| 12 | Low | Only one swap is in flight in the adapter. A stuck swap blocks the next ones | Refused swaps are refunded in full. Anyone can retry a failed measurement; the owner can clear a stuck record |
-| 13 | Low | Coin that a receiver hands back after a payout stays in the adapter | Kept in its ledger and recoverable by the owner with `withdraw_held` |
-| 14 | Info | The testnet pools are made and funded by the project, so their prices are not market prices | By design for the demo. A production deployment needs real pools and a real price source |
+Standalone WAR/furnace, deployment key removal, target representations/custody/DAO, GoPlus, MCP, NEAR AI and Robinhood integration are outside that historical review.
 
-## Trust assumptions
+## Target trust boundaries
 
-- The swap adapter holds no user funds between swaps, apart from coin a receiver handed back. The owner sets which pool serves each pair.
-- The owner can pause deposits, rotate agents, and change the treasury, router and execution settings. Withdrawals, refunds and claims keep working while paused.
-- The agent decides audits, prices and settlement timing. Prices come from a 30-minute average of a public API.
-- A function-call session key scoped to the arena can at most spend the funded internal balance and valid credit on deposits.
+The target requires authenticated source receipts, versioned audit/observation policy and constrained MPC payloads. The receipt verifier/custody mechanism and finality assumptions are OPEN; treat these as trusted dependencies until implemented evidence proves otherwise.
+
+| Threat | Required target control | Outstanding verification |
+| --- | --- | --- |
+| Fake/replayed deposit, donation contamination, decimal inflation | Actual received units, unique chain/tx/log identity, attribution, exact normalization | Adversarial tokens, reorgs, verifier trust |
+| Underbacking or duplicate spend | Per-asset B = M + E + P + D + U and exclusive reservations | Conservation/property/recovery tests |
+| 30-second oracle manipulation | Frozen sources, endpoint/cadence policy, provenance, exact scores, complete coverage | Supply trust, wash-volume and manipulation limits OPEN |
+| Late/duplicate scheduling | Immutable interval, expected round/state checks, once-only transitions | Outage/restart/repeated-overtime tests |
+| Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Use the [selected field map](goplus-audit.md); coverage, freshness and tax/admin admissibility remain OPEN |
+| Creator/protocol spoofing | Actual mandatory creator stake and frozen authenticated fee identity | Protocol verification policy OPEN |
+| Arbitrary MPC transaction | Exact chain/token/recipient/amount/path/nonce from reservation | Tampering, signer, nonce/replacement/gas tests |
+| Lost response / duplicate payout | Durable identity and reserve; reconcile before new spend; finalized matching receipt | Broadcast crash, timeout, reverted/replaced tx, concurrency |
+| Principal seizure or silent release | Independent escrow, no automatic timeout, decision-bound single execution | DAO and upgrade authority OPEN; no assumed quorum/fallback |
+| Player-agent theft | Enforceable token cap, method/asset/destination scope, expiry/revocation | Leaked key, malicious strategy, concurrent spend |
+| Infrastructure gains player authority | Separate credentials and role checks | Negative authorization tests across APIs/MCP |
+| Prompt injection | Typed bounded actions, canonical preview hash and revalidation | Metadata/provider injection and mismatch tests |
+| Indexer reorg/stale status | Finalized cursor/hash, provisional labels, replay/reconciliation | Finality policy/recovery drills |
+| Storage/gas exhaustion | Pagination, funded storage, bounded work with continuation | Limits OPEN; cannot impose an overtime cap |
+| Tax/rebase/admin token risk | Actual receipt credit, explicit eligibility policy, deficit detection | Tax/admin policy OPEN; short receipt cannot count as full payment |
+| Operator/signer compromise | Least privilege, disclosed powers, constrained signing, monitoring | Rotation/revocation and incident response |
+
+Rewards remain independent of DAO decisions while still requiring valid backing and payout authorization. Available rights must never imply confirmed Robinhood receipt.
+
+## TEE provenance
+
+The current /attestation endpoint reports operator metadata, not cryptographic remote attestation. A target TEE service needs verified workload/hardware evidence, image identity and bound secret release. NEAR AI inference verification is separate from verification of the entire custody/scheduler service. Neither authenticates market data or grants spending permission.
+
+## Required work before target live acceptance
+
+- Specify/review custody proofs, finality, reorg recovery, reservations and upgrade controls.
+- Resolve audit policies and GoPlus testnet coverage; exercise unknown data and strict LP threshold.
+- Test all scoring modes, signed/rational edges, gaps and unlimited overtime.
+- Prove token conservation, decimal safety, payout retries, redemption/disposal exclusion and DAO independence.
+- Enforce player budget/expiry/revocation and reject infrastructure-role crossover.
+- Review deployed artifacts/account powers, provenance, monitoring and recovery runbooks.
+- Independently review the implemented target; historical risk acceptance does not carry forward automatically.
+
+[Roadmap](implementation-roadmap.md) and [OpenSpec tasks](openspec/changes/redesign-permissionless-robinhood-arena/tasks.md) track unfinished work. This PR moves no funds and deploys no contracts.
