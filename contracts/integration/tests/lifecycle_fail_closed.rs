@@ -135,6 +135,18 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
         .into_result()?;
     let creator = env.user("fixture-creator").await?;
     let player = env.user("fixture-player").await?;
+    let third = env
+        .worker
+        .dev_deploy(&common::wasm("valtrum_mock_ft"))
+        .await?;
+    third
+        .call("new")
+        .args_json(json!({"name": "Fixture third", "symbol": "THIRD", "decimals": 18}))
+        .transact()
+        .await?
+        .into_result()?;
+    env.register(&third, env.arena.id()).await?;
+    env.register(&third, player.id()).await?;
     env.arena_call_yocto(&env.owner, "activate_lifecycle", json!({}))
         .await?
         .into_result()?;
@@ -155,10 +167,11 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     let created = creator.call(env.arena.id(), "create_lifecycle_battle")
         .args_json(json!({ "mode": "PriceGain", "assets": [
             { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000001", "representation": env.pepe.id(), "custody_domain": "fixture" },
-            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" }
+            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000002", "representation": env.shib.id(), "custody_domain": "fixture" },
+            { "chain_id": 46630, "token_address": "0x0000000000000000000000000000000000000003", "representation": third.id(), "custody_domain": "fixture" }
         ] })).deposit(NearToken::from_near(1)).max_gas().transact().await?.into_result()?;
     let id: u64 = created.json()?;
-    for (index, user) in [(0, &creator), (1, &player)] {
+    for (index, user) in [(0, &creator), (1, &player), (2, &player)] {
         user.call(env.arena.id(), "register_lifecycle_position")
             .args_json(json!({"battle_id": id, "community": index}))
             .deposit(NearToken::from_near(1))
@@ -183,7 +196,12 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     }
     env.mint(&env.pepe, creator.id(), 20).await?;
     env.mint(&env.shib, player.id(), 30).await?;
-    for (index, user, token, amount) in [(0, &creator, &env.pepe, 7), (1, &player, &env.shib, 11)] {
+    env.mint(&third, player.id(), 40).await?;
+    for (index, user, token, amount) in [
+        (0, &creator, &env.pepe, 7),
+        (1, &player, &env.shib, 11),
+        (2, &player, &third, 13),
+    ] {
         env.transfer_call(
             user,
             token,
@@ -208,6 +226,27 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     assert_eq!(before["locked"], true);
     assert_eq!(before["communities"][0]["vault"], "7");
     assert_eq!(before["communities"][1]["vault"], "11");
+    assert_eq!(before["communities"][2]["vault"], "13");
+    let late_audit = env
+        .arena
+        .call("fixture_approve_lifecycle")
+        .args_json(json!({"battle_id": id, "community": 0}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(late_audit.into_result().is_err());
+    env.agent
+        .call(env.arena.id(), "lock_lifecycle_battle")
+        .args_json(json!({"battle_id": id}))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    assert_eq!(
+        env.arena_view("get_lifecycle_battle", json!({"battle_id": id}))
+            .await?,
+        before
+    );
     env.transfer_call(
         &creator,
         &env.pepe,
@@ -237,6 +276,7 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     assert_eq!(held["principal_amount"], "7");
     assert_eq!(env.balance(&env.pepe, env.arena.id()).await?, 7);
     assert_eq!(env.balance(&env.shib, env.arena.id()).await?, 11);
+    assert_eq!(env.balance(&third, env.arena.id()).await?, 13);
     let conflicting = env
         .arena
         .call("fixture_hold_lifecycle_principal")

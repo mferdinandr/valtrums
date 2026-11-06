@@ -1,0 +1,11 @@
+# Lifecycle implementation and integration boundary
+
+The lifecycle contract path is fail-closed. Activating it requires a fresh arena with no legacy battles and permanently rejects legacy proposals. Lifecycle representations cannot be the legacy USDC token. Existing contract state and positions are not migrated.
+
+Creation requires payment for storage, not a proposal bond. A position must be registered before a representation transfer; the NEP-141 receiver returns a transfer that cannot be credited. A lock requires a nonempty vault for every community, a positive creator position, an observation policy, and separately recorded audit and backing evidence for every community. A locked snapshot does not change when lock is repeated, policy changes, or later transfers arrive.
+
+The normal build does not expose methods to record audit/backing approvals or a winner. Consequently it cannot accept lifecycle deposits or start a live battle yet. Internal evidence references are not proof of custody, and a `PrincipalHold` is accounting for representation units, not proof that foreign backing has been reserved or disposed. The backing, audit, scoring, settlement, and DAO changes must provide authenticated interfaces and preserve the locked position and principal invariants before live use. No DAO disposition or fallback is defined here.
+
+The `sandbox-fixtures` feature adds self-call-only fixture methods to a separate test build. Do not enable this feature for deployments. Fixture evidence and winners do not prove live service coverage, audit approval, actual-received backing, or scoring. Sandbox tests verify the NEP-141 receiver and local custody behavior with mock tokens; they do not establish a cross-chain deposit recovery path. Until the backing integration implements and verifies that path, a late foreign-chain arrival cannot be claimed as recovered based on these tests.
+
+The observation source, evidence freshness, cancellation, recovery, storage cleanup, and operational limits remain subject to the open decisions in the product specification. Implementation tasks remain unchecked until their full requirements, including cross-chain recovery and independent reward handling, are verified.
