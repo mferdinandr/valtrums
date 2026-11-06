@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   agent-image:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: false # CD disabled at owner request
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,7 +60,7 @@ jobs:
           printf 'Agent image: `%s@%s`\n\nPublishing does not start an agent process.\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
 
   web:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: false # CD disabled at owner request
     runs-on: ubuntu-latest
     permissions:
       contents: read

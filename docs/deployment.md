@@ -1,8 +1,8 @@
 # Deployment: existing system and target rollout
 
-## Automatic web and image delivery
+## Web and image delivery (disabled)
 
-[CI/CD](ci-cd.md) gates Vercel testnet-web deployment and GHCR agent-image publication on all main CI checks. Hosting credentials and project variables require one-time configuration. This delivery does not deploy the target contracts or start an agent process.
+[CD is disabled](ci-cd.md) at owner request; main CI does not deploy web or publish agent images. The workflow is retained only for future setup. Hosting credentials and project variables require one-time configuration. This delivery does not deploy the target contracts or start an agent process.
 
 ## Existing implementation: supported operations
 

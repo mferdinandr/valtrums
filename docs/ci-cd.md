@@ -1,4 +1,6 @@
-# CI, automatic delivery and signed commits
+# CI, delivery configuration and signed commits
+
+**CD disabled at owner request.** CI no longer calls the delivery workflow, and both delivery jobs are disabled. The setup below is retained for future use; merging this PR will not publish images or deploy hosting.
 
 The workflows deliver the **existing web application and infrastructure-agent image**. They do not implement or deploy the proposed Robinhood arena, initialize or upgrade contracts, run the agent with user funds, or select DAO rules. Both blockchain configuration and the hosting project are dedicated to testnet/demo use.
 
@@ -8,13 +10,12 @@ The workflows deliver the **existing web application and infrastructure-agent im
 
 | Job | Required checks |
 | --- | --- |
-| docs | Tracked Markdown file links; OpenSpec 1.2.0 strict validation |
 | contracts | Rust formatting, Clippy and contract unit tests |
 | sandbox | Contract integration tests |
 | node | Frozen pnpm install, typecheck, agent/web tests and build |
 | docker | Build agent image and offline health smoke test with a throwaway key |
 
-The file-link checker skips fenced code, remote URLs and section anchors. It does not claim to validate network availability or every Markdown construct. OpenSpec completion means specification validity, not feature implementation.
+Documentation and OpenSpec are excluded from CI at owner request. They may be checked manually. The file-link checker skips fenced code, remote URLs and section anchors. It does not claim to validate network availability or every Markdown construct. OpenSpec completion means specification validity, not feature implementation.
 
 CI has read-only repository permissions by default. Pull-request jobs do not receive Vercel deployment credentials or package-publishing permissions. The deploy call is permitted only for main outside pull-request events and needs every listed CI job to succeed. Protect main with required CI checks if repository settings do not already enforce them; workflow files alone do not configure branch protection.
 

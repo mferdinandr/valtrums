@@ -40,7 +40,7 @@ Technical workstreams remain chain abstraction, scoring/settlement, player AI, a
 | [Architecture](docs/architecture.md) | Components, asset flows and trust boundaries |
 | [Interfaces](docs/interfaces.md) | Planned contract, event, oracle, agent and MCP APIs |
 | [Ecosystem](docs/ecosystem.md) | Partners, priorities, testnet evidence and unknowns |
-| [CI/CD and signatures](docs/ci-cd.md) | CI gates, automatic testnet web/image delivery, setup and rollback |
+| [CI/CD and signatures](docs/ci-cd.md) | CI gates, disabled CD configuration, signatures and setup |
 | [Deployment](docs/deployment.md) | Existing commands versus planned rollout |
 | [Security review](docs/security-review.md) | Historical scope and unfinished target review |
 | [Roadmap](docs/implementation-roadmap.md) | Dependencies and acceptance gates |
