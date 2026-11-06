@@ -41,6 +41,7 @@ async fn unapproved_representation_transfer_returns_to_sender() -> anyhow::Resul
         "lifecycle_hold_principal",
         "fixture_approve_lifecycle",
         "fixture_hold_lifecycle_principal",
+        "fixture_credit_lifecycle",
     ] {
         let attempt = alice.call(env.arena.id(), method)
             .args_json(json!({"id": id, "community": 0, "winner": 0, "evidence": {"evidence_hash": "fabricated"}}))
@@ -285,5 +286,86 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
         .transact()
         .await?;
     assert!(conflicting.into_result().is_err());
+    Ok(())
+}
+
+/// Measures the worst permitted community count using synthetic fixture
+/// positions. This is not a custody or live-network gas guarantee.
+#[tokio::test]
+async fn fixture_sixteen_community_lock_fits_sandbox_gas() -> anyhow::Result<()> {
+    let env = common::Env::new(60, false).await?;
+    env.arena
+        .as_account()
+        .deploy(&fixture_arena_wasm()?)
+        .await?
+        .into_result()?;
+    let creator = env.user("gas-creator").await?;
+    env.arena_call_yocto(&env.owner, "activate_lifecycle", json!({}))
+        .await?
+        .into_result()?;
+    env.arena_call_yocto(
+        &env.owner,
+        "set_lifecycle_protocol",
+        json!({"protocol": env.treasury.id()}),
+    )
+    .await?
+    .into_result()?;
+    env.arena_call_yocto(
+        &env.owner,
+        "set_lifecycle_observation_policy",
+        json!({"policy": {"version": 1, "policy_hash": "p".repeat(256)}}),
+    )
+    .await?
+    .into_result()?;
+    let assets: Vec<_> = (0..16).map(|i| json!({"chain_id": 46630, "token_address": format!("0x{:040x}", i + 1), "representation": format!("representation-{i}.test.near"), "custody_domain": "d".repeat(256)})).collect();
+    let created = creator
+        .call(env.arena.id(), "create_lifecycle_battle")
+        .args_json(json!({"mode": "PriceGain", "assets": assets}))
+        .deposit(NearToken::from_near(2))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let id: u64 = created.json()?;
+    for index in 0..16 {
+        creator
+            .call(env.arena.id(), "register_lifecycle_position")
+            .args_json(json!({"battle_id": id, "community": index}))
+            .deposit(NearToken::from_near(1))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+        env.arena
+            .call("fixture_approve_lifecycle")
+            .args_json(json!({"battle_id": id, "community": index}))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    for index in 0..16 {
+        env.arena.call("fixture_credit_lifecycle").args_json(json!({"battle_id": id, "community": index, "account": creator.id(), "token": format!("representation-{index}.test.near"), "amount": "1"}))
+            .max_gas().transact().await?.into_result()?;
+    }
+    let lock = env
+        .agent
+        .call(env.arena.id(), "lock_lifecycle_battle")
+        .args_json(json!({"battle_id": id}))
+        .deposit(NearToken::from_near(2))
+        .max_gas()
+        .transact()
+        .await?;
+    let gas = lock.total_gas_burnt;
+    lock.into_result()?;
+    eprintln!("16-community fixture lock: {gas:?}");
+    let battle = env
+        .arena_view("get_lifecycle_battle", json!({"battle_id": id}))
+        .await?;
+    assert_eq!(battle["locked"], true);
+    assert_eq!(
+        battle["communities"].as_array().expect("communities").len(),
+        16
+    );
     Ok(())
 }

@@ -9,6 +9,12 @@ use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
 use std::collections::BTreeSet;
 
+/// Testnet limit; gas at this limit must be verified before live use.
+pub const MAX_COMMUNITIES: usize = 16;
+/// Bound metadata copied into snapshots so a single field cannot consume the
+/// transaction or storage budget for the entire battle.
+const MAX_METADATA_BYTES: usize = 256;
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetIdentity {
@@ -42,6 +48,12 @@ pub struct FeePolicy {
 pub struct ObservationPolicy {
     pub version: u64,
     pub policy_hash: String,
+}
+
+impl ObservationPolicy {
+    pub fn is_valid(&self) -> bool {
+        !self.policy_hash.trim().is_empty() && self.policy_hash.len() <= MAX_METADATA_BYTES
+    }
 }
 
 /// References supplied independently by the audit and backing adapters.
@@ -144,6 +156,7 @@ pub struct Battle {
 pub enum LifecycleError {
     UnknownBattle,
     TooFewCommunities,
+    TooManyCommunities,
     InvalidAsset,
     DuplicateAsset,
     InvalidPolicy,
@@ -171,6 +184,9 @@ impl Battle {
         if assets.len() < 2 {
             return Err(LifecycleError::TooFewCommunities);
         }
+        if assets.len() > MAX_COMMUNITIES {
+            return Err(LifecycleError::TooManyCommunities);
+        }
         if fee.fee_bps > 10_000
             || fee.creator_share_bps > 10_000
             || (fee.protocol_created && fee.creator != fee.protocol)
@@ -188,6 +204,7 @@ impl Battle {
             if !address.is_some_and(|value| {
                 value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
             }) || asset.custody_domain.trim().is_empty()
+                || asset.custody_domain.len() > MAX_METADATA_BYTES
             {
                 return Err(LifecycleError::InvalidAsset);
             }
@@ -282,7 +299,9 @@ impl Battle {
         if let Some(ref approval) = evidence {
             if approval.asset != entry.asset
                 || approval.policy_hash.trim().is_empty()
+                || approval.policy_hash.len() > MAX_METADATA_BYTES
                 || approval.evidence_hash.trim().is_empty()
+                || approval.evidence_hash.len() > MAX_METADATA_BYTES
             {
                 return Err(LifecycleError::InvalidApproval);
             }
@@ -305,7 +324,10 @@ impl Battle {
             .get_mut(community)
             .ok_or(LifecycleError::InvalidCommunity)?;
         if let Some(ref approval) = evidence {
-            if approval.asset != entry.asset || approval.evidence_hash.trim().is_empty() {
+            if approval.asset != entry.asset
+                || approval.evidence_hash.trim().is_empty()
+                || approval.evidence_hash.len() > MAX_METADATA_BYTES
+            {
                 return Err(LifecycleError::InvalidApproval);
             }
         }
@@ -386,7 +408,7 @@ impl Battle {
     /// frozen, duplicate lock calls return the original snapshot unchanged.
     pub fn lock(&mut self, observation: ObservationPolicy) -> Result<&Snapshot, LifecycleError> {
         if self.snapshot.is_none() {
-            if observation.policy_hash.is_empty() {
+            if !observation.is_valid() {
                 return Err(LifecycleError::InvalidPolicy);
             }
             if self
@@ -734,6 +756,36 @@ mod tests {
         assert_eq!(
             deposit(&mut b, 0, "creator.testnet", 0, 1),
             Err(LifecycleError::MissingApproval)
+        );
+    }
+
+    #[test]
+    fn community_count_and_metadata_are_bounded() {
+        let assets = (1..=16).map(asset).collect::<Vec<_>>();
+        assert!(Battle::new(assets, ScoringMode::PriceGain, fee()).is_ok());
+        let assets = (1..=17).map(asset).collect::<Vec<_>>();
+        assert_eq!(
+            Battle::new(assets, ScoringMode::PriceGain, fee()),
+            Err(LifecycleError::TooManyCommunities)
+        );
+        let mut long = asset(1);
+        long.custody_domain = "x".repeat(MAX_METADATA_BYTES + 1);
+        assert_eq!(
+            Battle::new(vec![long, asset(2)], ScoringMode::PriceGain, fee()),
+            Err(LifecycleError::InvalidAsset)
+        );
+        let mut b = battle();
+        let mut long_audit = audit(0);
+        long_audit.evidence_hash = "x".repeat(MAX_METADATA_BYTES + 1);
+        assert_eq!(
+            b.set_audit(0, Some(long_audit)),
+            Err(LifecycleError::InvalidApproval)
+        );
+        let mut long_backing = backing(0);
+        long_backing.evidence_hash = "x".repeat(MAX_METADATA_BYTES + 1);
+        assert_eq!(
+            b.set_backing(0, Some(long_backing)),
+            Err(LifecycleError::InvalidApproval)
         );
     }
 

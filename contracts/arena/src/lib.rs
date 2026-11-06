@@ -235,10 +235,7 @@ impl Arena {
     pub fn set_lifecycle_observation_policy(&mut self, policy: lifecycle::ObservationPolicy) {
         self.assert_owner();
         near_sdk::assert_one_yocto();
-        require!(
-            !policy.policy_hash.trim().is_empty(),
-            "Observation policy is required"
-        );
+        require!(policy.is_valid(), "Observation policy is invalid");
         self.lifecycle_observation_policy = Some(policy);
     }
 
@@ -1953,8 +1950,8 @@ impl Arena {
             community as usize,
             Some(lifecycle::AuditApproval {
                 asset: asset.clone(),
-                policy_hash: "fixture-policy".into(),
-                evidence_hash: "fixture-audit".into(),
+                policy_hash: "p".repeat(256),
+                evidence_hash: "a".repeat(256),
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture audit rejected"));
@@ -1963,10 +1960,24 @@ impl Arena {
             community as usize,
             Some(lifecycle::BackingApproval {
                 asset,
-                evidence_hash: "fixture-backing".into(),
+                evidence_hash: "b".repeat(256),
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture backing rejected"));
+    }
+
+    /// Synthetic accounting credit for gas tests only; no token moves.
+    #[private]
+    pub fn fixture_credit_lifecycle(
+        &mut self,
+        battle_id: u64,
+        community: u32,
+        account: AccountId,
+        token: AccountId,
+        amount: U128,
+    ) {
+        self.lifecycle_credit(battle_id, community, &token, &account, amount.0)
+            .unwrap_or_else(|_| env::panic_str("Fixture credit rejected"));
     }
 
     #[private]
