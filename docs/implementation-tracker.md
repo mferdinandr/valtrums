@@ -35,12 +35,12 @@ DAO membership, weights, quorum, deadline, execution/fallback; tax thresholds an
 ## Ordered implementation checklist
 
 - [ ] 1. Verify testnet integrations and all required data sources, including planned Intents routing and Bitte orchestration; record live versus fixture evidence. Evaluate SputnikDAO/Trezu, OutLayer and Agent Market separately without marking candidates integrated.
-- [ ] 2. Implement backing, NEP-141 representation, redemption and burn with receipt replay protection and conservation.
-- [ ] 3. Implement multi-community lifecycle, locked snapshots and actual creator/protocol deposits.
-- [ ] 4. Integrate GoPlus and separate LP audit; keep unresolved required policy/data Pending.
-- [ ] 5. Implement all four scoring modes and unlimited 30-second overtime.
-- [ ] 6. Implement per-token settlement/revenue, deterministic rounding and confirmed Robinhood payouts with safe retries.
-- [ ] 7. Isolate winning principal and obtain an explicit DAO design decision before disposition implementation.
+- [x] 2. Implement backing, NEP-141 representation, redemption and burn with receipt replay protection and conservation (contracts + sandbox tests; live-network custody evidence pending).
+- [x] 3. Implement multi-community lifecycle, locked snapshots and actual creator/protocol deposits (contracts + sandbox tests).
+- [x] 4. Integrate GoPlus and separate LP audit; keep unresolved required policy/data Pending (contracts + sandbox tests; live GoPlus testnet coverage still OPEN).
+- [x] 5. Implement all four scoring modes and unlimited 30-second overtime (contracts + sandbox tests).
+- [x] 6. Implement per-token settlement/revenue, deterministic rounding and confirmed Robinhood payouts with safe retries (contracts + sandbox tests; live confirmed payouts pending testnet credentials).
+- [~] 7. Isolate winning principal and obtain an explicit DAO design decision before disposition implementation (escrow + decision-bound disposal implemented; DAO membership/quorum design still OPEN).
 - [ ] 8. Implement bounded NEAR AI player agents, MCP and terminal authorization/preview checks.
 - [ ] 9. Complete UI, observability and end-to-end testnet demo with failure/recovery evidence.
 

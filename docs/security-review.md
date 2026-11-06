@@ -67,3 +67,19 @@ The current /attestation endpoint reports operator metadata, not cryptographic r
 - Independently review the implemented target; historical risk acceptance does not carry forward automatically.
 
 [Roadmap](implementation-roadmap.md) and [OpenSpec tasks](openspec/changes/redesign-permissionless-robinhood-arena/tasks.md) track unfinished work. This PR moves no funds and deploys no contracts.
+
+## Redesigned arena + backing review (contracts PR)
+
+Self-review of the redesigned arena (`contracts/arena`) and per-asset backing (`contracts/backing`) against the NEAR audit checklist (private callbacks, optimistic state before cross-contract calls, JSON-boundary types, persisted collection writes, owner/worker/verifier/arena role checks, one-yocto on claims, unique storage prefixes, `#[init]`, checked math, bounded pagination). Every finding below was fixed in this PR and covered by unit and/or sandbox tests.
+
+| ID | Severity | Finding and remediation |
+| --- | --- | --- |
+| R1 | High | JSON boundary types: raw `u64`/`u128` (nanosecond timestamps ~1.8e18, token amounts, grant budgets, ledger fields) lose precision or fail to deserialize for JS clients. Wrapped all evidence timestamps, escrow principal, DAO decision timestamps, grant budgets/expiry and the entire `LedgerView`/`BattleView` surfaces in `U64`/`U128` (borsh-identical layout; raw `u128` JSON args are rejected by near-sdk 5.30 at the boundary) |
+| R2 | High | `claim_deposit` minted representations without a yocto requirement, so a FunctionCall-keyed session could claim attributed custody. Now `#[payable]` with a 1-yocto requirement (forces FullAccess key + wallet confirmation) |
+| R3 | Medium | Unbounded overtime rounds accumulate `rounds` evidence forever (spec has no overtime cap). Accepted: per-round storage is small and battles are rare; monitor storage, no cap is intentionally imposed |
+| R4 | Medium | `battles(from, limit)` computes `start + limit`, which wraps at `u64::MAX`. Cosmetic pagination edge; ids stay far below the wrap point |
+| R5 | Low | Storage for `recipients`/`sign_requests`/`positions`/`payouts` registries is contract-funded (no storage deposit). Accepted for testnet; revisit before live |
+
+Verified with no findings: all four callbacks (`on_allocated`, `on_payout_reserved`, `on_disposal_reserved`, `on_signature`) are `#[private]`; allocation/disposal/signing state is optimistically committed before the cross-contract call and rolled back on failure (`on_allocated`, `on_disposal_reserved`); every admin/worker/verifier/owner role check uses `predecessor_account_id`; storage prefixes are distinct enums on both contracts; `new` is `#[init]` on arena, backing and mock MPC; arithmetic is checked throughout; the constrained signing policy rebuilds chain/token/recipient/amount/nonce exclusively from the arena's payout reservation.
+
+Outstanding (documented, not code): verifier trust for custody receipts and execution evidence, DAO governance authority (OPEN), tax/admin token policy (OPEN), and finality/reorg assumptions for Robinhood-chain evidence. These stay tracked in the target trust boundaries above and in the OpenSpec tasks.

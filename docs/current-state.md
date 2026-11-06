@@ -50,3 +50,20 @@ The four Ref budgets sum to 39.832284 USDC. Test pools and open-mint tokens demo
 - WAR/furnace account key removal, deployment and arena integration cannot be inferred merely from their source code.
 
 See [deployment.md](deployment.md) for supported legacy commands and a separately labeled target rollout plan.
+
+## Redesigned contracts (contracts PR on `feat/openspec-redesign-arena`)
+
+Unmerged working tree, not deployed to any network. The redesign replaces the legacy arena with the target design:
+
+| Area | Present behavior |
+| --- | --- |
+| Arena | [arena](../contracts/arena/src/lib.rs): permissionless multi-community battles (2+), no bond, creator mandatory positive position, 30-second point-observation rounds, four scoring modes ([scoring](../contracts/arena/src/scoring.rs)), unlimited tied overtime, locked vaults until a unique winner, per-losing-vault 99.9%/0.05%/0.05% split ([settlement](../contracts/arena/src/settlement.rs)) |
+| Audit | [audit](../contracts/arena/src/audit.rs): GoPlus critical risk rejects, unknown mandatory data holds Pending, independent strict LP gate above USD 10,000, freshness TTL |
+| Backing | [backing](../contracts/backing/src/lib.rs): one NEP-141 representation contract per asset, custody receipts with replay protection, ledger invariant `B = M + E + P + D + U`, entitlements, payout/redemption/disposal reservations with exclusive spending, verifier-confirmed execution |
+| Principal | Winner vault enters DAO [escrow](../contracts/arena/src/types.rs); disposition is decision-bound and executed at most once; governance rules stay OPEN |
+| Foreign EVM | Reservation-bound constrained [signing](../contracts/arena/src/mpc.rs): exact chain/token/recipient/amount/nonce/path rebuilt from the arena payout registry; retries; mock MPC for sandbox |
+| Grants | [grants](../contracts/arena/src/grants.rs): on-chain player-agent budgets spent at `ft_on_transfer`, method/asset/chain scope, expiry/revocation |
+| Tests | 66 arena unit, 11 backing unit, 13 sandbox integration tests (lifecycle, constrained signing, DAO escrow, grants, LP gate, smoke) — `cargo test` green with no warnings |
+| JSON boundary | All nanosecond timestamps and token amounts use `U64`/`U128` on JSON surfaces (near-sdk 5.30 rejects raw `u128`; values exceed JS safe integers) |
+
+Open items tracked in [security-review.md](security-review.md) and the OpenSpec tasks: verifier trust, DAO governance, tax/admin token policy, finality/reorg evidence, live testnet credentials.
