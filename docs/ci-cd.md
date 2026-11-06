@@ -4,9 +4,9 @@
 
 The workflows deliver the **existing web application and infrastructure-agent image**. They do not implement or deploy the proposed Robinhood arena, initialize or upgrade contracts, run the agent with user funds, or select DAO rules. Both blockchain configuration and the hosting project are dedicated to testnet/demo use.
 
-## CI on every branch and pull request
+## CI on pull requests and main
 
-[CI workflow](../.github/workflows/ci.yml) runs on branch pushes, pull requests and manual workflow dispatch. On main, in-progress runs are not canceled. Other runs cancel older work for the same event/ref.
+[CI workflow](../.github/workflows/ci.yml) runs on pull requests, pushes to main and manual workflow dispatch. Feature-branch pushes do not start a second run alongside the PR run. Changes limited to Markdown or docs/ (including OpenSpec) are ignored; changes to code, scripts or workflows still run all four jobs. Historical checks from earlier commits may remain visible in the PR timeline. On main, in-progress runs are not canceled. Other runs cancel older work for the same event/ref.
 
 | Job | Required checks |
 | --- | --- |
