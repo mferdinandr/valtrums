@@ -11,6 +11,8 @@ pub mod events;
 pub mod lifecycle;
 pub mod math;
 pub mod mpc;
+pub mod rounds;
+pub mod scoring;
 pub mod types;
 pub mod views;
 
