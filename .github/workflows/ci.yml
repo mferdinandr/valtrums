@@ -3,9 +3,34 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check local Markdown links
+        run: python3 scripts/check-doc-links.py
+      - name: Validate OpenSpec
+        working-directory: docs
+        env:
+          OPENSPEC_TELEMETRY: '0'
+        run: npx --yes --package @fission-ai/openspec@1.2.0 openspec validate --all --strict --no-interactive
+
   contracts:
     runs-on: ubuntu-latest
     defaults:
@@ -50,6 +75,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm -F @valtrum/agent test
+      - run: pnpm -F @valtrum/web test
       - run: pnpm build
 
   docker:
@@ -100,3 +127,13 @@ jobs:
           done
           docker logs agent
           exit 1
+
+  deploy-testnet:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [docs, contracts, sandbox, node, docker]
+    permissions:
+      contents: read
+      packages: write
+      deployments: write
+    uses: ./.github/workflows/cd.yml
+    secrets: inherit
