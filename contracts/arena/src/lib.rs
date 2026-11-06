@@ -11,9 +11,10 @@ pub mod events;
 pub mod math;
 pub mod mpc;
 pub mod types;
-pub mod views;
+pub mod v2_lifecycle;
 pub mod v2_revenue;
 pub mod v2_scoring;
+pub mod views;
 
 use credit::plan_funding;
 use math::Outcome;
@@ -88,8 +89,14 @@ enum TransferMsg {
     },
     /// Adds the transferred USDC to the sender's internal balance.
     FundBalance,
+    DepositV2 {
+        battle_id: U64,
+    },
     /// Output of a settlement step, paid back by the execution DEX.
-    StepProceeds { battle_id: u64, step_index: u32 },
+    StepProceeds {
+        battle_id: u64,
+        step_index: u32,
+    },
     Deposit {
         battle_id: u64,
         side: Side,
@@ -155,6 +162,7 @@ pub struct Arena {
     sign_request_count: u64,
     /// Target-arena configuration; added state requires a fresh isolated deployment.
     v2_revenue: v2_revenue::RevenuePolicy,
+    v2_lifecycle: v2_lifecycle::State,
 }
 
 #[near]
@@ -191,6 +199,7 @@ impl Arena {
             sign_requests: LookupMap::new(StorageKey::SignRequests),
             sign_request_count: 0,
             v2_revenue: v2_revenue::RevenuePolicy::default(),
+            v2_lifecycle: v2_lifecycle::State::default(),
         }
     }
 
@@ -910,6 +919,9 @@ impl Arena {
             return PromiseOrValue::Value(amount);
         }
         let unused = match parsed {
+            Ok(TransferMsg::DepositV2 { battle_id }) => {
+                self.deposit_v2(sender_id, token, amount.0, battle_id.0)
+            }
             Ok(TransferMsg::Propose {
                 token_a,
                 token_b,
