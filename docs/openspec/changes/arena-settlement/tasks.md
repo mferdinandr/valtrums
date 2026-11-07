@@ -4,10 +4,10 @@ Check tasks only after implementation and verification. Coordinate lifecycle sna
 
 ## Fee configuration
 
-- [ ] Restrict total fee and creator-share configuration to protocol authority and validate each value in 0–10000 bps.
+- [x] Restrict total fee and creator-share configuration to protocol authority and validate total fee in 0–1000 bps and creator share in 0–10000 bps.
 - [x] Set initial defaults to 10 bps total fee and 5000 bps creator share.
-- [ ] Snapshot fee, split, authenticated creator type and protocol recipient at battle creation.
-- [ ] Verify later configuration changes affect only future battles and invalid values are rejected.
+- [x] Snapshot fee, split, authenticated creator type and protocol recipient at battle creation.
+- [x] Verify later configuration changes affect only future battles and invalid values are rejected.
 
 ## Per-token allocation
 

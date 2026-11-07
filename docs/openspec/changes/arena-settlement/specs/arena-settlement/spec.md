@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Per-token rewards and revenue
-For each losing vault the system SHALL allocate the remainder after its snapshotted configurable fee to final-winner participants proportionally. Protocol SHALL configure total fee and creator share independently in basis points from 0 through 10000; initial defaults are fee 10 bps (0.1%) and creator share 5000 bps (50% of fee). Only protocol can change settings; each battle SHALL snapshot fee, split and protocol recipient at creation. A protocol-created battle SHALL allocate its entire fee to protocol.
+For each losing vault the system SHALL allocate the remainder after its snapshotted configurable fee to final-winner participants proportionally. Protocol SHALL configure total fee in basis points from 0 through 1000 (a 10% ceiling) and creator share from 0 through 10000, independently; initial defaults are fee 10 bps (0.1%) and creator share 5000 bps (50% of fee). Only protocol can change settings; each battle SHALL snapshot fee, split and protocol recipient at creation. A protocol-created battle SHALL allocate its entire fee to protocol.
 
 #### Scenario: Configuration changes
 - **WHEN** protocol changes fee or split after battle creation
 - **THEN** the battle retains its snapshot and new battles use the new values
 
 #### Scenario: Invalid bounds and zero shares
-- **WHEN** either basis-point value is outside 0 through 10000
+- **WHEN** total fee is outside 0 through 1000 basis points or creator share is outside 0 through 10000
 - **THEN** configuration is rejected; valid zero recipient allocations do not fail other allocations
 
 #### Scenario: Two communities
