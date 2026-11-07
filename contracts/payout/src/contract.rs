@@ -10,15 +10,19 @@
 //!
 //! The owner only registers backing contracts and cannot change one afterwards.
 //!
-//! Signer (MPC) calls and transaction building are not performed here; the
-//! relayer obtains the authorized payload from `begin_signing` and reports the
-//! resulting signature. Operator evidence is a trusted attestation, not proof.
+//! The contract builds the ERC-20 transfer itself from the reservation and asks
+//! the NEAR MPC signer (a fourth, fixed account) to sign it. Only the signer's
+//! own callback can attach a signature to a payout; the relayer only chooses a
+//! fee cap, never a recipient, amount, token, chain, path or nonce. Operator
+//! evidence is a trusted attestation, not proof.
+use crate::evm;
 use crate::{
-    Authorization, Hash, NoSpendProof, PaymentEvidence, Payout, PayoutId, Reason, SlotOutcome,
-    Status,
+    Attempt, AttemptState, Authorization, Hash, NoSpendProof, PaymentEvidence, Payout, PayoutId,
+    PayoutState, Reason, SlotOutcome, Status, StoredSignature,
 };
 use near_sdk::json_types::{U128, U64};
-use near_sdk::store::LookupMap;
+use near_sdk::serde_json::{json, Value};
+use near_sdk::store::{LookupMap, Vector};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     Promise, PromiseError,
@@ -27,15 +31,23 @@ use near_sdk::{
 const REQUEST_DEPOSIT: NearToken = NearToken::from_millinear(30);
 /// Kept by the contract to pay for later signing attempts (at most `MAX_ATTEMPTS`).
 const ATTEMPT_RESERVE: NearToken = NearToken::from_millinear(10);
-const MAX_ATTEMPTS: usize = 8;
 const BACKING_GAS: Gas = Gas::from_tgas(15);
 const CALLBACK_GAS: Gas = Gas::from_tgas(30);
+/// Gas for the signer call (the signer's own budget is up to 300 Tgas) and the
+/// callback that parses its answer and stores the signature.
+const SIGNER_GAS: Gas = Gas::from_tgas(250);
+const SIGN_CALLBACK_GAS: Gas = Gas::from_tgas(20);
+/// Signer deposit: one yoctoNEAR, paid from the contract's own balance.
+const SIGNER_DEPOSIT: NearToken = NearToken::from_yoctonear(1);
+/// Largest page `list_open_payouts` scans.
+const MAX_PAGE: u64 = 50;
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
 enum StorageKey {
     Backings,
     Payouts,
+    Index,
 }
 
 /// Immutable source-chain binding of one registered backing contract.
@@ -51,6 +63,10 @@ pub struct BackingConfigInput {
     pub path: String,
     /// Next unused source-chain nonce of `sender`.
     pub first_nonce: U64,
+    /// Gas limit of the ERC-20 transfer transaction.
+    pub gas_limit: U64,
+    /// Highest `max_fee_per_gas` the relayer may ask the signer to sign.
+    pub max_fee_cap: U128,
 }
 
 #[near(serializers = [borsh])]
@@ -62,6 +78,8 @@ struct BackingConfig {
     sender: [u8; 20],
     path: String,
     next_nonce: u64,
+    gas_limit: u64,
+    max_fee_cap: u128,
 }
 
 #[near(serializers = [json])]
@@ -144,7 +162,7 @@ pub enum ReasonInput {
     EvidenceUnavailable,
 }
 
-/// The only transaction parameters the relayer may sign.
+/// The only transaction parameters a signature may authorize.
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SigningPayload {
@@ -158,6 +176,72 @@ pub struct SigningPayload {
     pub path: String,
     pub nonce: U64,
     pub binding_hash: Hash,
+    pub gas_limit: U64,
+    pub max_fee_cap: U128,
+}
+
+/// Where one signing attempt stands (stable view of `AttemptState`).
+#[near(serializers = [json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttemptStateView {
+    Requested,
+    Signed,
+    Broadcast,
+    Pending,
+    Reverted,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttemptView {
+    /// All zero while `state` is `requested`.
+    pub tx_hash: Hash,
+    pub max_fee_per_gas: U128,
+    pub state: AttemptStateView,
+}
+
+/// Stable public view of a payout. Variants of `PayoutState` and fields of this
+/// struct are only ever added.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PayoutView {
+    pub backing: AccountId,
+    pub holder: AccountId,
+    pub request_id: Hash,
+    pub state: PayoutState,
+    /// Set only while `state` is `reconciliation_required`.
+    pub reason: Option<ReasonInput>,
+    /// True for `confirmed` and `restored`.
+    pub terminal: bool,
+    pub chain_id: U64,
+    pub token: [u8; 20],
+    pub sender: [u8; 20],
+    pub destination: [u8; 20],
+    pub amount: U128,
+    pub path: String,
+    pub nonce: U64,
+    pub binding_hash: Hash,
+    pub attempts: Vec<AttemptView>,
+    /// Set only once `state` is `confirmed`.
+    pub evidence_hash: Option<Hash>,
+}
+
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PayoutPage {
+    /// Unresolved payouts found in the scanned range (terminal ones are skipped).
+    pub items: Vec<PayoutView>,
+    /// Pass this as `from_index` for the next page; equals the count at the end.
+    pub next_index: U64,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PayoutKey {
+    backing: AccountId,
+    holder: AccountId,
+    request_id: Hash,
 }
 
 /// Mirrors the backing contract's JSON shapes (kept local to avoid linking
@@ -208,40 +292,50 @@ pub struct PayoutContract {
     owner: AccountId,
     operator: AccountId,
     relayer: AccountId,
+    /// The NEAR MPC signer; the only account whose answer can sign a payout.
+    signer: AccountId,
     backings: LookupMap<AccountId, BackingConfig>,
     payouts: LookupMap<PayoutId, Payout>,
+    /// Every payout key in creation order, for paginated reconciliation.
+    index: Vector<PayoutKey>,
 }
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn label(status: &Status) -> &'static str {
-    match status {
-        Status::Authorized => "authorized",
-        Status::SigningRequested => "signing_requested",
-        Status::Signed => "signed",
-        Status::Broadcast => "broadcast",
-        Status::ReconciliationRequired(_) => "reconciliation_required",
-        Status::Confirmed { .. } => "confirmed",
-        Status::Restored => "restored",
-    }
+fn emit(event: &str, data: Value) {
+    env::log_str(&format!(
+        "EVENT_JSON:{}",
+        json!({"standard": "valtrum_payout", "version": "1.0.0", "event": event, "data": data})
+    ));
 }
 
 #[near]
 impl PayoutContract {
     #[init]
-    pub fn new(owner: AccountId, operator: AccountId, relayer: AccountId) -> Self {
+    pub fn new(
+        owner: AccountId,
+        operator: AccountId,
+        relayer: AccountId,
+        signer: AccountId,
+    ) -> Self {
+        let roles = [&owner, &operator, &relayer, &signer];
         require!(
-            owner != operator && owner != relayer && operator != relayer,
-            "Roles must be distinct accounts"
+            roles
+                .iter()
+                .enumerate()
+                .all(|(i, a)| roles.iter().skip(i + 1).all(|b| a != b)),
+            "Roles and signer must be distinct accounts"
         );
         Self {
             owner,
             operator,
             relayer,
+            signer,
             backings: LookupMap::new(StorageKey::Backings),
             payouts: LookupMap::new(StorageKey::Payouts),
+            index: Vector::new(StorageKey::Index),
         }
     }
 
@@ -259,7 +353,9 @@ impl PayoutContract {
                 && config.token != [0; 20]
                 && config.sender != [0; 20]
                 && !config.custody_domain.trim().is_empty()
-                && !config.path.trim().is_empty(),
+                && !config.path.trim().is_empty()
+                && config.gas_limit.0 > 0
+                && config.max_fee_cap.0 > 0,
             "Invalid backing configuration"
         );
         self.backings.insert(
@@ -271,6 +367,8 @@ impl PayoutContract {
                 sender: config.sender,
                 path: config.path,
                 next_nonce: config.first_nonce.0,
+                gas_limit: config.gas_limit.0,
+                max_fee_cap: config.max_fee_cap.0,
             },
         );
     }
@@ -370,8 +468,14 @@ impl PayoutContract {
         let payout = Payout::authorize(authorization)
             .unwrap_or_else(|_| env::panic_str("Invalid payout authorization"));
         let before = env::storage_usage();
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         self.payouts.flush();
+        self.index.push(PayoutKey {
+            backing: backing.clone(),
+            holder: holder.clone(),
+            request_id,
+        });
+        self.index.flush();
         let bumped = self
             .backings
             .get_mut(&backing)
@@ -394,58 +498,132 @@ impl PayoutContract {
         true
     }
 
-    /// Relayer only. Marks that a signature is about to be requested and
-    /// returns the exact parameters the signer is allowed to authorize.
+    /// Relayer only. The contract builds the transfer from the reservation,
+    /// records the request, and asks the signer to sign it. The relayer chooses
+    /// only the fee cap: strictly higher than every earlier attempt, at most the
+    /// registered cap, at most `MAX_ATTEMPTS` attempts. A repeat while the signer
+    /// has not answered is refused, so one payout never has two requests in
+    /// flight unless it was explicitly put on hold. The signer deposit and the
+    /// storage of attempts come from the contract's own reserve.
     #[payable]
-    pub fn begin_signing(
+    pub fn request_signature(
         &mut self,
         backing: AccountId,
         holder: AccountId,
         request_id: Hash,
-    ) -> SigningPayload {
+        max_fee_per_gas: U128,
+    ) -> Promise {
         near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.relayer,
             "Only relayer"
+        );
+        let config = self.config(&backing);
+        require!(
+            max_fee_per_gas.0 > 0 && max_fee_per_gas.0 <= config.max_fee_cap,
+            "Fee cap outside the registered limit"
         );
         let (id, mut payout) = self.load(&backing, &holder, &request_id);
         payout
-            .request_signature()
+            .request_signature(max_fee_per_gas.0)
             .unwrap_or_else(|error| env::panic_str(&format!("Signing rejected: {error:?}")));
-        let view = Self::payload_of(&payout);
-        self.payouts.insert(id, payout);
-        view
+        let tx = payout
+            .authorization
+            .transfer_tx(max_fee_per_gas.0, config.gas_limit);
+        let args = json!({
+            "request": {
+                "path": payout.authorization.path,
+                "payload_v2": { "Ecdsa": evm::hex_encode(&tx.signing_hash()) },
+                "domain_id": 0,
+            }
+        })
+        .to_string()
+        .into_bytes();
+        emit(
+            "signature_requested",
+            json!({
+                "backing": backing, "holder": holder, "request_id": evm::hex_encode(&request_id),
+                "payload_hash": evm::hex_encode(&tx.signing_hash()),
+                "max_fee_per_gas": max_fee_per_gas.0.to_string(),
+                "nonce": payout.authorization.nonce,
+            }),
+        );
+        // State is written before the external call; the callback only adds to it.
+        self.save(id, payout);
+        Promise::new(self.signer.clone())
+            .function_call("sign".to_string(), args, SIGNER_DEPOSIT, SIGNER_GAS)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(SIGN_CALLBACK_GAS)
+                    .on_signature(backing, holder, request_id, max_fee_per_gas),
+            )
     }
 
-    /// Relayer only. The signed transaction must carry this payout's binding.
-    #[payable]
-    pub fn record_signature(
+    /// The only way a signature enters a payout. It is private, so only this
+    /// contract's own promise (the signer call it created) can reach it, and it
+    /// never panics: an unusable answer or a failed call holds the payout for
+    /// reconciliation, and a late answer for a closed payout is dropped.
+    /// Returns true when a new signed attempt was stored.
+    #[private]
+    pub fn on_signature(
         &mut self,
         backing: AccountId,
         holder: AccountId,
         request_id: Hash,
-        tx_hash: Hash,
-        binding_hash: Hash,
         max_fee_per_gas: U128,
+        #[callback_result] result: Result<Value, PromiseError>,
     ) -> bool {
-        near_sdk::assert_one_yocto();
-        require!(
-            env::predecessor_account_id() == self.relayer,
-            "Only relayer"
-        );
-        let (id, mut payout) = self.load(&backing, &holder, &request_id);
-        require!(
-            payout.attempts.len() < MAX_ATTEMPTS
-                || payout.attempts.iter().any(|a| a.tx_hash == tx_hash),
-            "Too many signing attempts"
-        );
-        let fresh = payout
-            .record_signature(tx_hash, binding_hash, max_fee_per_gas.0)
-            .unwrap_or_else(|error| env::panic_str(&format!("Signature rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        let id = PayoutId::derive(&backing, &holder, &request_id);
+        let (Some(mut payout), Some(config)) = (
+            self.payouts.get(&id).cloned(),
+            self.backings.get(&backing).cloned(),
+        ) else {
+            return false;
+        };
+        let parsed = result
+            .ok()
+            .and_then(|response| evm::parse_signature(&response).ok());
+        let outcome = match parsed {
+            Some(signature) => {
+                let tx = payout
+                    .authorization
+                    .transfer_tx(max_fee_per_gas.0, config.gas_limit);
+                let signed = tx.signed(&signature);
+                let tx_hash = evm::keccak(&signed);
+                let stored = StoredSignature::from(signature);
+                payout
+                    .signature_received(max_fee_per_gas.0, tx_hash, stored)
+                    .map(|fresh| (fresh, Some(tx_hash)))
+            }
+            None => payout
+                .signature_failed(max_fee_per_gas.0)
+                .map(|()| (false, None)),
+        };
+        let Ok((fresh, tx_hash)) = outcome else {
+            return false;
+        };
+        match tx_hash {
+            Some(hash) => emit(
+                "signature_received",
+                json!({
+                    "backing": backing, "holder": holder, "request_id": evm::hex_encode(&request_id),
+                    "tx_hash": evm::hex_encode(&hash),
+                    "max_fee_per_gas": max_fee_per_gas.0.to_string(),
+                }),
+            ),
+            None => emit(
+                "signature_failed",
+                json!({
+                    "backing": backing, "holder": holder, "request_id": evm::hex_encode(&request_id),
+                    "max_fee_per_gas": max_fee_per_gas.0.to_string(),
+                }),
+            ),
+        }
+        self.save(id, payout);
         fresh
     }
 
+    /// Relayer only. Records that a signed attempt was sent to the network.
     #[payable]
     pub fn record_broadcast(
         &mut self,
@@ -463,7 +641,32 @@ impl PayoutContract {
         let fresh = payout
             .record_broadcast(tx_hash)
             .unwrap_or_else(|error| env::panic_str(&format!("Broadcast rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
+        fresh
+    }
+
+    /// Relayer or operator. Records that a broadcast attempt was seen on the
+    /// network but is not final. It changes only the reported state; it never
+    /// confirms, releases or allows another spend.
+    #[payable]
+    pub fn record_pending_finality(
+        &mut self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+        tx_hash: Hash,
+    ) -> bool {
+        near_sdk::assert_one_yocto();
+        let caller = env::predecessor_account_id();
+        require!(
+            caller == self.relayer || caller == self.operator,
+            "Only relayer or operator"
+        );
+        let (id, mut payout) = self.load(&backing, &holder, &request_id);
+        let fresh = payout
+            .record_pending(tx_hash)
+            .unwrap_or_else(|error| env::panic_str(&format!("Pending rejected: {error:?}")));
+        self.save(id, payout);
         fresh
     }
 
@@ -490,7 +693,7 @@ impl PayoutContract {
                 ReasonInput::EvidenceUnavailable => Reason::EvidenceUnavailable,
             })
             .unwrap_or_else(|error| env::panic_str(&format!("Hold rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
     }
 
     /// Operator only. Marks an attempt as finalized with failure.
@@ -511,7 +714,7 @@ impl PayoutContract {
         payout
             .record_revert(tx_hash)
             .unwrap_or_else(|error| env::panic_str(&format!("Revert rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
     }
 
     /// Operator only. Validates the attested transfer against the payout, has
@@ -573,7 +776,7 @@ impl PayoutContract {
         let fresh = payout
             .confirm(&PaymentEvidence::from(&evidence))
             .unwrap_or_else(|_| env::panic_str("Payout diverged from backing"));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         fresh
     }
 
@@ -626,10 +829,11 @@ impl PayoutContract {
         payout
             .restore(attested.as_ref())
             .unwrap_or_else(|_| env::panic_str("Payout diverged from backing"));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         true
     }
 
+    /// Short label of the payout state (see `get_payout` for the full view).
     pub fn get_payout_status(
         &self,
         backing: AccountId,
@@ -639,7 +843,70 @@ impl PayoutContract {
         let id = PayoutId::derive(&backing, &holder, &request_id);
         self.payouts
             .get(&id)
-            .map(|payout| label(&payout.status).to_string())
+            .map(|payout| payout.status.state().label().to_string())
+    }
+
+    /// The stable payout view; `None` when no payout exists for the request.
+    pub fn get_payout(
+        &self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+    ) -> Option<PayoutView> {
+        let id = PayoutId::derive(&backing, &holder, &request_id);
+        self.payouts.get(&id).map(Self::view_of)
+    }
+
+    /// Unresolved payouts in creation order. Scans at most `limit` (capped at
+    /// 50) index positions from `from_index`; confirmed and restored payouts
+    /// are skipped. Walk `next_index` until it reaches `get_payout_count`.
+    pub fn list_open_payouts(&self, from_index: U64, limit: U64) -> PayoutPage {
+        let len = u64::from(self.index.len());
+        let start = from_index.0.min(len);
+        let end = start.saturating_add(limit.0.min(MAX_PAGE)).min(len);
+        let mut items = Vec::new();
+        for position in start..end {
+            let Some(key) = u32::try_from(position)
+                .ok()
+                .and_then(|position| self.index.get(position))
+            else {
+                continue;
+            };
+            let id = PayoutId::derive(&key.backing, &key.holder, &key.request_id);
+            if let Some(payout) = self.payouts.get(&id) {
+                if !payout.status.state().is_terminal() {
+                    items.push(Self::view_of(payout));
+                }
+            }
+        }
+        PayoutPage {
+            items,
+            next_index: U64(end),
+        }
+    }
+
+    pub fn get_payout_count(&self) -> U64 {
+        U64(u64::from(self.index.len()))
+    }
+
+    /// The signed transaction (hex, ready for `eth_sendRawTransaction`) of a
+    /// recorded attempt, rebuilt from the reservation and the stored signature.
+    pub fn get_signed_transaction(
+        &self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+        tx_hash: Hash,
+    ) -> Option<String> {
+        let id = PayoutId::derive(&backing, &holder, &request_id);
+        let payout = self.payouts.get(&id)?;
+        let config = self.backings.get(&backing)?;
+        let attempt = payout.attempts.iter().find(|a| a.tx_hash == tx_hash)?;
+        let signature = attempt.signature?;
+        let tx = payout
+            .authorization
+            .transfer_tx(attempt.max_fee_per_gas, config.gas_limit);
+        Some(evm::hex_encode(&tx.signed(&signature.into())))
     }
 
     pub fn get_signing_payload(
@@ -649,7 +916,31 @@ impl PayoutContract {
         request_id: Hash,
     ) -> Option<SigningPayload> {
         let id = PayoutId::derive(&backing, &holder, &request_id);
-        self.payouts.get(&id).map(Self::payload_of)
+        let payout = self.payouts.get(&id)?;
+        let config = self.backings.get(&backing)?;
+        Some(Self::payload_of(payout, config))
+    }
+
+    /// Hex of the 32-byte hash the contract asks the signer to sign for a payout
+    /// at this fee cap (what a verifier can recompute from the reservation).
+    pub fn get_signing_hash(
+        &self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+        max_fee_per_gas: U128,
+    ) -> Option<String> {
+        let id = PayoutId::derive(&backing, &holder, &request_id);
+        let payout = self.payouts.get(&id)?;
+        let config = self.backings.get(&backing)?;
+        let tx = payout
+            .authorization
+            .transfer_tx(max_fee_per_gas.0, config.gas_limit);
+        Some(evm::hex_encode(&tx.signing_hash()))
+    }
+
+    pub fn get_signer(&self) -> AccountId {
+        self.signer.clone()
     }
 
     pub fn get_next_nonce(&self, backing: AccountId) -> Option<U64> {
@@ -660,6 +951,42 @@ impl PayoutContract {
 }
 
 impl PayoutContract {
+    /// Stores a payout and emits `payout_state_changed` when its public state
+    /// differs from the stored one (or the payout is new).
+    fn save(&mut self, id: PayoutId, payout: Payout) {
+        let previous = self.payouts.get(&id).map(|p| p.status.state());
+        let current = payout.status.state();
+        if previous != Some(current) {
+            let a = &payout.authorization;
+            emit(
+                "payout_state_changed",
+                json!({
+                    "backing": a.backing, "holder": a.holder,
+                    "request_id": evm::hex_encode(&a.request_id),
+                    "from": previous.map(PayoutState::label),
+                    "to": current.label(),
+                    "reason": Self::reason_of(&payout.status),
+                }),
+            );
+        }
+        self.payouts.insert(id, payout);
+    }
+
+    fn reason_of(status: &Status) -> Option<ReasonInput> {
+        match status {
+            Status::ReconciliationRequired(Reason::SignerNoResponse) => {
+                Some(ReasonInput::SignerNoResponse)
+            }
+            Status::ReconciliationRequired(Reason::BroadcastUnconfirmed) => {
+                Some(ReasonInput::BroadcastUnconfirmed)
+            }
+            Status::ReconciliationRequired(Reason::EvidenceUnavailable) => {
+                Some(ReasonInput::EvidenceUnavailable)
+            }
+            _ => None,
+        }
+    }
+
     fn config(&self, backing: &AccountId) -> BackingConfig {
         self.backings
             .get(backing)
@@ -682,7 +1009,7 @@ impl PayoutContract {
         (id, payout)
     }
 
-    fn payload_of(payout: &Payout) -> SigningPayload {
+    fn payload_of(payout: &Payout, config: &BackingConfig) -> SigningPayload {
         let a = &payout.authorization;
         SigningPayload {
             backing: a.backing.clone(),
@@ -695,6 +1022,47 @@ impl PayoutContract {
             path: a.path.clone(),
             nonce: U64(a.nonce),
             binding_hash: payout.binding_hash,
+            gas_limit: U64(config.gas_limit),
+            max_fee_cap: U128(config.max_fee_cap),
+        }
+    }
+
+    fn view_of(payout: &Payout) -> PayoutView {
+        let a = &payout.authorization;
+        PayoutView {
+            backing: a.backing.clone(),
+            holder: a.holder.clone(),
+            request_id: a.request_id,
+            state: payout.status.state(),
+            reason: Self::reason_of(&payout.status),
+            terminal: payout.status.state().is_terminal(),
+            chain_id: U64(a.chain_id),
+            token: a.token,
+            sender: a.sender,
+            destination: a.destination,
+            amount: U128(a.amount),
+            path: a.path.clone(),
+            nonce: U64(a.nonce),
+            binding_hash: payout.binding_hash,
+            attempts: payout.attempts.iter().map(Self::attempt_view).collect(),
+            evidence_hash: match payout.status {
+                Status::Confirmed { evidence_hash } => Some(evidence_hash),
+                _ => None,
+            },
+        }
+    }
+
+    fn attempt_view(attempt: &Attempt) -> AttemptView {
+        AttemptView {
+            tx_hash: attempt.tx_hash,
+            max_fee_per_gas: U128(attempt.max_fee_per_gas),
+            state: match attempt.state {
+                AttemptState::Requested => AttemptStateView::Requested,
+                AttemptState::Signed => AttemptStateView::Signed,
+                AttemptState::Broadcast => AttemptStateView::Broadcast,
+                AttemptState::Pending => AttemptStateView::Pending,
+                AttemptState::Reverted => AttemptStateView::Reverted,
+            },
         }
     }
 }

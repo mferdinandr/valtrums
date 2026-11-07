@@ -8,6 +8,7 @@
 use near_sdk::{env, near, AccountId};
 
 pub mod contract;
+pub mod evm;
 
 pub type Hash = [u8; 32];
 
@@ -73,6 +74,23 @@ impl Authorization {
         env::sha256_array(&data)
     }
 
+    /// The exact transaction a signature may authorize: an ERC-20 `transfer` of
+    /// `amount` to `destination` on `token`, zero value, at the bound nonce.
+    /// Only the fee and the gas limit are chosen outside the reservation; the
+    /// priority fee equals the fee cap, so a higher cap is a strict replacement.
+    pub fn transfer_tx(&self, max_fee_per_gas: u128, gas_limit: u64) -> evm::EvmTx {
+        evm::EvmTx {
+            chain_id: self.chain_id,
+            nonce: self.nonce,
+            max_priority_fee_per_gas: max_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to: self.token,
+            value: 0,
+            data: evm::erc20_transfer(&self.destination, self.amount),
+        }
+    }
+
     fn is_valid(&self) -> bool {
         self.request_id != [0; 32]
             && self.chain_id > 0
@@ -85,11 +103,46 @@ impl Authorization {
     }
 }
 
+/// Signature of one attempt, kept so the signed transaction can be rebuilt
+/// from the reservation instead of being stored whole.
+#[near(serializers = [borsh])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StoredSignature {
+    pub r: [u8; 32],
+    pub s: [u8; 32],
+    pub y_parity: u8,
+}
+
+impl From<evm::EcdsaSignature> for StoredSignature {
+    fn from(value: evm::EcdsaSignature) -> Self {
+        Self {
+            r: value.r,
+            s: value.s,
+            y_parity: value.y_parity,
+        }
+    }
+}
+
+impl From<StoredSignature> for evm::EcdsaSignature {
+    fn from(value: StoredSignature) -> Self {
+        Self {
+            r: value.r,
+            s: value.s,
+            y_parity: value.y_parity,
+        }
+    }
+}
+
 #[near(serializers = [borsh])]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttemptState {
+    /// The signer was asked; no signature has been recorded (`tx_hash` is zero).
+    Requested,
+    /// The signer answered; nothing is known to be on the network.
     Signed,
     Broadcast,
+    /// Seen on the network but not finalized.
+    Pending,
     /// Finalized with failure: the nonce is consumed and no token moved.
     Reverted,
 }
@@ -97,9 +150,11 @@ pub enum AttemptState {
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attempt {
+    /// Zero while the state is `Requested`.
     pub tx_hash: Hash,
     pub max_fee_per_gas: u128,
     pub state: AttemptState,
+    pub signature: Option<StoredSignature>,
 }
 
 #[near(serializers = [borsh])]
@@ -110,16 +165,21 @@ pub enum Reason {
     EvidenceUnavailable,
 }
 
+/// Internal status. `Status::state` gives the stable public classification.
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     /// Reserved and authorized; nothing has been requested from the signer.
     Authorized,
-    /// A signature was requested. It may exist even if the response was lost.
+    /// A signature was requested and the signer callback has not run yet.
     SigningRequested,
-    /// At least one signed attempt exists and none is finalized.
+    /// The signer answered and at least one signed attempt exists.
     Signed,
     Broadcast,
+    /// A transaction was seen on the network and awaits finality.
+    PendingFinality,
+    /// Every attempt finalized with failure. Awaits a nonce-slot release proof.
+    Reverted,
     /// Unresolved: stays reserved and may not be restored or duplicated.
     ReconciliationRequired(Reason),
     Confirmed {
@@ -127,6 +187,60 @@ pub enum Status {
     },
     /// Definitively no spend remains; the reservation may be released.
     Restored,
+}
+
+/// The stable, public payout classification (see `implementation-notes.md`).
+/// Variants are only ever added, never renamed or reordered.
+#[near(serializers = [json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PayoutState {
+    Authorized,
+    SigningRequested,
+    Signed,
+    Broadcast,
+    PendingFinality,
+    Reverted,
+    ReconciliationRequired,
+    Confirmed,
+    Restored,
+}
+
+impl PayoutState {
+    pub fn label(self) -> &'static str {
+        match self {
+            PayoutState::Authorized => "authorized",
+            PayoutState::SigningRequested => "signing_requested",
+            PayoutState::Signed => "signed",
+            PayoutState::Broadcast => "broadcast",
+            PayoutState::PendingFinality => "pending_finality",
+            PayoutState::Reverted => "reverted",
+            PayoutState::ReconciliationRequired => "reconciliation_required",
+            PayoutState::Confirmed => "confirmed",
+            PayoutState::Restored => "restored",
+        }
+    }
+
+    /// Confirmed and restored never change again.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, PayoutState::Confirmed | PayoutState::Restored)
+    }
+}
+
+impl Status {
+    pub fn state(&self) -> PayoutState {
+        match self {
+            Status::Authorized => PayoutState::Authorized,
+            Status::SigningRequested => PayoutState::SigningRequested,
+            Status::Signed => PayoutState::Signed,
+            Status::Broadcast => PayoutState::Broadcast,
+            Status::PendingFinality => PayoutState::PendingFinality,
+            Status::Reverted => PayoutState::Reverted,
+            Status::ReconciliationRequired(_) => PayoutState::ReconciliationRequired,
+            Status::Confirmed { .. } => PayoutState::Confirmed,
+            Status::Restored => PayoutState::Restored,
+        }
+    }
 }
 
 /// Attested facts about the paying transfer on the source chain.
@@ -184,11 +298,17 @@ pub enum PayoutError {
     EvidenceMismatch,
     /// Replacement must use the same nonce and a strictly higher fee.
     InvalidReplacement,
+    /// A signer request is already in flight for this payout.
+    InFlight,
+    TooManyAttempts,
     /// Not enough proof to release; the reservation stays.
     NotProven,
     /// The proof shows a successful spend; confirm it instead.
     MustConfirm,
 }
+
+/// At most this many signing attempts are kept per payout.
+pub const MAX_ATTEMPTS: usize = 8;
 
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,94 +355,192 @@ impl Payout {
         }
     }
 
-    /// Mark that the signer is about to be asked. After this, an unanswered
-    /// request cannot be treated as "nothing was signed".
-    pub fn request_signature(&mut self) -> Result<bool, PayoutError> {
-        self.open()?;
-        match self.status {
-            Status::Authorized => {
-                self.status = Status::SigningRequested;
-                Ok(true)
-            }
-            Status::SigningRequested => Ok(false),
-            _ => Err(PayoutError::WrongState),
+    /// Our attempt with a recorded hash (never the zero hash of a request).
+    fn signed_attempt_mut(&mut self, tx_hash: &Hash) -> Result<&mut Attempt, PayoutError> {
+        if tx_hash == &[0; 32] {
+            return Err(PayoutError::UnknownAttempt);
         }
+        self.attempts
+            .iter_mut()
+            .find(|a| &a.tx_hash == tx_hash && a.state != AttemptState::Requested)
+            .ok_or(PayoutError::UnknownAttempt)
     }
 
-    /// Record a signed transaction. It must carry this payout's binding hash.
-    /// A same-hash repeat is idempotent; a different hash is a same-nonce
-    /// replacement and needs a strictly higher fee than every earlier attempt.
-    pub fn record_signature(
-        &mut self,
-        tx_hash: Hash,
-        binding_hash: Hash,
-        max_fee_per_gas: u128,
-    ) -> Result<bool, PayoutError> {
+    fn has_attempt(&self, tx_hash: &Hash) -> bool {
+        tx_hash != &[0; 32] && self.attempts.iter().any(|a| &a.tx_hash == tx_hash)
+    }
+
+    /// Record that the signer is about to be asked for a transaction with this
+    /// fee cap. After this, an unanswered request cannot be treated as "nothing
+    /// was signed". The fee must be strictly higher than every earlier attempt,
+    /// at most `MAX_ATTEMPTS` are kept, and while a request is unanswered no
+    /// other can start unless the payout is explicitly on hold.
+    pub fn request_signature(&mut self, max_fee_per_gas: u128) -> Result<(), PayoutError> {
         self.open()?;
-        if binding_hash != self.binding_hash || tx_hash == [0; 32] {
-            return Err(PayoutError::Tamper);
-        }
-        if matches!(self.status, Status::Authorized) {
+        if matches!(self.status, Status::Reverted) {
             return Err(PayoutError::WrongState);
         }
-        if self.attempts.iter().any(|a| a.tx_hash == tx_hash) {
-            return Ok(false);
-        }
-        if self
+        let unanswered = self
             .attempts
             .iter()
-            .any(|a| a.max_fee_per_gas >= max_fee_per_gas)
+            .any(|a| a.state == AttemptState::Requested);
+        if unanswered && !matches!(self.status, Status::ReconciliationRequired(_)) {
+            return Err(PayoutError::InFlight);
+        }
+        if self.attempts.len() >= MAX_ATTEMPTS {
+            return Err(PayoutError::TooManyAttempts);
+        }
+        if max_fee_per_gas == 0
+            || self
+                .attempts
+                .iter()
+                .any(|a| a.max_fee_per_gas >= max_fee_per_gas)
         {
             return Err(PayoutError::InvalidReplacement);
         }
         self.attempts.push(Attempt {
-            tx_hash,
+            tx_hash: [0; 32],
             max_fee_per_gas,
-            state: AttemptState::Signed,
+            state: AttemptState::Requested,
+            signature: None,
         });
-        if matches!(self.status, Status::SigningRequested) {
-            self.status = Status::Signed;
+        self.status = Status::SigningRequested;
+        Ok(())
+    }
+
+    /// Store the signature the signer returned for the request with this fee.
+    /// It is recorded even when a later request already exists: a signature that
+    /// reached the chain's history must never be unknown to the payout. A repeat
+    /// of a known transaction hash changes nothing.
+    pub fn signature_received(
+        &mut self,
+        max_fee_per_gas: u128,
+        tx_hash: Hash,
+        signature: StoredSignature,
+    ) -> Result<bool, PayoutError> {
+        self.open()?;
+        if tx_hash == [0; 32] {
+            return Err(PayoutError::Tamper);
+        }
+        let index = self
+            .attempts
+            .iter()
+            .position(|a| {
+                a.state == AttemptState::Requested && a.max_fee_per_gas == max_fee_per_gas
+            })
+            .ok_or(PayoutError::UnknownAttempt)?;
+        if self.has_attempt(&tx_hash) {
+            self.attempts.remove(index);
+            if matches!(self.status, Status::SigningRequested)
+                && !self
+                    .attempts
+                    .iter()
+                    .any(|a| a.state == AttemptState::Requested)
+            {
+                self.status = self.status_from_attempts();
+            }
+            return Ok(false);
+        }
+        let attempt = &mut self.attempts[index];
+        attempt.tx_hash = tx_hash;
+        attempt.state = AttemptState::Signed;
+        attempt.signature = Some(signature);
+        let still_unanswered = self
+            .attempts
+            .iter()
+            .any(|a| a.state == AttemptState::Requested);
+        if !still_unanswered
+            && matches!(
+                self.status,
+                Status::SigningRequested | Status::ReconciliationRequired(Reason::SignerNoResponse)
+            )
+        {
+            self.status = self.status_from_attempts();
         }
         Ok(true)
     }
 
+    /// The furthest live attempt decides the status once no request is
+    /// unanswered, so a late or replacement signature never moves a payout
+    /// backwards from `Broadcast` or `PendingFinality` to `Signed`.
+    fn status_from_attempts(&self) -> Status {
+        let has = |state| self.attempts.iter().any(|a| a.state == state);
+        if has(AttemptState::Pending) {
+            Status::PendingFinality
+        } else if has(AttemptState::Broadcast) {
+            Status::Broadcast
+        } else {
+            Status::Signed
+        }
+    }
+
+    /// The signer call failed: it produced no signature. The payout is held,
+    /// not released, and a new request may follow.
+    pub fn signature_failed(&mut self, max_fee_per_gas: u128) -> Result<(), PayoutError> {
+        self.open()?;
+        let index = self
+            .attempts
+            .iter()
+            .position(|a| {
+                a.state == AttemptState::Requested && a.max_fee_per_gas == max_fee_per_gas
+            })
+            .ok_or(PayoutError::UnknownAttempt)?;
+        self.attempts.remove(index);
+        if matches!(self.status, Status::SigningRequested) {
+            self.status = Status::ReconciliationRequired(Reason::SignerNoResponse);
+        }
+        Ok(())
+    }
+
     pub fn record_broadcast(&mut self, tx_hash: Hash) -> Result<bool, PayoutError> {
         self.open()?;
-        let attempt = self
-            .attempts
-            .iter_mut()
-            .find(|a| a.tx_hash == tx_hash)
-            .ok_or(PayoutError::UnknownAttempt)?;
-        if attempt.state == AttemptState::Broadcast {
-            return Ok(false);
-        }
-        if attempt.state == AttemptState::Reverted {
-            return Err(PayoutError::WrongState);
+        let attempt = self.signed_attempt_mut(&tx_hash)?;
+        match attempt.state {
+            AttemptState::Broadcast | AttemptState::Pending => return Ok(false),
+            AttemptState::Reverted => return Err(PayoutError::WrongState),
+            _ => {}
         }
         attempt.state = AttemptState::Broadcast;
         self.status = Status::Broadcast;
         Ok(true)
     }
 
+    /// A broadcast attempt was seen on the network but is not final.
+    pub fn record_pending(&mut self, tx_hash: Hash) -> Result<bool, PayoutError> {
+        self.open()?;
+        let attempt = self.signed_attempt_mut(&tx_hash)?;
+        match attempt.state {
+            AttemptState::Pending => return Ok(false),
+            AttemptState::Broadcast => {}
+            _ => return Err(PayoutError::WrongState),
+        }
+        attempt.state = AttemptState::Pending;
+        self.status = Status::PendingFinality;
+        Ok(true)
+    }
+
     /// Timeouts and lost responses hold the reservation; they never release it.
     pub fn require_reconciliation(&mut self, reason: Reason) -> Result<(), PayoutError> {
         self.open()?;
-        if matches!(self.status, Status::Authorized) {
+        if matches!(self.status, Status::Authorized | Status::Reverted) {
             return Err(PayoutError::WrongState);
         }
         self.status = Status::ReconciliationRequired(reason);
         Ok(())
     }
 
-    /// Mark an attempt as finalized-with-failure from attested evidence.
+    /// Mark an attempt as finalized-with-failure from attested evidence. When
+    /// no attempt can still execute, the payout becomes `Reverted`.
     pub fn record_revert(&mut self, tx_hash: Hash) -> Result<(), PayoutError> {
         self.open()?;
-        let attempt = self
+        self.signed_attempt_mut(&tx_hash)?.state = AttemptState::Reverted;
+        if self
             .attempts
-            .iter_mut()
-            .find(|a| a.tx_hash == tx_hash)
-            .ok_or(PayoutError::UnknownAttempt)?;
-        attempt.state = AttemptState::Reverted;
+            .iter()
+            .all(|a| a.state == AttemptState::Reverted)
+        {
+            self.status = Status::Reverted;
+        }
         Ok(())
     }
 
@@ -344,6 +562,7 @@ impl Payout {
             || evidence.sender != a.sender
             || evidence.recipient != a.destination
             || evidence.amount != a.amount
+            || evidence.tx_hash == [0; 32]
             || evidence.block_hash == [0; 32]
             || evidence.evidence_hash == [0; 32]
             || evidence.finalized_head_hash == [0; 32]
@@ -354,7 +573,9 @@ impl Payout {
         let attempt = self
             .attempts
             .iter()
-            .find(|attempt| attempt.tx_hash == evidence.tx_hash)
+            .find(|attempt| {
+                attempt.tx_hash == evidence.tx_hash && attempt.state != AttemptState::Requested
+            })
             .ok_or(PayoutError::EvidenceMismatch)?;
         if attempt.state == AttemptState::Reverted {
             return Err(PayoutError::EvidenceMismatch);
@@ -388,12 +609,12 @@ impl Payout {
         match &proof.outcome {
             SlotOutcome::OurTxSucceeded(_) => return Err(PayoutError::MustConfirm),
             SlotOutcome::OurTxReverted(hash) => {
-                if !self.attempts.iter().any(|a| &a.tx_hash == hash) {
+                if !self.has_attempt(hash) {
                     return Err(PayoutError::NotProven);
                 }
             }
             SlotOutcome::ForeignTx(hash) => {
-                if self.attempts.iter().any(|a| &a.tx_hash == hash) {
+                if hash == &[0; 32] || self.has_attempt(hash) {
                     return Err(PayoutError::NotProven);
                 }
             }
@@ -440,12 +661,18 @@ mod tests {
             evidence_hash: [7; 32],
         }
     }
+    fn sig() -> StoredSignature {
+        StoredSignature {
+            r: [1; 32],
+            s: [2; 32],
+            y_parity: 0,
+        }
+    }
     fn signed(tx: u8, fee: u128) -> Payout {
         let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("authorize");
-        payout.request_signature().expect("request");
-        let binding = payout.binding_hash;
+        payout.request_signature(fee).expect("request");
         payout
-            .record_signature([tx; 32], binding, fee)
+            .signature_received(fee, [tx; 32], sig())
             .expect("sign");
         payout
     }
@@ -502,35 +729,167 @@ mod tests {
             edit(&mut changed);
             assert_ne!(changed.binding_hash(), base);
         }
-        // A signature whose binding does not match is refused and recorded nowhere.
-        let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
-        payout.request_signature().expect("request");
-        let mut tampered = auth("a.testnet", 1);
-        tampered.destination = [4; 20];
-        assert_eq!(
-            payout.record_signature([1; 32], tampered.binding_hash(), 10),
-            Err(PayoutError::Tamper)
-        );
-        assert!(payout.attempts.is_empty());
+    }
+
+    #[test]
+    fn the_transaction_is_rebuilt_from_the_authorization_alone() {
+        let a = auth("a.testnet", 1);
+        let tx = a.transfer_tx(10, 100_000);
+        assert_eq!(tx.to, a.token);
+        assert_eq!(tx.chain_id, a.chain_id);
+        assert_eq!(tx.nonce, a.nonce);
+        assert_eq!(tx.value, 0);
+        assert_eq!(tx.data, evm::erc20_transfer(&a.destination, a.amount));
+        assert_eq!(tx.max_priority_fee_per_gas, tx.max_fee_per_gas);
+        // Any changed recipient, amount, nonce or token changes the signing hash.
+        let base = tx.signing_hash();
+        let edits: [fn(&mut Authorization); 4] = [
+            |a| a.destination = [4; 20],
+            |a| a.amount = 99,
+            |a| a.nonce = 6,
+            |a| a.token = [4; 20],
+        ];
+        for edit in edits {
+            let mut changed = auth("a.testnet", 1);
+            edit(&mut changed);
+            assert_ne!(changed.transfer_tx(10, 100_000).signing_hash(), base);
+        }
     }
 
     #[test]
     fn a_signature_alone_never_confirms_and_signing_needs_a_prior_request() {
         let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
-        let binding = payout.binding_hash;
         assert_eq!(
-            payout.record_signature([1; 32], binding, 10),
-            Err(PayoutError::WrongState)
+            payout.signature_received(10, [1; 32], sig()),
+            Err(PayoutError::UnknownAttempt)
         );
-        assert_eq!(payout.request_signature(), Ok(true));
-        assert_eq!(payout.request_signature(), Ok(false));
-        assert_eq!(payout.record_signature([1; 32], binding, 10), Ok(true));
-        assert_eq!(payout.record_signature([1; 32], binding, 10), Ok(false));
-        assert_eq!(payout.status, Status::Signed);
+        assert_eq!(payout.status.state(), PayoutState::Authorized);
+        assert_eq!(payout.request_signature(10), Ok(()));
+        // One request at a time while the signer has not answered.
+        assert_eq!(payout.request_signature(11), Err(PayoutError::InFlight));
+        assert_eq!(payout.status.state(), PayoutState::SigningRequested);
+        assert_eq!(payout.signature_received(10, [1; 32], sig()), Ok(true));
+        assert_eq!(
+            payout.signature_received(10, [1; 32], sig()),
+            Err(PayoutError::UnknownAttempt)
+        );
+        assert_eq!(payout.status.state(), PayoutState::Signed);
         assert_eq!(payout.record_broadcast([1; 32]), Ok(true));
         assert_eq!(payout.record_broadcast([1; 32]), Ok(false));
-        assert_eq!(payout.status, Status::Broadcast);
-        assert!(!matches!(payout.status, Status::Confirmed { .. }));
+        assert_eq!(payout.status.state(), PayoutState::Broadcast);
+        assert_eq!(payout.record_pending([1; 32]), Ok(true));
+        assert_eq!(payout.record_pending([1; 32]), Ok(false));
+        assert_eq!(payout.status.state(), PayoutState::PendingFinality);
+        assert!(!payout.status.state().is_terminal());
+    }
+
+    #[test]
+    fn pending_needs_a_broadcast_and_zero_hashes_never_match_a_request() {
+        let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
+        payout.request_signature(10).expect("request");
+        assert_eq!(
+            payout.record_broadcast([0; 32]),
+            Err(PayoutError::UnknownAttempt)
+        );
+        assert_eq!(
+            payout.record_revert([0; 32]),
+            Err(PayoutError::UnknownAttempt)
+        );
+        let mut zero = evidence(0);
+        zero.tx_hash = [0; 32];
+        assert_eq!(payout.confirm(&zero), Err(PayoutError::EvidenceMismatch));
+        payout.signature_received(10, [1; 32], sig()).expect("sign");
+        assert_eq!(payout.record_pending([1; 32]), Err(PayoutError::WrongState));
+        assert_eq!(
+            payout.record_pending([2; 32]),
+            Err(PayoutError::UnknownAttempt)
+        );
+    }
+
+    #[test]
+    fn a_failed_signer_call_holds_the_payout_and_allows_a_retry() {
+        let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
+        payout.request_signature(10).expect("request");
+        payout.signature_failed(10).expect("failed");
+        assert_eq!(
+            payout.status,
+            Status::ReconciliationRequired(Reason::SignerNoResponse)
+        );
+        assert!(payout.attempts.is_empty());
+        // The failed request left nothing a replacement must outbid, but the
+        // reservation is held: cancelling needs proof.
+        assert_eq!(payout.restore(None), Err(PayoutError::NotProven));
+        assert_eq!(payout.request_signature(10), Ok(()));
+        assert_eq!(payout.signature_received(10, [1; 32], sig()), Ok(true));
+        assert_eq!(payout.status.state(), PayoutState::Signed);
+    }
+
+    #[test]
+    fn replacements_need_a_strictly_higher_fee_and_at_most_eight_attempts() {
+        let mut payout = signed(1, 10);
+        assert_eq!(
+            payout.request_signature(10),
+            Err(PayoutError::InvalidReplacement)
+        );
+        assert_eq!(
+            payout.request_signature(9),
+            Err(PayoutError::InvalidReplacement)
+        );
+        assert_eq!(
+            payout.request_signature(0),
+            Err(PayoutError::InvalidReplacement)
+        );
+        for n in 2u8..=8 {
+            payout
+                .request_signature(u128::from(n) * 10)
+                .expect("replace");
+            payout
+                .signature_received(u128::from(n) * 10, [n; 32], sig())
+                .expect("sign");
+        }
+        assert_eq!(payout.attempts.len(), MAX_ATTEMPTS);
+        assert_eq!(
+            payout.request_signature(1_000),
+            Err(PayoutError::TooManyAttempts)
+        );
+        // History is kept; any attempt may be the one that executes.
+        assert_eq!(payout.confirm(&evidence(1)), Ok(true));
+    }
+
+    #[test]
+    fn a_late_signature_is_recorded_even_after_a_higher_request() {
+        let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
+        payout.request_signature(10).expect("request");
+        payout
+            .require_reconciliation(Reason::SignerNoResponse)
+            .expect("hold");
+        // A replacement may start while the first callback is lost.
+        payout.request_signature(20).expect("replacement");
+        payout
+            .signature_received(20, [2; 32], sig())
+            .expect("second");
+        assert_eq!(payout.status.state(), PayoutState::SigningRequested);
+        // The older answer arrives late: it must still become known.
+        assert_eq!(payout.signature_received(10, [1; 32], sig()), Ok(true));
+        assert_eq!(payout.status.state(), PayoutState::Signed);
+        assert_eq!(payout.attempts.len(), 2);
+        assert_eq!(payout.confirm(&evidence(1)), Ok(true));
+    }
+
+    #[test]
+    fn a_replacement_signature_never_moves_a_payout_backwards() {
+        let mut payout = signed(1, 10);
+        payout.record_broadcast([1; 32]).expect("broadcast");
+        payout.record_pending([1; 32]).expect("pending");
+        payout.request_signature(20).expect("replace");
+        assert_eq!(payout.status.state(), PayoutState::SigningRequested);
+        payout.signature_received(20, [2; 32], sig()).expect("sign");
+        assert_eq!(payout.status.state(), PayoutState::PendingFinality);
+        // The same signed transaction answered twice is a no-op that still resolves the request.
+        payout.request_signature(30).expect("replace again");
+        assert_eq!(payout.signature_received(30, [2; 32], sig()), Ok(false));
+        assert_eq!(payout.status.state(), PayoutState::PendingFinality);
+        assert_eq!(payout.attempts.len(), 2);
     }
 
     #[test]
@@ -550,7 +909,7 @@ mod tests {
             let mut wrong = evidence(1);
             edit(&mut wrong);
             assert_eq!(payout.confirm(&wrong), Err(PayoutError::EvidenceMismatch));
-            assert_eq!(payout.status, Status::Broadcast);
+            assert_eq!(payout.status.state(), PayoutState::Broadcast);
         }
         assert_eq!(payout.confirm(&evidence(1)), Ok(true));
         assert_eq!(payout.confirm(&evidence(1)), Ok(false));
@@ -560,32 +919,52 @@ mod tests {
             payout.confirm(&conflicting),
             Err(PayoutError::EvidenceMismatch)
         );
-        assert_eq!(payout.request_signature(), Err(PayoutError::Closed));
+        assert_eq!(payout.request_signature(99), Err(PayoutError::Closed));
+        assert_eq!(payout.record_pending([1; 32]), Err(PayoutError::Closed));
         assert_eq!(payout.restore(None), Err(PayoutError::Closed));
+        assert!(payout.status.state().is_terminal());
     }
 
     #[test]
-    fn lost_responses_hold_the_reservation_and_replacements_keep_nonce_and_history() {
+    fn reverts_move_to_reverted_only_when_no_attempt_can_still_execute() {
+        let mut payout = signed(1, 10);
+        payout.request_signature(20).expect("replace");
+        payout.signature_received(20, [2; 32], sig()).expect("sign");
+        payout.record_broadcast([1; 32]).expect("broadcast");
+        payout.record_revert([1; 32]).expect("revert one");
+        assert_eq!(payout.status.state(), PayoutState::Broadcast);
+        payout.record_revert([2; 32]).expect("revert two");
+        assert_eq!(payout.status.state(), PayoutState::Reverted);
+        // A reverted payout accepts no new spend and cannot be re-held.
+        assert_eq!(payout.request_signature(30), Err(PayoutError::WrongState));
+        assert_eq!(
+            payout.require_reconciliation(Reason::EvidenceUnavailable),
+            Err(PayoutError::WrongState)
+        );
+        assert_eq!(
+            payout.record_broadcast([1; 32]),
+            Err(PayoutError::WrongState)
+        );
+        assert_eq!(
+            payout.confirm(&evidence(1)),
+            Err(PayoutError::EvidenceMismatch)
+        );
+    }
+
+    #[test]
+    fn lost_responses_hold_the_reservation() {
         let mut payout = Payout::authorize(auth("a.testnet", 1)).expect("payout");
-        payout.request_signature().expect("request");
+        payout.request_signature(10).expect("request");
         payout
             .require_reconciliation(Reason::SignerNoResponse)
             .expect("hold");
+        assert_eq!(payout.status.state(), PayoutState::ReconciliationRequired);
         // A lost signer response may hide a signature: cancelling is not allowed.
         assert_eq!(payout.restore(None), Err(PayoutError::NotProven));
-        let binding = payout.binding_hash;
         payout
-            .record_signature([1; 32], binding, 10)
+            .signature_received(10, [1; 32], sig())
             .expect("late signature");
         payout.record_broadcast([1; 32]).expect("broadcast");
-        // Same-nonce replacement must pay strictly more; older attempts stay recorded.
-        assert_eq!(
-            payout.record_signature([2; 32], binding, 10),
-            Err(PayoutError::InvalidReplacement)
-        );
-        assert_eq!(payout.record_signature([2; 32], binding, 11), Ok(true));
-        assert_eq!(payout.attempts.len(), 2);
-        // Either attempt may be the one that executes.
         assert_eq!(payout.confirm(&evidence(1)), Ok(true));
     }
 
@@ -609,11 +988,9 @@ mod tests {
             .require_reconciliation(Reason::BroadcastUnconfirmed)
             .expect("hold");
         assert_eq!(payout.restore(None), Err(PayoutError::NotProven));
-        // The slot is not consumed yet.
         let mut early = proof(SlotOutcome::OurTxReverted([1; 32]));
         early.finalized_nonce = 5;
         assert_eq!(payout.restore(Some(&early)), Err(PayoutError::NotProven));
-        // Wrong sender or an unknown "our" transaction proves nothing.
         let mut other_sender = proof(SlotOutcome::OurTxReverted([1; 32]));
         other_sender.sender = [4; 20];
         assert_eq!(
@@ -624,34 +1001,22 @@ mod tests {
             payout.restore(Some(&proof(SlotOutcome::OurTxReverted([9; 32])))),
             Err(PayoutError::NotProven)
         );
-        // A foreign tx that is actually our attempt is not a foreign slot.
         assert_eq!(
             payout.restore(Some(&proof(SlotOutcome::ForeignTx([1; 32])))),
             Err(PayoutError::NotProven)
         );
-        // A successful spend must be confirmed, not restored.
         assert_eq!(
             payout.restore(Some(&proof(SlotOutcome::OurTxSucceeded([1; 32])))),
             Err(PayoutError::MustConfirm)
         );
-        assert_eq!(
-            payout.status,
-            Status::ReconciliationRequired(Reason::BroadcastUnconfirmed)
-        );
+        assert_eq!(payout.status.state(), PayoutState::ReconciliationRequired);
         payout.record_revert([1; 32]).expect("revert");
-        assert_eq!(
-            payout.record_broadcast([1; 32]),
-            Err(PayoutError::WrongState)
-        );
-        assert_eq!(
-            payout.confirm(&evidence(1)),
-            Err(PayoutError::EvidenceMismatch)
-        );
+        assert_eq!(payout.status.state(), PayoutState::Reverted);
         assert_eq!(
             payout.restore(Some(&proof(SlotOutcome::OurTxReverted([1; 32])))),
             Ok(())
         );
-        assert_eq!(payout.status, Status::Restored);
+        assert_eq!(payout.status.state(), PayoutState::Restored);
         // A foreign transaction consuming the nonce also releases an unexecuted payout.
         let mut replaced = signed(1, 10);
         replaced.record_broadcast([1; 32]).expect("broadcast");
@@ -659,5 +1024,37 @@ mod tests {
             replaced.restore(Some(&proof(SlotOutcome::ForeignTx([6; 32])))),
             Ok(())
         );
+        // A zero hash never stands for a request that has no transaction yet.
+        let mut requested = Payout::authorize(auth("a.testnet", 1)).expect("payout");
+        requested.request_signature(10).expect("request");
+        assert_eq!(
+            requested.restore(Some(&proof(SlotOutcome::OurTxReverted([0; 32])))),
+            Err(PayoutError::NotProven)
+        );
+        assert_eq!(
+            requested.restore(Some(&proof(SlotOutcome::ForeignTx([0; 32])))),
+            Err(PayoutError::NotProven)
+        );
+    }
+
+    #[test]
+    fn every_status_maps_to_one_stable_label() {
+        let labels = [
+            (PayoutState::Authorized, "authorized"),
+            (PayoutState::SigningRequested, "signing_requested"),
+            (PayoutState::Signed, "signed"),
+            (PayoutState::Broadcast, "broadcast"),
+            (PayoutState::PendingFinality, "pending_finality"),
+            (PayoutState::Reverted, "reverted"),
+            (
+                PayoutState::ReconciliationRequired,
+                "reconciliation_required",
+            ),
+            (PayoutState::Confirmed, "confirmed"),
+            (PayoutState::Restored, "restored"),
+        ];
+        for (state, label) in labels {
+            assert_eq!(state.label(), label);
+        }
     }
 }

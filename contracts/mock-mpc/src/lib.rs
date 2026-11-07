@@ -23,7 +23,13 @@ pub struct SignInput {
 pub struct MockMpc {
     /// When set, `sign` panics, so callers can exercise their failure path.
     fail: bool,
+    /// When set, `sign` answers with a response no caller can parse.
+    malformed: bool,
     signed: u64,
+    /// The payload and path of the most recent `sign` call, so tests can check
+    /// exactly what the caller asked to have signed.
+    last_payload: String,
+    last_path: String,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -36,8 +42,23 @@ impl MockMpc {
     pub fn new() -> Self {
         Self {
             fail: false,
+            malformed: false,
             signed: 0,
+            last_payload: String::new(),
+            last_path: String::new(),
         }
+    }
+
+    pub fn set_malformed(&mut self, malformed: bool) {
+        self.malformed = malformed;
+    }
+
+    pub fn get_last_payload(&self) -> String {
+        self.last_payload.clone()
+    }
+
+    pub fn get_last_path(&self) -> String {
+        self.last_path.clone()
     }
 
     pub fn set_fail(&mut self, fail: bool) {
@@ -64,6 +85,11 @@ impl MockMpc {
             "Only domain 0 is supported by the mock"
         );
         self.signed += 1;
+        self.last_payload = payload.clone();
+        self.last_path = request.path.clone();
+        if self.malformed {
+            return json!({"Secp256k1": {"big_r": "zz", "s": "00", "recovery_id": 9}});
+        }
 
         let mut seed = payload.as_bytes().to_vec();
         seed.extend_from_slice(request.path.as_bytes());
