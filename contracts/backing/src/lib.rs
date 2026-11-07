@@ -93,6 +93,46 @@ pub struct CustodyLedgerView {
     pub reconciliation_required: bool,
 }
 
+/// Result of reserving a payout: the exact amount in source atomic units that
+/// the source-chain transfer must carry.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReservedPayout {
+    pub created: bool,
+    pub source_amount: U128,
+}
+
+/// JSON form of a finalized source debit, with amounts as decimal strings.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FinalizedDebitInput {
+    pub chain_id: U64,
+    pub token_address: String,
+    pub custody_domain: String,
+    pub destination: [u8; 20],
+    pub source_amount: U128,
+    pub recipient_received: U128,
+    pub transaction_hash: [u8; 32],
+    pub log_index: u32,
+    pub block_hash: [u8; 32],
+}
+
+impl From<FinalizedDebitInput> for reservation::FinalizedDebit {
+    fn from(value: FinalizedDebitInput) -> Self {
+        Self {
+            chain_id: value.chain_id.0,
+            token_address: value.token_address,
+            custody_domain: value.custody_domain,
+            destination: value.destination,
+            source_amount: value.source_amount.0,
+            recipient_received: value.recipient_received.0,
+            transaction_hash: value.transaction_hash,
+            log_index: value.log_index,
+            block_hash: value.block_hash,
+        }
+    }
+}
+
 /// Immutable record of one settlement allocation converted into an entitlement.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +151,8 @@ pub struct Backing {
     mapping_version: u64,
     /// The only account allowed to convert its locked representations into entitlements.
     arena: AccountId,
+    /// The only account allowed to reserve, confirm or release payouts.
+    payout: AccountId,
     paused: bool,
     token: FungibleToken,
     metadata: FungibleTokenMetadata,
@@ -138,6 +180,7 @@ impl Backing {
         registry: AccountId,
         mapping_version: U64,
         arena: AccountId,
+        payout: AccountId,
     ) -> Self {
         require!(mapping_version.0 > 0, "Invalid mapping version");
         let mut asset = asset;
@@ -188,6 +231,7 @@ impl Backing {
             registry,
             mapping_version: mapping_version.0,
             arena,
+            payout,
             paused: false,
             token: FungibleToken::new(StorageKey::Token),
             metadata,
@@ -413,6 +457,75 @@ impl Backing {
 
     pub fn get_allocation(&self, allocation_id: [u8; 32]) -> Option<Allocation> {
         self.allocations.get(&allocation_id).cloned()
+    }
+
+    /// Payout hand-off, callable only by the payout account fixed at
+    /// initialization. Reserves part of `beneficiary`'s entitlement for one
+    /// original-token payout. The payout contract must have authenticated that
+    /// the beneficiary asked for it. Returns false for an identical repeat.
+    pub fn reserve_payout(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        amount: U128,
+        destination: [u8; 20],
+    ) -> ReservedPayout {
+        self.assert_payout_authority();
+        let created = self
+            .reserve_entitlement(beneficiary.clone(), request_id, amount.0, destination)
+            .unwrap_or_else(|error| env::panic_str(&format!("Reservation rejected: {error:?}")));
+        let source_amount = self
+            .reservations
+            .get(&(beneficiary, request_id))
+            .map(|item| item.source_amount)
+            .unwrap_or_else(|| env::panic_str("Reservation missing"));
+        ReservedPayout {
+            created,
+            source_amount: U128(source_amount),
+        }
+    }
+
+    /// Consume a payout reservation after the payout authority has verified a
+    /// matching finalized debit. Exactly-once; a repeat returns false.
+    pub fn confirm_payout(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        evidence: FinalizedDebitInput,
+    ) -> bool {
+        self.assert_payout_authority();
+        self.confirm_payout_reservation(beneficiary, request_id, evidence.into())
+            .unwrap_or_else(|error| env::panic_str(&format!("Confirmation rejected: {error:?}")))
+    }
+
+    /// Return a payout reservation to the entitlement after the payout
+    /// authority has proven no executable spend remains. A repeat returns false.
+    pub fn release_payout(&mut self, beneficiary: AccountId, request_id: [u8; 32]) -> bool {
+        self.assert_payout_authority();
+        self.release_payout_reservation(beneficiary, request_id)
+            .unwrap_or_else(|error| env::panic_str(&format!("Release rejected: {error:?}")))
+    }
+
+    /// Lifecycle of a payout reservation: reserved, broadcast, confirmed or released.
+    pub fn payout_reservation_status(
+        &self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+    ) -> Option<String> {
+        use reservation::ReservationStatus;
+        let item = self.reservations.get(&(beneficiary, request_id))?;
+        if item.kind != reservation::ReservationKind::Payout {
+            return None;
+        }
+        Some(
+            match item.status {
+                ReservationStatus::Reserved => "reserved",
+                ReservationStatus::Broadcast { .. } => "broadcast",
+                ReservationStatus::Confirmed { .. } => "confirmed",
+                ReservationStatus::Released => "released",
+            }
+            .to_string(),
+        )
     }
 
     /// The owner can halt affected transfers; this does not alter liabilities.
@@ -863,6 +976,95 @@ impl Backing {
         Ok(changed)
     }
 
+    fn assert_payout_authority(&self) {
+        require!(
+            env::predecessor_account_id() == self.payout,
+            "Only payout authority"
+        );
+    }
+
+    /// Confirm a payout reservation. The payout authority has already verified
+    /// that the evidence names one of its signed attempts, so a replacement
+    /// transaction may differ from the hash recorded earlier; every other check
+    /// is the redemption confirmation's.
+    pub fn confirm_payout_reservation(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        evidence: reservation::FinalizedDebit,
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{ReservationError, ReservationKind, ReservationStatus};
+        let key = (beneficiary.clone(), request_id);
+        let mut item = self
+            .reservations
+            .get(&key)
+            .cloned()
+            .ok_or(ReservationError::MissingReservation)?;
+        if item.kind != ReservationKind::Payout {
+            return Err(ReservationError::WrongKind);
+        }
+        match item.status {
+            ReservationStatus::Released => return Err(ReservationError::AlreadyReleased),
+            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {
+                if evidence.transaction_hash == [0; 32] {
+                    return Err(ReservationError::InvalidTransaction);
+                }
+                item.status = ReservationStatus::Broadcast {
+                    transaction_hash: evidence.transaction_hash,
+                };
+                self.reservations.insert(key, item);
+            }
+            ReservationStatus::Confirmed { .. } => {}
+        }
+        self.confirm_redemption(beneficiary, request_id, evidence)
+    }
+
+    /// Return a payout reservation to the beneficiary's entitlement. The caller
+    /// must have proven that no executable source-chain spend remains.
+    pub fn release_payout_reservation(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{ReservationError, ReservationKind, ReservationStatus};
+        if self.paused || self.reconciliation_required {
+            return Err(ReservationError::Paused);
+        }
+        let key = (beneficiary.clone(), request_id);
+        let mut item = self
+            .reservations
+            .get(&key)
+            .cloned()
+            .ok_or(ReservationError::MissingReservation)?;
+        if item.kind != ReservationKind::Payout {
+            return Err(ReservationError::WrongKind);
+        }
+        match item.status {
+            ReservationStatus::Released => return Ok(false),
+            ReservationStatus::Confirmed { .. } => return Err(ReservationError::AlreadyConfirmed),
+            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {}
+        }
+        let balance = self
+            .entitlement_balances
+            .get(&beneficiary)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(item.amount)
+            .ok_or(ReservationError::InvalidLedger)?;
+        let mut next = self.ledger.clone();
+        next.move_liability(
+            ledger::Bucket::Payouts,
+            ledger::Bucket::Entitlements,
+            item.amount,
+        )
+        .map_err(|_| ReservationError::InvalidLedger)?;
+        item.status = ReservationStatus::Released;
+        self.ledger = next;
+        self.entitlement_balances.insert(beneficiary, balance);
+        self.reservations.insert(key, item);
+        Ok(true)
+    }
+
     /// Apply an authenticated finalized redemption debit exactly once. This
     /// internal method validates binding but cannot itself prove finality;
     /// there is no exported callback until the verifier is implemented.
@@ -1127,6 +1329,7 @@ mod tests {
             account("registry.testnet"),
             U64(1),
             account("arena.testnet"),
+            account("payout.testnet"),
         )
     }
     fn observed(amount: u128, index: u32) -> receipt::Receipt {
@@ -1180,6 +1383,7 @@ mod tests {
             account("registry.testnet"),
             U64(1),
             account("arena.testnet"),
+            account("payout.testnet"),
         );
         let item = observed(9_876, 1);
         assert_eq!(contract.observe_receipt(item.clone()), Ok(true));
@@ -1229,6 +1433,7 @@ mod tests {
             account("registry.testnet"),
             U64(1),
             account("arena.testnet"),
+            account("payout.testnet"),
         );
         contract.ledger.custody = 10;
         contract.ledger.minted = 1;
@@ -1459,6 +1664,7 @@ mod tests {
             account("registry.testnet"),
             U64(1),
             account("arena.testnet"),
+            account("payout.testnet"),
         );
         let item = observed(98, 1);
         contract.observe_receipt(item.clone()).expect("observe");
@@ -1773,6 +1979,122 @@ mod tests {
         assert_eq!(
             contract.confirm_redemption(bob, [2; 32], debit(40, 6)),
             Err(ReservationError::EvidenceMismatch)
+        );
+    }
+
+    fn entitled(amount: u128) -> (Backing, AccountId) {
+        let mut contract = contract();
+        funded_arena(&mut contract, amount);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(amount));
+        (contract, bob)
+    }
+
+    #[test]
+    fn only_the_payout_authority_can_reserve_confirm_or_release() {
+        let (mut contract, bob) = entitled(100);
+        context("payout.testnet", 0);
+        let first = contract.reserve_payout(bob.clone(), [1; 32], U128(60), [9; 20]);
+        assert_eq!((first.created, first.source_amount), (true, U128(60)));
+        let repeat = contract.reserve_payout(bob.clone(), [1; 32], U128(60), [9; 20]);
+        assert_eq!((repeat.created, repeat.source_amount), (false, U128(60)));
+        assert_eq!(
+            contract.payout_reservation_status(bob.clone(), [1; 32]),
+            Some("reserved".into())
+        );
+        for caller in ["bob.testnet", "owner.testnet", "arena.testnet"] {
+            context(caller, 0);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                contract.release_payout(bob.clone(), [1; 32])
+            }));
+            assert!(outcome.is_err(), "{caller} must not release");
+        }
+        assert_eq!(contract.get_ledger().payouts, U128(60));
+    }
+
+    #[test]
+    fn release_returns_the_entitlement_once_and_never_after_confirmation() {
+        let (mut contract, bob) = entitled(100);
+        context("payout.testnet", 0);
+        assert!(
+            contract
+                .reserve_payout(bob.clone(), [1; 32], U128(60), [9; 20])
+                .created
+        );
+        assert!(contract.release_payout(bob.clone(), [1; 32]));
+        assert!(!contract.release_payout(bob.clone(), [1; 32]));
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(100));
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.entitlements, ledger.payouts), (U128(100), U128(0)));
+        assert!(ledger.accounting_balanced);
+        assert_eq!(
+            contract.payout_reservation_status(bob.clone(), [1; 32]),
+            Some("released".into())
+        );
+        // A released reservation cannot be confirmed or broadcast later.
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [1; 32], debit(60, 7)),
+            Err(reservation::ReservationError::AlreadyReleased)
+        );
+        assert_eq!(
+            contract.release_payout_reservation(account("nobody.testnet"), [1; 32]),
+            Err(reservation::ReservationError::MissingReservation)
+        );
+        // A confirmed payout cannot be released.
+        assert!(
+            contract
+                .reserve_payout(bob.clone(), [2; 32], U128(40), [9; 20])
+                .created
+        );
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [2; 32], debit(40, 7)),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [2; 32], debit(40, 7)),
+            Ok(false)
+        );
+        assert_eq!(
+            contract.release_payout_reservation(bob.clone(), [2; 32]),
+            Err(reservation::ReservationError::AlreadyConfirmed)
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.payouts), (U128(60), U128(0)));
+        assert_eq!(ledger.entitlements, U128(60));
+        assert!(ledger.accounting_balanced);
+    }
+
+    #[test]
+    fn payout_confirmation_accepts_a_replacement_hash_but_not_a_changed_debit() {
+        let (mut contract, bob) = entitled(100);
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 60, [9; 20]),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.record_reservation_broadcast(bob.clone(), [1; 32], [6; 32]),
+            Ok(true)
+        );
+        // The payout authority vouched for a replacement attempt with another hash.
+        let mut wrong = debit(60, 7);
+        wrong.recipient_received = 59;
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [1; 32], wrong),
+            Err(reservation::ReservationError::EvidenceMismatch)
+        );
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [1; 32], debit(60, 7)),
+            Ok(true)
+        );
+        // The same debit cannot pay a second reservation.
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [3; 32], 40, [9; 20]),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.confirm_payout_reservation(bob, [3; 32], debit(40, 7)),
+            Err(reservation::ReservationError::DebitAlreadyConsumed)
         );
     }
 

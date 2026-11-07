@@ -106,7 +106,7 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         "owner": owner.id(),
         "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
         "name": "Representation fixture", "symbol": "TEST",
-        "registry": registry.id(), "mapping_version": "1", "arena": owner.id()
+        "registry": registry.id(), "mapping_version": "1", "arena": owner.id(), "payout": owner.id()
     })).max_gas().transact().await?.into_result()?;
     owner
         .call(registry.id(), "set_representation")

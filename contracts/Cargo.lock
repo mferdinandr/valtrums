@@ -4102,6 +4102,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-payout"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-receipt-registry"
 version = "0.1.0"
 dependencies = [
