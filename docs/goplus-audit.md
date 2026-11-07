@@ -106,4 +106,12 @@ The evidence TTL is configurable (default 600 s) and the audit pass runs inside 
 
 The reference pair is part of the community mapping committed at lifecycle creation (`reference_chain_id`, normalized lowercase `reference_address`, both or neither, no two communities sharing a pair; mapping label `asset-identity-v2`). `submit_lifecycle_audit` requires the approval's asset to equal the committed asset including the pair. The agent audits the pair read from the battle view, compares it with the protocol registry and holds Pending on any mismatch, on a committed pair absent from the registry, or when the registry maps a token that has no committed pair. The registry remains the authority for which mappings are acceptable. The borsh layout changed, so a fresh arena is required.
 
+## Future improvements (not scheduled)
+
+Not built and not tasks; no fallback code exists.
+
+- **Fallback audit for tokens GoPlus does not cover.** Phase 1 is static: Sourcify v2 verified source and ABI plus on-chain reads such as owner, proxy slot and bytecode. It can only fill admin and ownership context, not tax or honeypot fields.
+- **Buy/sell simulation** to measure honeypot behaviour and taxes, for example by `eth_call` with state overrides against the DEX router, is deferred. It needs an RPC that supports state overrides (not yet verified) and a decision on how simulated results map into the tax and honeypot fields.
+- Until a source of tax and honeypot data exists, tokens without GoPlus data remain Pending under the existing rule that unknown mandatory fields hold Pending.
+
 The corresponding [OpenSpec audit requirements](openspec/changes/arena-audit/specs/arena-audit/spec.md) are the acceptance criteria. DAO rules remain independent and OPEN.
