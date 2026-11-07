@@ -47,7 +47,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 ## Lifecycle and coverage
 
 - [x] Schedule audit refresh in the agent pass (every pass, ahead of expiry, locked battles skipped, failures isolated) via a new `get_lifecycle_battle_count` view and `submit_lifecycle_audit`.
-- [ ] Refuse lock on expired or changed evidence end to end: the agent does not yet drive `lock_lifecycle_battle`, and the contract checks only that an approval is present, not its expiry, so a lapse is prevented only by the pass withdrawing the approval.
+- [x] Refuse lock on expired or changed evidence end to end: audit approvals carry an expiry set only by `submit_lifecycle_audit`, `lock_lifecycle_battle` refuses an expired, missing, changed-asset or policy-mismatched approval, and the agent lock step (`lifecycle-lock.ts`, `AUDIT_LOCK_ENABLED`) sends the lock after a fresh refresh. Fixture and sandbox verified only; recovery after a live token-policy change stays OPEN.
 - [ ] Integrate consistent field reasons with lifecycle logs and future clients (reports exist; no log or client wiring yet).
 - [ ] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations.
 - [x] Label fixtures as adapter verification and retain Pending for unsupported or unmapped coverage; mainnet `4663` evidence is accepted only through the registry reference mapping.

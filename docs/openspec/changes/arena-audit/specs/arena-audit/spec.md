@@ -129,3 +129,31 @@ The cron auditor SHALL refresh affected community evidence before lock under a v
 #### Scenario: Expired or changed evidence
 - **WHEN** audit evidence expires or a community/token mapping changes before lock
 - **THEN** lock is refused until the affected community satisfies the refreshed audit and separate liquidity gate
+
+### Requirement: Lock refuses expired or changed approvals
+The arena SHALL store, with each audit pass, an expiry taken only from the whitelisted `submit_lifecycle_audit` call, and `lock_lifecycle_battle` SHALL refuse unless every community's approval exists, is before its expiry, binds the committed asset and matches the pinned policy hash when one is set. The agent SHALL send the lock only when every community is approved and fresh.
+
+#### Scenario: Expired approval
+- **WHEN** block time is at or after one community's approval expiry
+- **THEN** the lock is refused, the battle stays unlocked, and a refreshed pass lets it proceed
+
+#### Scenario: Changed asset or policy
+- **WHEN** an approval no longer equals the committed asset, or its policy hash differs from the pinned policy
+- **THEN** the lock is refused
+
+#### Scenario: Missing or withdrawn approval
+- **WHEN** a community has no approval or a reject or pending result withdrew it
+- **THEN** the lock is refused
+
+#### Scenario: Invalid expiry on submission
+- **WHEN** a pass has no expiry, one not in the future, or one more than 24 hours ahead
+- **THEN** the submission is refused and no approval is stored
+
+#### Scenario: Repeated refresh and lock
+- **WHEN** the same pass is submitted again, or lock is called on a locked battle
+- **THEN** the call is harmless and a locked snapshot is unchanged, including after the expiry has passed
+
+#### Scenario: Agent lock
+- **WHEN** every record is a pass with enough life left
+- **THEN** the agent sends the lock once with a deposit of at least 1 yocto plus storage, and a failure is retried after a backoff with a bounded error
+
