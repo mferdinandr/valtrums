@@ -476,6 +476,22 @@ impl Battle {
             .ok_or(LifecycleError::NotLocked)
     }
 
+    /// Hold the principal of the winner established by a finished scoring run.
+    /// A caller-supplied label is not accepted: the run must score the same
+    /// mode and community count as this battle and must have resolved a unique
+    /// winner from complete evidence. Eliminated vaults stay in the snapshot.
+    pub fn hold_principal_from_scoring(
+        &mut self,
+        rounds: &crate::rounds::Rounds,
+    ) -> Result<&PrincipalHold, LifecycleError> {
+        let snapshot = self.snapshot.as_ref().ok_or(LifecycleError::NotLocked)?;
+        if rounds.mode() != self.mode || rounds.community_count() != snapshot.communities.len() {
+            return Err(LifecycleError::InvalidPolicy);
+        }
+        let winner = rounds.winner().ok_or(LifecycleError::WinnerNotResolved)?;
+        self.hold_principal(winner)
+    }
+
     /// Expose frozen losing-vault inputs without consulting any DAO decision.
     /// The future settlement adapter must enforce exclusive allocation.
     pub fn losing_vault(&self, community: u32) -> Result<LosingVault, LifecycleError> {
@@ -973,6 +989,133 @@ mod tests {
         assert_eq!(b.losing_vault(0), Err(LifecycleError::WinningVault));
         assert_eq!(b.losing_vault(1), Ok(first));
         assert_eq!(b.principal_hold.as_ref().expect("hold").amount, 7);
+    }
+
+    #[test]
+    fn only_a_scored_unique_winner_holds_principal_and_eliminated_vaults_stay_locked() {
+        use crate::rounds::{
+            CandidateObservation, ModeData, ObservationTerms, Resolution, RoundError, Rounds,
+            ROUND_NS,
+        };
+        use crate::scoring::{ObservationContext, ObservationEvidence};
+        let terms = ObservationTerms {
+            source: "source".into(),
+            quote_currency: "USD".into(),
+            eligible_pools: vec!["pool".into()],
+            finality: "finalized".into(),
+            price_decimals: 6,
+            supply_decimals: 2,
+            volume_decimals: 8,
+            boundary_tolerance_ns: 0,
+            max_gap_ns: ROUND_NS,
+        };
+        let mut b = battle();
+        approve(&mut b);
+        deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
+        deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
+        // Only the digest of the terms is committed at lock.
+        let frozen = b
+            .lock(ObservationPolicy {
+                version: 1,
+                policy_hash: terms.digest(ScoringMode::PriceGain),
+            })
+            .expect("lock")
+            .observation
+            .clone();
+        let assets = |count: usize| (0..count).map(|i| format!("asset-{i}")).collect::<Vec<_>>();
+        let mut rounds = Rounds::from_frozen_policy(
+            1,
+            ScoringMode::PriceGain,
+            &frozen.policy_hash,
+            &terms,
+            assets(3),
+        )
+        .expect("rounds");
+        // No result yet: nothing is held and a wrong-shaped run is refused.
+        assert_eq!(
+            b.hold_principal_from_scoring(&rounds),
+            Err(LifecycleError::WinnerNotResolved)
+        );
+        let two = Rounds::from_frozen_policy(
+            1,
+            ScoringMode::PriceGain,
+            &frozen.policy_hash,
+            &terms,
+            assets(2),
+        )
+        .expect("two");
+        // Terms that were not the ones committed at lock cannot start rounds.
+        let mut swapped = terms.clone();
+        swapped.source = "other source".into();
+        assert_eq!(
+            Rounds::from_frozen_policy(
+                1,
+                ScoringMode::PriceGain,
+                &frozen.policy_hash,
+                &swapped,
+                assets(3)
+            )
+            .err(),
+            Some(RoundError::PolicyMismatch)
+        );
+        assert_eq!(
+            b.hold_principal_from_scoring(&two),
+            Err(LifecycleError::InvalidPolicy)
+        );
+        let observe = |rounds: &Rounds, round: u64, community: u32, end: u128| {
+            let (start_ns, end_ns) = rounds.window().expect("open");
+            CandidateObservation {
+                community,
+                evidence: ObservationEvidence {
+                    context: ObservationContext {
+                        battle_id: 1,
+                        round_id: round,
+                        asset_id: format!("asset-{community}"),
+                        source: "source".into(),
+                        policy_hash: frozen.policy_hash.clone(),
+                        start_ns,
+                        end_ns,
+                    },
+                    observed_times_ns: vec![start_ns, end_ns],
+                    evidence_hash: "h".into(),
+                },
+                data: ModeData::Price { start: 100, end },
+            }
+        };
+        rounds.open_round(1, 1_000).expect("open");
+        let tie = [
+            observe(&rounds, 1, 0, 110),
+            observe(&rounds, 1, 1, 110),
+            observe(&rounds, 1, 2, 102),
+        ];
+        assert_eq!(
+            rounds.resolve_round(1, &tie),
+            Ok(Resolution::Overtime {
+                next_candidates: vec![0, 1]
+            })
+        );
+        // After a tie there is still no winner; every vault is still intact.
+        assert_eq!(
+            b.hold_principal_from_scoring(&rounds),
+            Err(LifecycleError::WinnerNotResolved)
+        );
+        assert_eq!(b.losing_vault(2), Err(LifecycleError::WinnerNotResolved));
+        assert_eq!(
+            rounds.open_round(2, 1_000),
+            Err(RoundError::StartsBeforePreviousEnd)
+        );
+        rounds.open_round(2, 1_000 + ROUND_NS).expect("open 2");
+        let fin = [observe(&rounds, 2, 0, 96), observe(&rounds, 2, 1, 95)];
+        assert_eq!(rounds.resolve_round(2, &fin), Ok(Resolution::Winner(0)));
+        let hold = b
+            .hold_principal_from_scoring(&rounds)
+            .expect("hold")
+            .clone();
+        assert_eq!((hold.community, hold.amount), (0, 7));
+        // The eliminated and the earlier-tied loser both retain their full vaults.
+        assert_eq!(b.losing_vault(2).expect("eliminated").amount, 13);
+        assert_eq!(b.losing_vault(1).expect("loser").amount, 11);
     }
 
     #[test]
