@@ -9,6 +9,8 @@ use near_sdk::{
 pub mod credit;
 pub mod events;
 pub mod lifecycle;
+#[cfg(test)]
+mod lifecycle_guards;
 pub mod math;
 pub mod mpc;
 pub mod rounds;
