@@ -3,6 +3,19 @@ import { ZERO, addDecimal, compareDecimal, formatDecimal, parseDecimal, type Dec
 /** Independent LP gate: total eligible liquidity must be strictly greater than USD 10000. */
 export const MIN_LIQUIDITY_USD: Decimal = { units: 10000n, scale: 0 };
 
+/**
+ * Valuation source label carried in evidence, hashes and the user report. It is a headline
+ * approximation of the QUOTE-side balance only (never the audited token's side); it is not
+ * executable depth, and v3 balances can include out-of-range liquidity and be moved briefly.
+ */
+export const VALUATION_SOURCE = "headline_quote_balance";
+
+export type UnpricedCode =
+  | "quote_asset_unpriced"
+  | "price_pool_floor_unset"
+  | "price_pool_floor_not_met"
+  | "price_pool_invalid";
+
 export interface PoolEvidence {
   chainId: string;
   poolId: string;
@@ -10,10 +23,18 @@ export interface PoolEvidence {
   token: string;
   quoteAsset: string;
   kind: "constant_product" | "concentrated";
-  /** Headline USD value of the pool (decimal text). */
+  /** USD value of the quote-side balance (decimal text); the value that is counted. */
   headlineUsd: string | null;
-  /** Active/executable depth in USD; required to count a concentrated pool. */
-  executableDepthUsd?: string | null;
+  /** Set when the quote asset could not be priced; the pool then contributes nothing and holds Pending. */
+  unpriced?: UnpricedCode;
+  /** For a priced WETH quote: the WETH/stablecoin v3 pool, its slot0 price and stable-side balance, read in the same block. */
+  quotePricing?: {
+    pricePool: string;
+    sqrtPriceX96: string;
+    wethIsToken0: boolean;
+    stableBalanceUsd: string;
+    block: string;
+  };
   valuationSource: string | null;
   observedAt: string | null; // ISO time
   observedBlock: string | null;
@@ -33,6 +54,7 @@ export interface LpReason {
     | "duplicate_pool"
     | "conflicting_duplicate"
     | "unreliable_valuation"
+    | UnpricedCode
     | "at_or_below_threshold";
   poolId?: string;
   message: string;
@@ -76,8 +98,8 @@ export function evaluateLiquidity(
 
   const seen = new Map<string, PoolEvidence>();
   let unreliable = false;
+  let unpriced = false;
   let counted = ZERO;
-  let headline = ZERO;
   const countedPools: string[] = [];
   let oldest: string | null = null;
 
@@ -100,25 +122,30 @@ export function evaluateLiquidity(
     }
     seen.set(k, pool);
 
-    const headlineValue = parseDecimal(pool.headlineUsd);
-    const counted_ =
-      pool.kind === "concentrated" ? parseDecimal(pool.executableDepthUsd) : headlineValue;
+    if (pool.unpriced) {
+      reasons.push({
+        code: pool.unpriced,
+        poolId: pool.poolId,
+        message: `quote asset ${pool.quoteAsset} could not be priced (${pool.unpriced})`,
+      });
+      // An unpriced pool is not counted. Not counting it can only understate liquidity, so a total
+      // above the threshold still passes, while a total at or below it holds Pending (not Fail).
+      unpriced = true;
+      continue;
+    }
+    const value = parseDecimal(pool.headlineUsd);
     const observed = pool.observedAt !== null && !Number.isNaN(Date.parse(pool.observedAt));
     const located = observed || (pool.observedBlock !== null && pool.observedBlock !== "");
-    if (!counted_ || !headlineValue || !pool.valuationSource || !located) {
+    if (!value || pool.valuationSource !== VALUATION_SOURCE || !located) {
       reasons.push({
         code: "unreliable_valuation",
         poolId: pool.poolId,
-        message:
-          pool.kind === "concentrated" && !parseDecimal(pool.executableDepthUsd)
-            ? "concentrated pool lacks executable depth"
-            : "missing value, valuation source or observation time/block",
+        message: `missing value, valuation source ${VALUATION_SOURCE} or observation time/block`,
       });
       unreliable = true;
       continue;
     }
-    counted = addDecimal(counted, counted_);
-    headline = addDecimal(headline, headlineValue);
+    counted = addDecimal(counted, value);
     countedPools.push(pool.poolId);
     if (observed && (oldest === null || Date.parse(pool.observedAt!) < Date.parse(oldest))) {
       oldest = pool.observedAt;
@@ -126,14 +153,16 @@ export function evaluateLiquidity(
   }
 
   if (unreliable || countedPools.length === 0) {
-    if (countedPools.length === 0 && !unreliable) {
+    if (countedPools.length === 0 && !unreliable && !unpriced) {
       reasons.push({ code: "no_eligible_pool", message: "no eligible pool for this asset" });
     }
     return pending();
   }
   const totalUsd = formatDecimal(counted);
-  const base = { totalUsd, headlineUsd: formatDecimal(headline), countedPools, oldestObservedAt: oldest };
+  // Headline and counted value are now the same quantity (quote-side balance).
+  const base = { totalUsd, headlineUsd: totalUsd, countedPools, oldestObservedAt: oldest };
   if (compareDecimal(counted, MIN_LIQUIDITY_USD) > 0) return { ...base, state: "pass", reasons };
+  if (unpriced) return { ...base, state: "pending", reasons };
   reasons.push({
     code: "at_or_below_threshold",
     message: `liquidity ${totalUsd} USD is not strictly greater than 10000`,

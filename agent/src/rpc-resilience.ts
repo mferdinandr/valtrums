@@ -58,7 +58,8 @@ export interface ReadOnlyEvmRpc {
   blockNumber(): Promise<bigint>;
   /** Block timestamp in seconds. */
   blockTimestamp(blockNumber: bigint): Promise<bigint>;
-  call(tx: { to: string; data: string }): Promise<string>;
+  /** `eth_call` pinned to `block` when given. */
+  call(tx: { to: string; data: string }, block?: bigint): Promise<string>;
 }
 
 /** Retries read-only EVM calls on transient failures (rate limits, gateway and network errors). */
@@ -72,6 +73,6 @@ export function withEvmReadRetries(
     chainId: () => retry(() => rpc.chainId()),
     blockNumber: () => retry(() => rpc.blockNumber()),
     blockTimestamp: (n) => retry(() => rpc.blockTimestamp(n)),
-    call: (tx) => retry(() => rpc.call(tx)),
+    call: (tx, block) => retry(() => rpc.call(tx, block)),
   };
 }

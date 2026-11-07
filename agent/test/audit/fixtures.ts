@@ -2,7 +2,7 @@
 import type { AuditAsset } from "../../src/audit/decision.js";
 import { buildAuditPolicy, type AuditPolicy } from "../../src/audit/policy.js";
 import type { RawGoPlusResponse } from "../../src/audit/goplus.js";
-import type { LpEvidence } from "../../src/audit/liquidity.js";
+import { VALUATION_SOURCE, type LpEvidence } from "../../src/audit/liquidity.js";
 
 export const TOKEN = "0x00000000000000000000000000000000000000aa";
 export const CHAIN = "46630";
@@ -82,7 +82,7 @@ export function lp(usd: string, extra: Partial<LpEvidence["pools"][number]> = {}
         quoteAsset: "WETH",
         kind: "constant_product",
         headlineUsd: usd,
-        valuationSource: "fixture-oracle",
+        valuationSource: VALUATION_SOURCE,
         observedAt: QUERIED,
         observedBlock: "100",
         ...extra,

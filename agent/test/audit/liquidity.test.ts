@@ -56,13 +56,37 @@ describe("independent liquidity gate (fixture-only)", () => {
     expect(evaluateLiquidity(a, lp("50000", { observedAt: "garbage", observedBlock: null })).state).toBe("pending");
   });
 
-  it("counts concentrated pools by executable depth, not headline", () => {
-    expect(evaluateLiquidity(a, lp("500000", { kind: "concentrated" })).state).toBe("pending");
-    const r = evaluateLiquidity(a, lp("500000", { kind: "concentrated", executableDepthUsd: "9000" }));
-    expect(r.state).toBe("fail");
-    expect(r.headlineUsd).toBe("500000");
-    expect(evaluateLiquidity(a, lp("500000", { kind: "concentrated", executableDepthUsd: "10001" })).state).toBe(
-      "pass",
-    );
+  it("values v2 and v3 pools alike by their quote-side headline balance", () => {
+    expect(evaluateLiquidity(a, lp("10001", { kind: "concentrated" })).state).toBe("pass");
+    expect(evaluateLiquidity(a, lp("10000", { kind: "concentrated" })).state).toBe("fail");
+    expect(evaluateLiquidity(a, lp("10001", { kind: "constant_product" })).state).toBe("pass");
+  });
+
+  it("requires the headline_quote_balance valuation source", () => {
+    expect(evaluateLiquidity(a, lp("50000", { valuationSource: "executable_depth" })).state).toBe("pending");
+  });
+
+  it("an unpriced pool is not counted: only-unpriced is Pending with its reason", () => {
+    for (const code of [
+      "quote_asset_unpriced",
+      "price_pool_floor_unset",
+      "price_pool_floor_not_met",
+      "price_pool_invalid",
+    ] as const) {
+      const r = evaluateLiquidity(a, lp("0", { headlineUsd: null, unpriced: code }));
+      expect(r.state).toBe("pending");
+      expect(r.reasons.map((x) => x.code)).toContain(code);
+    }
+  });
+
+  it("counted liquidity above the threshold passes despite an unpriced pool; at or below it holds Pending, not Fail", () => {
+    const mk = (usd: string) => {
+      const e = lp(usd);
+      e.pools.push({ ...e.pools[0]!, poolId: "0xpool2", headlineUsd: null, unpriced: "quote_asset_unpriced" });
+      return e;
+    };
+    expect(evaluateLiquidity(a, mk("10001")).state).toBe("pass");
+    expect(evaluateLiquidity(a, mk("10000")).state).toBe("pending");
+    expect(evaluateLiquidity(a, mk("9999")).state).toBe("pending");
   });
 });

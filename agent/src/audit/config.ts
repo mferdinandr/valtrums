@@ -1,6 +1,7 @@
 import { isAddress, normalizeAddress } from "../evm-abi.js";
 import { DEFAULT_EVIDENCE_TTL_SECONDS } from "./policy.js";
-import { validateStablecoins, type PoolConfig } from "./lp-fetcher.js";
+import { parseDecimal } from "./decimal.js";
+import { validateStablecoins, type PoolConfig, type WethConfig } from "./lp-fetcher.js";
 import { validateRegistry, type ReferenceEntry } from "./reference.js";
 
 export interface AuditConfig {
@@ -8,6 +9,8 @@ export interface AuditConfig {
   registry: ReferenceEntry[];
   stablecoins: Map<string, number>;
   pools: PoolConfig[];
+  /** Optional WETH quote pricing; unset means WETH-quoted pools stay unpriced (Pending). */
+  weth?: WethConfig;
   /** Secret: never log or serialize. */
   goplusAccessToken: string | undefined;
   /** Read-only Robinhood mainnet (4663) RPC, separate from the testnet FOREIGN_RPC_URL. May embed a key: never log it. */
@@ -80,11 +83,36 @@ export function loadAuditConfig(
     return { pool: normalizeAddress(p.pool), kind: p.kind };
   });
 
+  // WETH is priced only through one explicitly configured v3 pool and floor; no defaults exist.
+  const wethAddress = env.AUDIT_WETH_ADDRESS?.trim();
+  const pricePool = env.AUDIT_WETH_PRICE_POOL?.trim();
+  const minUsd = env.AUDIT_WETH_PRICE_POOL_MIN_USD?.trim();
+  if ((pricePool || minUsd) && !wethAddress) {
+    throw new Error("AUDIT_WETH_ADDRESS is required when a WETH price pool or floor is set");
+  }
+  let weth: WethConfig | undefined;
+  if (wethAddress) {
+    if (!isAddress(wethAddress)) throw new Error("AUDIT_WETH_ADDRESS must be a 20-byte hex address");
+    if (pricePool && !isAddress(pricePool)) throw new Error("AUDIT_WETH_PRICE_POOL must be a 20-byte hex address");
+    if (minUsd && !parseDecimal(minUsd)) throw new Error("AUDIT_WETH_PRICE_POOL_MIN_USD must be a plain decimal");
+    const wethChain = env.AUDIT_WETH_CHAIN_ID?.trim();
+    if (!wethChain || !/^[1-9][0-9]*$/.test(wethChain)) {
+      throw new Error("AUDIT_WETH_CHAIN_ID must be a positive integer when AUDIT_WETH_ADDRESS is set");
+    }
+    weth = {
+      address: normalizeAddress(wethAddress),
+      chainId: wethChain,
+      ...(pricePool ? { pricePool: normalizeAddress(pricePool) } : {}),
+      ...(minUsd ? { pricePoolMinUsd: minUsd } : {}),
+    };
+  }
+
   return {
     ttlSeconds,
     registry,
     stablecoins,
     pools,
+    ...(weth ? { weth } : {}),
     goplusAccessToken: env.GOPLUS_ACCESS_TOKEN?.trim() || undefined,
     referenceRpcUrl,
   };

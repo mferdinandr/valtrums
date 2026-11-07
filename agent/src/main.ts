@@ -118,6 +118,7 @@ async function main(): Promise<void> {
             rpc: withEvmReadRetries(new FetchEvmRpc(auditCfg.referenceRpcUrl)),
             stablecoins: auditCfg.stablecoins,
             pools: auditCfg.pools,
+            ...(auditCfg.weth ? { weth: auditCfg.weth } : {}),
           }),
           submitter: new AuditSubmitter(cfg.arenaContractId, transport),
           records: new Map(),
