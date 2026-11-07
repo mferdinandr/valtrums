@@ -487,3 +487,91 @@ fn lock_is_refused_while_the_middle_vault_is_empty() {
 fn lock_is_refused_while_the_last_vault_is_empty() {
     single_empty_vault_blocks_lock(2);
 }
+
+/// An approved, fully funded battle ready for the worker to lock.
+fn funded_battle() -> (Arena, u64) {
+    let (mut arena, id) = approved_battle("creator.testnet");
+    for community in 0..3 {
+        register(&mut arena, id, "creator.testnet", community);
+        assert_eq!(transfer(&mut arena, id, "creator.testnet", community, 2), 0);
+    }
+    context("owner.testnet", NearToken::from_yoctonear(1), 0);
+    arena.add_agent(account("worker.testnet"));
+    arena.set_lifecycle_observation_policy(crate::lifecycle::ObservationPolicyInput {
+        version: U64(1),
+        policy_hash: "p".into(),
+    });
+    (arena, id)
+}
+
+/// Yocto transferred back to the worker by the receipts of the last call.
+fn refunded_to_worker() -> u128 {
+    near_sdk::test_utils::get_created_receipts()
+        .iter()
+        .filter(|receipt| receipt.receiver_id == account("worker.testnet"))
+        .flat_map(|receipt| receipt.actions.iter())
+        .map(|action| match action {
+            near_sdk::mock::MockAction::Transfer { deposit, .. } => deposit.as_yoctonear(),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Storage cost of a first lock, measured on its own thread because the mocked
+/// blockchain keeps per-thread storage accounting.
+fn first_lock_storage_cost() -> u128 {
+    std::thread::spawn(|| {
+        let (mut arena, id) = funded_battle();
+        let attached = NearToken::from_near(1);
+        context("worker.testnet", attached, 0);
+        arena.lock_lifecycle_battle(id);
+        attached.as_yoctonear() - refunded_to_worker()
+    })
+    .join()
+    .expect("measurement thread")
+}
+
+#[test]
+fn lock_with_no_attached_deposit_is_refused_even_for_a_repeat() {
+    let (mut arena, id) = funded_battle();
+    context("worker.testnet", NearToken::from_yoctonear(0), 0);
+    assert!(panics(|| arena.lock_lifecycle_battle(id)));
+    assert!(!arena.get_lifecycle_battle(id).expect("battle").locked);
+    // Once locked, a repeat is still refused without a deposit and accepted with
+    // one yocto, which costs no storage and is refunded.
+    context("worker.testnet", NearToken::from_near(1), 0);
+    arena.lock_lifecycle_battle(id);
+    context("worker.testnet", NearToken::from_yoctonear(0), 0);
+    assert!(panics(|| arena.lock_lifecycle_battle(id)));
+    context("worker.testnet", NearToken::from_yoctonear(1), 0);
+    arena.lock_lifecycle_battle(id);
+    assert_eq!(refunded_to_worker(), 1);
+}
+
+#[test]
+fn lock_accepts_exactly_one_yocto_over_the_storage_cost_and_refunds_the_rest() {
+    let cost = first_lock_storage_cost();
+    assert!(cost > 0, "a first lock pays for the snapshot it stores");
+    // Exactly one yocto above the cost: accepted, and that yocto comes back.
+    let (mut arena, id) = funded_battle();
+    context("worker.testnet", NearToken::from_yoctonear(cost + 1), 0);
+    arena.lock_lifecycle_battle(id);
+    assert!(arena.get_lifecycle_battle(id).expect("battle").locked);
+    assert_eq!(refunded_to_worker(), 1);
+}
+
+#[test]
+fn lock_still_requires_the_storage_cost() {
+    let cost = first_lock_storage_cost();
+    let (mut arena, id) = funded_battle();
+    // One yocto short of the cost is refused as before.
+    context("worker.testnet", NearToken::from_yoctonear(cost - 1), 0);
+    assert!(panics(|| arena.lock_lifecycle_battle(id)));
+}
+
+#[test]
+fn only_an_agent_can_lock() {
+    let (mut arena, id) = funded_battle();
+    context("creator.testnet", NearToken::from_near(1), 0);
+    assert!(panics(|| arena.lock_lifecycle_battle(id)));
+}
