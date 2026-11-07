@@ -181,7 +181,14 @@ pub struct Arena {
     lifecycle_participant_counts: LookupMap<(u64, u32), u32>,
     /// Entitlements already handed to the backings, per battle.
     lifecycle_settlement: LookupMap<u64, u32>,
+    /// Fee settings snapshotted into each new lifecycle battle.
+    lifecycle_fee_bps: u16,
+    lifecycle_creator_share_bps: u16,
 }
+
+/// Total fee on a losing vault can never be set above 10%.
+pub const MAX_LIFECYCLE_FEE_BPS: u16 = 1_000;
+const MAX_BPS: u16 = 10_000;
 
 #[near]
 impl Arena {
@@ -227,7 +234,37 @@ impl Arena {
             lifecycle_participants: LookupMap::new(StorageKey::LifecycleParticipants),
             lifecycle_participant_counts: LookupMap::new(StorageKey::LifecycleParticipantCounts),
             lifecycle_settlement: LookupMap::new(StorageKey::LifecycleSettlement),
+            lifecycle_fee_bps: 10,
+            lifecycle_creator_share_bps: 5_000,
         }
+    }
+
+    /// Protocol only. Sets the total fee on each losing vault (at most 10%) and
+    /// the creator's share of that fee (0-100%) for battles created afterwards.
+    /// Existing battles keep the fee they were created with.
+    #[payable]
+    pub fn set_lifecycle_fee(&mut self, fee_bps: u16, creator_share_bps: u16) {
+        near_sdk::assert_one_yocto();
+        require!(
+            self.lifecycle_protocol.as_ref() == Some(&env::predecessor_account_id()),
+            "Only the protocol account can change fees"
+        );
+        require!(
+            fee_bps <= MAX_LIFECYCLE_FEE_BPS,
+            "Total fee cannot exceed 1000 bps"
+        );
+        require!(
+            creator_share_bps <= MAX_BPS,
+            "Creator share cannot exceed 10000 bps"
+        );
+        self.lifecycle_fee_bps = fee_bps;
+        self.lifecycle_creator_share_bps = creator_share_bps;
+    }
+
+    /// Fee settings that the next lifecycle battle will snapshot, as
+    /// (total fee bps, creator share bps).
+    pub fn get_lifecycle_fee(&self) -> (u16, u16) {
+        (self.lifecycle_fee_bps, self.lifecycle_creator_share_bps)
     }
 
     /// Fix the oracle account once. It cannot be changed or removed afterwards,
@@ -326,8 +363,8 @@ impl Arena {
             .unwrap_or_else(|| env::panic_str("Lifecycle protocol is not configured"));
         let creator = env::predecessor_account_id();
         let fee = lifecycle::FeePolicy {
-            fee_bps: 10,
-            creator_share_bps: 5_000,
+            fee_bps: self.lifecycle_fee_bps,
+            creator_share_bps: self.lifecycle_creator_share_bps,
             protocol_created: creator == protocol,
             creator: creator.clone(),
             protocol,

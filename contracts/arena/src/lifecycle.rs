@@ -496,6 +496,11 @@ impl Battle {
         self.communities.len()
     }
 
+    /// The fee snapshotted when the battle was created.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        &self.fee
+    }
+
     pub fn mode(&self) -> ScoringMode {
         self.mode
     }
@@ -1402,6 +1407,74 @@ mod tests {
         assert_eq!(
             arena.lifecycle_position(id, 0, &account("creator.testnet")),
             0
+        );
+    }
+
+    #[test]
+    fn only_the_protocol_changes_fees_within_bounds_and_only_for_future_battles() {
+        use near_sdk::json_types::{U128, U64};
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+        let caller = |name: &str, deposit: NearToken| {
+            testing_env!(VMContextBuilder::new()
+                .predecessor_account_id(account(name))
+                .attached_deposit(deposit)
+                .build());
+        };
+        let panics = |f: &mut dyn FnMut()| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+        };
+        caller("owner.testnet", NearToken::from_yoctonear(0));
+        let mut arena = crate::Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(0),
+            U64(60),
+        );
+        caller("owner.testnet", NearToken::from_yoctonear(1));
+        arena.activate_lifecycle();
+        // No protocol account yet: nobody can change fees.
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        arena.set_lifecycle_protocol(account("protocol.testnet"));
+        assert_eq!(arena.get_lifecycle_fee(), (10, 5_000));
+        let create = |arena: &mut crate::Arena| {
+            caller("creator.testnet", NearToken::from_near(1));
+            arena.create_lifecycle_battle(
+                vec![asset(1).into(), asset(2).into()],
+                ScoringMode::PriceGain,
+            )
+        };
+        let first = create(&mut arena);
+        // The arena owner is not the protocol and cannot change the fee.
+        caller("owner.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        caller("creator.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        // The protocol can, within bounds: at most 1000 bps in total, 10000 for the share.
+        caller("protocol.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(1_001, 5_000)));
+        assert!(panics(&mut || arena.set_lifecycle_fee(10, 10_001)));
+        caller("protocol.testnet", NearToken::from_yoctonear(0));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        assert_eq!(arena.get_lifecycle_fee(), (10, 5_000));
+        caller("protocol.testnet", NearToken::from_yoctonear(1));
+        arena.set_lifecycle_fee(1_000, 10_000);
+        assert_eq!(arena.get_lifecycle_fee(), (1_000, 10_000));
+        arena.set_lifecycle_fee(0, 0);
+        assert_eq!(arena.get_lifecycle_fee(), (0, 0));
+        arena.set_lifecycle_fee(25, 2_500);
+        // The earlier battle keeps its snapshot; a new one uses the new settings.
+        let second = create(&mut arena);
+        let old = arena.lifecycle_battles.get(&first).expect("first");
+        let new = arena.lifecycle_battles.get(&second).expect("second");
+        assert_eq!(
+            (old.fee_policy().fee_bps, old.fee_policy().creator_share_bps),
+            (10, 5_000)
+        );
+        assert_eq!(
+            (new.fee_policy().fee_bps, new.fee_policy().creator_share_bps),
+            (25, 2_500)
         );
     }
 
