@@ -18,6 +18,14 @@ import { NearArenaClient, createNearTransport } from "./near-client.js";
 import { checkExecutionMode, runOnce } from "./runtime.js";
 import { loadRuntimeConfig } from "./runtime-config.js";
 import { TwapFetcher } from "./twap.js";
+import { AuditSubmitter } from "./audit/approval.js";
+import { loadAuditConfig } from "./audit/config.js";
+import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
+import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
+import { createLpFetcher } from "./audit/lp-fetcher.js";
+import { buildAuditPolicy } from "./audit/policy.js";
+import { AuditReportStore } from "./audit/report.js";
+import { withEvmReadRetries } from "./rpc-resilience.js";
 
 async function main(): Promise<void> {
   const log = createJsonLogger();
@@ -91,6 +99,34 @@ async function main(): Promise<void> {
     log,
   };
 
+  // Lifecycle audit (GoPlus + independent LP): only when AUDIT_ENABLED=true.
+  const auditCfg = loadAuditConfig(process.env, rt.intervalSecs);
+  const lifecycleAudit = auditCfg
+    ? createLifecycleAuditPass({
+        source: new NearLifecycleAuditSource(cfg.arenaContractId, transport),
+        refresh: {
+          policy: buildAuditPolicy({ ttlSeconds: auditCfg.ttlSeconds }),
+          registry: auditCfg.registry,
+          now: () => new Date(),
+          refreshAheadMs: rt.intervalSecs * 2000,
+          fetchGoPlus: (q) =>
+            fetchGoPlusTokenSecurity(
+              q,
+              auditCfg.goplusAccessToken ? { accessToken: auditCfg.goplusAccessToken } : {},
+            ),
+          fetchLp: createLpFetcher({
+            rpc: withEvmReadRetries(new FetchEvmRpc(auditCfg.referenceRpcUrl)),
+            stablecoins: auditCfg.stablecoins,
+            pools: auditCfg.pools,
+          }),
+          submitter: new AuditSubmitter(cfg.arenaContractId, transport),
+          records: new Map(),
+        },
+        reports: new AuditReportStore(),
+        log,
+      })
+    : undefined;
+
   const health = new HealthState(rt.intervalSecs * 1000);
   const healthServer = await startHealthServer(
     parseHealthPort(process.env),
@@ -141,7 +177,7 @@ async function main(): Promise<void> {
 
   await runLoop({
     pass: async (watchdog) => {
-      const report = await runOnce({ ...deps, watchdog });
+      const report = await runOnce({ ...deps, watchdog, ...(lifecycleAudit ? { lifecycleAudit } : {}) });
       if (report.errors === 0) health.markPassSucceeded();
       log.info("pass complete", { ...report, watchdog });
     },

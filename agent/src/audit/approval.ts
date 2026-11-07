@@ -119,6 +119,8 @@ export interface RefreshDeps {
   /** Mapping a token declares about itself (untrusted); optional. */
   declaredReference?: (asset: AuditAsset) => DeclaredReference | null;
   now: () => Date;
+  /** Re-audit when less than this much approval life remains (default 0). */
+  refreshAheadMs?: number;
   fetchGoPlus: (q: GoPlusQuery) => Promise<RawGoPlusResponse>;
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
   submitter: Pick<AuditSubmitter, "submit">;
@@ -149,11 +151,12 @@ export async function refreshBattleAudit(
     return { asset: { ...base, reference: undefined } };
   });
   const assets = resolved.map((r) => r.asset);
+  // Refresh ahead of expiry so an approval cannot lapse between two scheduler passes.
   const before = lockReadiness(
     assets,
     assets.map((_, i) => deps.records.get(key(i))),
     deps.policy,
-    deps.now(),
+    new Date(deps.now().getTime() + (deps.refreshAheadMs ?? 0)),
   );
   for (const { index } of before.needsRefresh) {
     const { asset, hold } = resolved[index]!;
