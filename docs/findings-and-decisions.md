@@ -1,6 +1,6 @@
 # Findings and decisions log
 
-Team log of owner decisions, research findings and the state of each work branch. Newest entries go at the top of each section. Entries are facts at the date shown; re-verify before relying on them. Nothing here is a live-integration claim: tests are fixture-based unless a row says otherwise, and nothing listed has been merged yet.
+Team log of owner decisions, research findings and the state of each work branch. Newest entries go at the top of each section. Entries are facts at the date shown; re-verify before relying on them. Nothing here is a live-integration claim: tests are fixture-based unless a row says otherwise, and the pull requests listed below were merged on 2026-11-07.
 
 Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-audit.md), [OpenSpec coordination](openspec/README.md).
 
@@ -14,19 +14,24 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 
 | # | Decision | Applies to | Status |
 | --- | --- | --- | --- |
-| D1 | Audit policy v1: buy, sell and transfer tax are each admissible up to and including 5% (above 5% rejects; exactly 100% still rejects). Privileged token administration (mint, pause, blacklist or whitelist, balance changes, tax changes) is admissible only when ownership is renounced and unrecoverable; otherwise Reject. Unknown fields stay Pending. | arena-audit | Decided; implemented on `feat/arena-audit` (unmerged) |
-| D2 | Evidence lifetime defaults to 10 minutes, configurable, refreshed before lock. Behavior after a live token-policy change stays OPEN. | arena-audit | Decided; implemented on `feat/arena-audit` (unmerged) |
-| D3 | Everything the audit shows a user is written down for them: per-field results, tax as percentages, each admin capability with ownership status, reasons, policy version, expiry and reference mapping. | arena-audit, later MCP/UI | Report built on `feat/arena-audit`; no UI yet |
-| D4 | Liquidity: independent on-chain headline value of the quote-side balance of Uniswap v2 and v3 pools, strictly above USD 10,000. A WETH quote is priced through one configured WETH/USDG pool. Minimum executable depth stays OPEN. | arena-audit | In progress on `feat/arena-audit` |
-| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address comes from DexScreener and is not verified on-chain by us. | arena-audit | In progress on `feat/arena-audit` |
-| D6 | GoPlus supports only Robinhood mainnet `4663` (not testnet `46630`). On testnet each mock token carries a mainnet reference token. GoPlus and liquidity are measured on the reference token, always. Approval attests the reference token, not the mock contract. Mappings come only from a protocol-controlled registry. | arena-audit, arena-lifecycle | Implemented in agent code on `feat/arena-audit`; on-chain part in progress |
-| D7 | The reference pair (`reference_chain_id`, `reference_address`) becomes part of the committed community mapping (`asset-identity-v2`); a later change invalidates approval. | arena-lifecycle, arena-asset-representation | In progress on `feat/arena-audit` |
+| D1 | Audit policy v1: buy, sell and transfer tax are each admissible up to and including 5% (above 5% rejects; exactly 100% still rejects). Privileged token administration (mint, pause, blacklist or whitelist, balance changes, tax changes) is admissible only when ownership is renounced and unrecoverable; otherwise Reject. Unknown fields stay Pending. | arena-audit | Decided; implemented (merged in #53) |
+| D2 | Evidence lifetime defaults to 10 minutes, configurable, refreshed before lock. Behavior after a live token-policy change stays OPEN. | arena-audit | Decided; implemented (merged in #53) |
+| D3 | Everything the audit shows a user is written down for them: per-field results, tax as percentages, each admin capability with ownership status, reasons, policy version, expiry and reference mapping. | arena-audit, later MCP/UI | Report built (merged in #53); no UI yet |
+| D4 | Liquidity: independent on-chain headline value of the quote-side balance of Uniswap v2 and v3 pools, strictly above USD 10,000. A WETH quote is priced through one configured WETH/USDG pool. Minimum executable depth stays OPEN. | arena-audit | Implemented (merged in #53) |
+| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address comes from DexScreener and is not verified on-chain by us. | arena-audit | Implemented (merged in #53) |
+| D6 | GoPlus supports only Robinhood mainnet `4663` (not testnet `46630`). On testnet each mock token carries a mainnet reference token. GoPlus and liquidity are measured on the reference token, always. Approval attests the reference token, not the mock contract. Mappings come only from a protocol-controlled registry. | arena-audit, arena-lifecycle | Implemented (merged in #53) |
+| D7 | The reference pair (`reference_chain_id`, `reference_address`) becomes part of the committed community mapping (`asset-identity-v2`); a later change invalidates approval. | arena-lifecycle, arena-asset-representation | Implemented (merged in #53) |
 | D8 | A foreign deposit arriving after lock never enters a snapshot or vault; backing records it as unattributed and refunds the original depositor after finality. | arena-lifecycle, arena-asset-representation | Recorded in specs; refund path not implemented |
 | D9 | Scoring data for mock tokens also comes from the mainnet reference token. Recorded as integration tasks, not yet specified in scoring. | arena-testnet-integrations | Recorded as tasks |
 | D10 | No buy/sell simulation for now, and the whole fallback audit for tokens without GoPlus data is deferred. Tokens without GoPlus data stay Pending. | arena-audit | Deferred |
 | D11 | The mock set is the tokens that have GoPlus data (see the token table below). | testnet setup | Decided; registry not built |
-| D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed on `feat/arena-lifecycle-unblocked` (unmerged) |
-| D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived on `chore/archive-arena-scoring` (unmerged) |
+| D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed (merged in #52) |
+| D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived (merged in #55) |
+| D14 | Resume policy after an asset is suspended (deficit, reorg or unresolved reconciliation) is flexible and changeable by the owner (hackathon). Planned modes: `OwnerWithEvidence` (default: owner resumes only after an attestation shows custody covers all liabilities), `Automatic` (a later covering attestation lifts the suspension) and `Disabled`. `Automatic` trades safety for speed: a wrong or manipulated attestation could reopen payouts while a shortfall remains. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
+| D15 | A late foreign deposit is refunded to the beneficiary named in the custody deposit event (not the token sender), after finality; it never enters a snapshot or vault. Refines D8. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
+| D16 | The `docs/` branch prefix is allowed for documentation-only branches. | repository conventions | Merged in #56 |
+
+Work in progress (not yet pushed): `feat/backing-reconciliation` (asset-representation tasks: reconciliation, suspend and resume policy, late-deposit refund) and `feat/payout-mpc-signing` (chain-signatures tasks: MPC signer call from the payout contract, restart reconciliation, explicit payout states). `arena-settlement` follows once the payout status interface exists.
 
 ## Research findings (2026-11-07)
 
@@ -80,7 +85,7 @@ Third-party sources only; not checked against an official Uniswap or Robinhood p
 
 ## Work branches
 
-Opened as pull requests on 2026-11-07 and waiting for the owner's review; none is merged. Suggested merge order: #52, then #53 (one documentation conflict in `arena-lifecycle/implementation-notes.md`), then #54 and #55. Commits carry no AI attribution.
+All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #56. #53 needed a documentation conflict fixed in `arena-lifecycle/implementation-notes.md`, and its first CI run failed because #52 and #53 each added a field to a struct that the other's new tests construct (no textual conflict); fixed in `e1d1a36`. Lesson: re-run CI after merging `main` into a branch, even when git reports no conflicts. Commits carry no AI attribution.
 
 | PR | Branch |
 | --- | --- |
@@ -88,6 +93,7 @@ Opened as pull requests on 2026-11-07 and waiting for the owner's review; none i
 | [#53](https://github.com/mferdinandr/valtrum/pull/53) | `feat/arena-audit` |
 | [#54](https://github.com/mferdinandr/valtrum/pull/54) | `chore/openspec-followups` |
 | [#55](https://github.com/mferdinandr/valtrum/pull/55) | `chore/archive-arena-scoring` |
+| [#56](https://github.com/mferdinandr/valtrum/pull/56) | `docs/branch-prefix-rule` (allows the `docs/` branch prefix in `Code/CLAUDE.md`) |
 
 | Branch | Content | Verification so far |
 | --- | --- | --- |
@@ -96,7 +102,59 @@ Opened as pull requests on 2026-11-07 and waiting for the owner's review; none i
 | `chore/openspec-followups` | Tasks and spec text for the late-deposit refund (asset representation), the missing MPC signer call (chain signatures) and the mainnet reference registry (testnet integrations); this log; updates to docs that listed decided items as OPEN; shortened long requirements in the settlement spec. | `openspec validate --all --strict` (see below) |
 | `chore/archive-arena-scoring` | Archive of `arena-scoring` and creation of its main spec; fixed two links and the placeholder Purpose. | 317 arena tests passed on `main`-equivalent code before the archive |
 
-OpenSpec validation baseline after the follow-ups: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
+OpenSpec validation on `main` after all merges: 10 passed, 0 failed (`--strict`). Baseline command: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
+
+## Handoff: payout cluster (2026-11-07)
+
+Work was stopped before it finished so the team can continue. Both branches below exist **only as local commits** in git worktrees on the maintainer's machine until someone pushes them: `git push -u origin feat/backing-reconciliation feat/payout-mpc-signing`. Their only commit is a snapshot ("save unfinished work for handoff"): it was **not built or tested**, and it may not compile. Treat it as a starting point, not as reviewed work. Worktree paths: `Code/.claude/worktrees/agent-a45a83ebf66dfe05c` (backing) and `Code/.claude/worktrees/agent-aec594fdf3cf7c496` (payout).
+
+Goal: finish the open tasks of `arena-asset-representation` (3), `arena-chain-signatures` (3) and `arena-settlement` (2), then archive each only when all its tasks are verified. Current counts on `main`: 17/20, 12/15 and 14/16.
+
+| Branch | Snapshot contents | Tasks to finish |
+| --- | --- | --- |
+| `feat/backing-reconciliation` (13 files, +2082/-142) | New `contracts/backing/src/suspension.rs`, a `contracts/mock-lifecycle` crate, `integration/tests/backing_reconciliation.rs`, edits to backing `lib.rs`, `normalization.rs`, `reservation.rs` and several integration tests | (1) reconcile finalized payment or disposal evidence before consuming backing, restore only after a definitive no-spend proof; (2) suspend minting and payouts on deficit, reorg or unresolved reconciliation, with the resume policy of D14; (3) record a late foreign deposit as unattributed and refund the beneficiary named in the deposit event after finality (D15) |
+| `feat/payout-mpc-signing` (4 files, +1533/-310) | New `contracts/payout/src/evm.rs` (on-chain EVM transaction building), edits to payout `contract.rs`, `lib.rs` and `integration/tests/payout.rs` | (1) the payout contract calls the NEAR MPC signer itself and accepts only the signer callback's signature; (2) restart reconciliation worker in `agent/` that never creates a new spend before reconciling; (3) explicit payout states (signer response, broadcast, pending finality, revert, reconciliation required, confirmed) as a documented, stable view |
+| not started: `arena-settlement` | None | Expose available, reserved, broadcast, confirmation-pending and confirmed amounts per token from the payout status view (needs the payout branch first); test independent per-token payout progress and lost-response retry |
+
+Rules the work must keep (from `Code/CLAUDE.md` and the decisions above):
+- Rust contract code: no `unwrap()`, checked math only, fail closed, privileged methods need exactly one yocto and a restricted caller. Run `near-smart-contracts` guidance before writing contract code and a `near-contract-audit` review before opening a PR.
+- Do not edit `contracts/payout` from the backing branch or `contracts/backing` from the payout branch except for a minimal, documented interface change. Decide a merge order before opening PRs (backing first is natural; settlement last).
+- D14: resume policy is a stored enum (`OwnerWithEvidence` default, `Automatic`, `Disabled`), owner-only to change with one yocto, every change emits an event. D15: refund goes to the beneficiary in the deposit event.
+- The MPC signer interface (request shape, key version, derivation path, attached deposit, testnet signer account) must come from the official NEAR Chain Signatures documentation; the sandbox only has `contracts/mock-mpc`, so every test of signing is a fixture and not live evidence.
+- Nonce gaps (a released or foreign-consumed nonce blocks later transactions) are an operational procedure to document, not a protocol rule to invent. Operator and relayer rotation is out of scope.
+- Keep OpenSpec in step with the code: update each change's design, spec scenarios, notes and security review; keep each requirement under 500 characters (strict validation warns otherwise); run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Check a task only after a passing test verifies it.
+- One feature, one branch, one PR. Small commits in English (`feat|fix|test|docs: ...`), no AI attribution. Re-run CI after merging `main` into a branch even if git shows no conflicts (see the #52/#53 lesson above).
+
+Known risk until this work is done: the payout contract does not call the MPC signer, so the payout path must not be deployed or funded.
+
+## Issue index (2026-11-07)
+
+Every unchecked OpenSpec task has an owner issue. Issues [#58](https://github.com/mferdinandr/valtrum/issues/58), [#59](https://github.com/mferdinandr/valtrum/issues/59) and [#60](https://github.com/mferdinandr/valtrum/issues/60) (assigned before this index) cover the player-grant foundation, the event indexer and the durable audit report archive. The issues below cover the rest and are labeled `priority-1` to `priority-4` (1: start now because it blocks other work or touches shared files; 4: can wait) and `blocked` when they wait on another issue, PR or decision. The only unchecked task without an issue is the `arena-audit` minimum executable-depth policy, which is an OPEN owner decision.
+
+Known file overlaps between issues, noted as comments on them: #63 and #60 both change `agent/src/audit/lifecycle-pass.ts`; #61, #62 and #58 all touch `contracts/Cargo.toml`, `Cargo.lock` and the integration helpers; new contract events from #61, #62 and #63 need follow-up parsing in the #59 indexer; several issues edit the same `tasks.md` files.
+
+| Priority | Issue | Title | OpenSpec tasks |
+| --- | --- | --- | --- |
+| P1 | [#61](https://github.com/mferdinandr/valtrum/issues/61) | backing reconciliation, suspension and late-deposit refund | asset-representation (3) |
+| P1 | [#62](https://github.com/mferdinandr/valtrum/issues/62) | payout contract calls the MPC signer; explicit payout states | chain-signatures (2) |
+| P1 | [#63](https://github.com/mferdinandr/valtrum/issues/63) | refuse lock on expired or changed audit evidence end to end | audit (1) |
+| P2 | [#64](https://github.com/mferdinandr/valtrum/issues/64) | reconcile pending payouts after a worker restart | chain-signatures (1) |
+| P2 | [#65](https://github.com/mferdinandr/valtrum/issues/65) | payout and entitlement states per token in settlement | settlement (2) |
+| P2 | [#66](https://github.com/mferdinandr/valtrum/issues/66) | connect audit and backing approvals to lifecycle; finish lifecycle verification | lifecycle (6) |
+| P3 | [#67](https://github.com/mferdinandr/valtrum/issues/67) | refuse signing and receipts on RPC chain id mismatch | testnet-integrations (1) |
+| P3 | [#68](https://github.com/mferdinandr/valtrum/issues/68) | verify market data sources for reference tokens (scoring inputs) | testnet-integrations (1) |
+| P3 | [#69](https://github.com/mferdinandr/valtrum/issues/69) | protocol-controlled reference-token registry for audit and scoring | testnet-integrations (1) |
+| P3 | [#70](https://github.com/mferdinandr/valtrum/issues/70) | MCP and terminal read-only tools with backend search | mcp-terminal (5) |
+| P3 | [#71](https://github.com/mferdinandr/valtrum/issues/71) | close the remaining arena-audit verification tasks | audit (3), testnet-integrations (1) |
+| P3 | [#72](https://github.com/mferdinandr/valtrum/issues/72) | verify chain identities, signer setup and recorded receipts on testnet | testnet-integrations (4) |
+| P4 | [#73](https://github.com/mferdinandr/valtrum/issues/73) | verify principal escrow without a governance decision | dao-escrow (4) |
+| P4 | [#74](https://github.com/mferdinandr/valtrum/issues/74) | decide the DAO governance and disposition design (owner) | dao-escrow (3) |
+| P4 | [#75](https://github.com/mferdinandr/valtrum/issues/75) | execute approved DAO decisions and verify source-chain disposition | dao-escrow (6) |
+| P4 | [#76](https://github.com/mferdinandr/valtrum/issues/76) | previews, authorization and action status for MCP and terminal | mcp-terminal (9) |
+| P4 | [#77](https://github.com/mferdinandr/valtrum/issues/77) | player agent proposals through previews and grants; broader grant tests deferred by #58 | player-agents (4) |
+| P4 | [#78](https://github.com/mferdinandr/valtrum/issues/78) | Intents and Bitte integration evidence | testnet-integrations (4) |
+| P4 | [#79](https://github.com/mferdinandr/valtrum/issues/79) | entitlement, transfer and DAO states in the UI; recovery alerts | testnet-integrations (2) |
+| P4 | [#80](https://github.com/mferdinandr/valtrum/issues/80) | end-to-end demos and failure recovery on testnet | testnet-integrations (6) |
 
 ## Open items and who acts
 
