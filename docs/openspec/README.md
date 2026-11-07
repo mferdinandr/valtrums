@@ -1,13 +1,13 @@
 # OpenSpec coordination
 
-These ten changes supersede `redesign-permissionless-robinhood-arena`; it is not archived as completed. Each change gets a branch, implementation PR and review. Check individual tasks only after implementation and verification; see each task list for current progress. The mixed implementation on `feat/openspec-redesign-arena` is reference only.
+These ten changes (arena-scoring is archived) supersede `redesign-permissionless-robinhood-arena`; it is not archived as completed. Each change gets a branch, implementation PR and review. Check individual tasks only after implementation and verification; see each task list for current progress. The mixed implementation on `feat/openspec-redesign-arena` is reference only.
 
 | Order | Change | Dependencies and parallel work |
 | --- | --- | --- |
 | 1 | [Permissionless arena lifecycle](changes/arena-lifecycle/proposal.md) | Coordinate backing deposits and audit approval |
 | 2 | [Backed asset representation](changes/arena-asset-representation/proposal.md) | Define deposit and custody interface with lifecycle |
 | 3 | [GoPlus and liquidity audit](changes/arena-audit/proposal.md) | Coordinate approval interface with lifecycle |
-| 4 | [Scoring and overtime](changes/arena-scoring/proposal.md) | Coordinate frozen policy and round interface with lifecycle |
+| 4 | [Scoring and overtime](changes/archive/2026-11-07-arena-scoring/proposal.md) (archived; requirements in [specs/arena-scoring](specs/arena-scoring/spec.md)) | Coordinate frozen policy and round interface with lifecycle |
 | 5 | [Settlement and adjustable fees](changes/arena-settlement/proposal.md) | Requires lifecycle snapshot, scoring result and backing entitlement interfaces |
 | 6 | [Reservation-bound signing and payout](changes/arena-chain-signatures/proposal.md) | Requires backing reservations and settlement entitlements |
 | 7 | [DAO escrow and disposition](changes/arena-dao-escrow/proposal.md) | Requires lifecycle escrow and backing reservations; governance remains OPEN |
