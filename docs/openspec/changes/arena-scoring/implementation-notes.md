@@ -6,6 +6,13 @@
 
 Not done, so the matching tasks stay open:
 
-- The module cannot verify that provider values really use the committed scales, finality or pools; it only validates the shape and identity of evidence the adapter hands it and cannot tell who produced it.
-- There is no contract entry point yet. An authenticated adapter must build observations, call these functions and persist state; the round state is in memory only.
+- `Rounds` itself cannot verify that provider values really use the committed scales, finality or pools; it validates the shape and identity of evidence it is handed.
+
+Contract entry points (`rounds_api.rs`) now authenticate and persist this:
+
+- `set_lifecycle_oracle` fixes one oracle account, once; the owner cannot replace it. Only that account opens rounds (`open_lifecycle_round`) or submits observations (`submit_lifecycle_observations`), and a round cannot be resolved before its recorded end.
+- `start_lifecycle_rounds` (anyone) reveals the observation terms of a locked battle; they must hash to the frozen policy, so nobody can choose them. Round state is persisted per battle.
+- The oracle supplies only sample times, an evidence hash and the mode data; battle, round, asset, source, policy hash and window come from the frozen configuration, so they cannot be spoofed. Evidence that is incomplete, out of order, for the wrong candidate set or unscorable returns `Pending` and records nothing.
+- A unique winner is recorded as the held principal in the same call; a repeat returns the recorded outcome.
+- The oracle is a single trusted account for the testnet: nothing proves its prices are right, and a compromised oracle can decide a battle. It cannot be rotated.
 - Provider, cadence, boundary tolerance and quantization values remain OPEN policy decisions.
