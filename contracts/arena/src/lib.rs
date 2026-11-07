@@ -14,6 +14,7 @@ pub mod mpc;
 pub mod rounds;
 pub mod rounds_api;
 pub mod scoring;
+pub mod settle_api;
 pub mod settlement;
 pub mod types;
 pub mod views;
@@ -63,6 +64,9 @@ enum StorageKey {
     LifecycleBattles,
     LifecyclePositions,
     LifecycleRounds,
+    LifecycleParticipants,
+    LifecycleParticipantCounts,
+    LifecycleSettlement,
 }
 
 #[ext_contract(ext_ft)]
@@ -171,6 +175,12 @@ pub struct Arena {
     /// The only account that opens rounds and submits observations. Set once.
     lifecycle_oracle: Option<AccountId>,
     lifecycle_rounds: LookupMap<u64, rounds::Rounds>,
+    /// Registered positions in registration order, so settlement can enumerate
+    /// a community's participants: (battle, community, index) -> account.
+    lifecycle_participants: LookupMap<(u64, u32, u32), AccountId>,
+    lifecycle_participant_counts: LookupMap<(u64, u32), u32>,
+    /// Entitlements already handed to the backings, per battle.
+    lifecycle_settlement: LookupMap<u64, u32>,
 }
 
 #[near]
@@ -214,6 +224,9 @@ impl Arena {
             lifecycle_exclusive: false,
             lifecycle_oracle: None,
             lifecycle_rounds: LookupMap::new(StorageKey::LifecycleRounds),
+            lifecycle_participants: LookupMap::new(StorageKey::LifecycleParticipants),
+            lifecycle_participant_counts: LookupMap::new(StorageKey::LifecycleParticipantCounts),
+            lifecycle_settlement: LookupMap::new(StorageKey::LifecycleSettlement),
         }
     }
 
@@ -381,6 +394,8 @@ impl Arena {
         self.lifecycle_register_position(battle_id, community, &account)
             .unwrap_or_else(|_| env::panic_str("Cannot register position"));
         self.lifecycle_positions.flush();
+        self.lifecycle_participants.flush();
+        self.lifecycle_participant_counts.flush();
         let bytes = env::storage_usage()
             .checked_sub(before)
             .unwrap_or_else(|| env::panic_str("Storage accounting failed"));

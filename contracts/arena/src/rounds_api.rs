@@ -319,7 +319,7 @@ impl Arena {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::lifecycle::{
         AssetIdentity, AuditApproval, BackingApproval, Battle, FeePolicy, ObservationPolicy,
@@ -364,7 +364,7 @@ mod tests {
     }
 
     /// An arena with the oracle fixed and one locked three-community battle.
-    fn locked_arena() -> Arena {
+    pub(crate) fn locked_arena() -> Arena {
         context("owner.testnet", NearToken::from_yoctonear(0), 0);
         let mut arena = Arena::new(
             account("owner.testnet"),

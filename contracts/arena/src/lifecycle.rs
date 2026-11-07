@@ -644,7 +644,38 @@ impl crate::Arena {
             return Err(LifecycleError::PositionAlreadyRegistered);
         }
         self.lifecycle_positions.insert(key, 0);
+        let count = self
+            .lifecycle_participant_counts
+            .get(&(id, community))
+            .copied()
+            .unwrap_or(0);
+        let next = count.checked_add(1).ok_or(LifecycleError::Overflow)?;
+        self.lifecycle_participants
+            .insert((id, community, count), account.clone());
+        self.lifecycle_participant_counts
+            .insert((id, community), next);
         Ok(())
+    }
+
+    /// Credited deposits of every participant of a community, in registration
+    /// order, omitting registered accounts that hold nothing.
+    pub fn lifecycle_participant_positions(
+        &self,
+        id: u64,
+        community: u32,
+    ) -> Vec<(AccountId, u128)> {
+        let count = self
+            .lifecycle_participant_counts
+            .get(&(id, community))
+            .copied()
+            .unwrap_or(0);
+        (0..count)
+            .filter_map(|index| self.lifecycle_participants.get(&(id, community, index)))
+            .filter_map(|account| {
+                let deposit = self.lifecycle_position(id, community, account);
+                (deposit > 0).then(|| (account.clone(), deposit))
+            })
+            .collect()
     }
 
     pub fn lifecycle_credit(
