@@ -11,6 +11,7 @@ Deliver permissionless arena lifecycle and its acceptance scenarios without clai
 - Contract: [capability requirements](specs/arena-lifecycle/spec.md).
 - Integration boundary: Coordinate backing deposits and audit approval.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
+- The community asset identity may commit an optional mainnet reference pair (`reference_chain_id`, normalized lowercase `reference_address`; both or neither; no two communities share a pair). It is part of asset equality, so an audit approval must name the committed pair.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
 ## Risks / Migration

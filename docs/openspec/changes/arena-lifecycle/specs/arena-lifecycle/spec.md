@@ -11,6 +11,21 @@ The system SHALL require at least two distinct token communities and a positive 
 - **WHEN** three approved distinct communities have positive vaults and creator participation
 - **THEN** all three can be frozen in the starting snapshot
 
+### Requirement: Optional committed reference pair
+A community MAY commit a mainnet reference pair with its asset identity.
+
+#### Scenario: Valid or absent pair
+- **WHEN** both reference fields are set to a valid chain ID and 20-byte address, or both are unset
+- **THEN** creation succeeds and the address is stored lowercase
+
+#### Scenario: Invalid or repeated pair
+- **WHEN** only one field is set, the address is malformed, or two communities share a pair
+- **THEN** creation is rejected
+
+#### Scenario: Audit for another pair
+- **WHEN** an approval names a different or missing pair than the committed one
+- **THEN** it is refused
+
 ### Requirement: Immutable pre-round snapshot
 The system SHALL lock communities, deposits, mode, fee identity and policies before round 1 and reject subsequent deposits through all overtime rounds.
 
