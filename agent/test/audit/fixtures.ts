@@ -41,7 +41,14 @@ export const CLEAN_ENTRY: Record<string, string> = {
 
 export function goplus(
   overrides: Record<string, string | undefined> = {},
-  opts: { key?: string; chainId?: string; code?: number; result?: unknown; httpStatus?: number } = {},
+  opts: {
+    key?: string;
+    chainId?: string;
+    queryToken?: string;
+    code?: number;
+    result?: unknown;
+    httpStatus?: number;
+  } = {},
 ): RawGoPlusResponse {
   const entry: Record<string, string> = { ...CLEAN_ENTRY };
   for (const [k, v] of Object.entries(overrides)) {
@@ -51,10 +58,10 @@ export function goplus(
   const body = {
     code: opts.code ?? 1,
     message: "OK",
-    result: opts.result !== undefined ? opts.result : { [opts.key ?? TOKEN]: entry },
+    result: opts.result !== undefined ? opts.result : { [opts.key ?? opts.queryToken ?? TOKEN]: entry },
   };
   return {
-    query: { chainId: opts.chainId ?? CHAIN, token: TOKEN },
+    query: { chainId: opts.chainId ?? CHAIN, token: opts.queryToken ?? TOKEN },
     providerVersion: "token_security/v1",
     queriedAt: QUERIED,
     httpStatus: opts.httpStatus ?? 200,
@@ -83,6 +90,13 @@ export function lp(usd: string, extra: Partial<LpEvidence["pools"][number]> = {}
     ],
   };
 }
+
+// Reference-token fixtures: the testnet mock token `TOKEN` represents mainnet token `REF_TOKEN`.
+export const REF_CHAIN = "4663";
+export const REF_TOKEN = "0x00000000000000000000000000000000000000bb";
+export const registry = [{ chainId: CHAIN, token: TOKEN, referenceChainId: REF_CHAIN, referenceToken: REF_TOKEN }];
+export const refGoplus = (overrides: Record<string, string | undefined> = {}) =>
+  goplus(overrides, { chainId: REF_CHAIN, queryToken: REF_TOKEN });
 
 /** The real v1 policy (owner decisions) with the default 600 s TTL. */
 export const FIXTURE_RESOLVED: AuditPolicy = buildAuditPolicy();

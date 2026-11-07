@@ -1,11 +1,14 @@
 import type { NearTransport } from "../near-client.js";
 import {
   evaluateCommunity,
+  goplusTarget,
   policyHash,
   type AuditAsset,
   type AuditPolicy,
   type AuditRecord,
+  type Reason,
 } from "./decision.js";
+import { resolveReference, type DeclaredReference, type ReferenceEntry } from "./reference.js";
 import type { GoPlusQuery, RawGoPlusResponse } from "./goplus.js";
 import type { LpEvidence } from "./liquidity.js";
 
@@ -14,7 +17,10 @@ export const sameAsset = (a: AuditAsset, b: AuditAsset): boolean =>
   a.token.toLowerCase() === b.token.toLowerCase() &&
   a.representation === b.representation &&
   a.custodyDomain === b.custodyDomain &&
-  a.mappingVersion === b.mappingVersion;
+  a.mappingVersion === b.mappingVersion &&
+  a.reference?.chainId === b.reference?.chainId &&
+  a.reference?.token.toLowerCase() === b.reference?.token.toLowerCase() &&
+  a.reference?.registryEntryHash === b.reference?.registryEntryHash;
 
 export type RefreshReason =
   | "missing"
@@ -108,6 +114,10 @@ export class AuditSubmitter {
 
 export interface RefreshDeps {
   policy: AuditPolicy;
+  /** Protocol-controlled reference-token registry; the only accepted source of reference mappings. */
+  registry: readonly ReferenceEntry[];
+  /** Mapping a token declares about itself (untrusted); optional. */
+  declaredReference?: (asset: AuditAsset) => DeclaredReference | null;
   now: () => Date;
   fetchGoPlus: (q: GoPlusQuery) => Promise<RawGoPlusResponse>;
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
@@ -120,31 +130,41 @@ export interface RefreshDeps {
 /**
  * Re-audits only communities whose approval is missing, expired, changed or not passed, and
  * submits each result. Re-running with nothing stale performs no provider calls or writes.
+ * Reference mappings are resolved from the registry on every pass, so a registry change
+ * invalidates the affected approval.
  */
 export async function refreshBattleAudit(
   battleId: number,
-  assets: AuditAsset[],
+  baseAssets: AuditAsset[],
   deps: RefreshDeps,
 ): Promise<LockReadiness & { skippedBecauseLocked: boolean }> {
   if (await deps.isLocked(battleId)) {
     return { ready: true, needsRefresh: [], skippedBecauseLocked: true };
   }
   const key = (i: number) => `${battleId}:${i}`;
-  const now = deps.now();
+  const resolved = baseAssets.map((base): { asset: AuditAsset; hold?: Reason } => {
+    const r = resolveReference(base, deps.registry, deps.declaredReference?.(base) ?? null);
+    if (r.kind === "mapped") return { asset: { ...base, reference: r.reference } };
+    if (r.kind === "hold") return { asset: { ...base, reference: undefined }, hold: { code: r.code, message: r.message } };
+    return { asset: { ...base, reference: undefined } };
+  });
+  const assets = resolved.map((r) => r.asset);
   const before = lockReadiness(
     assets,
     assets.map((_, i) => deps.records.get(key(i))),
     deps.policy,
-    now,
+    deps.now(),
   );
   for (const { index } of before.needsRefresh) {
-    const asset = assets[index]!;
+    const { asset, hold } = resolved[index]!;
+    const target = goplusTarget(asset);
     const record = evaluateCommunity({
       asset,
-      goplus: await deps.fetchGoPlus({ chainId: asset.chainId, token: asset.token }),
+      goplus: hold ? null : await deps.fetchGoPlus(target),
       lp: await deps.fetchLp(asset),
       policy: deps.policy,
       now: deps.now(),
+      ...(hold ? { referenceHold: hold } : {}),
     });
     deps.records.set(key(index), record);
     await deps.submitter.submit(battleId, index, record);

@@ -33,7 +33,7 @@ describe("approval binding and refresh (fixture-only)", () => {
 
   it("policy change (ttl) invalidates; expiry invalidates; non-pass and missing are not approvals", () => {
     const r = pass();
-    const changed = { ...FIXTURE_RESOLVED, version: "v2", freshness: { status: "resolved", id: "f2", ttlMs: 1 } } as const;
+    const changed = { ...FIXTURE_RESOLVED, version: "v2", freshness: { status: "resolved", id: "f2", ttlSeconds: 1 } } as const;
     expect(approvalStatus(r, asset, changed, NOW)).toMatchObject({ reason: "policy_changed" });
     const later = new Date(Date.parse(r.expiresAt!) + 1);
     expect(approvalStatus(r, asset, FIXTURE_RESOLVED, later)).toMatchObject({ reason: "expired" });
@@ -79,6 +79,7 @@ describe("approval binding and refresh (fixture-only)", () => {
     } as never);
     const d: RefreshDeps = {
       policy: FIXTURE_RESOLVED,
+      registry: [],
       now: () => clock,
       fetchGoPlus: async () => {
         goplusCalls++;
