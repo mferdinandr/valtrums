@@ -157,6 +157,11 @@ function tokenEntry(raw: RawGoPlusResponse): Record<string, unknown> | undefined
 const UNKNOWN_FLAG: FlagState = { state: "unknown", raw: null, reason: "no usable source evidence" };
 const UNKNOWN_TAX: TaxState = { kind: "unknown", raw: null, reason: "no usable source evidence" };
 
+/** Evidence placeholder when no usable provider response exists (e.g. unresolved reference mapping). */
+export function unusableGoPlus(reason: string): NormalizedGoPlus {
+  return allUnknown({ status: "error", reason });
+}
+
 function allUnknown(source: SourceStatus): NormalizedGoPlus {
   const rec = <K extends string, V>(keys: readonly K[], v: V) =>
     Object.fromEntries(keys.map((k) => [k, v])) as Record<K, V>;

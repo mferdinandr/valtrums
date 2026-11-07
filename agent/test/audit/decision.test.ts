@@ -1,6 +1,7 @@
 // FIXTURE-ONLY adapter verification. FIXTURE_RESOLVED is not a real policy.
 import { describe, expect, it } from "vitest";
-import { UNRESOLVED_POLICY, evaluateCommunity, type AuditPolicy } from "../../src/audit/decision.js";
+import { evaluateCommunity } from "../../src/audit/decision.js";
+import { UNRESOLVED_POLICY, type AuditPolicy } from "../../src/audit/policy.js";
 import type { LpEvidence } from "../../src/audit/liquidity.js";
 import { FIXTURE_RESOLVED, NOW, asset, goplus, lp } from "./fixtures.js";
 
@@ -46,7 +47,7 @@ describe("audit decision precedence (fixture-only)", () => {
     }
   });
 
-  it("buy 0.05 + empty sell tax + unresolved admin stays pending", () => {
+  it("buy 0.05 + empty sell tax under an unresolved policy stays pending", () => {
     const r = run(goplus({ buy_tax: "0.05", sell_tax: "" }), lp("10001"), UNRESOLVED_POLICY);
     expect(r.result).toBe("pending");
     expect(r.goplus.tax.buy_tax).toMatchObject({ kind: "known", fraction: "0.05" });
@@ -69,8 +70,64 @@ describe("audit decision precedence (fixture-only)", () => {
     expect(run(goplus({ owner_address: "", is_honeypot: "1" })).result).toBe("reject");
   });
 
-  it("a reported privilege with resolved-but-failing admin policy does not pass", () => {
-    expect(run(goplus({ is_mintable: "1" })).result).toBe("pending");
+  it("an active capability with renounced, unrecoverable ownership is admissible", () => {
+    expect(run(goplus({ is_mintable: "1" })).result).toBe("pass");
+    const zero = "0x0000000000000000000000000000000000000000";
+    expect(run(goplus({ is_mintable: "1", owner_address: zero })).result).toBe("pass");
+  });
+
+  it("an active capability with non-renounced ownership rejects with a reason code", () => {
+    const owner = "0x00000000000000000000000000000000000000cc";
+    for (const flag of [
+      "is_mintable",
+      "transfer_pausable",
+      "is_blacklisted",
+      "is_whitelisted",
+      "owner_change_balance",
+      "slippage_modifiable",
+      "personal_slippage_modifiable",
+    ]) {
+      const r = run(goplus({ [flag]: "1", owner_address: owner }));
+      expect(r.result).toBe("reject");
+      expect(r.reasons).toContainEqual(expect.objectContaining({ code: "admin_privilege_not_renounced", field: flag }));
+    }
+    expect(run(goplus({ is_mintable: "1", hidden_owner: "1" })).result).toBe("reject");
+    expect(run(goplus({ is_mintable: "1", can_take_back_ownership: "1" })).result).toBe("reject");
+  });
+
+  it("an active capability with unknown ownership holds pending", () => {
+    const r = run(goplus({ is_mintable: "1", hidden_owner: undefined }));
+    expect(r.result).toBe("pending");
+    expect(r.reasons.some((x) => x.code === "ownership_unknown")).toBe(true);
+  });
+
+  it("inactive capabilities do not need renounced ownership", () => {
+    const owner = "0x00000000000000000000000000000000000000cc";
+    expect(run(goplus({ owner_address: owner })).result).toBe("pass");
+  });
+
+  it("tax up to and including 0.05 is admissible; above rejects with tax_above_limit; exactly 1 rejects", () => {
+    expect(run(goplus({ buy_tax: "0.05", sell_tax: "0.050", transfer_tax: "0.01" })).result).toBe("pass");
+    for (const f of ["buy_tax", "sell_tax", "transfer_tax"]) {
+      const r = run(goplus({ [f]: "0.050000001" }));
+      expect(r.result).toBe("reject");
+      expect(r.reasons).toContainEqual(expect.objectContaining({ code: "tax_above_limit", field: f }));
+      expect(run(goplus({ [f]: "1" })).result).toBe("reject");
+    }
+  });
+
+  it("tax above the limit plus an unknown field rejects and keeps the unknown finding", () => {
+    const r = run(goplus({ buy_tax: "0.2", sell_tax: "" }));
+    expect(r.result).toBe("reject");
+    expect(r.reasons.some((x) => x.code === "unknown_field" && x.field === "sell_tax")).toBe(true);
+  });
+
+  it("policy hash reflects the resolved decisions and their parameters", () => {
+    const a = run().policyHash;
+    const capped = { ...FIXTURE_RESOLVED, tax: { status: "resolved", id: "tax-cap-v1", maxFraction: "0.06" } } as const;
+    expect(run(goplus(), lp("10001"), capped).policyHash).not.toBe(a);
+    expect(run(goplus(), lp("10001"), { ...FIXTURE_RESOLVED, tax: { status: "unresolved" } }).policyHash).not.toBe(a);
+    expect(run().policyVersion).toBe("audit-policy-v1");
   });
 
   it("wrong chain/token or unsupported coverage cannot approve or reject", () => {

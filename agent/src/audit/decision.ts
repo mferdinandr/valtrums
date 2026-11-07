@@ -1,15 +1,11 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import {
-  normalizeGoPlus,
-  type NormalizedGoPlus,
-  type PrivilegeFlag,
-  type RawGoPlusResponse,
-  type FlagState,
-  type TaxField,
-  type TaxState,
-} from "./goplus.js";
+import { normalizeGoPlus, unusableGoPlus, type NormalizedGoPlus, type RawGoPlusResponse } from "./goplus.js";
 import { evaluateLiquidity, type LpEvidence, type LpResult } from "./liquidity.js";
+import { evaluateAdminPolicy, evaluateTaxPolicy, type AuditPolicy, type PolicyOutcome } from "./policy.js";
+import type { ReferenceBinding } from "./reference.js";
+
+export { UNRESOLVED_POLICY, type AuditPolicy } from "./policy.js";
 
 export type AuditResult = "pass" | "reject" | "pending";
 
@@ -20,41 +16,9 @@ export interface AuditAsset {
   representation: string;
   custodyDomain: string;
   mappingVersion: string;
+  /** Present when GoPlus is queried for a reference token instead of the asset itself. */
+  reference?: ReferenceBinding;
 }
-
-export type PolicyVerdict = "accept" | "reject" | "pending";
-
-/**
- * Tax thresholds and privileged-admin admissibility are OPEN product decisions.
- * The default is `unresolved`, which holds every token Pending. A resolved policy
- * must be supplied by an explicit owner decision; this module invents no values.
- */
-export type TaxPolicy =
-  | { status: "unresolved" }
-  | { status: "resolved"; id: string; evaluate: (tax: Record<TaxField, TaxState>) => PolicyVerdict };
-export type AdminPolicy =
-  | { status: "unresolved" }
-  | {
-      status: "resolved";
-      id: string;
-      evaluate: (privileges: Record<PrivilegeFlag, FlagState>, n: NormalizedGoPlus) => PolicyVerdict;
-    };
-/** Evidence TTL and refresh cadence are OPEN; unresolved means nothing can be fresh. */
-export type FreshnessPolicy = { status: "unresolved" } | { status: "resolved"; id: string; ttlMs: number };
-
-export interface AuditPolicy {
-  version: string;
-  tax: TaxPolicy;
-  admin: AdminPolicy;
-  freshness: FreshnessPolicy;
-}
-
-export const UNRESOLVED_POLICY: AuditPolicy = {
-  version: "audit-policy-v0-unresolved",
-  tax: { status: "unresolved" },
-  admin: { status: "unresolved" },
-  freshness: { status: "unresolved" },
-};
 
 export interface Reason {
   code: string;
@@ -62,10 +26,15 @@ export interface Reason {
   message: string;
 }
 
+export type AuditKind = "direct" | "reference_token";
+
 export interface AuditRecord {
   asset: AuditAsset;
+  /** `reference_token`: GoPlus evidence attests the reference token, not the asset contract. */
+  auditKind: AuditKind;
   result: AuditResult;
   reasons: Reason[];
+  policy: AuditPolicy;
   policyVersion: string;
   policyHash: string;
   evidenceHash: string;
@@ -74,7 +43,7 @@ export interface AuditRecord {
   providerVersion: string;
   queriedAt: string;
   decidedAt: string;
-  /** Approval stops being valid at this time; null when no freshness policy is resolved. */
+  /** Approval stops being valid at this time; null unless the result is a pass with a resolved TTL. */
   expiresAt: string | null;
   goplus: NormalizedGoPlus;
   lp: LpResult;
@@ -82,79 +51,76 @@ export interface AuditRecord {
 
 const hex = (text: string) => bytesToHex(sha256(utf8ToBytes(text)));
 
-/** Commits to the policy version and which OPEN decisions are resolved, never to function bodies. */
+/** Commits to every resolved decision and its parameters (cap, capability list, rule, TTL, reference mode). */
 export function policyHash(policy: AuditPolicy): string {
-  return hex(
-    JSON.stringify({
-      version: policy.version,
-      tax: policy.tax.status === "resolved" ? policy.tax.id : null,
-      admin: policy.admin.status === "resolved" ? policy.admin.id : null,
-      freshness:
-        policy.freshness.status === "resolved"
-          ? { id: policy.freshness.id, ttlMs: policy.freshness.ttlMs }
-          : null,
-      lpMinUsdExclusive: "10000",
-    }),
-  );
+  return hex(JSON.stringify({ policy, lpMinUsdExclusive: "10000" }));
 }
 
 export interface AuditInput {
   asset: AuditAsset;
-  goplus: RawGoPlusResponse;
+  /** Null when no provider query was made (for example an unresolved reference mapping). */
+  goplus: RawGoPlusResponse | null;
   lp: LpEvidence | null;
   policy: AuditPolicy;
   now: Date;
+  /** A reference-mapping problem that holds the audit Pending. */
+  referenceHold?: Reason;
+}
+
+/** The chain/token GoPlus must be queried for. */
+export function goplusTarget(asset: AuditAsset): { chainId: string; token: string } {
+  return asset.reference
+    ? { chainId: asset.reference.chainId, token: asset.reference.token }
+    : { chainId: asset.chainId, token: asset.token };
 }
 
 export function evaluateCommunity(input: AuditInput): AuditRecord {
   const { asset, policy, now } = input;
   const reasons: Reason[] = [];
-  const g = normalizeGoPlus(input.goplus);
+  const auditKind: AuditKind = asset.reference ? "reference_token" : "direct";
   const lp = evaluateLiquidity(asset, input.lp);
-
-  const identityOk =
-    input.goplus.query.chainId === asset.chainId &&
-    input.goplus.query.token.toLowerCase() === asset.token.toLowerCase();
   let rejected = false;
   let pending = false;
   const hold = (r: Reason) => {
     pending = true;
     reasons.push(r);
   };
+  const apply = (o: PolicyOutcome) => {
+    reasons.push(...o.reasons);
+    if (o.verdict === "reject") rejected = true;
+    else if (o.verdict === "pending") pending = true;
+  };
 
-  if (!identityOk) {
+  let g: NormalizedGoPlus;
+  const target = goplusTarget(asset);
+  if (input.referenceHold) {
+    g = unusableGoPlus(input.referenceHold.message);
+    hold(input.referenceHold);
+  } else if (!input.goplus) {
+    g = unusableGoPlus("no provider response");
+    hold({ code: "source_error", message: "no provider response" });
+  } else if (
+    input.goplus.query.chainId !== target.chainId ||
+    input.goplus.query.token.toLowerCase() !== target.token.toLowerCase()
+  ) {
+    g = unusableGoPlus("GoPlus query does not match the audited chain/token");
     hold({ code: "wrong_source", message: "GoPlus query was for another chain or token" });
-  } else if (g.source.status !== "ok") {
-    hold({ code: `source_${g.source.status}`, message: g.source.reason });
   } else {
-    for (const f of g.findings) {
-      if (f.severity === "critical") {
-        rejected = true;
-        reasons.push({ code: "critical", field: f.field, message: f.reason });
-      } else if (f.severity === "unknown") {
-        // Unknown required fields hold Pending, but are always retained, even next to a reject.
-        hold({ code: "unknown_field", field: f.field, message: f.reason });
-      }
-    }
-    if (!rejected) {
-      if (policy.tax.status === "unresolved") {
-        hold({ code: "tax_policy_unresolved", message: "tax threshold policy is OPEN" });
-      } else {
-        const v = policy.tax.evaluate(g.tax);
-        if (v === "reject") {
+    g = normalizeGoPlus(input.goplus);
+    if (g.source.status !== "ok") {
+      hold({ code: `source_${g.source.status}`, message: g.source.reason });
+    } else {
+      for (const f of g.findings) {
+        if (f.severity === "critical") {
           rejected = true;
-          reasons.push({ code: "tax_policy_reject", message: "tax rejected by resolved policy" });
-        } else if (v === "pending") hold({ code: "tax_policy_pending", message: "tax policy returned pending" });
+          reasons.push({ code: "critical", field: f.field, message: f.reason });
+        } else if (f.severity === "unknown") {
+          // Unknown required fields hold Pending, and stay listed even beside a reject.
+          hold({ code: "unknown_field", field: f.field, message: f.reason });
+        }
       }
-      if (policy.admin.status === "unresolved") {
-        hold({ code: "admin_policy_unresolved", message: "privileged-admin policy is OPEN" });
-      } else {
-        const v = policy.admin.evaluate(g.privileges, g);
-        if (v === "reject") {
-          rejected = true;
-          reasons.push({ code: "admin_policy_reject", message: "privilege rejected by resolved policy" });
-        } else if (v === "pending") hold({ code: "admin_policy_pending", message: "admin policy returned pending" });
-      }
+      apply(evaluateTaxPolicy(policy.tax, g.tax));
+      apply(evaluateAdminPolicy(policy.admin, g.privileges, g.context));
     }
   }
 
@@ -171,43 +137,49 @@ export function evaluateCommunity(input: AuditInput): AuditRecord {
   if (policy.freshness.status === "unresolved") {
     hold({ code: "freshness_policy_unresolved", message: "evidence TTL policy is OPEN" });
   } else {
-    const ttl = policy.freshness.ttlMs;
-    const times = [input.goplus.queriedAt, lp.oldestObservedAt].map((t) => (t ? Date.parse(t) : NaN));
+    const ttlMs = policy.freshness.ttlSeconds * 1000;
+    const times = [input.goplus?.queriedAt, lp.oldestObservedAt].map((t) => (t ? Date.parse(t) : NaN));
     if (times.some((t) => Number.isNaN(t))) {
       hold({ code: "evidence_time_missing", message: "evidence timestamp missing or invalid" });
     } else if (times.some((t) => t > now.getTime())) {
       hold({ code: "evidence_from_future", message: "evidence timestamp is after decision time" });
     } else {
       const oldest = Math.min(...(times as number[]));
-      expiresAt = new Date(oldest + ttl).toISOString();
-      if (now.getTime() >= oldest + ttl) hold({ code: "stale_evidence", message: "evidence is older than the freshness TTL" });
+      expiresAt = new Date(oldest + ttlMs).toISOString();
+      if (now.getTime() >= oldest + ttlMs) {
+        hold({ code: "stale_evidence", message: "evidence is older than the freshness TTL" });
+      }
     }
   }
 
   const result: AuditResult = rejected ? "reject" : pending ? "pending" : "pass";
-  const rawResponseHash = hex(input.goplus.rawText);
+  const rawText = input.goplus?.rawText ?? "";
+  const rawResponseHash = hex(rawText);
   const pHash = policyHash(policy);
   const evidenceHash = hex(
     JSON.stringify({
+      auditKind,
       asset,
       rawResponseHash,
-      providerVersion: input.goplus.providerVersion,
-      queriedAt: input.goplus.queriedAt,
+      providerVersion: input.goplus?.providerVersion ?? null,
+      queriedAt: input.goplus?.queriedAt ?? null,
       lp: input.lp,
       policyHash: pHash,
     }),
   );
   return {
     asset,
+    auditKind,
     result,
     reasons,
+    policy,
     policyVersion: policy.version,
     policyHash: pHash,
     evidenceHash,
     rawResponseHash,
-    rawResponse: input.goplus.rawText,
-    providerVersion: input.goplus.providerVersion,
-    queriedAt: input.goplus.queriedAt,
+    rawResponse: rawText,
+    providerVersion: input.goplus?.providerVersion ?? "",
+    queriedAt: input.goplus?.queriedAt ?? "",
     decidedAt: now.toISOString(),
     expiresAt: result === "pass" ? expiresAt : null,
     goplus: g,

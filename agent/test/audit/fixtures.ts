@@ -1,5 +1,6 @@
 // FIXTURE-ONLY: synthetic GoPlus-shaped responses and LP evidence. Not live API output.
-import type { AuditAsset, AuditPolicy } from "../../src/audit/decision.js";
+import type { AuditAsset } from "../../src/audit/decision.js";
+import { buildAuditPolicy, type AuditPolicy } from "../../src/audit/policy.js";
 import type { RawGoPlusResponse } from "../../src/audit/goplus.js";
 import type { LpEvidence } from "../../src/audit/liquidity.js";
 
@@ -83,19 +84,5 @@ export function lp(usd: string, extra: Partial<LpEvidence["pools"][number]> = {}
   };
 }
 
-/** Fixture policy that resolves the OPEN decisions only so the Pass path can be exercised. NOT a real policy. */
-export const FIXTURE_RESOLVED: AuditPolicy = {
-  version: "fixture-policy",
-  tax: {
-    status: "resolved",
-    id: "fixture-tax",
-    evaluate: (tax) =>
-      Object.values(tax).every((t) => t.kind === "known" && t.fraction === "0") ? "accept" : "pending",
-  },
-  admin: {
-    status: "resolved",
-    id: "fixture-admin",
-    evaluate: (p) => (Object.values(p).every((f) => f.state === "false") ? "accept" : "pending"),
-  },
-  freshness: { status: "resolved", id: "fixture-fresh", ttlMs: 10 * 60_000 },
-};
+/** The real v1 policy (owner decisions) with the default 600 s TTL. */
+export const FIXTURE_RESOLVED: AuditPolicy = buildAuditPolicy();
