@@ -25,20 +25,51 @@ pub mod normalization;
 pub mod receipt;
 pub mod registry_claim;
 pub mod reservation;
+pub mod suspension;
 
 use ledger::Ledger;
 use registry_claim::{RegistryClaim, RegistryKey};
+use suspension::{CustodyAttestation, ResumePolicy, Suspension, SuspensionView};
 
 /// Upper bound on storage a first claim can add (receipt plus two account maps).
 const CLAIM_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(20);
 const REGISTRY_GAS: Gas = Gas::from_tgas(10);
 const CALLBACK_GAS: Gas = Gas::from_tgas(30);
+const ARENA_GAS: Gas = Gas::from_tgas(10);
+/// The first callback schedules the arena lock query and the second callback.
+const CLAIM_STAGE_GAS: Gas = Gas::from_tgas(60);
 
 #[ext_contract(ext_registry)]
 #[allow(dead_code)]
 trait SharedRegistry {
     fn get_active_claim(&self, key: RegistryKey) -> Option<RegistryClaim>;
     fn is_disputed(&self, key: RegistryKey) -> bool;
+}
+
+/// Subset of the arena's existing `get_lifecycle_battle` view that backing reads.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BattleLockStatus {
+    pub locked: bool,
+}
+
+#[ext_contract(ext_arena)]
+#[allow(dead_code)]
+trait ArenaLifecycle {
+    fn get_lifecycle_battle(&self, battle_id: u64) -> Option<BattleLockStatus>;
+}
+
+/// A finalized deposit that arrived after its battle locked. It never entered a
+/// snapshot or vault and is refundable to `beneficiary` only.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LateDeposit {
+    pub battle_id: U64,
+    pub beneficiary: AccountId,
+    /// Representation units recorded in bucket U.
+    pub units: U128,
+    /// Sub-unit source residue attributed to the beneficiary.
+    pub source_residue: U128,
 }
 
 #[near(serializers = [borsh])]
@@ -52,6 +83,8 @@ enum StorageKey {
     ConfirmedDebits,
     Allocations,
     EntitlementBalances,
+    Late,
+    LateReceipts,
 }
 
 /// Identity and precision are immutable for this contract instance.
@@ -78,6 +111,8 @@ pub struct LedgerView {
     pub paused: bool,
     pub reconciliation_required: bool,
     pub source_residue: U128,
+    /// Part of `unallocated` that is a late deposit, refundable only.
+    pub late_refundable: U128,
 }
 
 /// Locally accounted values in source atomic units, not a live custody proof.
@@ -166,6 +201,16 @@ pub struct Backing {
     confirmed_debits: LookupMap<receipt::ReceiptId, (AccountId, [u8; 32])>,
     allocations: LookupMap<[u8; 32], Allocation>,
     entitlement_balances: LookupMap<AccountId, u128>,
+    /// Aggregate of the suspension reasons; liabilities are never touched by it.
+    suspension: Suspension,
+    resume_policy: ResumePolicy,
+    /// Account allowed to attest the custody balance; unset until the owner sets it.
+    operator: Option<AccountId>,
+    attestation: Option<CustodyAttestation>,
+    attestation_sequence: u64,
+    late_by_account: LookupMap<AccountId, u128>,
+    late_total: u128,
+    late_receipts: LookupMap<receipt::ReceiptId, LateDeposit>,
 }
 
 #[near]
@@ -245,6 +290,14 @@ impl Backing {
             confirmed_debits: LookupMap::new(StorageKey::ConfirmedDebits),
             allocations: LookupMap::new(StorageKey::Allocations),
             entitlement_balances: LookupMap::new(StorageKey::EntitlementBalances),
+            suspension: Suspension::default(),
+            resume_policy: ResumePolicy::default(),
+            operator: None,
+            attestation: None,
+            attestation_sequence: 0,
+            late_by_account: LookupMap::new(StorageKey::Late),
+            late_total: 0,
+            late_receipts: LookupMap::new(StorageKey::LateReceipts),
         }
     }
 
@@ -274,15 +327,16 @@ impl Backing {
             .get_active_claim(key)
             .then(
                 Self::ext(env::current_account_id())
-                    .with_static_gas(CALLBACK_GAS)
+                    .with_static_gas(CLAIM_STAGE_GAS)
                     .with_attached_deposit(env::attached_deposit())
                     .on_claim_receipt(env::predecessor_account_id(), transaction_hash, log_index),
             )
     }
 
-    /// Returns true only when this call credited new custody. Every other
-    /// outcome (unavailable, disputed, mismatched, replayed, paused) credits
-    /// nothing and refunds the full deposit to the caller.
+    /// Stage one: validate the registry claim against this asset, then ask the
+    /// arena whether the claim's battle is locked. Every other outcome
+    /// (unavailable, disputed, mismatched, suspended) credits nothing and
+    /// refunds the full deposit to the caller.
     #[private]
     #[payable]
     pub fn on_claim_receipt(
@@ -291,12 +345,48 @@ impl Backing {
         transaction_hash: String,
         log_index: u32,
         #[callback_result] claim: Result<Option<RegistryClaim>, PromiseError>,
+    ) -> PromiseOrValue<bool> {
+        let attached = env::attached_deposit();
+        if let (Ok(Some(claim)), false) = (claim, self.paused || self.reconciliation_required) {
+            if self.claim_is_creditable(&transaction_hash, log_index, &claim) {
+                return PromiseOrValue::Promise(
+                    ext_arena::ext(self.arena.clone())
+                        .with_static_gas(ARENA_GAS)
+                        .get_lifecycle_battle(claim.battle_id.0)
+                        .then(
+                            Self::ext(env::current_account_id())
+                                .with_static_gas(CALLBACK_GAS)
+                                .with_attached_deposit(attached)
+                                .on_claim_lock_status(caller, transaction_hash, log_index, claim),
+                        ),
+                );
+            }
+        }
+        if attached.as_yoctonear() > 0 {
+            Promise::new(caller).transfer(attached).detach();
+        }
+        PromiseOrValue::Value(false)
+    }
+
+    /// Stage two. Returns true only when this call credited new custody. A
+    /// battle that is unknown or whose lock state is unavailable fails closed.
+    /// A locked battle records the deposit as a late deposit (bucket U, refund
+    /// only); an open battle credits ordinary attributed custody.
+    #[private]
+    #[payable]
+    pub fn on_claim_lock_status(
+        &mut self,
+        caller: AccountId,
+        transaction_hash: String,
+        log_index: u32,
+        claim: RegistryClaim,
+        #[callback_result] battle: Result<Option<BattleLockStatus>, PromiseError>,
     ) -> bool {
         let attached = env::attached_deposit().as_yoctonear();
         let before = env::storage_usage();
-        let credited = match (claim, self.paused || self.reconciliation_required) {
-            (Ok(Some(claim)), false) => {
-                self.apply_registry_claim(&transaction_hash, log_index, &claim)
+        let credited = match (battle, self.paused || self.reconciliation_required) {
+            (Ok(Some(status)), false) => {
+                self.apply_registry_claim(&transaction_hash, log_index, &claim, status.locked)
             }
             _ => false,
         };
@@ -359,7 +449,7 @@ impl Backing {
         if disputed != Ok(true) {
             return false;
         }
-        let fresh = !self.reconciliation_required;
+        let fresh = !self.suspension.reorg;
         self.reorganize_receipt(&id).is_ok() && fresh
     }
 
@@ -514,7 +604,10 @@ impl Backing {
     ) -> Option<String> {
         use reservation::ReservationStatus;
         let item = self.reservations.get(&(beneficiary, request_id))?;
-        if item.kind != reservation::ReservationKind::Payout {
+        if !matches!(
+            item.kind,
+            reservation::ReservationKind::Payout | reservation::ReservationKind::Refund
+        ) {
             return None;
         }
         Some(
@@ -595,6 +688,226 @@ impl Backing {
         .emit();
     }
 
+    /// Owner-only. Sets the account allowed to attest the custody balance.
+    /// `None` removes the operator, so no attestation is accepted.
+    #[payable]
+    pub fn set_operator(&mut self, operator: Option<AccountId>) {
+        require!(env::predecessor_account_id() == self.owner, "Only owner");
+        near_sdk::assert_one_yocto();
+        suspension::emit(
+            "operator_changed",
+            near_sdk::serde_json::json!({
+                "old": self.operator,
+                "new": operator,
+                "by": self.owner,
+            }),
+        );
+        self.operator = operator;
+    }
+
+    /// Owner-only, exactly one yocto, every change emits an event. The policy
+    /// decides how a reorg or deficit suspension can be lifted.
+    #[payable]
+    pub fn set_resume_policy(&mut self, policy: ResumePolicy) {
+        require!(env::predecessor_account_id() == self.owner, "Only owner");
+        near_sdk::assert_one_yocto();
+        suspension::emit(
+            "resume_policy_changed",
+            near_sdk::serde_json::json!({
+                "old": self.resume_policy,
+                "new": policy,
+                "by": self.owner,
+            }),
+        );
+        self.resume_policy = policy;
+    }
+
+    /// Operator attestation of the custody balance (source atomic units) at a
+    /// finalized source block. A balance below the ledger liabilities
+    /// (B = M + E + P + D + U, plus attributed residue) suspends the asset.
+    /// A covering attestation lifts a reorg or deficit suspension only under
+    /// the `Automatic` policy. Source blocks must strictly increase. Returns
+    /// whether the balance covers the liabilities. Liabilities are never changed.
+    #[payable]
+    pub fn attest_custody_balance(
+        &mut self,
+        source_block_number: U64,
+        source_block_hash: [u8; 32],
+        finalized_head_number: U64,
+        finalized_head_hash: [u8; 32],
+        balance: U128,
+        evidence_hash: [u8; 32],
+    ) -> bool {
+        near_sdk::assert_one_yocto();
+        require!(
+            self.operator.as_ref() == Some(&env::predecessor_account_id()),
+            "Only operator"
+        );
+        require!(
+            source_block_hash != [0; 32]
+                && finalized_head_hash != [0; 32]
+                && evidence_hash != [0; 32]
+                && source_block_number.0 <= finalized_head_number.0
+                && (source_block_number.0 != finalized_head_number.0
+                    || source_block_hash == finalized_head_hash),
+            "Invalid attestation"
+        );
+        if let Some(last) = &self.attestation {
+            if last.source_block_number.0 == source_block_number.0 {
+                require!(
+                    last.source_block_hash == source_block_hash
+                        && last.balance == balance
+                        && last.finalized_head_number == finalized_head_number
+                        && last.finalized_head_hash == finalized_head_hash
+                        && last.evidence_hash == evidence_hash,
+                    "Conflicting attestation"
+                );
+                return last.covered;
+            }
+            require!(
+                source_block_number.0 > last.source_block_number.0,
+                "Stale attestation"
+            );
+        }
+        let sequence = self
+            .attestation_sequence
+            .checked_add(1)
+            .unwrap_or_else(|| env::panic_str("Sequence overflow"));
+        let required = self.required_source_units();
+        let covered = self.ledger.is_balanced() && required.is_some_and(|need| balance.0 >= need);
+        self.attestation_sequence = sequence;
+        self.attestation = Some(CustodyAttestation {
+            sequence: U64(sequence),
+            source_block_number,
+            source_block_hash,
+            finalized_head_number,
+            finalized_head_hash,
+            balance,
+            evidence_hash,
+            required: U128(required.unwrap_or(u128::MAX)),
+            covered,
+        });
+        suspension::emit(
+            "custody_attested",
+            near_sdk::serde_json::json!({
+                "sequence": sequence.to_string(),
+                "source_block_number": source_block_number,
+                "balance": balance,
+                "required": required.map(|need| need.to_string()),
+                "covered": covered,
+            }),
+        );
+        if !covered {
+            if !self.suspension.deficit {
+                self.suspension.deficit = true;
+                suspension::emit(
+                    "asset_suspended",
+                    near_sdk::serde_json::json!({ "reason": "deficit" }),
+                );
+            }
+            self.suspension.since_attestation = sequence;
+            self.sync_suspension();
+        } else if self.resume_policy == ResumePolicy::Automatic
+            && self.suspension.evidence_liftable()
+        {
+            self.lift_evidence_reasons("automatic");
+        }
+        covered
+    }
+
+    /// Owner-only resume under `OwnerWithEvidence`: lifts a reorg or deficit
+    /// suspension once an attestation made after the suspension shows the
+    /// custody balance still covers every liability. Unresolved reconciliation
+    /// of a reservation is not lifted here. Returns true when nothing remains
+    /// suspended.
+    #[payable]
+    pub fn resume(&mut self) -> bool {
+        require!(env::predecessor_account_id() == self.owner, "Only owner");
+        near_sdk::assert_one_yocto();
+        require!(
+            self.resume_policy == ResumePolicy::OwnerWithEvidence,
+            "Resume policy does not allow owner resume"
+        );
+        require!(self.suspension.evidence_liftable(), "Nothing to resume");
+        require!(
+            self.attestation_covers_now(),
+            "Covering attestation required"
+        );
+        self.lift_evidence_reasons("owner");
+        !self.reconciliation_required
+    }
+
+    /// Payout-authority only. Marks a reservation whose spend cannot be
+    /// determined (lost callback, conflicting evidence) as unresolved, which
+    /// suspends the asset until the reservation is confirmed or released.
+    /// Attach exactly one yocto. Returns false if it was already unresolved.
+    #[payable]
+    pub fn report_unresolved_reconciliation(
+        &mut self,
+        holder: AccountId,
+        request_id: [u8; 32],
+    ) -> bool {
+        near_sdk::assert_one_yocto();
+        self.assert_payout_authority();
+        self.mark_unresolved(holder, request_id)
+            .unwrap_or_else(|error| env::panic_str(&format!("Report rejected: {error:?}")))
+    }
+
+    /// Payout-authority only. Reserves part of a late deposit for refund to its
+    /// beneficiary on the source chain. Same identity, confirmation and release
+    /// path as `reserve_payout`; `confirm_payout` consumes it and `release_payout`
+    /// returns it to the late balance. Attach exactly one yocto.
+    #[payable]
+    pub fn reserve_late_refund(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        amount: U128,
+        destination: [u8; 20],
+    ) -> ReservedPayout {
+        near_sdk::assert_one_yocto();
+        self.assert_payout_authority();
+        let created = self
+            .reserve_late(beneficiary.clone(), request_id, amount.0, destination)
+            .unwrap_or_else(|error| env::panic_str(&format!("Refund rejected: {error:?}")));
+        let source_amount = self
+            .reservations
+            .get(&(beneficiary, request_id))
+            .map(|item| item.source_amount)
+            .unwrap_or_else(|| env::panic_str("Reservation missing"));
+        ReservedPayout {
+            created,
+            source_amount: U128(source_amount),
+        }
+    }
+
+    pub fn late_balance_of(&self, account: AccountId) -> U128 {
+        U128(self.late_by_account.get(&account).copied().unwrap_or(0))
+    }
+
+    pub fn get_late_deposit(
+        &self,
+        transaction_hash: String,
+        log_index: u32,
+    ) -> Option<LateDeposit> {
+        let id = receipt::ReceiptId::from_hex(self.asset.chain_id.0, &transaction_hash, log_index)
+            .ok()?;
+        self.late_receipts.get(&id).cloned()
+    }
+
+    pub fn get_suspension(&self) -> SuspensionView {
+        SuspensionView {
+            suspended: self.reconciliation_required,
+            reorg: self.suspension.reorg,
+            deficit: self.suspension.deficit,
+            unresolved: U64(self.suspension.unresolved),
+            since_attestation: U64(self.suspension.since_attestation),
+            resume_policy: self.resume_policy,
+            operator: self.operator.clone(),
+            last_attestation: self.attestation.clone(),
+        }
+    }
+
     pub fn unallocated_balance_of(&self, account: AccountId) -> U128 {
         U128(
             self.unallocated_by_account
@@ -621,9 +934,10 @@ impl Backing {
             unallocated: U128(self.ledger.unallocated),
             accounting_balanced: self.ledger.is_balanced()
                 && self.ledger.minted == self.token.total_supply,
-            paused: self.paused,
+            paused: self.transfers_halted(),
             reconciliation_required: self.reconciliation_required,
             source_residue: U128(self.residual_total),
+            late_refundable: U128(self.late_total),
         }
     }
 
@@ -677,25 +991,38 @@ pub enum ReceiptProcessingError {
 }
 
 impl Backing {
+    fn claim_is_creditable(
+        &self,
+        transaction_hash: &str,
+        log_index: u32,
+        claim: &RegistryClaim,
+    ) -> bool {
+        receipt::ReceiptId::from_hex(self.asset.chain_id.0, transaction_hash, log_index).is_ok()
+            && registry_claim::matches_asset(
+                claim,
+                &self.asset,
+                &env::current_account_id(),
+                self.mapping_version,
+            )
+    }
+
+    /// `late` is true when the claim's battle was already locked: the deposit
+    /// is then recorded as unattributed and refundable only.
     fn apply_registry_claim(
         &mut self,
         transaction_hash: &str,
         log_index: u32,
         claim: &RegistryClaim,
+        late: bool,
     ) -> bool {
+        if !self.claim_is_creditable(transaction_hash, log_index, claim) {
+            return false;
+        }
         let Ok(id) =
             receipt::ReceiptId::from_hex(self.asset.chain_id.0, transaction_hash, log_index)
         else {
             return false;
         };
-        if !registry_claim::matches_asset(
-            claim,
-            &self.asset,
-            &env::current_account_id(),
-            self.mapping_version,
-        ) {
-            return false;
-        }
         let candidate = receipt::Receipt {
             id: id.clone(),
             beneficiary: claim.beneficiary.clone(),
@@ -703,7 +1030,8 @@ impl Backing {
             source_block_hash: claim.block_hash,
             status: receipt::ReceiptStatus::Provisional,
         };
-        self.observe_receipt(candidate).is_ok() && self.finalize_receipt(&id) == Ok(true)
+        let late = late.then_some(claim.battle_id.0);
+        self.observe_receipt(candidate).is_ok() && self.finalize_receipt_as(&id, late) == Ok(true)
     }
 
     pub fn observe_receipt(
@@ -711,7 +1039,7 @@ impl Backing {
         candidate: receipt::Receipt,
     ) -> Result<bool, ReceiptProcessingError> {
         use receipt::ReceiptStatus;
-        if self.paused {
+        if self.paused || self.reconciliation_required {
             return Err(ReceiptProcessingError::Paused);
         }
         if candidate.id.chain_id != self.asset.chain_id.0 {
@@ -745,7 +1073,17 @@ impl Backing {
         &mut self,
         id: &receipt::ReceiptId,
     ) -> Result<bool, ReceiptProcessingError> {
-        if self.paused {
+        self.finalize_receipt_as(id, None)
+    }
+
+    /// `late` carries the battle id of a deposit that arrived after lock. Such
+    /// units go to the refund-only late balance, never to claimable custody.
+    fn finalize_receipt_as(
+        &mut self,
+        id: &receipt::ReceiptId,
+        late: Option<u64>,
+    ) -> Result<bool, ReceiptProcessingError> {
+        if self.paused || self.reconciliation_required {
             return Err(ReceiptProcessingError::Paused);
         }
         let mut item = self
@@ -766,12 +1104,24 @@ impl Backing {
         )
         .map_err(|_| ReceiptProcessingError::Overflow)?;
         let account = item.beneficiary.clone();
-        let unallocated = self
-            .unallocated_by_account
+        let tracked = if late.is_some() {
+            &self.late_by_account
+        } else {
+            &self.unallocated_by_account
+        };
+        let unallocated = tracked
             .get(&account)
             .copied()
             .unwrap_or(0)
             .checked_add(normalized.representation_units)
+            .ok_or(ReceiptProcessingError::Overflow)?;
+        let late_total = self
+            .late_total
+            .checked_add(if late.is_some() {
+                normalized.representation_units
+            } else {
+                0
+            })
             .ok_or(ReceiptProcessingError::Overflow)?;
         let residue = self
             .residual_by_account
@@ -791,8 +1141,32 @@ impl Backing {
                 .map_err(|_| ReceiptProcessingError::Overflow)?;
         }
         if normalized.representation_units > 0 {
-            self.unallocated_by_account
-                .insert(account.clone(), unallocated);
+            if late.is_some() {
+                self.late_by_account.insert(account.clone(), unallocated);
+            } else {
+                self.unallocated_by_account
+                    .insert(account.clone(), unallocated);
+            }
+        }
+        if let Some(battle_id) = late {
+            self.late_total = late_total;
+            self.late_receipts.insert(
+                id.clone(),
+                LateDeposit {
+                    battle_id: U64(battle_id),
+                    beneficiary: account.clone(),
+                    units: U128(normalized.representation_units),
+                    source_residue: U128(normalized.source_residue),
+                },
+            );
+            suspension::emit(
+                "late_deposit_recorded",
+                near_sdk::serde_json::json!({
+                    "battle_id": battle_id.to_string(),
+                    "beneficiary": account,
+                    "units": normalized.representation_units.to_string(),
+                }),
+            );
         }
         if normalized.source_residue > 0 {
             self.residual_by_account.insert(account, residue);
@@ -855,7 +1229,9 @@ impl Backing {
         let target = match kind {
             ReservationKind::Redemption => ledger::Bucket::Payouts,
             ReservationKind::Disposal => ledger::Bucket::Disposal,
-            ReservationKind::Payout => return Err(ReservationError::WrongKind),
+            ReservationKind::Payout | ReservationKind::Refund => {
+                return Err(ReservationError::WrongKind)
+            }
         };
         let mut next = self.ledger.clone();
         next.move_liability(ledger::Bucket::Minted, target, amount)
@@ -878,6 +1254,7 @@ impl Backing {
                 destination,
                 kind,
                 status: ReservationStatus::Reserved,
+                unresolved: false,
             },
         );
         Ok(true)
@@ -950,6 +1327,7 @@ impl Backing {
                 destination,
                 kind: ReservationKind::Payout,
                 status: ReservationStatus::Reserved,
+                unresolved: false,
             },
         );
         Ok(true)
@@ -983,114 +1361,119 @@ impl Backing {
         );
     }
 
-    /// Confirm a payout reservation. The payout authority has already verified
-    /// that the evidence names one of its signed attempts, so a replacement
-    /// transaction may differ from the hash recorded earlier; every other check
-    /// is the redemption confirmation's.
+    /// Confirm a payout or late-refund reservation. The payout authority has
+    /// already verified that the evidence names one of its signed attempts, so a
+    /// replacement transaction may differ from the hash recorded earlier; every
+    /// other check is the redemption confirmation's.
     pub fn confirm_payout_reservation(
         &mut self,
         beneficiary: AccountId,
         request_id: [u8; 32],
         evidence: reservation::FinalizedDebit,
     ) -> Result<bool, reservation::ReservationError> {
-        use reservation::{ReservationError, ReservationKind, ReservationStatus};
-        let key = (beneficiary.clone(), request_id);
-        let mut item = self
-            .reservations
-            .get(&key)
-            .cloned()
-            .ok_or(ReservationError::MissingReservation)?;
-        if item.kind != ReservationKind::Payout {
-            return Err(ReservationError::WrongKind);
-        }
-        match item.status {
-            ReservationStatus::Released => return Err(ReservationError::AlreadyReleased),
-            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {
-                if evidence.transaction_hash == [0; 32] {
-                    return Err(ReservationError::InvalidTransaction);
-                }
-                item.status = ReservationStatus::Broadcast {
-                    transaction_hash: evidence.transaction_hash,
-                };
-                self.reservations.insert(key, item);
-            }
-            ReservationStatus::Confirmed { .. } => {}
-        }
-        self.confirm_redemption(beneficiary, request_id, evidence)
+        use reservation::ReservationKind;
+        self.confirm_debit_evidence(
+            (beneficiary, request_id),
+            evidence,
+            &[ReservationKind::Payout, ReservationKind::Refund],
+            true,
+        )
     }
 
-    /// Return a payout reservation to the beneficiary's entitlement. The caller
-    /// must have proven that no executable source-chain spend remains.
+    /// Return a payout or late-refund reservation to its source balance (the
+    /// entitlement, or the late balance). The caller must have proven that no
+    /// executable source-chain spend remains. Allowed while the asset is
+    /// suspended: it moves a liability between buckets and creates no spend.
     pub fn release_payout_reservation(
         &mut self,
         beneficiary: AccountId,
         request_id: [u8; 32],
     ) -> Result<bool, reservation::ReservationError> {
-        use reservation::{ReservationError, ReservationKind, ReservationStatus};
-        if self.paused || self.reconciliation_required {
-            return Err(ReservationError::Paused);
-        }
-        let key = (beneficiary.clone(), request_id);
-        let mut item = self
-            .reservations
-            .get(&key)
-            .cloned()
-            .ok_or(ReservationError::MissingReservation)?;
-        if item.kind != ReservationKind::Payout {
-            return Err(ReservationError::WrongKind);
-        }
-        match item.status {
-            ReservationStatus::Released => return Ok(false),
-            ReservationStatus::Confirmed { .. } => return Err(ReservationError::AlreadyConfirmed),
-            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {}
-        }
-        let balance = self
-            .entitlement_balances
-            .get(&beneficiary)
-            .copied()
-            .unwrap_or(0)
-            .checked_add(item.amount)
-            .ok_or(ReservationError::InvalidLedger)?;
-        let mut next = self.ledger.clone();
-        next.move_liability(
-            ledger::Bucket::Payouts,
-            ledger::Bucket::Entitlements,
-            item.amount,
+        use reservation::ReservationKind;
+        self.release_reservation_core(
+            (beneficiary, request_id),
+            &[ReservationKind::Payout, ReservationKind::Refund],
         )
-        .map_err(|_| ReservationError::InvalidLedger)?;
-        item.status = ReservationStatus::Released;
-        self.ledger = next;
-        self.entitlement_balances.insert(beneficiary, balance);
-        self.reservations.insert(key, item);
-        Ok(true)
     }
 
-    /// Apply an authenticated finalized redemption debit exactly once. This
-    /// internal method validates binding but cannot itself prove finality;
-    /// there is no exported callback until the verifier is implemented.
+    /// Internal-only. Restores a redemption or disposal reservation as
+    /// representation units after definitive no-spend proof. No authority is
+    /// defined for it yet (DAO is OPEN), so it is not an entry point.
+    pub fn release_unspent_reservation(
+        &mut self,
+        holder: AccountId,
+        request_id: [u8; 32],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::ReservationKind;
+        self.release_reservation_core(
+            (holder, request_id),
+            &[ReservationKind::Redemption, ReservationKind::Disposal],
+        )
+    }
+
+    /// Apply an authenticated finalized redemption or payout debit exactly once.
+    /// This internal method validates binding but cannot itself prove finality.
+    /// It works while the asset is suspended: a real debit must be recorded.
     pub fn confirm_redemption(
         &mut self,
         holder: AccountId,
         request_id: [u8; 32],
         evidence: reservation::FinalizedDebit,
     ) -> Result<bool, reservation::ReservationError> {
+        use reservation::ReservationKind;
+        self.confirm_debit_evidence(
+            (holder, request_id),
+            evidence,
+            &[
+                ReservationKind::Redemption,
+                ReservationKind::Payout,
+                ReservationKind::Refund,
+            ],
+            false,
+        )
+    }
+
+    /// Internal-only. Consume a DAO disposal reservation on matching finalized
+    /// evidence. No DAO authority is defined, so this is not an entry point.
+    pub fn confirm_disposal(
+        &mut self,
+        holder: AccountId,
+        request_id: [u8; 32],
+        evidence: reservation::FinalizedDebit,
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::ReservationKind;
+        self.confirm_debit_evidence(
+            (holder, request_id),
+            evidence,
+            &[ReservationKind::Disposal],
+            false,
+        )
+    }
+
+    /// Single consumption path. All checks happen before any write, so a
+    /// rejected confirmation leaves no trace. `vouched` means the payout
+    /// authority already tied the evidence to one of its attempts, so the
+    /// transaction hash need not equal the one recorded at broadcast.
+    fn confirm_debit_evidence(
+        &mut self,
+        key: (AccountId, [u8; 32]),
+        evidence: reservation::FinalizedDebit,
+        kinds: &[reservation::ReservationKind],
+        vouched: bool,
+    ) -> Result<bool, reservation::ReservationError> {
         use reservation::{ReservationError, ReservationKind, ReservationStatus};
         let mut evidence = evidence;
         evidence.token_address = evidence.token_address.to_ascii_lowercase();
-        if self.paused || self.reconciliation_required {
-            return Err(ReservationError::Paused);
-        }
-        let key = (holder, request_id);
         let mut item = self
             .reservations
             .get(&key)
             .cloned()
             .ok_or(ReservationError::MissingReservation)?;
-        if !matches!(
-            item.kind,
-            ReservationKind::Redemption | ReservationKind::Payout
-        ) {
+        if !kinds.contains(&item.kind) {
             return Err(ReservationError::WrongKind);
+        }
+        if matches!(item.status, ReservationStatus::Released) {
+            return Err(ReservationError::AlreadyReleased);
         }
         if evidence.chain_id != self.asset.chain_id.0
             || !evidence
@@ -1114,7 +1497,8 @@ impl Backing {
                 }
             }
             ReservationStatus::Broadcast { transaction_hash }
-                if *transaction_hash == evidence.transaction_hash => {}
+                if vouched || *transaction_hash == evidence.transaction_hash => {}
+            ReservationStatus::Reserved if vouched => {}
             _ => return Err(ReservationError::EvidenceMismatch),
         }
         let debit_id = receipt::ReceiptId {
@@ -1125,19 +1509,288 @@ impl Backing {
         if self.confirmed_debits.get(&debit_id).is_some() {
             return Err(ReservationError::DebitAlreadyConsumed);
         }
+        let bucket = if item.kind == ReservationKind::Disposal {
+            ledger::Bucket::Disposal
+        } else {
+            ledger::Bucket::Payouts
+        };
         let mut ledger = self.ledger.clone();
         ledger
-            .confirm_debit(ledger::Bucket::Payouts, item.amount)
+            .confirm_debit(bucket, item.amount)
             .map_err(|_| ReservationError::InvalidLedger)?;
         item.status = ReservationStatus::Confirmed { evidence };
+        self.clear_unresolved(&mut item);
         self.confirmed_debits.insert(debit_id, key.clone());
         self.reservations.insert(key, item);
         self.ledger = ledger;
         Ok(true)
     }
 
+    fn release_reservation_core(
+        &mut self,
+        key: (AccountId, [u8; 32]),
+        kinds: &[reservation::ReservationKind],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{ReservationError, ReservationKind, ReservationStatus};
+        let mut item = self
+            .reservations
+            .get(&key)
+            .cloned()
+            .ok_or(ReservationError::MissingReservation)?;
+        if !kinds.contains(&item.kind) {
+            return Err(ReservationError::WrongKind);
+        }
+        match item.status {
+            ReservationStatus::Released => return Ok(false),
+            ReservationStatus::Confirmed { .. } => return Err(ReservationError::AlreadyConfirmed),
+            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {}
+        }
+        let holder = key.0.clone();
+        let from = if item.kind == ReservationKind::Disposal {
+            ledger::Bucket::Disposal
+        } else {
+            ledger::Bucket::Payouts
+        };
+        let to = match item.kind {
+            ReservationKind::Payout => ledger::Bucket::Entitlements,
+            ReservationKind::Refund => ledger::Bucket::Unallocated,
+            ReservationKind::Redemption | ReservationKind::Disposal => ledger::Bucket::Minted,
+        };
+        let mut next = self.ledger.clone();
+        next.move_liability(from, to, item.amount)
+            .map_err(|_| ReservationError::InvalidLedger)?;
+        match item.kind {
+            ReservationKind::Payout => {
+                let balance = self
+                    .entitlement_balances
+                    .get(&holder)
+                    .copied()
+                    .unwrap_or(0)
+                    .checked_add(item.amount)
+                    .ok_or(ReservationError::InvalidLedger)?;
+                self.entitlement_balances.insert(holder, balance);
+            }
+            ReservationKind::Refund => {
+                let balance = self
+                    .late_by_account
+                    .get(&holder)
+                    .copied()
+                    .unwrap_or(0)
+                    .checked_add(item.amount)
+                    .ok_or(ReservationError::InvalidLedger)?;
+                let total = self
+                    .late_total
+                    .checked_add(item.amount)
+                    .ok_or(ReservationError::InvalidLedger)?;
+                self.late_by_account.insert(holder, balance);
+                self.late_total = total;
+            }
+            ReservationKind::Redemption | ReservationKind::Disposal => {
+                let balance = self
+                    .token
+                    .accounts
+                    .get(&holder)
+                    .ok_or(ReservationError::UnknownHolder)?;
+                if balance.checked_add(item.amount).is_none()
+                    || self.token.total_supply.checked_add(item.amount).is_none()
+                    || self.token.total_supply != self.ledger.minted
+                {
+                    return Err(ReservationError::InvalidLedger);
+                }
+                self.token.internal_deposit(&holder, item.amount);
+                FtMint {
+                    owner_id: &holder,
+                    amount: U128(item.amount),
+                    memo: Some("backing restoration"),
+                }
+                .emit();
+            }
+        }
+        item.status = ReservationStatus::Released;
+        self.clear_unresolved(&mut item);
+        self.ledger = next;
+        self.reservations.insert(key, item);
+        Ok(true)
+    }
+
+    fn mark_unresolved(
+        &mut self,
+        holder: AccountId,
+        request_id: [u8; 32],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{ReservationError, ReservationStatus};
+        let key = (holder.clone(), request_id);
+        let mut item = self
+            .reservations
+            .get(&key)
+            .cloned()
+            .ok_or(ReservationError::MissingReservation)?;
+        match item.status {
+            ReservationStatus::Released => return Err(ReservationError::AlreadyReleased),
+            ReservationStatus::Confirmed { .. } => return Err(ReservationError::AlreadyConfirmed),
+            ReservationStatus::Reserved | ReservationStatus::Broadcast { .. } => {}
+        }
+        if item.unresolved {
+            return Ok(false);
+        }
+        let count = self
+            .suspension
+            .unresolved
+            .checked_add(1)
+            .ok_or(ReservationError::InvalidLedger)?;
+        item.unresolved = true;
+        self.suspension.unresolved = count;
+        self.suspension.since_attestation = self.attestation_sequence;
+        self.sync_suspension();
+        self.reservations.insert(key, item);
+        suspension::emit(
+            "reconciliation_unresolved",
+            near_sdk::serde_json::json!({
+                "holder": holder,
+                "request_id": request_id,
+            }),
+        );
+        Ok(true)
+    }
+
+    fn clear_unresolved(&mut self, item: &mut reservation::Reservation) {
+        if item.unresolved {
+            item.unresolved = false;
+            self.suspension.unresolved = self.suspension.unresolved.saturating_sub(1);
+            self.sync_suspension();
+        }
+    }
+
+    /// Reserve part of a late deposit for refund. U moves to P before any
+    /// signature is requested; the reservation identity is the payout's.
+    pub fn reserve_late(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: [u8; 32],
+        amount: u128,
+        destination: [u8; 20],
+    ) -> Result<bool, reservation::ReservationError> {
+        use reservation::{Reservation, ReservationError, ReservationKind, ReservationStatus};
+        if self.paused || self.reconciliation_required {
+            return Err(ReservationError::Paused);
+        }
+        if amount == 0 {
+            return Err(ReservationError::ZeroAmount);
+        }
+        if destination == [0; 20] || request_id == [0; 32] {
+            return Err(ReservationError::InvalidDestination);
+        }
+        let source_amount = normalization::to_source_exact(
+            amount,
+            self.asset.source_decimals,
+            self.asset.representation_decimals,
+        )
+        .map_err(|_| ReservationError::UnrepresentableAmount)?;
+        let key = (beneficiary.clone(), request_id);
+        if let Some(existing) = self.reservations.get(&key) {
+            return if existing.amount == amount
+                && existing.kind == ReservationKind::Refund
+                && existing.destination == destination
+            {
+                Ok(false)
+            } else {
+                Err(ReservationError::ConflictingRequest)
+            };
+        }
+        let available = self
+            .late_by_account
+            .get(&beneficiary)
+            .copied()
+            .ok_or(ReservationError::UnknownHolder)?;
+        let remaining = available
+            .checked_sub(amount)
+            .ok_or(ReservationError::InsufficientBalance)?;
+        let total = self
+            .late_total
+            .checked_sub(amount)
+            .ok_or(ReservationError::InvalidLedger)?;
+        let mut next = self.ledger.clone();
+        next.move_liability(ledger::Bucket::Unallocated, ledger::Bucket::Payouts, amount)
+            .map_err(|_| ReservationError::InvalidLedger)?;
+        self.late_by_account.insert(beneficiary.clone(), remaining);
+        self.late_total = total;
+        self.ledger = next;
+        self.reservations.insert(
+            key,
+            Reservation {
+                request_id,
+                holder: beneficiary,
+                amount,
+                source_amount,
+                destination,
+                kind: ReservationKind::Refund,
+                status: ReservationStatus::Reserved,
+                unresolved: false,
+            },
+        );
+        Ok(true)
+    }
+
+    fn transfers_halted(&self) -> bool {
+        self.paused || self.suspension.reorg
+    }
+
+    fn sync_suspension(&mut self) {
+        self.reconciliation_required = self.suspension.any();
+    }
+
+    /// Liabilities in source atomic units, rounded up so a deficit is never
+    /// hidden by rounding. None on overflow.
+    fn required_source_units(&self) -> Option<u128> {
+        let ledger = &self.ledger;
+        let total = ledger
+            .minted
+            .checked_add(ledger.entitlements)?
+            .checked_add(ledger.payouts)?
+            .checked_add(ledger.disposal)?
+            .checked_add(ledger.unallocated)?;
+        normalization::to_source_ceil(
+            total,
+            self.asset.source_decimals,
+            self.asset.representation_decimals,
+        )
+        .ok()?
+        .checked_add(self.residual_total)
+    }
+
+    fn attestation_covers_now(&self) -> bool {
+        match &self.attestation {
+            Some(last) => {
+                last.sequence.0 > self.suspension.since_attestation
+                    && self.ledger.is_balanced()
+                    && self
+                        .required_source_units()
+                        .is_some_and(|need| last.balance.0 >= need)
+            }
+            None => false,
+        }
+    }
+
+    fn lift_evidence_reasons(&mut self, by: &str) {
+        let reorg = self.suspension.reorg;
+        let deficit = self.suspension.deficit;
+        self.suspension.reorg = false;
+        self.suspension.deficit = false;
+        self.sync_suspension();
+        suspension::emit(
+            "asset_resumed",
+            near_sdk::serde_json::json!({
+                "by": by,
+                "reorg": reorg,
+                "deficit": deficit,
+                "still_suspended": self.reconciliation_required,
+            }),
+        );
+    }
+
     /// Reorganization freezes the asset; neither supply nor backing is silently
-    /// rolled back. No unpause is possible until reconciliation is implemented.
+    /// rolled back. It lifts only through the resume policy and a covering
+    /// attestation made afterwards.
     pub fn reorganize_receipt(
         &mut self,
         id: &receipt::ReceiptId,
@@ -1149,8 +1802,15 @@ impl Backing {
             .ok_or(ReceiptProcessingError::MissingReceipt)?;
         item.mark_reorganized();
         self.receipts.insert(id.clone(), item);
-        self.paused = true;
-        self.reconciliation_required = true;
+        if !self.suspension.reorg {
+            self.suspension.reorg = true;
+            self.suspension.since_attestation = self.attestation_sequence;
+            suspension::emit(
+                "asset_suspended",
+                near_sdk::serde_json::json!({ "reason": "reorg" }),
+            );
+        }
+        self.sync_suspension();
         Ok(())
     }
 }
@@ -1159,7 +1819,7 @@ impl Backing {
 impl FungibleTokenCore for Backing {
     #[payable]
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
-        require!(!self.paused, "Asset paused");
+        require!(!self.transfers_halted(), "Asset paused");
         self.token.ft_transfer(receiver_id, amount, memo)
     }
     #[payable]
@@ -1170,7 +1830,7 @@ impl FungibleTokenCore for Backing {
         memo: Option<String>,
         msg: String,
     ) -> PromiseOrValue<U128> {
-        require!(!self.paused, "Asset paused");
+        require!(!self.transfers_halted(), "Asset paused");
         self.token.ft_transfer_call(receiver_id, amount, memo, msg)
     }
     fn ft_total_supply(&self) -> U128 {
@@ -1775,17 +2435,41 @@ mod tests {
         contract: &mut Backing,
         claim: Result<Option<RegistryClaim>, PromiseError>,
     ) -> bool {
+        claim_callback_in(contract, claim, Some(false))
+    }
+    /// Drives both claim stages; `locked` is the arena's answer (`None` means
+    /// the arena did not know the battle).
+    fn claim_callback_in(
+        contract: &mut Backing,
+        claim: Result<Option<RegistryClaim>, PromiseError>,
+        locked: Option<bool>,
+    ) -> bool {
         testing_env!(VMContextBuilder::new()
             .current_account_id(account("alice.near"))
             .predecessor_account_id(account("alice.near"))
             .attached_deposit(CLAIM_STORAGE_DEPOSIT)
             .build());
-        contract.on_claim_receipt(
+        let staged = contract.on_claim_receipt(
             account("caller.testnet"),
             format!("0x{}", "ab".repeat(32)),
             1,
-            claim,
-        )
+            claim.clone(),
+        );
+        match staged {
+            PromiseOrValue::Value(value) => value,
+            PromiseOrValue::Promise(_) => {
+                let Ok(Some(claim)) = claim else {
+                    return false;
+                };
+                contract.on_claim_lock_status(
+                    account("caller.testnet"),
+                    format!("0x{}", "ab".repeat(32)),
+                    1,
+                    claim,
+                    Ok(locked.map(|locked| BattleLockStatus { locked })),
+                )
+            }
+        }
     }
 
     #[test]
@@ -1846,7 +2530,11 @@ mod tests {
         assert!(!report(&mut contract, &unknown, Ok(true)));
         assert!(!contract.paused);
         assert!(report(&mut contract, &hash, Ok(true)));
-        assert!(contract.paused && contract.reconciliation_required);
+        assert!(
+            contract.suspension.reorg
+                && contract.transfers_halted()
+                && contract.reconciliation_required
+        );
         assert_eq!(contract.get_ledger().unallocated, U128(98));
         assert!(!report(&mut contract, &hash, Ok(true)));
     }
@@ -2138,5 +2826,606 @@ mod tests {
             (U128(0), U128(0), U128(130))
         );
         assert!(ledger.accounting_balanced);
+    }
+
+    // ---- late deposits ------------------------------------------------------
+
+    fn late_contract() -> Backing {
+        let mut contract = contract();
+        assert!(claim_callback_in(
+            &mut contract,
+            Ok(Some(registry_claim(98))),
+            Some(true)
+        ));
+        contract
+    }
+
+    #[test]
+    fn deposit_after_lock_is_recorded_as_late_and_never_claimable() {
+        let contract = late_contract();
+        let bob = account("bob.testnet");
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.unallocated), (U128(98), U128(98)));
+        assert_eq!(ledger.late_refundable, U128(98));
+        assert!(ledger.accounting_balanced);
+        assert_eq!(contract.late_balance_of(bob.clone()), U128(98));
+        // Not claimable as representation: the ordinary attributed balance is empty.
+        assert_eq!(contract.unallocated_balance_of(bob), U128(0));
+        let recorded = contract
+            .get_late_deposit(format!("0x{}", "ab".repeat(32)), 1)
+            .expect("late deposit recorded");
+        assert_eq!(recorded.battle_id, U64(1));
+        assert_eq!(recorded.beneficiary, account("bob.testnet"));
+        assert_eq!(recorded.units, U128(98));
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient attributed custody")]
+    fn late_balance_cannot_be_minted() {
+        let mut contract = late_contract();
+        let bob = account("bob.testnet");
+        contract.token.internal_register_account(&bob);
+        context("bob.testnet", 1);
+        contract.claim_representation(bob, U128(98));
+    }
+
+    #[test]
+    fn unknown_or_unavailable_battle_fails_closed() {
+        let mut contract = contract();
+        assert!(!claim_callback_in(
+            &mut contract,
+            Ok(Some(registry_claim(98))),
+            None
+        ));
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(account("alice.near"))
+            .predecessor_account_id(account("alice.near"))
+            .attached_deposit(CLAIM_STORAGE_DEPOSIT)
+            .build());
+        assert!(!contract.on_claim_lock_status(
+            account("caller.testnet"),
+            format!("0x{}", "ab".repeat(32)),
+            1,
+            registry_claim(98),
+            Err(PromiseError::Failed)
+        ));
+        assert_eq!(contract.get_ledger().custody, U128(0));
+        assert_eq!(contract.get_ledger().late_refundable, U128(0));
+        // The receipt stays claimable once the arena answers.
+        assert!(claim_callback_in(
+            &mut contract,
+            Ok(Some(registry_claim(98))),
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn late_deposit_is_credited_once() {
+        let mut contract = late_contract();
+        assert!(!claim_callback_in(
+            &mut contract,
+            Ok(Some(registry_claim(98))),
+            Some(true)
+        ));
+        // A replay that now sees an open battle cannot convert it to claimable custody.
+        assert!(!claim_callback_in(
+            &mut contract,
+            Ok(Some(registry_claim(98))),
+            Some(false)
+        ));
+        assert_eq!(contract.get_ledger().late_refundable, U128(98));
+        assert_eq!(
+            contract.unallocated_balance_of(account("bob.testnet")),
+            U128(0)
+        );
+    }
+
+    #[test]
+    fn late_refund_uses_the_payout_identity_and_conserves_backing() {
+        use reservation::ReservationError;
+        let mut contract = late_contract();
+        let bob = account("bob.testnet");
+        context("payout.testnet", 1);
+        let first = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [9; 20]);
+        assert_eq!((first.created, first.source_amount), (true, U128(60)));
+        let repeat = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [9; 20]);
+        assert!(!repeat.created);
+        assert_eq!(
+            contract.reserve_late(bob.clone(), [1; 32], 60, [8; 20]),
+            Err(ReservationError::ConflictingRequest)
+        );
+        assert_eq!(
+            contract.reserve_late(bob.clone(), [2; 32], 39, [9; 20]),
+            Err(ReservationError::InsufficientBalance)
+        );
+        assert_eq!(
+            contract.payout_reservation_status(bob.clone(), [1; 32]),
+            Some("reserved".into())
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.unallocated, ledger.payouts, ledger.late_refundable),
+            (U128(38), U128(60), U128(38))
+        );
+        assert!(ledger.accounting_balanced);
+        // Release returns it to the late balance, not to entitlements.
+        assert!(contract.release_payout(bob.clone(), [1; 32]));
+        assert_eq!(contract.late_balance_of(bob.clone()), U128(98));
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(0));
+        assert_eq!(contract.get_ledger().payouts, U128(0));
+        // Reserve again and confirm with matching evidence.
+        contract.reserve_late_refund(bob.clone(), [3; 32], U128(98), [9; 20]);
+        let confirmed = contract.confirm_payout(
+            bob.clone(),
+            [3; 32],
+            FinalizedDebitInput {
+                chain_id: U64(46630),
+                token_address: asset().token_address,
+                custody_domain: "fixture".into(),
+                destination: [9; 20],
+                source_amount: U128(98),
+                recipient_received: U128(98),
+                transaction_hash: [7; 32],
+                log_index: 0,
+                block_hash: [8; 32],
+            },
+        );
+        assert!(confirmed);
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.custody, ledger.payouts, ledger.late_refundable),
+            (U128(0), U128(0), U128(0))
+        );
+        assert!(ledger.accounting_balanced);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only payout authority")]
+    fn only_the_payout_authority_reserves_late_refunds() {
+        let mut contract = late_contract();
+        context("bob.testnet", 1);
+        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [9; 20]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn late_refund_reservation_requires_one_yocto() {
+        let mut contract = late_contract();
+        context("payout.testnet", 0);
+        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [9; 20]);
+    }
+
+    // ---- deficit suspension and resume policy -------------------------------
+
+    fn set_operator(contract: &mut Backing) {
+        context("owner.testnet", 1);
+        contract.set_operator(Some(account("operator.testnet")));
+    }
+
+    fn attest(contract: &mut Backing, block: u64, balance: u128) -> bool {
+        context("operator.testnet", 1);
+        contract.attest_custody_balance(
+            U64(block),
+            [block as u8; 32],
+            U64(block + 1),
+            [200; 32],
+            U128(balance),
+            [5; 32],
+        )
+    }
+
+    fn minted_contract(amount: u128) -> Backing {
+        let mut contract = contract();
+        let item = observed(amount, 1);
+        contract.observe_receipt(item.clone()).expect("observe");
+        contract.finalize_receipt(&item.id).expect("finalize");
+        let alice = account("alice.testnet");
+        contract.token.internal_register_account(&alice);
+        context("alice.testnet", 1);
+        contract.claim_representation(alice, U128(amount));
+        set_operator(&mut contract);
+        contract
+    }
+
+    #[test]
+    fn attestation_below_liabilities_suspends_but_keeps_liabilities() {
+        let mut contract = minted_contract(100);
+        assert!(attest(&mut contract, 10, 100));
+        assert!(!contract.get_ledger().reconciliation_required);
+        assert!(!attest(&mut contract, 11, 99));
+        let view = contract.get_suspension();
+        assert!(view.suspended && view.deficit && !view.reorg);
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.minted), (U128(100), U128(100)));
+        assert!(ledger.accounting_balanced);
+        // Minting and new reservations are blocked.
+        assert_eq!(
+            contract.reserve_representation(
+                account("alice.testnet"),
+                [1; 32],
+                10,
+                reservation::ReservationKind::Redemption,
+                [9; 20]
+            ),
+            Err(reservation::ReservationError::Paused)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(account("bob.testnet"), [1; 32], 1, [9; 20]),
+            Err(reservation::ReservationError::Paused)
+        );
+        let mut late = contract;
+        assert!(!claim_callback_in(
+            &mut late,
+            Ok(Some(registry_claim(5))),
+            Some(false)
+        ));
+    }
+
+    #[test]
+    fn residue_is_part_of_the_required_balance() {
+        let mut configured = asset();
+        configured.source_decimals = 4;
+        configured.representation_decimals = 2;
+        context("owner.testnet", 0);
+        let mut contract = Backing::new(
+            account("owner.testnet"),
+            configured,
+            "Test".into(),
+            "TEST".into(),
+            account("registry.testnet"),
+            U64(1),
+            account("arena.testnet"),
+            account("payout.testnet"),
+        );
+        let item = observed(9_876, 1);
+        contract.observe_receipt(item.clone()).expect("observe");
+        contract.finalize_receipt(&item.id).expect("finalize");
+        set_operator(&mut contract);
+        assert!(!attest(&mut contract, 10, 9_875));
+        assert!(attest(&mut contract, 11, 9_876));
+    }
+
+    #[test]
+    fn attestations_are_operator_only_ordered_and_idempotent() {
+        let mut contract = minted_contract(100);
+        assert!(attest(&mut contract, 10, 100));
+        assert!(attest(&mut contract, 10, 100));
+        let stale = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            attest(&mut contract, 9, 100)
+        }));
+        assert!(stale.is_err());
+        let conflicting = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            attest(&mut contract, 10, 5)
+        }));
+        assert!(conflicting.is_err());
+        let outsider = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            context("attacker.testnet", 1);
+            contract.attest_custody_balance(U64(11), [1; 32], U64(12), [2; 32], U128(0), [3; 32])
+        }));
+        assert!(outsider.is_err());
+        assert!(!contract.get_ledger().reconciliation_required);
+    }
+
+    #[test]
+    fn owner_with_evidence_needs_a_later_covering_attestation() {
+        let mut contract = minted_contract(100);
+        assert!(!attest(&mut contract, 10, 50));
+        // Without a later covering attestation the owner cannot resume.
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        // A covering attestation alone does not lift under this policy.
+        assert!(attest(&mut contract, 11, 100));
+        assert!(contract.get_suspension().suspended);
+        context("attacker.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        context("owner.testnet", 0);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        context("owner.testnet", 1);
+        assert!(contract.resume());
+        assert!(!contract.get_suspension().suspended);
+        assert_eq!(contract.get_ledger().minted, U128(100));
+    }
+
+    #[test]
+    fn resume_fails_when_liabilities_outgrow_the_attested_balance() {
+        let mut contract = minted_contract(100);
+        assert!(!attest(&mut contract, 10, 50));
+        assert!(attest(&mut contract, 11, 100));
+        // A liability added after the attestation (a reorg-held credit) is not covered.
+        contract.ledger.custody += 1;
+        contract.ledger.unallocated += 1;
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+    }
+
+    #[test]
+    fn reorg_suspension_needs_an_attestation_made_after_it() {
+        let mut contract = minted_contract(100);
+        assert!(attest(&mut contract, 10, 100));
+        let id = receipt::ReceiptId {
+            chain_id: 46630,
+            transaction_hash: [42; 32],
+            log_index: 1,
+        };
+        contract.reorganize_receipt(&id).expect("reorg");
+        assert!(contract.get_suspension().reorg);
+        // The earlier covering attestation cannot justify resuming.
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        assert!(attest(&mut contract, 11, 100));
+        context("owner.testnet", 1);
+        assert!(contract.resume());
+        assert!(!contract.get_ledger().reconciliation_required);
+    }
+
+    #[test]
+    fn automatic_policy_lifts_on_a_later_covering_attestation() {
+        let mut contract = minted_contract(100);
+        context("owner.testnet", 1);
+        contract.set_resume_policy(ResumePolicy::Automatic);
+        assert!(!attest(&mut contract, 10, 1));
+        assert!(contract.get_suspension().suspended);
+        // A still-short attestation does not lift.
+        assert!(!attest(&mut contract, 11, 99));
+        assert!(contract.get_suspension().suspended);
+        assert!(attest(&mut contract, 12, 100));
+        assert!(!contract.get_suspension().suspended);
+        // The owner entry point is not the Automatic path.
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+    }
+
+    #[test]
+    fn disabled_policy_never_resumes() {
+        let mut contract = minted_contract(100);
+        context("owner.testnet", 1);
+        contract.set_resume_policy(ResumePolicy::Disabled);
+        assert!(!attest(&mut contract, 10, 1));
+        assert!(attest(&mut contract, 11, 100));
+        assert!(contract.get_suspension().suspended);
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        // The owner can still change the policy afterwards.
+        contract.set_resume_policy(ResumePolicy::OwnerWithEvidence);
+        assert!(attest(&mut contract, 12, 100));
+        context("owner.testnet", 1);
+        assert!(contract.resume());
+    }
+
+    #[test]
+    fn resume_policy_defaults_safe_and_changes_are_owner_only_one_yocto_and_logged() {
+        let mut contract = contract();
+        assert_eq!(
+            contract.get_suspension().resume_policy,
+            ResumePolicy::OwnerWithEvidence
+        );
+        context("owner.testnet", 1);
+        contract.set_resume_policy(ResumePolicy::Automatic);
+        assert_eq!(
+            contract.get_suspension().resume_policy,
+            ResumePolicy::Automatic
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs
+            .iter()
+            .any(|line| line.contains("resume_policy_changed")
+                && line.contains("owner_with_evidence")
+                && line.contains("automatic")));
+        context("attacker.testnet", 1);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.set_resume_policy(ResumePolicy::Disabled)
+        }))
+        .is_err());
+        context("owner.testnet", 0);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.set_resume_policy(ResumePolicy::Disabled)
+        }))
+        .is_err());
+        context("owner.testnet", 2);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.set_resume_policy(ResumePolicy::Disabled)
+        }))
+        .is_err());
+        assert_eq!(
+            contract.get_suspension().resume_policy,
+            ResumePolicy::Automatic
+        );
+    }
+
+    // ---- reconciliation ------------------------------------------------------
+
+    #[test]
+    fn unresolved_reservation_suspends_until_confirmed_and_confirm_works_while_suspended() {
+        let (mut contract, bob) = entitled(100);
+        context("payout.testnet", 0);
+        contract.reserve_payout(bob.clone(), [1; 32], U128(60), [9; 20]);
+        context("payout.testnet", 1);
+        assert!(contract.report_unresolved_reconciliation(bob.clone(), [1; 32]));
+        assert!(!contract.report_unresolved_reconciliation(bob.clone(), [1; 32]));
+        let view = contract.get_suspension();
+        assert!(view.suspended && view.unresolved == U64(1) && !view.deficit && !view.reorg);
+        // New reservations and mint are blocked; liabilities are intact.
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [2; 32], 1, [9; 20]),
+            Err(reservation::ReservationError::Paused)
+        );
+        assert_eq!(contract.get_ledger().payouts, U128(60));
+        // The owner cannot resume past an unresolved reservation.
+        context("owner.testnet", 1);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| contract.resume())).is_err()
+        );
+        // Matching finalized evidence still reconciles and clears the flag.
+        context("payout.testnet", 0);
+        assert!(contract.confirm_payout(
+            bob.clone(),
+            [1; 32],
+            FinalizedDebitInput {
+                chain_id: U64(46630),
+                token_address: asset().token_address,
+                custody_domain: "fixture".into(),
+                destination: [9; 20],
+                source_amount: U128(60),
+                recipient_received: U128(60),
+                transaction_hash: [7; 32],
+                log_index: 0,
+                block_hash: [8; 32],
+            },
+        ));
+        assert!(!contract.get_suspension().suspended);
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.payouts), (U128(40), U128(0)));
+        assert!(ledger.accounting_balanced);
+    }
+
+    #[test]
+    fn release_after_no_spend_proof_clears_unresolved_and_works_while_suspended() {
+        let (mut contract, bob) = entitled(100);
+        context("payout.testnet", 0);
+        contract.reserve_payout(bob.clone(), [1; 32], U128(60), [9; 20]);
+        context("payout.testnet", 1);
+        contract.report_unresolved_reconciliation(bob.clone(), [1; 32]);
+        context("payout.testnet", 0);
+        assert!(contract.release_payout(bob.clone(), [1; 32]));
+        assert!(!contract.get_suspension().suspended);
+        assert_eq!(contract.entitlement_of(bob), U128(100));
+        // Terminal reservations cannot be reported unresolved.
+        context("payout.testnet", 1);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.report_unresolved_reconciliation(account("bob.testnet"), [1; 32])
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn rejected_confirmation_leaves_no_trace() {
+        let (mut contract, bob) = entitled(100);
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 60, [9; 20]),
+            Ok(true)
+        );
+        let mut wrong = debit(60, 7);
+        wrong.source_amount = 59;
+        assert_eq!(
+            contract.confirm_payout_reservation(bob.clone(), [1; 32], wrong),
+            Err(reservation::ReservationError::EvidenceMismatch)
+        );
+        assert_eq!(
+            contract.payout_reservation_status(bob, [1; 32]),
+            Some("reserved".into())
+        );
+    }
+
+    #[test]
+    fn disposal_confirms_against_the_disposal_bucket_and_release_restores_supply() {
+        use reservation::{ReservationError, ReservationKind};
+        let mut contract = minted_contract(100);
+        let alice = account("alice.testnet");
+        contract
+            .reserve_representation(
+                alice.clone(),
+                [1; 32],
+                40,
+                ReservationKind::Disposal,
+                [9; 20],
+            )
+            .expect("disposal");
+        contract
+            .reserve_representation(
+                alice.clone(),
+                [2; 32],
+                30,
+                ReservationKind::Redemption,
+                [9; 20],
+            )
+            .expect("redemption");
+        // A redemption confirmation cannot consume a disposal and vice versa.
+        assert_eq!(
+            contract.confirm_redemption(alice.clone(), [1; 32], debit(40, 7)),
+            Err(ReservationError::WrongKind)
+        );
+        assert_eq!(
+            contract.confirm_disposal(alice.clone(), [2; 32], debit(30, 7)),
+            Err(ReservationError::WrongKind)
+        );
+        // Not broadcast yet: evidence for an unbroadcast spend is rejected.
+        assert_eq!(
+            contract.confirm_disposal(alice.clone(), [1; 32], debit(40, 7)),
+            Err(ReservationError::EvidenceMismatch)
+        );
+        contract
+            .record_reservation_broadcast(alice.clone(), [1; 32], [7; 32])
+            .expect("broadcast");
+        assert_eq!(
+            contract.confirm_disposal(alice.clone(), [1; 32], debit(40, 7)),
+            Ok(true)
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.custody, ledger.disposal, ledger.payouts),
+            (U128(60), U128(0), U128(30))
+        );
+        // Definitive no-spend proof restores the redemption as supply, once.
+        assert_eq!(
+            contract.release_unspent_reservation(alice.clone(), [2; 32]),
+            Ok(true)
+        );
+        assert_eq!(
+            contract.release_unspent_reservation(alice.clone(), [2; 32]),
+            Ok(false)
+        );
+        assert_eq!(contract.ft_balance_of(alice.clone()), U128(60));
+        assert_eq!(contract.ft_total_supply(), U128(60));
+        assert_eq!(
+            contract.release_unspent_reservation(alice, [1; 32]),
+            Err(ReservationError::AlreadyConfirmed)
+        );
+        assert!(contract.get_ledger().accounting_balanced);
+    }
+
+    #[test]
+    fn confirmation_is_allowed_while_the_asset_is_suspended() {
+        use reservation::ReservationKind;
+        let mut contract = minted_contract(100);
+        let alice = account("alice.testnet");
+        contract
+            .reserve_representation(
+                alice.clone(),
+                [1; 32],
+                40,
+                ReservationKind::Redemption,
+                [9; 20],
+            )
+            .expect("reserve");
+        contract
+            .record_reservation_broadcast(alice.clone(), [1; 32], [7; 32])
+            .expect("broadcast");
+        // The debit happened on the source chain, so the balance fell short.
+        assert!(!attest(&mut contract, 10, 60));
+        assert!(contract.get_suspension().deficit);
+        assert_eq!(
+            contract.confirm_redemption(alice, [1; 32], debit(40, 7)),
+            Ok(true)
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!((ledger.custody, ledger.payouts), (U128(60), U128(0)));
+        // A later attestation at the reduced liability level covers.
+        assert!(attest(&mut contract, 11, 60));
+        context("owner.testnet", 1);
+        assert!(contract.resume());
     }
 }

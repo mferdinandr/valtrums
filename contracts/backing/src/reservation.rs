@@ -9,6 +9,8 @@ pub enum ReservationKind {
     Disposal,
     /// Settlement entitlement paid out in the original token.
     Payout,
+    /// Late deposit returned to its beneficiary on the source chain.
+    Refund,
 }
 
 #[near(serializers = [borsh])]
@@ -52,6 +54,9 @@ pub struct Reservation {
     pub destination: [u8; 20],
     pub kind: ReservationKind,
     pub status: ReservationStatus,
+    /// Spend cannot be determined; the asset stays suspended until the
+    /// reservation is confirmed or released.
+    pub unresolved: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +123,7 @@ mod tests {
             destination: [9; 20],
             kind: ReservationKind::Redemption,
             status: ReservationStatus::Reserved,
+            unresolved: false,
         };
         assert_eq!(
             reservation.record_broadcast([0; 32]),

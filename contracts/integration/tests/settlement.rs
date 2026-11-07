@@ -203,6 +203,13 @@ async fn world() -> anyhow::Result<World> {
             .await?
             .into_result()?;
     }
+    // Backing asks the arena whether battle 1 is locked and treats a deposit
+    // that arrives after lock as late, so the synthetic credits come first.
+    mint_to_arena(&registry, &verifier, &backing_a, &arena, TOKEN_A, 1, "1000").await?;
+    mint_to_arena(
+        &registry, &verifier, &backing_b, &arena, TOKEN_B, 2, "100000",
+    )
+    .await?;
     agent
         .call(arena.id(), "lock_lifecycle_battle")
         .args_json(json!({"battle_id": battle_id}))
@@ -211,11 +218,6 @@ async fn world() -> anyhow::Result<World> {
         .transact()
         .await?
         .into_result()?;
-    mint_to_arena(&registry, &verifier, &backing_a, &arena, TOKEN_A, 1, "1000").await?;
-    mint_to_arena(
-        &registry, &verifier, &backing_b, &arena, TOKEN_B, 2, "100000",
-    )
-    .await?;
     arena
         .call("fixture_hold_lifecycle_principal")
         .args_json(json!({"battle_id": battle_id, "winner": 0}))

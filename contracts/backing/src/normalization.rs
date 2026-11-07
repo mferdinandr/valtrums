@@ -61,6 +61,26 @@ pub fn to_source_exact(
     }
 }
 
+/// Convert representation units to source units, rounding up. Used only to
+/// size liabilities for a solvency comparison, never for a payment.
+pub fn to_source_ceil(
+    amount: u128,
+    source_decimals: u8,
+    representation_decimals: u8,
+) -> Result<u128, NormalizationError> {
+    let difference = source_decimals.abs_diff(representation_decimals);
+    let factor = 10_u128
+        .checked_pow(u32::from(difference))
+        .ok_or(NormalizationError::UnsupportedScale)?;
+    if representation_decimals >= source_decimals {
+        Ok(amount / factor + u128::from(!amount.is_multiple_of(factor)))
+    } else {
+        amount
+            .checked_mul(factor)
+            .ok_or(NormalizationError::Overflow)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

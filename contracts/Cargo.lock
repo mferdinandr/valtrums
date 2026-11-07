@@ -4095,6 +4095,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-mock-lifecycle"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-mock-mpc"
 version = "0.1.0"
 dependencies = [
