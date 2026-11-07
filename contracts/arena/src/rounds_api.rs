@@ -14,6 +14,9 @@ use crate::{Arena, ArenaExt};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, near, require, NearToken, Promise};
 
+/// How far a round's start may lie from the block time, in either direction.
+const MAX_WINDOW_SKEW_NS: u64 = 300_000_000_000;
+
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObservationTermsInput {
@@ -195,10 +198,21 @@ impl Arena {
         self.charge_storage(before);
     }
 
-    /// Oracle only. Records the immutable window of the next round.
+    /// Oracle only. Records the immutable window of the next round. The start
+    /// must be within `MAX_WINDOW_SKEW_NS` of the current block time, so the
+    /// oracle can neither pick a historical window nor park a battle on a
+    /// distant future one.
+    #[payable]
     pub fn open_lifecycle_round(&mut self, battle_id: U64, round_id: U64, start_ns: U64) {
+        near_sdk::assert_one_yocto();
         self.assert_oracle();
         require!(!self.paused, "Arena is paused");
+        let now = env::block_timestamp();
+        require!(
+            start_ns.0 <= now.saturating_add(MAX_WINDOW_SKEW_NS)
+                && start_ns.0.saturating_add(MAX_WINDOW_SKEW_NS) >= now,
+            "Round start is too far from the current time"
+        );
         let rounds = self
             .lifecycle_rounds
             .get_mut(&battle_id.0)
@@ -211,12 +225,14 @@ impl Arena {
     /// Oracle only, and only after the round's recorded end. A unique winner is
     /// recorded as the held principal in the same call. Incomplete or invalid
     /// evidence returns `Pending` and leaves the round open.
+    #[payable]
     pub fn submit_lifecycle_observations(
         &mut self,
         battle_id: U64,
         round_id: U64,
         observations: Vec<CandidateObservationInput>,
     ) -> RoundOutcome {
+        near_sdk::assert_one_yocto();
         self.assert_oracle();
         require!(!self.paused, "Arena is paused");
         let rounds = self
@@ -478,7 +494,7 @@ pub(crate) mod tests {
         arena.start_lifecycle_rounds(U64(1), terms());
         assert!(panics(|| arena.start_lifecycle_rounds(U64(1), terms())));
         for caller in ["anyone.testnet", "owner.testnet"] {
-            context(caller, NearToken::from_yoctonear(0), START);
+            context(caller, NearToken::from_yoctonear(1), START);
             assert!(panics(|| arena.open_lifecycle_round(
                 U64(1),
                 U64(1),
@@ -488,7 +504,25 @@ pub(crate) mod tests {
                 arena.submit_lifecycle_observations(U64(1), U64(1), vec![]);
             }));
         }
+        // Without the one yocto, even the oracle is refused.
         context("oracle.testnet", NearToken::from_yoctonear(0), START);
+        assert!(panics(|| arena.open_lifecycle_round(
+            U64(1),
+            U64(1),
+            U64(START)
+        )));
+        // A start far from the block time is refused in both directions.
+        context("oracle.testnet", NearToken::from_yoctonear(1), START);
+        assert!(panics(|| arena.open_lifecycle_round(
+            U64(1),
+            U64(1),
+            U64(START - MAX_WINDOW_SKEW_NS - 1)
+        )));
+        assert!(panics(|| arena.open_lifecycle_round(
+            U64(1),
+            U64(1),
+            U64(START + MAX_WINDOW_SKEW_NS + 1)
+        )));
         arena.open_lifecycle_round(U64(1), U64(1), U64(START));
         let view = arena.get_lifecycle_round(U64(1)).expect("view");
         assert_eq!(
@@ -502,7 +536,7 @@ pub(crate) mod tests {
         let mut arena = locked_arena();
         context("anyone.testnet", NearToken::from_near(1), 0);
         arena.start_lifecycle_rounds(U64(1), terms());
-        context("oracle.testnet", NearToken::from_yoctonear(0), START);
+        context("oracle.testnet", NearToken::from_yoctonear(1), START);
         arena.open_lifecycle_round(U64(1), U64(1), U64(START));
         // A round cannot be resolved before its recorded end.
         let early = vec![
@@ -515,7 +549,7 @@ pub(crate) mod tests {
         }));
         context(
             "oracle.testnet",
-            NearToken::from_yoctonear(0),
+            NearToken::from_yoctonear(1),
             START + ROUND,
         );
         // Missing evidence for a candidate holds the round, with no winner recorded.
@@ -541,7 +575,7 @@ pub(crate) mod tests {
         arena.open_lifecycle_round(U64(1), U64(2), U64(START + ROUND));
         context(
             "oracle.testnet",
-            NearToken::from_yoctonear(0),
+            NearToken::from_yoctonear(1),
             START + 2 * ROUND,
         );
         let with_eliminated = vec![

@@ -246,7 +246,9 @@ impl PayoutContract {
     }
 
     /// Owner-only, once per backing; a registered binding can never change.
+    #[payable]
     pub fn register_backing(&mut self, backing: AccountId, config: BackingConfigInput) {
+        near_sdk::assert_one_yocto();
         require!(env::predecessor_account_id() == self.owner, "Only owner");
         require!(
             self.backings.get(&backing).is_none(),
@@ -394,12 +396,14 @@ impl PayoutContract {
 
     /// Relayer only. Marks that a signature is about to be requested and
     /// returns the exact parameters the signer is allowed to authorize.
+    #[payable]
     pub fn begin_signing(
         &mut self,
         backing: AccountId,
         holder: AccountId,
         request_id: Hash,
     ) -> SigningPayload {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.relayer,
             "Only relayer"
@@ -414,6 +418,7 @@ impl PayoutContract {
     }
 
     /// Relayer only. The signed transaction must carry this payout's binding.
+    #[payable]
     pub fn record_signature(
         &mut self,
         backing: AccountId,
@@ -423,6 +428,7 @@ impl PayoutContract {
         binding_hash: Hash,
         max_fee_per_gas: U128,
     ) -> bool {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.relayer,
             "Only relayer"
@@ -440,6 +446,7 @@ impl PayoutContract {
         fresh
     }
 
+    #[payable]
     pub fn record_broadcast(
         &mut self,
         backing: AccountId,
@@ -447,6 +454,7 @@ impl PayoutContract {
         request_id: Hash,
         tx_hash: Hash,
     ) -> bool {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.relayer,
             "Only relayer"
@@ -460,6 +468,7 @@ impl PayoutContract {
     }
 
     /// Relayer or operator. Holds the reservation; it can never release it.
+    #[payable]
     pub fn require_reconciliation(
         &mut self,
         backing: AccountId,
@@ -467,6 +476,7 @@ impl PayoutContract {
         request_id: Hash,
         reason: ReasonInput,
     ) {
+        near_sdk::assert_one_yocto();
         let caller = env::predecessor_account_id();
         require!(
             caller == self.relayer || caller == self.operator,
@@ -484,6 +494,7 @@ impl PayoutContract {
     }
 
     /// Operator only. Marks an attempt as finalized with failure.
+    #[payable]
     pub fn record_revert(
         &mut self,
         backing: AccountId,
@@ -491,6 +502,7 @@ impl PayoutContract {
         request_id: Hash,
         tx_hash: Hash,
     ) {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.operator,
             "Only operator"
@@ -504,6 +516,7 @@ impl PayoutContract {
 
     /// Operator only. Validates the attested transfer against the payout, has
     /// the backing consume its reservation, and only then marks it confirmed.
+    #[payable]
     pub fn confirm_payout(
         &mut self,
         backing: AccountId,
@@ -511,6 +524,7 @@ impl PayoutContract {
         request_id: Hash,
         evidence: PaymentEvidenceInput,
     ) -> Promise {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.operator,
             "Only operator"
@@ -566,6 +580,7 @@ impl PayoutContract {
     /// Operator only. Without a proof, only an unsigned payout can be
     /// cancelled; otherwise an attested finalized nonce slot must prove that no
     /// executable spend remains. The backing releases first, then this records.
+    #[payable]
     pub fn restore_payout(
         &mut self,
         backing: AccountId,
@@ -573,6 +588,7 @@ impl PayoutContract {
         request_id: Hash,
         proof: Option<NoSpendProofInput>,
     ) -> Promise {
+        near_sdk::assert_one_yocto();
         require!(
             env::predecessor_account_id() == self.operator,
             "Only operator"
