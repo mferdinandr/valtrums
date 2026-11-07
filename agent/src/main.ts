@@ -22,6 +22,8 @@ import { AuditSubmitter } from "./audit/approval.js";
 import { loadAuditConfig } from "./audit/config.js";
 import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
 import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
+import type { AuditRecord } from "./audit/decision.js";
+import { LifecycleLocker } from "./audit/lifecycle-lock.js";
 import { createLpFetcher } from "./audit/lp-fetcher.js";
 import { buildAuditPolicy } from "./audit/policy.js";
 import { AuditReportStore } from "./audit/report.js";
@@ -101,9 +103,24 @@ async function main(): Promise<void> {
 
   // Lifecycle audit (GoPlus + independent LP): only when AUDIT_ENABLED=true.
   const auditCfg = loadAuditConfig(process.env, rt.intervalSecs);
+  const auditSource = new NearLifecycleAuditSource(cfg.arenaContractId, transport);
+  const auditRecords = new Map<string, AuditRecord>();
   const lifecycleAudit = auditCfg
     ? createLifecycleAuditPass({
-        source: new NearLifecycleAuditSource(cfg.arenaContractId, transport),
+        source: auditSource,
+        // The lock step is separate (lifecycle-lock.ts) and off unless AUDIT_LOCK_ENABLED=true.
+        ...(auditCfg.lockEnabled
+          ? {
+              lock: new LifecycleLocker({
+                contractId: cfg.arenaContractId,
+                transport,
+                records: auditRecords,
+                now: () => new Date(),
+                isLocked: async (id) => (await auditSource.get(id))?.locked === true,
+                log,
+              }),
+            }
+          : {}),
         refresh: {
           policy: buildAuditPolicy({ ttlSeconds: auditCfg.ttlSeconds }),
           registry: auditCfg.registry,
@@ -121,7 +138,7 @@ async function main(): Promise<void> {
             ...(auditCfg.weth ? { weth: auditCfg.weth } : {}),
           }),
           submitter: new AuditSubmitter(cfg.arenaContractId, transport),
-          records: new Map(),
+          records: auditRecords,
         },
         reports: new AuditReportStore(),
         log,

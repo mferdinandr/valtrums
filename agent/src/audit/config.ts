@@ -15,6 +15,8 @@ export interface AuditConfig {
   goplusAccessToken: string | undefined;
   /** Read-only Robinhood mainnet (4663) RPC, separate from the testnet FOREIGN_RPC_URL. May embed a key: never log it. */
   referenceRpcUrl: string;
+  /** AUDIT_LOCK_ENABLED=true lets the agent send `lock_lifecycle_battle`; off by default because a lock is final. */
+  lockEnabled: boolean;
 }
 
 function json(env: Record<string, string | undefined>, name: string, fallback: string): unknown {
@@ -115,5 +117,6 @@ export function loadAuditConfig(
     ...(weth ? { weth } : {}),
     goplusAccessToken: env.GOPLUS_ACCESS_TOKEN?.trim() || undefined,
     referenceRpcUrl,
+    lockEnabled: env.AUDIT_LOCK_ENABLED?.trim() === "true",
   };
 }

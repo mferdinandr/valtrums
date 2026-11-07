@@ -84,6 +84,9 @@ export function submitArgs(battleId: number, community: number, record: AuditRec
     result: record.result,
     policy_hash: record.policyHash,
     evidence_hash: record.evidenceHash,
+    // Required by the contract for a pass (block time in ms, at most 24 h ahead); ignored otherwise.
+    // The contract refuses a pass whose expiry is missing or not in the future.
+    expires_at_ms: record.result === "pass" && record.expiresAt ? String(Date.parse(record.expiresAt)) : null,
   };
 }
 

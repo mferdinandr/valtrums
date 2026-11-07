@@ -1,6 +1,7 @@
 import type { NearTransport } from "../near-client.js";
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
 import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
+import type { LifecycleLocker } from "./lifecycle-lock.js";
 import { AuditReportStore } from "./report.js";
 
 /** Subset of the arena's `LifecycleView` this pass reads. */
@@ -60,6 +61,8 @@ export interface LifecycleAuditPassDeps {
   source: LifecycleAuditSource;
   refresh: Omit<RefreshDeps, "isLocked">;
   reports?: AuditReportStore;
+  /** Optional lock step (see lifecycle-lock.ts); runs only after a refresh that left every community ready. */
+  lock?: Pick<LifecycleLocker, "tryLock">;
   log?: Logger;
 }
 
@@ -88,6 +91,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         }
         checked++;
         if (result.ready) ready++;
+        if (deps.lock && (await deps.lock.tryLock(id, view.communities.length, result.ready)).status === "failed") errors++;
       } catch (err) {
         errors++;
         log.error("lifecycle audit failed", { battleId: id, error: errorMessage(err) });
