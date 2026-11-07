@@ -7,6 +7,8 @@
 //! trusted-operator attestation of finalized source-chain state, not a proof.
 use near_sdk::{env, near, AccountId};
 
+pub mod contract;
+
 pub type Hash = [u8; 32];
 
 /// Globally unambiguous payout identity: it commits to the backing contract,
@@ -19,6 +21,18 @@ pub struct PayoutId(pub Hash);
 fn length_prefixed(out: &mut Vec<u8>, part: &[u8]) {
     out.extend_from_slice(&(part.len() as u32).to_be_bytes());
     out.extend_from_slice(part);
+}
+
+impl PayoutId {
+    /// Identity of the payout for a backing contract, holder and the backing's
+    /// local request id. It does not depend on any other payout parameter.
+    pub fn derive(backing: &AccountId, holder: &AccountId, request_id: &Hash) -> Self {
+        let mut data = b"valtrum/payout/v1".to_vec();
+        length_prefixed(&mut data, backing.as_str().as_bytes());
+        length_prefixed(&mut data, holder.as_str().as_bytes());
+        length_prefixed(&mut data, request_id);
+        PayoutId(env::sha256_array(&data))
+    }
 }
 
 /// Everything a signature may authorize. It is built from an exclusive backing
@@ -41,11 +55,7 @@ pub struct Authorization {
 
 impl Authorization {
     pub fn id(&self) -> PayoutId {
-        let mut data = b"valtrum/payout/v1".to_vec();
-        length_prefixed(&mut data, self.backing.as_str().as_bytes());
-        length_prefixed(&mut data, self.holder.as_str().as_bytes());
-        length_prefixed(&mut data, &self.request_id);
-        PayoutId(env::sha256_array(&data))
+        PayoutId::derive(&self.backing, &self.holder, &self.request_id)
     }
 
     /// Commitment to every immutable spend parameter. Gas pricing is excluded
