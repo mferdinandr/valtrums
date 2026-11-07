@@ -1,7 +1,6 @@
 import type { NearTransport } from "../near-client.js";
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
-import { refreshBattleAudit, type RefreshDeps } from "./approval.js";
-import type { AuditAsset } from "./decision.js";
+import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
 import { AuditReportStore } from "./report.js";
 
 /** Subset of the arena's `LifecycleView` this pass reads. */
@@ -12,6 +11,9 @@ export interface LifecycleBattleView {
     token_address: string;
     representation: string;
     custody_domain: string;
+    /** Optional committed mainnet reference pair (both set or both absent). */
+    reference_chain_id?: string | number | null;
+    reference_address?: string | null;
   }[];
 }
 
@@ -20,8 +22,8 @@ export interface LifecycleAuditSource {
   get(id: number): Promise<LifecycleBattleView | null>;
 }
 
-/** The lifecycle asset identity has no separate version field; this label names that shape. */
-export const ASSET_MAPPING_VERSION = "asset-identity-v1";
+/** The lifecycle asset identity has no separate version field; this label names that shape (v2 adds the optional reference pair). */
+export const ASSET_MAPPING_VERSION = "asset-identity-v2";
 
 export class NearLifecycleAuditSource implements LifecycleAuditSource {
   constructor(
@@ -40,13 +42,17 @@ export class NearLifecycleAuditSource implements LifecycleAuditSource {
   }
 }
 
-export function assetsOf(view: LifecycleBattleView): AuditAsset[] {
+export function assetsOf(view: LifecycleBattleView): CommittedAsset[] {
   return view.communities.map((c) => ({
     chainId: String(c.chain_id),
     token: c.token_address,
     representation: c.representation,
     custodyDomain: c.custody_domain,
     mappingVersion: ASSET_MAPPING_VERSION,
+    committed:
+      c.reference_chain_id != null && c.reference_address != null
+        ? { referenceChainId: String(c.reference_chain_id), referenceAddress: c.reference_address }
+        : null,
   }));
 }
 

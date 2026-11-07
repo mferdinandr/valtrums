@@ -61,6 +61,8 @@ describe("approval binding and refresh (fixture-only)", () => {
         token_address: asset.token,
         representation: "aa.token.testnet",
         custody_domain: "vault-1",
+        reference_chain_id: null,
+        reference_address: null,
       },
       result: "pass",
       policy_hash: r.policyHash,

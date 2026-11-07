@@ -77,6 +77,9 @@ export function submitArgs(battleId: number, community: number, record: AuditRec
       token_address: record.asset.token,
       representation: record.asset.representation,
       custody_domain: record.asset.custodyDomain,
+      // Must equal the committed pair: the contract refuses an approval for a different pair.
+      reference_chain_id: record.asset.reference?.chainId ?? null,
+      reference_address: record.asset.reference?.token.toLowerCase() ?? null,
     },
     result: record.result,
     policy_hash: record.policyHash,
@@ -112,6 +115,9 @@ export class AuditSubmitter {
   }
 }
 
+/** Base asset as read from the arena, with the reference pair committed on-chain (null = none committed). */
+export type CommittedAsset = AuditAsset & { committed?: DeclaredReference | null };
+
 export interface RefreshDeps {
   policy: AuditPolicy;
   /** Protocol-controlled reference-token registry; the only accepted source of reference mappings. */
@@ -137,17 +143,40 @@ export interface RefreshDeps {
  */
 export async function refreshBattleAudit(
   battleId: number,
-  baseAssets: AuditAsset[],
+  baseAssets: CommittedAsset[],
   deps: RefreshDeps,
 ): Promise<LockReadiness & { skippedBecauseLocked: boolean }> {
   if (await deps.isLocked(battleId)) {
     return { ready: true, needsRefresh: [], skippedBecauseLocked: true };
   }
   const key = (i: number) => `${battleId}:${i}`;
-  const resolved = baseAssets.map((base): { asset: AuditAsset; hold?: Reason } => {
-    const r = resolveReference(base, deps.registry, deps.declaredReference?.(base) ?? null);
+  const resolved = baseAssets.map((withCommit): { asset: AuditAsset; hold?: Reason } => {
+    const { committed, ...base } = withCommit;
+    // The pair committed on-chain is what is audited; the registry decides if it is acceptable.
+    const declared = committed !== undefined ? committed : (deps.declaredReference?.(base) ?? null);
+    const r = resolveReference(base, deps.registry, declared);
+    if (r.kind === "mapped" && committed === null) {
+      return {
+        asset: { ...base, reference: undefined },
+        hold: {
+          code: "reference_mismatch",
+          message: "registry maps this token to a reference but the committed community mapping has none",
+        },
+      };
+    }
     if (r.kind === "mapped") return { asset: { ...base, reference: r.reference } };
-    if (r.kind === "hold") return { asset: { ...base, reference: undefined }, hold: { code: r.code, message: r.message } };
+    if (r.kind === "hold") {
+      // Keep the committed pair on the record (marked unverified) so the pending result still
+      // names the community's real asset when it is submitted.
+      const reference = committed
+        ? {
+            chainId: committed.referenceChainId,
+            token: committed.referenceAddress.toLowerCase(),
+            registryEntryHash: "unverified",
+          }
+        : undefined;
+      return { asset: { ...base, reference }, hold: { code: r.code, message: r.message } };
+    }
     return { asset: { ...base, reference: undefined } };
   });
   const assets = resolved.map((r) => r.asset);

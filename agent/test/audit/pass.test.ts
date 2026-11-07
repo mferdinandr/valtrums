@@ -16,10 +16,22 @@ import { runOnce } from "../../src/runtime.js";
 import { TwapFetcher } from "../../src/twap.js";
 import { FIXTURE_RESOLVED, NOW, REF_CHAIN, REF_TOKEN, TOKEN, refGoplus, refLp, registry } from "./fixtures.js";
 
-const view = (locked = false): LifecycleBattleView => ({
+const view = (
+  locked = false,
+  pair: { reference_chain_id?: string | null; reference_address?: string | null } = {
+    reference_chain_id: REF_CHAIN,
+    reference_address: REF_TOKEN,
+  },
+): LifecycleBattleView => ({
   locked,
   communities: [
-    { chain_id: "46630", token_address: TOKEN, representation: "aa.token.testnet", custody_domain: "vault-1" },
+    {
+      chain_id: "46630",
+      token_address: TOKEN,
+      representation: "aa.token.testnet",
+      custody_domain: "vault-1",
+      ...pair,
+    },
   ],
 });
 
@@ -63,6 +75,47 @@ describe("lifecycle audit pass (fixture-only)", () => {
     const sent = s.calls[0]![2] as { evidence_hash: string; result: string };
     expect(sent.result).toBe("pass");
     expect(s.reports.get(sent.evidence_hash)?.auditKind).toBe("reference_token");
+  });
+
+  it("submits the committed reference pair so the contract can match the asset", async () => {
+    const s = setup({ 1: view() });
+    await s.pass();
+    const asset = (s.calls[0]![2] as { asset: Record<string, unknown> }).asset;
+    expect(asset).toMatchObject({ reference_chain_id: REF_CHAIN, reference_address: REF_TOKEN });
+  });
+
+  it("holds Pending when the committed pair differs from, or is absent against, the registry", async () => {
+    const other = "0x00000000000000000000000000000000000000dd";
+    for (const pair of [
+      { reference_chain_id: REF_CHAIN, reference_address: other }, // different token than the registry
+      { reference_chain_id: null, reference_address: null }, // registry maps it but nothing committed
+    ]) {
+      const s = setup({ 1: view(false, pair) });
+      expect(await s.pass()).toEqual({ checked: 1, ready: 0, errors: 0 });
+      expect(s.queries).toHaveLength(0);
+      const sent = s.calls[0]![2] as { result: string; asset: { reference_address: string | null } };
+      expect(sent.result).toBe("pending");
+      // The pending result still names the committed asset, so the contract accepts it.
+      expect(sent.asset.reference_address).toBe(pair.reference_address);
+    }
+  });
+
+  it("holds Pending when a committed pair is not in the registry at all", async () => {
+    const s = setup({ 1: view() });
+    const pass = createLifecycleAuditPass({
+      source: source({ 1: view(false, { reference_chain_id: "4663", reference_address: "0x00000000000000000000000000000000000000ee" }) }),
+      refresh: {
+        policy: FIXTURE_RESOLVED,
+        registry: [],
+        now: () => NOW,
+        fetchGoPlus: async () => refGoplus(),
+        fetchLp: async () => refLp("10001"),
+        submitter: new AuditSubmitter("arena.testnet", { call: async (...a: unknown[]) => void s.calls.push(a) } as never),
+        records: new Map(),
+      },
+    });
+    expect((await pass()).ready).toBe(0);
+    expect((s.calls[0]![2] as { result: string }).result).toBe("pending");
   });
 
   it("skips locked battles entirely", async () => {
