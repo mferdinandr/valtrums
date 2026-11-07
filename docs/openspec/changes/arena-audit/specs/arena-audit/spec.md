@@ -16,7 +16,7 @@ The system SHALL reject critical GoPlus risks and hold approval Pending for miss
 - **THEN** the system does not invent a value or silently approve and holds the token Pending
 
 ### Requirement: Versioned owner policy for tax and admin privileges
-The audit SHALL apply one versioned policy object (`audit-policy-v1`) and its hash SHALL change with any resolved decision or parameter. Buy, sell and transfer tax SHALL each be admissible up to and including the exact decimal 0.05; above 0.05 SHALL reject with reason `tax_above_limit`. The capabilities `is_mintable`, `transfer_pausable`, `is_blacklisted`, `is_whitelisted`, `owner_change_balance`, `slippage_modifiable` and `personal_slippage_modifiable` SHALL be admissible only when ownership is renounced and unrecoverable (owner empty or zero address, `hidden_owner` false, `can_take_back_ownership` false); an active capability otherwise SHALL reject with reason `admin_privilege_not_renounced`. Unknown fields SHALL remain Pending.
+The audit SHALL apply one versioned policy (`audit-policy-v1`) whose hash changes with any resolved decision. Each tax SHALL be admissible up to and including 0.05 and rejected above it (`tax_above_limit`). The seven admin capabilities SHALL be admissible only with renounced and unrecoverable ownership, else rejected (`admin_privilege_not_renounced`). Unknown fields SHALL stay Pending.
 
 #### Scenario: Tax at the limit
 - **WHEN** buy tax is "0.05" and every other gate passes
@@ -35,7 +35,7 @@ The audit SHALL apply one versioned policy object (`audit-policy-v1`) and its ha
 - **THEN** approval remains Pending
 
 ### Requirement: Reference-token audit for testnet mock tokens
-GoPlus supports only chain 4663. A testnet token SHALL be audited through its mainnet reference token only when the mapping (`reference_chain_id` 4663 and `reference_address`) comes from a protocol-controlled registry in configuration. Both the GoPlus query and the liquidity read SHALL use the reference pair. The evidence SHALL bind both the testnet asset and the reference pair, and the record, policy hash and evidence hash SHALL label it a reference-token audit that did not audit the testnet mock itself. Approval attests the mainnet reference token, not the behaviour of the testnet mock contract.
+A testnet token SHALL be audited through its mainnet (4663) reference token only when a protocol-controlled registry maps it and the same pair is committed in the community mapping. GoPlus and liquidity SHALL both use the reference pair, and the record and hashes SHALL label it a reference-token audit. Approval attests the reference token, not the testnet mock contract.
 
 #### Scenario: Registered mapping
 - **WHEN** a registered mock token has passing GoPlus and liquidity evidence for its mainnet reference token
@@ -54,15 +54,23 @@ GoPlus supports only chain 4663. A testnet token SHALL be audited through its ma
 - **THEN** evidence for any other chain or token cannot approve it
 
 ### Requirement: Independent strict liquidity gate
-Every community SHALL pass a separate evidence-backed LP check strictly greater than USD 10000. For a reference-token audit the pools SHALL be read on-chain for the mainnet reference token through a read-only mainnet RPC distinct from testnet custody RPC. Only reserves of explicitly configured stablecoins SHALL be valued, at 1 unit = 1 USD. The minimum executable-depth policy for concentrated liquidity SHALL remain OPEN and no value is invented.
+Every community SHALL pass a separate evidence-backed LP check strictly greater than USD 10000. For a reference-token audit the pools SHALL be read on-chain for the mainnet reference token through a read-only mainnet RPC distinct from testnet custody RPC. A pool SHALL be valued only by its quote-side balance at one block, labeled `headline_quote_balance`, an approximation and not executable depth. The minimum executable-depth policy SHALL remain OPEN.
 
 #### Scenario: Unlisted quote asset
-- **WHEN** a pool's quote asset is not on the configured stablecoin list
+- **WHEN** a pool's quote asset is neither a configured stablecoin nor the configured WETH
 - **THEN** the pool is not valued and cannot contribute to the gate
 
-#### Scenario: Concentrated pool
-- **WHEN** only a concentrated-liquidity pool is found and no executable depth is established
-- **THEN** approval remains Pending
+#### Scenario: Token-side balance
+- **WHEN** a pool holds a large balance of the audited token
+- **THEN** that balance adds no value
+
+#### Scenario: WETH quote
+- **WHEN** a pool is quoted in WETH and one configured v3 WETH/stablecoin pool is set with its floor met
+- **THEN** the WETH balance is priced from that pool at the same block
+
+#### Scenario: Unpriced WETH
+- **WHEN** the price pool, its floor or its tokens are unset, unmet or mismatched
+- **THEN** the WETH-quoted pool is not counted and approval remains Pending with a reason
 
 #### Scenario: Threshold equality
 - **WHEN** LP value is exactly USD 10000

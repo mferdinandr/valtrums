@@ -22,15 +22,23 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 - [x] Keep the direct rule for unmapped tokens: evidence for another chain or token cannot approve.
 - [x] Test registry validation, held mappings, mapping change invalidation, wrong-subject GoPlus and liquidity evidence, and evidence-hash commitment to the subject.
 
+## Committed reference pair
+
+- [x] Commit the optional mainnet reference pair in the community asset identity (both or neither, validated and lowercased at creation, no duplicate pair, included in asset equality) and require `submit_lifecycle_audit` to name the committed pair; the agent audits the on-chain pair, compares it with the registry and holds Pending on a mismatch.
+- [x] Test creation with and without the pair, one-sided and malformed pairs, duplicate pairs, an audit for a different or missing pair, and a mismatched committed pair on the agent side.
+
 ## Policy and independent liquidity
 
 - [x] Apply owner decisions in a versioned policy (`audit-policy-v1`): tax admissible up to and including 0.05, above rejects (`tax_above_limit`); the seven admin capabilities are admissible only with renounced and unrecoverable ownership, else Reject (`admin_privilege_not_renounced`); unknown stays Pending; `policyHash` reflects the resolved decisions and parameters.
 - [x] Make the evidence TTL configurable (default 600 seconds) and measure age from the older of the GoPlus query time and the oldest liquidity observation. Recovery after a live token-policy change stays OPEN.
-- [x] Read pool reserves on-chain for the reference token through a separate read-only mainnet RPC with shared retries; value only configured stablecoin reserves at 1 USD; observation time is the block timestamp. Fixture-only.
-- [x] Deduplicate eligible pools and distinguish headline liquidity from concentrated-liquidity executable depth; concentrated pools stay Pending until a minimum executable-depth policy exists (OPEN, not invented).
+- [x] Read pools on-chain for the reference token through a separate read-only mainnet RPC with shared retries, all reads pinned to one block; value v2 and v3 pools by quote-side balance only (`headline_quote_balance`), never the token side; observation time is the block timestamp. Fixture-only.
+- [x] Value quotes only in an explicitly configured stablecoin (decimals re-read on-chain) or the configured WETH priced from one configured v3 WETH/stablecoin pool via `slot0` with a configured stable-side floor; unset or mismatched config leaves the pool unpriced and Pending (`quote_asset_unpriced`, `price_pool_floor_unset`, `price_pool_floor_not_met`, `price_pool_invalid`). No code defaults.
+- [x] Label the valuation source `headline_quote_balance` in evidence, `evidenceHash`, `policyHash` and the user report as an approximation, not executable depth.
+- [x] Deduplicate eligible pools; tick-based executable depth is not computed and its policy stays OPEN (not invented).
 - [x] Evaluate independent exact USD valuation strictly above 10000; hold missing or unreliable evidence Pending.
 - [x] Test 9999, 10000 and 10001 USD, absent LP evidence, duplicate pools and mismatched asset identity.
 - [ ] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity (OPEN).
+- [ ] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain; they come from DexScreener and are unverified by us.
 
 ## User-facing report
 

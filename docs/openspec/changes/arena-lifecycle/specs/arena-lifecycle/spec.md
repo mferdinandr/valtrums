@@ -12,7 +12,7 @@ The system SHALL require at least two distinct token communities and a positive 
 - **THEN** all three can be frozen in the starting snapshot
 
 ### Requirement: Optional committed reference pair
-A community MAY commit a mainnet reference pair with its asset identity.
+A community MAY commit a mainnet reference pair with its asset identity, and the system SHALL validate it at creation.
 
 #### Scenario: Valid or absent pair
 - **WHEN** both reference fields are set to a valid chain ID and 20-byte address, or both are unset
