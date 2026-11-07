@@ -104,6 +104,29 @@ All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #5
 
 OpenSpec validation on `main` after all merges: 10 passed, 0 failed (`--strict`). Baseline command: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
 
+## Handoff: payout cluster (2026-11-07)
+
+Work was stopped before it finished so the team can continue. Both branches below exist **only as local commits** in git worktrees on the maintainer's machine until someone pushes them: `git push -u origin feat/backing-reconciliation feat/payout-mpc-signing`. Their only commit is a snapshot ("save unfinished work for handoff"): it was **not built or tested**, and it may not compile. Treat it as a starting point, not as reviewed work. Worktree paths: `Code/.claude/worktrees/agent-a45a83ebf66dfe05c` (backing) and `Code/.claude/worktrees/agent-aec594fdf3cf7c496` (payout).
+
+Goal: finish the open tasks of `arena-asset-representation` (3), `arena-chain-signatures` (3) and `arena-settlement` (2), then archive each only when all its tasks are verified. Current counts on `main`: 17/20, 12/15 and 14/16.
+
+| Branch | Snapshot contents | Tasks to finish |
+| --- | --- | --- |
+| `feat/backing-reconciliation` (13 files, +2082/-142) | New `contracts/backing/src/suspension.rs`, a `contracts/mock-lifecycle` crate, `integration/tests/backing_reconciliation.rs`, edits to backing `lib.rs`, `normalization.rs`, `reservation.rs` and several integration tests | (1) reconcile finalized payment or disposal evidence before consuming backing, restore only after a definitive no-spend proof; (2) suspend minting and payouts on deficit, reorg or unresolved reconciliation, with the resume policy of D14; (3) record a late foreign deposit as unattributed and refund the beneficiary named in the deposit event after finality (D15) |
+| `feat/payout-mpc-signing` (4 files, +1533/-310) | New `contracts/payout/src/evm.rs` (on-chain EVM transaction building), edits to payout `contract.rs`, `lib.rs` and `integration/tests/payout.rs` | (1) the payout contract calls the NEAR MPC signer itself and accepts only the signer callback's signature; (2) restart reconciliation worker in `agent/` that never creates a new spend before reconciling; (3) explicit payout states (signer response, broadcast, pending finality, revert, reconciliation required, confirmed) as a documented, stable view |
+| not started: `arena-settlement` | None | Expose available, reserved, broadcast, confirmation-pending and confirmed amounts per token from the payout status view (needs the payout branch first); test independent per-token payout progress and lost-response retry |
+
+Rules the work must keep (from `Code/CLAUDE.md` and the decisions above):
+- Rust contract code: no `unwrap()`, checked math only, fail closed, privileged methods need exactly one yocto and a restricted caller. Run `near-smart-contracts` guidance before writing contract code and a `near-contract-audit` review before opening a PR.
+- Do not edit `contracts/payout` from the backing branch or `contracts/backing` from the payout branch except for a minimal, documented interface change. Decide a merge order before opening PRs (backing first is natural; settlement last).
+- D14: resume policy is a stored enum (`OwnerWithEvidence` default, `Automatic`, `Disabled`), owner-only to change with one yocto, every change emits an event. D15: refund goes to the beneficiary in the deposit event.
+- The MPC signer interface (request shape, key version, derivation path, attached deposit, testnet signer account) must come from the official NEAR Chain Signatures documentation; the sandbox only has `contracts/mock-mpc`, so every test of signing is a fixture and not live evidence.
+- Nonce gaps (a released or foreign-consumed nonce blocks later transactions) are an operational procedure to document, not a protocol rule to invent. Operator and relayer rotation is out of scope.
+- Keep OpenSpec in step with the code: update each change's design, spec scenarios, notes and security review; keep each requirement under 500 characters (strict validation warns otherwise); run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Check a task only after a passing test verifies it.
+- One feature, one branch, one PR. Small commits in English (`feat|fix|test|docs: ...`), no AI attribution. Re-run CI after merging `main` into a branch even if git shows no conflicts (see the #52/#53 lesson above).
+
+Known risk until this work is done: the payout contract does not call the MPC signer, so the payout path must not be deployed or funded.
+
 ## Open items and who acts
 
 | Item | Needed from | Notes |
