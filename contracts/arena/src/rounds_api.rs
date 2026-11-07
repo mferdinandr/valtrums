@@ -417,6 +417,7 @@ pub(crate) mod tests {
                         asset: identity.clone(),
                         policy_hash: "policy".into(),
                         evidence_hash: format!("audit-{index}"),
+                        expires_at_ms: 1_000_000_000_000,
                     }),
                 )
                 .expect("audit");

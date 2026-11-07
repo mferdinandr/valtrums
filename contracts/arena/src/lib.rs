@@ -173,6 +173,8 @@ pub struct Arena {
     lifecycle_battle_count: u64,
     lifecycle_protocol: Option<AccountId>,
     lifecycle_observation_policy: Option<lifecycle::ObservationPolicy>,
+    /// Optional owner-pinned audit policy hash; when set, lock requires every approval to carry it.
+    lifecycle_audit_policy_hash: Option<String>,
     lifecycle_exclusive: bool,
     /// The only account that opens rounds and submits observations. Set once.
     lifecycle_oracle: Option<AccountId>,
@@ -230,6 +232,7 @@ impl Arena {
             lifecycle_battle_count: 0,
             lifecycle_protocol: None,
             lifecycle_observation_policy: None,
+            lifecycle_audit_policy_hash: None,
             lifecycle_exclusive: false,
             lifecycle_oracle: None,
             lifecycle_rounds: LookupMap::new(StorageKey::LifecycleRounds),
@@ -312,6 +315,22 @@ impl Arena {
         self.lifecycle_observation_policy = Some(policy);
     }
 
+    /// Pin (or clear with `None`) the audit policy hash that `lock_lifecycle_battle`
+    /// requires on every approval. A change makes earlier approvals under another
+    /// policy unable to lock until they are refreshed; it never alters a locked snapshot.
+    #[payable]
+    pub fn set_lifecycle_audit_policy_hash(&mut self, policy_hash: Option<String>) {
+        self.assert_owner();
+        near_sdk::assert_one_yocto();
+        if let Some(hash) = &policy_hash {
+            require!(
+                !hash.trim().is_empty() && hash.len() <= 256,
+                "Audit policy hash is invalid"
+            );
+        }
+        self.lifecycle_audit_policy_hash = policy_hash;
+    }
+
     /// Freeze the credited positions and policy. A repeated call preserves the
     /// original snapshot. Starting rounds remains the scoring integration's job.
     #[payable]
@@ -357,7 +376,12 @@ impl Arena {
     /// `reject` and `pending` withdraw any earlier approval. A locked battle
     /// refuses every change. Attached NEAR pays for storage growth; excess is
     /// refunded.
+    ///
+    /// `expires_at_ms` (block time, ms) is required for `pass` and ignored
+    /// otherwise; it must be in the future and at most 24 hours ahead.
+    /// ABI change: this optional last argument is new; withdrawals are unchanged.
     #[payable]
+    #[allow(clippy::too_many_arguments)]
     pub fn submit_lifecycle_audit(
         &mut self,
         battle_id: u64,
@@ -366,6 +390,7 @@ impl Arena {
         result: lifecycle::AuditResult,
         policy_hash: String,
         evidence_hash: String,
+        expires_at_ms: Option<U64>,
     ) {
         self.assert_agent();
         require!(!self.paused, "Arena is paused");
@@ -382,11 +407,25 @@ impl Arena {
         let caller = env::predecessor_account_id();
         let asset: lifecycle::AssetIdentity = asset.into();
         let evidence = match result {
-            lifecycle::AuditResult::Pass => Some(lifecycle::AuditApproval {
-                asset: asset.clone(),
-                policy_hash,
-                evidence_hash: evidence_hash.clone(),
-            }),
+            lifecycle::AuditResult::Pass => {
+                // Expiry is taken only from this authenticated submission and
+                // must lie in the future within the maximum approval life.
+                let expires = expires_at_ms
+                    .unwrap_or_else(|| env::panic_str("A pass requires expires_at_ms"))
+                    .0;
+                let now = env::block_timestamp_ms();
+                let latest = now
+                    .checked_add(lifecycle::MAX_AUDIT_APPROVAL_MS)
+                    .unwrap_or_else(|| env::panic_str("Expiry overflow"));
+                require!(expires > now, "Approval is already expired");
+                require!(expires <= latest, "Approval expiry is too far ahead");
+                Some(lifecycle::AuditApproval {
+                    asset: asset.clone(),
+                    policy_hash,
+                    evidence_hash: evidence_hash.clone(),
+                    expires_at_ms: expires,
+                })
+            }
             _ => {
                 // Withdrawal must still name the community's real asset.
                 let view = self
@@ -432,6 +471,7 @@ impl Arena {
                 "community": community,
                 "result": result,
                 "evidence_hash": evidence_hash,
+                "expires_at_ms": expires_at_ms.map(|v| v.0.to_string()),
             }),
         );
     }
@@ -2127,6 +2167,7 @@ impl Arena {
                 asset: asset.clone(),
                 policy_hash: "p".repeat(256),
                 evidence_hash: "a".repeat(256),
+                expires_at_ms: 1_000_000_000_000,
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture audit rejected"));

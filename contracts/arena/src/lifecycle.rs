@@ -150,6 +150,21 @@ pub struct AuditApproval {
     pub asset: AssetIdentity,
     pub policy_hash: String,
     pub evidence_hash: String,
+    /// Block time in milliseconds at or after which the approval no longer
+    /// supports a lock. Set only from the authenticated audit submission.
+    pub expires_at_ms: u64,
+}
+
+/// Longest approval life accepted at submission (24 hours).
+pub const MAX_AUDIT_APPROVAL_MS: u64 = 86_400_000;
+
+/// Facts the lock re-verifies against each stored approval.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LockCheck {
+    /// Current block time in milliseconds.
+    pub now_ms: u64,
+    /// When the owner pinned an audit policy hash, every approval must carry it.
+    pub required_policy_hash: Option<String>,
 }
 
 #[near(serializers = [borsh])]
@@ -191,6 +206,8 @@ pub struct CommunityView {
     pub vault: U128,
     pub audit_policy_hash: Option<String>,
     pub audit_evidence_hash: Option<String>,
+    /// Expiry of the stored audit approval (block time, milliseconds).
+    pub audit_expires_at_ms: Option<U64>,
     pub backing_evidence_hash: Option<String>,
 }
 
@@ -268,6 +285,10 @@ pub enum LifecycleError {
     Locked,
     MissingApproval,
     InvalidApproval,
+    /// An approval is at or past its expiry.
+    ExpiredApproval,
+    /// An approval no longer matches the committed asset or the pinned policy.
+    ApprovalMismatch,
     EmptyVault,
     CreatorHasNoPosition,
     NotLocked,
@@ -381,6 +402,7 @@ impl Battle {
                     vault: U128(community.vault),
                     audit_policy_hash: community.audit.as_ref().map(|e| e.policy_hash.clone()),
                     audit_evidence_hash: community.audit.as_ref().map(|e| e.evidence_hash.clone()),
+                    audit_expires_at_ms: community.audit.as_ref().map(|e| U64(e.expires_at_ms)),
                     backing_evidence_hash: community
                         .backing
                         .as_ref()
@@ -430,6 +452,7 @@ impl Battle {
                 || approval.policy_hash.len() > MAX_METADATA_BYTES
                 || approval.evidence_hash.trim().is_empty()
                 || approval.evidence_hash.len() > MAX_METADATA_BYTES
+                || approval.expires_at_ms == 0
             {
                 return Err(LifecycleError::InvalidApproval);
             }
@@ -611,9 +634,36 @@ impl Battle {
         })
     }
 
+    /// Every community's audit approval must still bind its committed asset
+    /// (and the pinned policy, if any) and must not be expired. Fails closed.
+    fn check_audit_fresh(&self, check: &LockCheck) -> Result<(), LifecycleError> {
+        for entry in &self.communities {
+            let approval = entry
+                .audit
+                .as_ref()
+                .ok_or(LifecycleError::MissingApproval)?;
+            if approval.asset != entry.asset {
+                return Err(LifecycleError::ApprovalMismatch);
+            }
+            if let Some(required) = &check.required_policy_hash {
+                if &approval.policy_hash != required {
+                    return Err(LifecycleError::ApprovalMismatch);
+                }
+            }
+            if check.now_ms >= approval.expires_at_ms {
+                return Err(LifecycleError::ExpiredApproval);
+            }
+        }
+        Ok(())
+    }
+
     /// The adapter must revalidate approval and backing before lock. Once
     /// frozen, duplicate lock calls return the original snapshot unchanged.
-    pub fn lock(&mut self, observation: ObservationPolicy) -> Result<&Snapshot, LifecycleError> {
+    pub fn lock(
+        &mut self,
+        observation: ObservationPolicy,
+        check: &LockCheck,
+    ) -> Result<&Snapshot, LifecycleError> {
         if self.snapshot.is_none() {
             if !observation.is_valid() {
                 return Err(LifecycleError::InvalidPolicy);
@@ -625,6 +675,7 @@ impl Battle {
             {
                 return Err(LifecycleError::MissingApproval);
             }
+            self.check_audit_fresh(check)?;
             if self.communities.iter().any(|entry| entry.vault == 0) {
                 return Err(LifecycleError::EmptyVault);
             }
@@ -787,12 +838,16 @@ impl crate::Arena {
         id: u64,
         policy: ObservationPolicy,
     ) -> Result<Snapshot, LifecycleError> {
+        let check = LockCheck {
+            now_ms: near_sdk::env::block_timestamp_ms(),
+            required_policy_hash: self.lifecycle_audit_policy_hash.clone(),
+        };
         let mut battle = self
             .lifecycle_battles
             .get(&id)
             .cloned()
             .ok_or(LifecycleError::UnknownBattle)?;
-        let snapshot = battle.lock(policy)?.clone();
+        let snapshot = battle.lock(policy, &check)?.clone();
         self.lifecycle_battles.insert(id, battle);
         Ok(snapshot)
     }
@@ -877,6 +932,14 @@ mod tests {
             asset: asset(index as u8 + 1),
             policy_hash: "policy".into(),
             evidence_hash: format!("audit-{index}"),
+            expires_at_ms: FAR,
+        }
+    }
+    const FAR: u64 = 1_000_000_000_000;
+    fn ck() -> LockCheck {
+        LockCheck {
+            now_ms: 0,
+            required_policy_hash: None,
         }
     }
     fn backing(index: usize) -> BackingApproval {
@@ -914,7 +977,7 @@ mod tests {
         assert_eq!(deposit(&mut b, 0, "creator.testnet", 0, 7), Ok(7));
         assert_eq!(deposit(&mut b, 1, "other.testnet", 0, 11), Ok(11));
         assert_eq!(deposit(&mut b, 2, "other.testnet", 0, 13), Ok(13));
-        let frozen = b.lock(policy("original")).expect("lock").clone();
+        let frozen = b.lock(policy("original"), &ck()).expect("lock").clone();
         assert_eq!(
             frozen
                 .communities
@@ -928,7 +991,7 @@ mod tests {
             Err(LifecycleError::Locked)
         );
         assert_eq!(b.set_audit(0, None), Err(LifecycleError::Locked));
-        assert_eq!(b.lock(policy("changed")), Ok(&frozen));
+        assert_eq!(b.lock(policy("changed"), &ck()), Ok(&frozen));
     }
 
     #[test]
@@ -938,7 +1001,7 @@ mod tests {
         deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
-        let frozen = b.lock(policy("original")).expect("lock").clone();
+        let frozen = b.lock(policy("original"), &ck()).expect("lock").clone();
         assert_eq!(
             frozen
                 .communities
@@ -958,7 +1021,7 @@ mod tests {
             deposit(&mut b, 2, "creator.testnet", 0, 1),
             Err(LifecycleError::Locked)
         );
-        assert_eq!(b.lock(policy("other")), Ok(&frozen));
+        assert_eq!(b.lock(policy("other"), &ck()), Ok(&frozen));
         assert_eq!(b.view().communities[0].vault, U128(7));
     }
 
@@ -970,7 +1033,10 @@ mod tests {
         deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
         b.set_backing(1, None).expect("withdraw evidence");
-        assert_eq!(b.lock(policy("p")), Err(LifecycleError::MissingApproval));
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::MissingApproval)
+        );
         assert_eq!(b.communities[1].vault, 11);
         assert_eq!(
             deposit(&mut b, 0, "creator.testnet", 7, 1),
@@ -978,7 +1044,10 @@ mod tests {
         );
         b.set_backing(1, Some(backing(1)))
             .expect("restore evidence");
-        assert_eq!(b.lock(policy("p")).expect("lock").communities[1].vault, 11);
+        assert_eq!(
+            b.lock(policy("p"), &ck()).expect("lock").communities[1].vault,
+            11
+        );
         assert_eq!(b.set_backing(1, None), Err(LifecycleError::Locked));
     }
 
@@ -990,13 +1059,13 @@ mod tests {
             deposit(&mut b, i, "other.testnet", 0, 1).expect("credit");
         }
         assert_eq!(
-            b.lock(policy("p")),
+            b.lock(policy("p"), &ck()),
             Err(LifecycleError::CreatorHasNoPosition)
         );
         let mut b = battle();
         approve(&mut b);
         deposit(&mut b, 0, "creator.testnet", 0, 1).expect("credit");
-        assert_eq!(b.lock(policy("p")), Err(LifecycleError::EmptyVault));
+        assert_eq!(b.lock(policy("p"), &ck()), Err(LifecycleError::EmptyVault));
     }
 
     #[test]
@@ -1155,7 +1224,7 @@ mod tests {
         deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
-        b.lock(policy("p")).expect("lock");
+        b.lock(policy("p"), &ck()).expect("lock");
         assert_eq!(b.losing_vault(1), Err(LifecycleError::WinnerNotResolved));
         b.hold_principal(0).expect("hold");
         let first = b.losing_vault(1).expect("loser");
@@ -1193,10 +1262,13 @@ mod tests {
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
         // Only the digest of the terms is committed at lock.
         let frozen = b
-            .lock(ObservationPolicy {
-                version: 1,
-                policy_hash: terms.digest(ScoringMode::PriceGain),
-            })
+            .lock(
+                ObservationPolicy {
+                    version: 1,
+                    policy_hash: terms.digest(ScoringMode::PriceGain),
+                },
+                &ck(),
+            )
             .expect("lock")
             .observation
             .clone();
@@ -1304,7 +1376,7 @@ mod tests {
         deposit(&mut b, 0, "other.testnet", 0, 400).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 100_000).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 200_000).expect("credit");
-        b.lock(policy("p")).expect("lock");
+        b.lock(policy("p"), &ck()).expect("lock");
         let winners = vec![
             (account("creator.testnet"), 600),
             (account("other.testnet"), 400),
@@ -1349,7 +1421,7 @@ mod tests {
         deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
-        b.lock(policy("p")).expect("lock");
+        b.lock(policy("p"), &ck()).expect("lock");
         assert_eq!(b.hold_principal(3), Err(LifecycleError::InvalidCommunity));
         let hold = b.hold_principal(1).expect("hold").clone();
         assert_eq!(hold.asset, asset(2));
@@ -1773,11 +1845,11 @@ mod tests {
         deposit(&mut b, 0, "creator.testnet", 0, 1).expect("credit");
         deposit(&mut b, 1, "other.testnet", 0, 1).expect("credit");
         assert_eq!(
-            b.lock(policy("p")),
+            b.lock(policy("p"), &ck()),
             Err(LifecycleError::CreatorHasNoPosition)
         );
         deposit(&mut b, 0, "protocol.testnet", 0, 1).expect("credit");
-        assert!(b.lock(policy("p")).is_ok());
+        assert!(b.lock(policy("p"), &ck()).is_ok());
     }
     fn audit_arena() -> (crate::Arena, u64) {
         use near_sdk::json_types::{U128, U64};
@@ -1815,6 +1887,7 @@ mod tests {
             AuditResult::Pass,
             "goplus-v1".into(),
             "ev1".into(),
+            Some(U64(60_000)),
         );
         let view = arena.get_lifecycle_battle(id).expect("view");
         assert_eq!(
@@ -1832,6 +1905,7 @@ mod tests {
             AuditResult::Pending,
             "goplus-v1".into(),
             "ev2".into(),
+            None,
         );
         let view = arena.get_lifecycle_battle(id).expect("view");
         assert!(view.communities[0].audit_evidence_hash.is_none());
@@ -1848,6 +1922,7 @@ mod tests {
             AuditResult::Pass,
             "goplus-v1".into(),
             "ev1".into(),
+            Some(U64(60_000)),
         );
     }
 
@@ -1862,6 +1937,7 @@ mod tests {
             AuditResult::Reject,
             "goplus-v1".into(),
             "ev1".into(),
+            None,
         );
     }
 
@@ -1881,6 +1957,7 @@ mod tests {
             AuditResult::Pass,
             "goplus-v1".into(),
             "ev1".into(),
+            Some(U64(60_000)),
         );
     }
 
@@ -1908,6 +1985,7 @@ mod tests {
             AuditResult::Pass,
             "goplus-v1".into(),
             "ev1".into(),
+            Some(U64(60_000)),
         );
     }
 
@@ -1922,6 +2000,7 @@ mod tests {
             AuditResult::Reject,
             "goplus-v1".into(),
             "e".repeat(257),
+            None,
         );
     }
 
@@ -1945,6 +2024,7 @@ mod tests {
             AuditResult::Pass,
             "goplus-v1".into(),
             "ev1".into(),
+            Some(U64(60_000)),
         );
     }
     fn with_reference(mut a: AssetIdentity, chain: u64, address: &str) -> AssetIdentity {
@@ -2029,6 +2109,7 @@ mod tests {
             asset,
             policy_hash: "p".into(),
             evidence_hash: "e".into(),
+            expires_at_ms: FAR,
         };
         assert_eq!(b.set_audit(0, Some(approval(committed.clone()))), Ok(()));
         // Missing pair, other address and other chain are all refused.
@@ -2067,7 +2148,15 @@ mod tests {
         // The committed pair is accepted whatever the case of the submitted address.
         let mut input: AssetInput = a.clone().into();
         input.reference_address = Some(REF_A.to_ascii_uppercase().replace("0X", "0x"));
-        arena.submit_lifecycle_audit(id, 0, input, AuditResult::Pass, "p".into(), "e".into());
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            input,
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            Some(U64(60_000)),
+        );
         assert!(arena.get_lifecycle_battle(id).expect("view").communities[0]
             .audit_evidence_hash
             .is_some());
@@ -2086,7 +2175,15 @@ mod tests {
             .expect("insert");
         let mut wrong: AssetInput = a.into();
         wrong.reference_address = Some(REF_B.into());
-        arena.submit_lifecycle_audit(id, 0, wrong, AuditResult::Pass, "p".into(), "e".into());
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            wrong,
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            Some(U64(60_000)),
+        );
     }
 
     #[test]
@@ -2101,6 +2198,186 @@ mod tests {
         let mut wrong: AssetInput = a.into();
         wrong.reference_chain_id = None;
         wrong.reference_address = None;
-        arena.submit_lifecycle_audit(id, 0, wrong, AuditResult::Reject, "p".into(), "e".into());
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            wrong,
+            AuditResult::Reject,
+            "p".into(),
+            "e".into(),
+            None,
+        );
+    }
+
+    fn funded(b: &mut Battle) {
+        approve(b);
+        deposit(b, 0, "creator.testnet", 0, 7).expect("credit");
+        deposit(b, 1, "other.testnet", 0, 11).expect("credit");
+        deposit(b, 2, "other.testnet", 0, 13).expect("credit");
+    }
+
+    fn check_at(now_ms: u64) -> LockCheck {
+        LockCheck {
+            now_ms,
+            required_policy_hash: None,
+        }
+    }
+
+    #[test]
+    fn lock_is_refused_at_or_after_expiry_and_allowed_before() {
+        let mut b = battle();
+        funded(&mut b);
+        b.communities[1]
+            .audit
+            .as_mut()
+            .expect("audit")
+            .expires_at_ms = 1_000;
+        assert_eq!(
+            b.lock(policy("p"), &check_at(1_000)),
+            Err(LifecycleError::ExpiredApproval)
+        );
+        assert_eq!(
+            b.lock(policy("p"), &check_at(5_000)),
+            Err(LifecycleError::ExpiredApproval)
+        );
+        assert!(!b.view().locked);
+        assert!(b.lock(policy("p"), &check_at(999)).is_ok());
+    }
+
+    #[test]
+    fn repeated_lock_after_expiry_returns_the_original_snapshot() {
+        let mut b = battle();
+        funded(&mut b);
+        b.communities[0]
+            .audit
+            .as_mut()
+            .expect("audit")
+            .expires_at_ms = 1_000;
+        let frozen = b.lock(policy("p"), &check_at(10)).expect("lock").clone();
+        assert_eq!(b.lock(policy("p"), &check_at(99_999)), Ok(&frozen));
+    }
+
+    #[test]
+    fn lock_is_refused_when_the_approval_no_longer_binds_the_community_asset() {
+        let mut b = battle();
+        funded(&mut b);
+        b.communities[2].audit.as_mut().expect("audit").asset = asset(9);
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::ApprovalMismatch)
+        );
+    }
+
+    #[test]
+    fn lock_requires_the_pinned_policy_hash_when_configured() {
+        let mut b = battle();
+        funded(&mut b);
+        let pinned = |hash: &str| LockCheck {
+            now_ms: 0,
+            required_policy_hash: Some(hash.into()),
+        };
+        assert_eq!(
+            b.lock(policy("p"), &pinned("policy-v2")),
+            Err(LifecycleError::ApprovalMismatch)
+        );
+        assert!(b.lock(policy("p"), &pinned("policy")).is_ok());
+    }
+
+    #[test]
+    fn a_missing_approval_is_refused_before_any_expiry_logic() {
+        let mut b = battle();
+        funded(&mut b);
+        b.set_audit(1, None).expect("withdraw");
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::MissingApproval)
+        );
+    }
+
+    #[test]
+    fn approval_with_zero_expiry_is_refused_at_storage() {
+        let mut b = battle();
+        let mut zero = audit(0);
+        zero.expires_at_ms = 0;
+        assert_eq!(
+            b.set_audit(0, Some(zero)),
+            Err(LifecycleError::InvalidApproval)
+        );
+    }
+
+    fn arena_at(now_ms: u64) {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+        let mut context = VMContextBuilder::new();
+        context
+            .predecessor_account_id(account("auditor.testnet"))
+            .attached_deposit(NearToken::from_near(1))
+            .block_timestamp(now_ms * 1_000_000);
+        testing_env!(context.build());
+    }
+
+    #[test]
+    fn arena_pass_stores_the_expiry_from_the_submission_and_exposes_it() {
+        let (mut arena, id) = audit_arena();
+        arena_at(10_000);
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            Some(U64(70_000)),
+        );
+        let view = arena.get_lifecycle_battle(id).expect("view");
+        assert_eq!(view.communities[0].audit_expires_at_ms, Some(U64(70_000)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Approval is already expired")]
+    fn arena_pass_with_an_expiry_not_in_the_future_is_refused() {
+        let (mut arena, id) = audit_arena();
+        arena_at(10_000);
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            Some(U64(10_000)),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Approval expiry is too far ahead")]
+    fn arena_pass_with_an_expiry_beyond_the_maximum_is_refused() {
+        let (mut arena, id) = audit_arena();
+        arena_at(10_000);
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            Some(U64(10_000 + MAX_AUDIT_APPROVAL_MS + 1)),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "A pass requires expires_at_ms")]
+    fn arena_pass_without_an_expiry_is_refused() {
+        let (mut arena, id) = audit_arena();
+        arena_at(10_000);
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "p".into(),
+            "e".into(),
+            None,
+        );
     }
 }

@@ -350,6 +350,7 @@ fn approved_battle(creator: &str) -> (Arena, u64) {
                     asset: asset(index + 1),
                     policy_hash: "policy".into(),
                     evidence_hash: "audit".into(),
+                    expires_at_ms: 1_000_000_000_000,
                 }),
             )
             .expect("audit fixture");
