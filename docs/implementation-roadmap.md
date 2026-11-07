@@ -11,7 +11,7 @@ Implementation tracker: [publish-ready parent issue](implementation-tracker.md).
 | 1 | Testnet integration and data sources | None | Actual chain/signer/GoPlus/market-data evidence plus planned Intents routing and Bitte orchestration; unsupported paths labeled; frozen observation policy feasible |
 | 2 | Backing, NEP-141, redemption and burn | 1, custody/finality design | Actual-received mint; replay prevention; exact normalization; exclusive liabilities and recovery |
 | 3 | Multi-community lifecycle and creator deposit | 2 | Two/three nonempty communities; real creator/protocol stake; no bond; immutable snapshot; late deposits recoverable |
-| 4 | GoPlus and independent LP audit | 1; gates approval in 3 | Critical risk rejects, unknown holds Pending, LP strictly > USD 10,000; tax/admin policy resolved before live approval |
+| 4 | GoPlus and independent LP audit | 1; gates approval in 3 | Critical risk rejects, unknown holds Pending, LP strictly > USD 10,000; audit policy v1 (decided 2026-11-07) applied before live approval |
 | 5 | Four scores and overtime | 3, 4, observation policy | Exact signed/rational math, 30-second rounds, no TWAP; repeated ties reset leaders only, all vaults locked |
 | 6 | Per-token settlement, revenue and Robinhood payout | 2, 5 | Configurable snapshotted fee and creator share; deterministic rounding; final native receipts and idempotent retries |
 | 7 | Principal escrow and DAO design | 2, 6 for allocation; governance decision OPEN | Principal isolated; losing-token payouts independent; no invented quorum/weight/deadline/fallback |
