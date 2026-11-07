@@ -127,6 +127,35 @@ Rules the work must keep (from `Code/CLAUDE.md` and the decisions above):
 
 Known risk until this work is done: the payout contract does not call the MPC signer, so the payout path must not be deployed or funded.
 
+## Issue index (2026-11-07)
+
+Every unchecked OpenSpec task has an owner issue. Issues [#58](https://github.com/mferdinandr/valtrum/issues/58), [#59](https://github.com/mferdinandr/valtrum/issues/59) and [#60](https://github.com/mferdinandr/valtrum/issues/60) (assigned before this index) cover the player-grant foundation, the event indexer and the durable audit report archive. The issues below cover the rest and are labeled `priority-1` to `priority-4` (1: start now because it blocks other work or touches shared files; 4: can wait) and `blocked` when they wait on another issue, PR or decision. The only unchecked task without an issue is the `arena-audit` minimum executable-depth policy, which is an OPEN owner decision.
+
+Known file overlaps between issues, noted as comments on them: #63 and #60 both change `agent/src/audit/lifecycle-pass.ts`; #61, #62 and #58 all touch `contracts/Cargo.toml`, `Cargo.lock` and the integration helpers; new contract events from #61, #62 and #63 need follow-up parsing in the #59 indexer; several issues edit the same `tasks.md` files.
+
+| Priority | Issue | Title | OpenSpec tasks |
+| --- | --- | --- | --- |
+| P1 | [#61](https://github.com/mferdinandr/valtrum/issues/61) | backing reconciliation, suspension and late-deposit refund | asset-representation (3) |
+| P1 | [#62](https://github.com/mferdinandr/valtrum/issues/62) | payout contract calls the MPC signer; explicit payout states | chain-signatures (2) |
+| P1 | [#63](https://github.com/mferdinandr/valtrum/issues/63) | refuse lock on expired or changed audit evidence end to end | audit (1) |
+| P2 | [#64](https://github.com/mferdinandr/valtrum/issues/64) | reconcile pending payouts after a worker restart | chain-signatures (1) |
+| P2 | [#65](https://github.com/mferdinandr/valtrum/issues/65) | payout and entitlement states per token in settlement | settlement (2) |
+| P2 | [#66](https://github.com/mferdinandr/valtrum/issues/66) | connect audit and backing approvals to lifecycle; finish lifecycle verification | lifecycle (6) |
+| P3 | [#67](https://github.com/mferdinandr/valtrum/issues/67) | refuse signing and receipts on RPC chain id mismatch | testnet-integrations (1) |
+| P3 | [#68](https://github.com/mferdinandr/valtrum/issues/68) | verify market data sources for reference tokens (scoring inputs) | testnet-integrations (1) |
+| P3 | [#69](https://github.com/mferdinandr/valtrum/issues/69) | protocol-controlled reference-token registry for audit and scoring | testnet-integrations (1) |
+| P3 | [#70](https://github.com/mferdinandr/valtrum/issues/70) | MCP and terminal read-only tools with backend search | mcp-terminal (5) |
+| P3 | [#71](https://github.com/mferdinandr/valtrum/issues/71) | close the remaining arena-audit verification tasks | audit (3), testnet-integrations (1) |
+| P3 | [#72](https://github.com/mferdinandr/valtrum/issues/72) | verify chain identities, signer setup and recorded receipts on testnet | testnet-integrations (4) |
+| P4 | [#73](https://github.com/mferdinandr/valtrum/issues/73) | verify principal escrow without a governance decision | dao-escrow (4) |
+| P4 | [#74](https://github.com/mferdinandr/valtrum/issues/74) | decide the DAO governance and disposition design (owner) | dao-escrow (3) |
+| P4 | [#75](https://github.com/mferdinandr/valtrum/issues/75) | execute approved DAO decisions and verify source-chain disposition | dao-escrow (6) |
+| P4 | [#76](https://github.com/mferdinandr/valtrum/issues/76) | previews, authorization and action status for MCP and terminal | mcp-terminal (9) |
+| P4 | [#77](https://github.com/mferdinandr/valtrum/issues/77) | player agent proposals through previews and grants; broader grant tests deferred by #58 | player-agents (4) |
+| P4 | [#78](https://github.com/mferdinandr/valtrum/issues/78) | Intents and Bitte integration evidence | testnet-integrations (4) |
+| P4 | [#79](https://github.com/mferdinandr/valtrum/issues/79) | entitlement, transfer and DAO states in the UI; recovery alerts | testnet-integrations (2) |
+| P4 | [#80](https://github.com/mferdinandr/valtrum/issues/80) | end-to-end demos and failure recovery on testnet | testnet-integrations (6) |
+
 ## Open items and who acts
 
 | Item | Needed from | Notes |
