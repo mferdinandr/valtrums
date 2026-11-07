@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { normalizeFlag, normalizeGoPlus, normalizeTax } from "../../src/audit/goplus.js";
 import { fetchGoPlusTokenSecurity } from "../../src/audit/goplus-client.js";
-import { TOKEN, goplus } from "./fixtures.js";
+import { evaluateCommunity } from "../../src/audit/decision.js";
+import { FIXTURE_RESOLVED, NOW, TOKEN, asset, goplus, lp } from "./fixtures.js";
 
 describe("goplus normalization (fixture-only)", () => {
   it('parses "0" as false, "1" as true, absent/odd as unknown', () => {
@@ -60,5 +61,57 @@ describe("goplus normalization (fixture-only)", () => {
     }) as unknown as typeof fetch;
     const bad = await fetchGoPlusTokenSecurity({ chainId: "46630", token: TOKEN }, { fetchImpl: failing });
     expect(normalizeGoPlus(bad).source.status).toBe("error");
+  });
+
+  it("works without any credential: no Authorization header is sent", async () => {
+    let headers: Record<string, string> = {};
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return new Response('{"code":1,"message":"OK","result":{}}', { status: 200 });
+    }) as unknown as typeof fetch;
+    await fetchGoPlusTokenSecurity({ chainId: "4663", token: TOKEN }, { fetchImpl });
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain("authorization");
+  });
+
+  it("retries a rate limit with bounded backoff and recovers", async () => {
+    let n = 0;
+    const sleeps: number[] = [];
+    const fetchImpl = (async () => {
+      n++;
+      if (n < 3) return new Response("{}", { status: 429 });
+      return new Response(JSON.stringify({ code: 1, result: { [TOKEN]: {} } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const raw = await fetchGoPlusTokenSecurity(
+      { chainId: "4663", token: TOKEN },
+      { fetchImpl, attempts: 3, baseDelayMs: 10, maxDelayMs: 20, sleep: async (ms) => void sleeps.push(ms) },
+    );
+    expect(n).toBe(3);
+    expect(sleeps).toEqual([10, 20]);
+    expect(raw.httpStatus).toBe(200);
+  });
+
+  it("a persistent rate limit (HTTP 429 or provider code) is Pending, never pass or reject", async () => {
+    for (const mk of [
+      () => new Response("{}", { status: 429 }),
+      () => new Response(JSON.stringify({ code: 4029, message: "too many requests" }), { status: 200 }),
+    ]) {
+      let n = 0;
+      const fetchImpl = (async () => (n++, mk())) as unknown as typeof fetch;
+      const raw = await fetchGoPlusTokenSecurity(
+        { chainId: "4663", token: TOKEN },
+        { fetchImpl, attempts: 2, sleep: async () => undefined },
+      );
+      expect(n).toBe(2);
+      expect(normalizeGoPlus(raw).source.status).toBe("rate_limited");
+      const rec = evaluateCommunity({
+        asset: { ...asset, chainId: "4663", reference: undefined },
+        goplus: raw,
+        lp: lp("50000", { chainId: "4663" }),
+        policy: FIXTURE_RESOLVED,
+        now: NOW,
+      });
+      expect(rec.result).toBe("pending");
+      expect(rec.reasons.some((r) => r.code === "source_rate_limited")).toBe(true);
+    }
   });
 });

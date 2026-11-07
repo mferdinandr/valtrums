@@ -45,7 +45,16 @@ export type SourceStatus =
   | { status: "unsupported"; reason: string }
   | { status: "empty"; reason: string }
   | { status: "error"; reason: string }
-  | { status: "wrong_source"; reason: string };
+  | { status: "wrong_source"; reason: string }
+  | { status: "rate_limited"; reason: string };
+
+/** HTTP 429 or a provider-level rate-limit answer in the body (code 4029 is an assumption). */
+export function isRateLimited(httpStatus: number, body: unknown): boolean {
+  if (httpStatus === 429) return true;
+  if (typeof body !== "object" || body === null) return false;
+  const { code, message } = body as { code?: unknown; message?: unknown };
+  return code === 4029 || (typeof message === "string" && /rate.?limit|too many requests/i.test(message));
+}
 
 export interface Finding {
   field: string;
@@ -120,6 +129,9 @@ function normalizeOwner(value: unknown): OwnerState {
 }
 
 function sourceStatus(raw: RawGoPlusResponse): SourceStatus {
+  if (isRateLimited(raw.httpStatus, raw.body)) {
+    return { status: "rate_limited", reason: "provider rate limit; evidence unavailable, retry later" };
+  }
   if (raw.httpStatus < 200 || raw.httpStatus >= 300) {
     return { status: "error", reason: `HTTP ${raw.httpStatus}` };
   }
