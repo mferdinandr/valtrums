@@ -119,6 +119,18 @@ impl ObservationPolicy {
     }
 }
 
+/// Outcome reported by the audit adapter for one community. Only `Pass`
+/// records an approval; `Reject` and `Pending` withdraw any earlier approval so
+/// a stale pass cannot survive a refreshed negative or unknown result.
+#[near(serializers = [json])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditResult {
+    Pass,
+    Reject,
+    Pending,
+}
+
 /// References supplied independently by the audit and backing adapters.
 /// An evidence reference is not itself proof of validity or authorization.
 #[near(serializers = [borsh])]
@@ -1694,5 +1706,131 @@ mod tests {
         );
         deposit(&mut b, 0, "protocol.testnet", 0, 1).expect("credit");
         assert!(b.lock(policy("p")).is_ok());
+    }
+    fn audit_arena() -> (crate::Arena, u64) {
+        use near_sdk::json_types::{U128, U64};
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+        let mut context = VMContextBuilder::new();
+        context.predecessor_account_id(account("owner.testnet"));
+        testing_env!(context.build());
+        let mut arena = crate::Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(0),
+            U64(60),
+        );
+        arena.add_agent(account("auditor.testnet"));
+        context.attached_deposit(NearToken::from_yoctonear(1));
+        testing_env!(context.build());
+        arena.activate_lifecycle();
+        let id = arena.lifecycle_insert(battle()).expect("battle");
+        context
+            .predecessor_account_id(account("auditor.testnet"))
+            .attached_deposit(NearToken::from_near(1));
+        testing_env!(context.build());
+        (arena, id)
+    }
+
+    #[test]
+    fn auditor_pass_binds_asset_and_reject_withdraws_it() {
+        let (mut arena, id) = audit_arena();
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
+        let view = arena.get_lifecycle_battle(id).expect("view");
+        assert_eq!(
+            view.communities[0].audit_evidence_hash.as_deref(),
+            Some("ev1")
+        );
+        assert_eq!(
+            view.communities[0].audit_policy_hash.as_deref(),
+            Some("goplus-v1")
+        );
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pending,
+            "goplus-v1".into(),
+            "ev2".into(),
+        );
+        let view = arena.get_lifecycle_battle(id).expect("view");
+        assert!(view.communities[0].audit_evidence_hash.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit result cannot be recorded")]
+    fn pass_for_another_asset_is_refused() {
+        let (mut arena, id) = audit_arena();
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(2).into(),
+            AuditResult::Pass,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit asset does not match the community")]
+    fn reject_for_another_asset_is_refused() {
+        let (mut arena, id) = audit_arena();
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(2).into(),
+            AuditResult::Reject,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Only a whitelisted agent")]
+    fn only_a_whitelisted_agent_can_submit_audit() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        let (mut arena, id) = audit_arena();
+        let mut context = VMContextBuilder::new();
+        context.predecessor_account_id(account("stranger.testnet"));
+        testing_env!(context.build());
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit result cannot be recorded")]
+    fn audit_cannot_change_after_lock() {
+        let (mut arena, id) = audit_arena();
+        let mut b = arena.lifecycle_battles.get(&id).cloned().expect("battle");
+        b.snapshot = Some(Snapshot {
+            communities: b.communities.clone(),
+            mode: ScoringMode::PriceGain,
+            fee: fee(),
+            observation: policy("p"),
+        });
+        arena.lifecycle_battles.insert(id, b);
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
     }
 }

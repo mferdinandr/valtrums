@@ -342,6 +342,80 @@ impl Arena {
         }
     }
 
+    /// Authorized auditor entry point: record the audit outcome for one
+    /// community before lock. The asset identity (chain, token, representation,
+    /// custody domain) must equal the community's identity, and `policy_hash`
+    /// must commit to the audit policy version. Only `pass` stores an approval;
+    /// `reject` and `pending` withdraw any earlier approval. A locked battle
+    /// refuses every change. Attached NEAR pays for storage growth; excess is
+    /// refunded.
+    #[payable]
+    pub fn submit_lifecycle_audit(
+        &mut self,
+        battle_id: u64,
+        community: u32,
+        asset: lifecycle::AssetInput,
+        result: lifecycle::AuditResult,
+        policy_hash: String,
+        evidence_hash: String,
+    ) {
+        self.assert_agent();
+        require!(!self.paused, "Arena is paused");
+        let caller = env::predecessor_account_id();
+        let asset: lifecycle::AssetIdentity = asset.into();
+        let evidence = match result {
+            lifecycle::AuditResult::Pass => Some(lifecycle::AuditApproval {
+                asset: asset.clone(),
+                policy_hash,
+                evidence_hash: evidence_hash.clone(),
+            }),
+            _ => {
+                // Withdrawal must still name the community's real asset.
+                let view = self
+                    .get_lifecycle_battle(battle_id)
+                    .unwrap_or_else(|| env::panic_str("Unknown battle"));
+                let item = view
+                    .communities
+                    .get(community as usize)
+                    .unwrap_or_else(|| env::panic_str("Unknown community"));
+                require!(
+                    item.chain_id.0 == asset.chain_id
+                        && item.token_address == asset.token_address
+                        && item.representation == asset.representation
+                        && item.custody_domain == asset.custody_domain,
+                    "Audit asset does not match the community"
+                );
+                None
+            }
+        };
+        let before = env::storage_usage();
+        self.lifecycle_set_audit(battle_id, community as usize, evidence)
+            .unwrap_or_else(|_| env::panic_str("Audit result cannot be recorded"));
+        self.lifecycle_battles.flush();
+        let bytes = env::storage_usage().saturating_sub(before);
+        let cost = env::storage_byte_cost()
+            .as_yoctonear()
+            .checked_mul(u128::from(bytes))
+            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        let attached = env::attached_deposit().as_yoctonear();
+        require!(attached >= cost, "Insufficient storage deposit");
+        let refund = attached - cost;
+        if refund > 0 {
+            Promise::new(caller)
+                .transfer(NearToken::from_yoctonear(refund))
+                .detach();
+        }
+        events::emit(
+            "audit_updated",
+            json!({
+                "battle_id": battle_id,
+                "community": community,
+                "result": result,
+                "evidence_hash": evidence_hash,
+            }),
+        );
+    }
+
     /// Create an audit-pending battle without a proposal bond. The attached
     /// NEAR pays for the record's actual storage; excess is returned. No token
     /// deposit can be credited until the backing and audit adapters are wired.
