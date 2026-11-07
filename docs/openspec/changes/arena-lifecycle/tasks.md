@@ -10,20 +10,20 @@ Check tasks only after implementation and verification. Coordinate audit and bac
 - [ ] Integrate authenticated audit and backing approvals per community and reject mismatched asset evidence.
 - [ ] Credit only actual backed deposits to their attributed participant and community before lock.
 - [ ] Require a positive backed creator position and nonempty vault for every community, including protocol-created battles.
-- [ ] Verify two- and three-community creation, invalid identities, missing approvals, empty vaults and absent creator stake.
+- [x] Verify two- and three-community creation, invalid identities, missing approvals, empty vaults and absent creator stake.
 
 ## Lock and late arrivals
 
-- [ ] Freeze identities, positions, vault totals, creator participation, mode, fee identity and policy references before round one.
+- [x] Freeze identities, positions, vault totals, creator participation, mode, fee identity and policy references before round one.
 - [x] Make repeated lock calls idempotent and preserve the original snapshot after configuration changes.
-- [ ] Refuse deposits and snapshot changes throughout live rounds and overtime.
+- [x] Refuse deposits and snapshot changes throughout live rounds and overtime.
 - [ ] Specify and integrate attribution and recovery for foreign deposits arriving after lock with the backing change.
 - [x] Ensure post-lock audit refreshes cannot alter the snapshot, live state, round or result.
 - [ ] Test duplicate lock, late representation transfers, late foreign arrivals and post-lock audit updates.
 
 ## Principal boundary
 
-- [ ] Hold the entire final winning vault separately from losing-vault settlement inputs.
-- [ ] Keep principal locked without a valid future DAO decision and expose no owner-only or worker-only disposition.
-- [ ] Verify unresolved governance does not block independently backed losing-token rewards.
+- [x] Hold the entire final winning vault separately from losing-vault settlement inputs.
+- [x] Keep principal locked without a valid future DAO decision and expose no owner-only or worker-only disposition.
+- [x] Verify unresolved governance does not block independently backed losing-token rewards.
 - [ ] Verify lifecycle integration with backing, audit and scoring before claiming live acceptance.

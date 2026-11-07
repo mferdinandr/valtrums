@@ -10,6 +10,7 @@ Deliver permissionless arena lifecycle and its acceptance scenarios without clai
 
 - Contract: [capability requirements](specs/arena-lifecycle/spec.md).
 - Integration boundary: Coordinate backing deposits and audit approval.
+- Late foreign deposits (owner decision): a foreign deposit that arrives after lock never enters the snapshot or any vault. Backing records it as unattributed and returns it to the original depositor after finality. The refund path belongs to the arena-asset-representation (backing) change and is not implemented in this change.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
