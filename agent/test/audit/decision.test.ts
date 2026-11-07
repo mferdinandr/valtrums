@@ -128,6 +128,8 @@ describe("audit decision precedence (fixture-only)", () => {
     expect(run(goplus(), lp("10001"), capped).policyHash).not.toBe(a);
     expect(run(goplus(), lp("10001"), { ...FIXTURE_RESOLVED, tax: { status: "unresolved" } }).policyHash).not.toBe(a);
     expect(run().policyVersion).toBe("audit-policy-v1");
+    // The LP valuation label is committed: evidence carrying another source cannot pass.
+    expect(run(goplus(), lp("50000", { valuationSource: "executable_depth" })).result).toBe("pending");
   });
 
   it("wrong chain/token or unsupported coverage cannot approve or reject", () => {

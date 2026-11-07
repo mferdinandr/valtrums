@@ -194,6 +194,34 @@ describe("runOnce lifecycle audit hook and config (fixture-only)", () => {
     expect(thrown.errors).toBe(1);
   });
 
+  it("WETH pricing config has no defaults and validates its parts", () => {
+    const env = { AUDIT_ENABLED: "true", REFERENCE_RPC_URL: "https://rpc.example/mainnet" };
+    expect(loadAuditConfig(env, 30)!.weth).toBeUndefined();
+    const addr = "0x00000000000000000000000000000000000000c3";
+    const pool = "0x00000000000000000000000000000000000000e1";
+    expect(() => loadAuditConfig({ ...env, AUDIT_WETH_PRICE_POOL: pool }, 30)).toThrow(/AUDIT_WETH_ADDRESS/);
+    expect(() => loadAuditConfig({ ...env, AUDIT_WETH_ADDRESS: addr }, 30)).toThrow(/AUDIT_WETH_CHAIN_ID/);
+    const full = {
+      ...env,
+      AUDIT_WETH_ADDRESS: addr,
+      AUDIT_WETH_CHAIN_ID: "4663",
+      AUDIT_WETH_PRICE_POOL: pool,
+      AUDIT_WETH_PRICE_POOL_MIN_USD: "1000000",
+    };
+    expect(loadAuditConfig(full, 30)!.weth).toEqual({
+      address: addr,
+      chainId: "4663",
+      pricePool: pool,
+      pricePoolMinUsd: "1000000",
+    });
+    // Pool and floor stay optional: unset means WETH-quoted pools are unpriced (Pending).
+    const bare = loadAuditConfig({ ...env, AUDIT_WETH_ADDRESS: addr, AUDIT_WETH_CHAIN_ID: "4663" }, 30)!;
+    expect(bare.weth?.pricePool).toBeUndefined();
+    expect(bare.weth?.pricePoolMinUsd).toBeUndefined();
+    expect(() => loadAuditConfig({ ...full, AUDIT_WETH_PRICE_POOL_MIN_USD: "1e6" }, 30)).toThrow(/decimal/);
+    expect(() => loadAuditConfig({ ...full, AUDIT_WETH_PRICE_POOL: "nope" }, 30)).toThrow(/20-byte/);
+  });
+
   it("config is off by default, defaults the TTL to 600 s, and validates the reference RPC and registry", () => {
     expect(loadAuditConfig({}, 30)).toBeNull();
     const env = {

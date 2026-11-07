@@ -85,6 +85,9 @@ describe("audit report (fixture-only)", () => {
     expect(text).toContain("Reference mapping: chain 4663");
     expect(text).toContain("buy_tax: 0%");
     expect(text).toContain("Result: PASS");
+    expect(r.liquidity.valuationSource).toBe("headline_quote_balance");
+    expect(text).toContain("approximation, not executable depth");
+    expect(text).toContain("out-of-range liquidity");
   });
 
   it("indexes reports by evidence hash", () => {

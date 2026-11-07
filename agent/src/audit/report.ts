@@ -1,6 +1,7 @@
 import { compareDecimal, formatDecimal, parseDecimal } from "./decimal.js";
 import type { AuditRecord, Reason } from "./decision.js";
 import { CRITICAL_FLAGS, PRIVILEGE_FLAGS, TAX_FIELDS, type Tri } from "./goplus.js";
+import { VALUATION_SOURCE } from "./liquidity.js";
 import { ownershipRenounced, type Renounced } from "./policy.js";
 
 /**
@@ -43,6 +44,10 @@ export interface AuditReport {
     headlineUsd: string | null;
     requiredAboveUsd: string;
     pools: string[];
+    /** Always `headline_quote_balance`. */
+    valuationSource: string;
+    /** Plain-words limitation of that valuation. */
+    valuationNote: string;
   };
   reasons: Reason[];
 }
@@ -139,6 +144,11 @@ export function buildAuditReport(record: AuditRecord): AuditReport {
       headlineUsd: record.lp.headlineUsd,
       requiredAboveUsd: "10000",
       pools: record.lp.countedPools,
+      valuationSource: VALUATION_SOURCE,
+      valuationNote:
+        "This is an approximation, not executable depth: only the quote-side balance of each pool is counted " +
+        "(never the audited token's side); v3 balances can include out-of-range liquidity and can be moved briefly. " +
+        "WETH quotes are priced from one configured WETH/stablecoin pool at the same block.",
     },
     reasons: record.reasons,
   };
@@ -186,6 +196,7 @@ export function formatAuditReport(r: AuditReport): string {
     `Liquidity (measured on chain ${r.liquidity.measuredOn.chainId} token ${r.liquidity.measuredOn.token}): ${r.liquidity.state} total ${r.liquidity.totalUsd ?? "n/a"} USD ` +
       `(required strictly above ${r.liquidity.requiredAboveUsd}); pools ${r.liquidity.pools.join(", ") || "none"}`,
   );
+  lines.push(`Valuation source: ${r.liquidity.valuationSource}. ${r.liquidity.valuationNote}`);
   lines.push("Reasons:");
   if (r.reasons.length === 0) lines.push("  none");
   for (const x of r.reasons) lines.push(`  [${x.code}]${x.field ? ` ${x.field}:` : ""} ${x.message}`);

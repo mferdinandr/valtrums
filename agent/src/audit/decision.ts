@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { normalizeGoPlus, unusableGoPlus, type NormalizedGoPlus, type RawGoPlusResponse } from "./goplus.js";
-import { evaluateLiquidity, type LpEvidence, type LpResult } from "./liquidity.js";
+import { VALUATION_SOURCE, evaluateLiquidity, type LpEvidence, type LpResult } from "./liquidity.js";
 import { evaluateAdminPolicy, evaluateTaxPolicy, type AuditPolicy, type PolicyOutcome } from "./policy.js";
 import type { ReferenceBinding } from "./reference.js";
 
@@ -58,7 +58,7 @@ const hex = (text: string) => bytesToHex(sha256(utf8ToBytes(text)));
 
 /** Commits to every resolved decision and its parameters (cap, capability list, rule, TTL, reference mode). */
 export function policyHash(policy: AuditPolicy): string {
-  return hex(JSON.stringify({ policy, lpMinUsdExclusive: "10000" }));
+  return hex(JSON.stringify({ policy, lpMinUsdExclusive: "10000", lpValuationSource: VALUATION_SOURCE }));
 }
 
 export interface AuditInput {
@@ -177,6 +177,7 @@ export function evaluateCommunity(input: AuditInput): AuditRecord {
       providerVersion: input.goplus?.providerVersion ?? null,
       queriedAt: input.goplus?.queriedAt ?? null,
       lp: input.lp,
+      lpValuationSource: VALUATION_SOURCE,
       policyHash: pHash,
     }),
   );
