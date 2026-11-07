@@ -16,13 +16,13 @@ Check tasks only after implementation and verification. Coordinate lifecycle sna
 - [x] Compute each vault's total fee once with checked wide arithmetic and floor division; assign the remainder to the winner pool.
 - [x] Split a user-created fee by floor creator share and protocol remainder; assign a protocol-created fee entirely to protocol.
 - [x] Allocate the winner pool by largest remainder with canonical account-ID byte ordering for ties.
-- [ ] Persist an immutable allocation ID and asset-bound entitlements so retries cannot allocate or charge twice.
+- [x] Persist an immutable allocation ID and asset-bound entitlements so retries cannot allocate or charge twice.
 - [x] Handle zero recipient shares and tiny vaults without failing unrelated allocations.
 - [x] Verify the 100000-unit 60/40 example, 10003-unit and 999/1000-unit fee cases, and 1:2:3 dust ordering.
-- [ ] Verify per-token conservation and deterministic results across pagination, claim order and two/three communities.
+- [x] Verify per-token conservation and deterministic results across pagination, claim order and two/three communities.
 
 ## Entitlement boundary
 
 - [ ] Expose available, reserved, broadcast, confirmation-pending and confirmed states without treating a hash as payment.
-- [ ] Allow independently backed losing-token rewards to proceed while winning principal awaits DAO disposition.
+- [x] Allow independently backed losing-token rewards to proceed while winning principal awaits DAO disposition.
 - [ ] Test independent token payout progress and lost-response retry without repeating allocation or fees.
