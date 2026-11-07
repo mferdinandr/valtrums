@@ -96,6 +96,7 @@ pub fn matches_observation_context(
             .all(|pair| pair[0] < pair[1])
 }
 
+#[allow(clippy::manual_div_ceil)] // expanded by `uint::construct_uint!`
 mod wide {
     uint::construct_uint! { pub struct U512(8); }
 }
