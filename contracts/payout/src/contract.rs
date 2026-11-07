@@ -921,6 +921,24 @@ impl PayoutContract {
         Some(Self::payload_of(payout, config))
     }
 
+    /// Hex of the 32-byte hash the contract asks the signer to sign for a payout
+    /// at this fee cap (what a verifier can recompute from the reservation).
+    pub fn get_signing_hash(
+        &self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+        max_fee_per_gas: U128,
+    ) -> Option<String> {
+        let id = PayoutId::derive(&backing, &holder, &request_id);
+        let payout = self.payouts.get(&id)?;
+        let config = self.backings.get(&backing)?;
+        let tx = payout
+            .authorization
+            .transfer_tx(max_fee_per_gas.0, config.gas_limit);
+        Some(evm::hex_encode(&tx.signing_hash()))
+    }
+
     pub fn get_signer(&self) -> AccountId {
         self.signer.clone()
     }

@@ -573,3 +573,157 @@ async fn two_payouts_get_distinct_nonces_and_payloads() -> anyhow::Result<()> {
     assert!(!drive(&w, &w.relayer, "record_broadcast", foreign).await?);
     Ok(())
 }
+
+fn event_names(logs: &[&str]) -> Vec<String> {
+    logs.iter()
+        .filter_map(|line| line.strip_prefix("EVENT_JSON:"))
+        .filter_map(|json| serde_json::from_str::<Value>(json).ok())
+        .filter(|event| event["standard"] == "valtrum_payout" && event["version"] == "1.0.0")
+        .filter_map(|event| event["event"].as_str().map(str::to_string))
+        .collect()
+}
+
+#[tokio::test]
+async fn the_signer_receives_exactly_the_payload_rebuilt_from_the_reservation() -> anyhow::Result<()>
+{
+    let w = world().await?;
+    assert!(request(&w, 7, "60").await?);
+    let outcome = w
+        .relayer
+        .call(w.payout.id(), "request_signature")
+        .deposit(NearToken::from_yoctonear(1))
+        .args_json(with(
+            id(&w, 7),
+            // Tampered recipient, token, amount and nonce arguments are not read.
+            json!({"max_fee_per_gas": "10", "destination": vec![4u8; 20], "token": vec![9u8; 20],
+                "amount": "99", "nonce": "1", "path": "elsewhere", "payload": "00"}),
+        ))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let expected: Option<String> = w
+        .payout
+        .view("get_signing_hash")
+        .args_json(with(id(&w, 7), json!({"max_fee_per_gas": "10"})))
+        .await?
+        .json()?;
+    let expected = expected.expect("signing hash");
+    assert_eq!(
+        w.mpc.view("get_last_payload").await?.json::<String>()?,
+        expected
+    );
+    assert_eq!(
+        w.mpc.view("get_last_path").await?.json::<String>()?,
+        "custody-1"
+    );
+    // A different fee is a different payload; the recipient and amount are fixed.
+    let other: Option<String> = w
+        .payout
+        .view("get_signing_hash")
+        .args_json(with(id(&w, 7), json!({"max_fee_per_gas": "11"})))
+        .await?
+        .json()?;
+    assert_ne!(other, Some(expected));
+    let raw: Option<String> = w
+        .payout
+        .view("get_signed_transaction")
+        .args_json(with(
+            id(&w, 7),
+            json!({"tx_hash": attempt_hash(&view(&w, 7).await?, 0)}),
+        ))
+        .await?
+        .json()?;
+    let raw = raw.expect("signed transaction");
+    assert!(raw.contains(&format!(
+        "a9059cbb{}{}{:064x}",
+        "0".repeat(24),
+        "03".repeat(20),
+        60
+    )));
+    assert!(!raw.contains(&"09".repeat(20)));
+
+    let logs = outcome.logs();
+    let names = event_names(&logs);
+    assert_eq!(
+        names,
+        [
+            "signature_requested",
+            "payout_state_changed",
+            "signature_received",
+            "payout_state_changed"
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unusable_signer_answer_holds_the_payout_and_a_retry_recovers() -> anyhow::Result<()> {
+    let w = world().await?;
+    assert!(request(&w, 8, "40").await?);
+    w.mpc
+        .call("set_malformed")
+        .args_json(json!({"malformed": true}))
+        .transact()
+        .await?
+        .into_result()?;
+    let outcome = w
+        .relayer
+        .call(w.payout.id(), "request_signature")
+        .deposit(NearToken::from_yoctonear(1))
+        .args_json(with(id(&w, 8), json!({"max_fee_per_gas": "10"})))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    assert!(event_names(&outcome.logs()).contains(&"signature_failed".to_string()));
+    let held = view(&w, 8).await?;
+    assert_eq!(held["state"], "reconciliation_required");
+    assert_eq!(held["reason"], "SignerNoResponse");
+    assert_eq!(held["terminal"], false);
+    assert!(held["attempts"].as_array().is_some_and(Vec::is_empty));
+    // The reservation is held: no cancellation without a nonce proof.
+    let cancel = with(id(&w, 8), json!({"proof": Value::Null}));
+    assert!(!drive(&w, &w.operator, "restore_payout", cancel).await?);
+    // The held payout is listed for reconciliation.
+    let page: Value = w
+        .payout
+        .view("list_open_payouts")
+        .args_json(json!({"from_index": "0", "limit": "50"}))
+        .await?
+        .json()?;
+    assert_eq!(page["items"][0]["state"], "reconciliation_required");
+    w.mpc
+        .call("set_malformed")
+        .args_json(json!({"malformed": false}))
+        .transact()
+        .await?
+        .into_result()?;
+    assert!(sign(&w, 8, "10").await?);
+    assert_eq!(status(&w, 8).await?.as_deref(), Some("signed"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_conflicting_repeat_request_never_changes_the_authorized_payout() -> anyhow::Result<()> {
+    let w = world().await?;
+    assert!(request(&w, 9, "60").await?);
+    // Same identity with another amount or destination must not overwrite the payout.
+    let _ = request(&w, 9, "61").await;
+    let _ = w
+        .alice
+        .call(w.payout.id(), "request_payout")
+        .args_json(json!({"backing": w.backing.id(), "request_id": vec![9u8; 32], "amount": "60", "destination": vec![4u8; 20]}))
+        .deposit(NearToken::from_millinear(30))
+        .max_gas()
+        .transact()
+        .await?;
+    let payout = view(&w, 9).await?;
+    assert_eq!(payout["amount"], "60");
+    assert_eq!(payout["destination"], json!(vec![3u8; 20]));
+    assert_eq!(
+        w.payout.view("get_payout_count").await?.json::<String>()?,
+        "1"
+    );
+    Ok(())
+}
