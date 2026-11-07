@@ -11,7 +11,9 @@ Deliver reservation-bound signing and payout and its acceptance scenarios withou
 - Contract: [capability requirements](specs/arena-chain-signatures/spec.md).
 - Integration boundary: Requires backing reservations and settlement entitlements.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
-- Known gap: the current payout contract makes no MPC signer call and builds no transaction; a relayer obtains the authorized payload and reports the signature. Until the contract calls the signer itself, the payout path must not be deployed or funded.
+- The payout contract builds the ERC-20 transfer from the reservation, calls the signer configured at initialization and accepts a signature only from its private callback. The relayer chooses only a fee cap. Signing fees come from the contract reserve.
+- Payout status is an explicit stable view (`authorized`, `signing_requested`, `signed`, `broadcast`, `pending_finality`, `reverted`, `reconciliation_required`, `confirmed`, `restored`) described in the implementation notes, with versioned NEP-297 events.
+- Known gaps: only the `mock-mpc` fixture was exercised, so signer gas, `domain_id` and response shape are unverified live, and the returned signature is not verified on chain. The payout path must not be deployed or funded until that is checked.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
 ## Risks / Migration
