@@ -29,3 +29,10 @@ The system SHALL conserve each asset using B = M + E + P + D + U as defined in d
 #### Scenario: Reorg evidence
 - **WHEN** a previously provisional source receipt is reorganized
 - **THEN** the system cannot finalize minting from that receipt and reconciliation holds affected actions
+
+### Requirement: Late foreign deposit refund
+The system SHALL record a verified foreign deposit that arrives after a battle lock as unattributed to that battle and SHALL return it to the original depositor after finality, never crediting a snapshot or vault.
+
+#### Scenario: Deposit after lock
+- **WHEN** a finalized foreign receipt arrives after lock
+- **THEN** no position or vault changes, and the amount is held as unattributed until it is refunded to the depositor
