@@ -4053,6 +4053,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-backing"
+version = "0.1.0"
+dependencies = [
+ "near-contract-standards",
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-furnace"
 version = "0.1.0"
 dependencies = [
@@ -4088,6 +4096,20 @@ dependencies = [
 
 [[package]]
 name = "valtrum-mock-mpc"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
+name = "valtrum-payout"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
+name = "valtrum-receipt-registry"
 version = "0.1.0"
 dependencies = [
  "near-sdk",
