@@ -32,7 +32,19 @@ async fn world() -> anyhow::Result<World> {
     let payout = worker.dev_deploy(&common::wasm("valtrum_payout")).await?;
     let owner = worker.dev_create_account().await?;
     let verifier = worker.dev_create_account().await?;
-    let arena = worker.dev_create_account().await?;
+    // Sandbox stand-in for the arena's lock view (battle 1 open); it also signs
+    // as the arena account.
+    let arena_contract = worker
+        .dev_deploy(&common::wasm("valtrum_mock_lifecycle"))
+        .await?;
+    arena_contract.call("new").transact().await?.into_result()?;
+    arena_contract
+        .call("set_battle")
+        .args_json(json!({"battle_id": "1", "locked": false}))
+        .transact()
+        .await?
+        .into_result()?;
+    let arena = arena_contract.as_account().clone();
     let alice = worker.dev_create_account().await?;
     let relayer = worker.dev_create_account().await?;
     let operator = worker.dev_create_account().await?;

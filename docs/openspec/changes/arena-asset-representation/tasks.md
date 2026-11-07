@@ -19,8 +19,8 @@ Check tasks only after implementation and verification. Custody verification, fi
 - [x] Transition locked losing representations into settlement entitlements without creating or losing backing.
 - [x] Reserve payout, redemption and DAO disposal liabilities exclusively before authorizing external spends.
 - [x] Disable or burn representations when reserving redemption and retain the reservation while execution is unresolved.
-- [ ] Reconcile finalized payment or disposal evidence before consuming backing; restore only after definitive no-spend proof.
-- [ ] Suspend affected minting and payouts on deficit, reorg or unresolved reconciliation.
+- [x] Reconcile finalized payment or disposal evidence before consuming backing; restore only after definitive no-spend proof.
+- [x] Suspend affected minting and payouts on deficit, reorg or unresolved reconciliation.
 - [ ] Record a foreign deposit that arrives after lock as unattributed to any battle and return it to the original depositor after finality, without entering a snapshot or vault.
 
 ## Verification

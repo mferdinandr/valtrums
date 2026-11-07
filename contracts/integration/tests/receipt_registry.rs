@@ -96,6 +96,17 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
     let verifier = worker.dev_create_account().await?;
     let alice = worker.dev_create_account().await?;
     let relayer = worker.dev_create_account().await?;
+    // Sandbox stand-in for the arena's lock view; battle 1 is open.
+    let arena = worker
+        .dev_deploy(&common::wasm("valtrum_mock_lifecycle"))
+        .await?;
+    arena.call("new").transact().await?.into_result()?;
+    arena
+        .call("set_battle")
+        .args_json(json!({"battle_id": "1", "locked": false}))
+        .transact()
+        .await?
+        .into_result()?;
     registry
         .call("new")
         .args_json(json!({"owner": owner.id(), "verifier": verifier.id()}))
@@ -106,7 +117,7 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         "owner": owner.id(),
         "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
         "name": "Representation fixture", "symbol": "TEST",
-        "registry": registry.id(), "mapping_version": "1", "arena": owner.id(), "payout": owner.id()
+        "registry": registry.id(), "mapping_version": "1", "arena": arena.id(), "payout": owner.id()
     })).max_gas().transact().await?.into_result()?;
     owner
         .call(registry.id(), "set_representation")
