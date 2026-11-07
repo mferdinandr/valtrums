@@ -1,7 +1,12 @@
 ## ADDED Requirements
 
 ### Requirement: Per-token rewards and revenue
-For each losing vault the system SHALL allocate the remainder after its snapshotted configurable fee to final-winner participants proportionally. Protocol SHALL configure total fee in basis points from 0 through 1000 (a 10% ceiling) and creator share from 0 through 10000, independently; initial defaults are fee 10 bps (0.1%) and creator share 5000 bps (50% of fee). Only protocol can change settings; each battle SHALL snapshot fee, split and protocol recipient at creation. A protocol-created battle SHALL allocate its entire fee to protocol.
+For each losing vault the system SHALL allocate the remainder after its snapshotted configurable fee to final-winner participants proportionally. Each battle SHALL snapshot fee, split and protocol recipient at creation, and a protocol-created battle SHALL allocate its entire fee to protocol.
+
+#### Scenario: Fee settings and defaults
+- **WHEN** protocol configures fees
+- **THEN** only protocol can change them, total fee is 0 through 1000 basis points (a 10% ceiling) and creator share is 0 through 10000, independently
+- **AND** initial defaults are fee 10 bps (0.1%) and creator share 5000 bps (50% of fee)
 
 #### Scenario: Configuration changes
 - **WHEN** protocol changes fee or split after battle creation
@@ -24,9 +29,12 @@ For each losing vault the system SHALL allocate the remainder after its snapshot
 - **THEN** winners receive 99900 and protocol receives 100 with no extra creator fee
 
 ### Requirement: Deterministic conserving rounding
-The system SHALL first collect `fee = floor(loser_vault * fee_bps / 10000)` using checked wide arithmetic and assign `loser_vault - fee` to the winner pool. For user-created battles it SHALL allocate `floor(fee * creator_share_bps / 10000)` to the creator and the remainder to protocol; protocol-created battles SHALL allocate all fee to protocol. Largest remainder SHALL apply only within the winner pool with stable beneficiary tie ordering, independent of claim order.
+The system SHALL first collect `fee = floor(loser_vault * fee_bps / 10000)` using checked wide arithmetic and assign `loser_vault - fee` to the winner pool. Largest remainder SHALL apply only within the winner pool with stable beneficiary tie ordering, independent of claim order.
 
-The numeric examples below use default fee settings.
+#### Scenario: Fee split
+- **WHEN** a fee is allocated
+- **THEN** a user-created battle gives `floor(fee * creator_share_bps / 10000)` to the creator and the remainder to protocol, and a protocol-created battle gives all of the fee to protocol
+- **AND** the numeric examples below use default fee settings
 
 #### Scenario: Uneven vault
 - **WHEN** a user-created losing vault holds 10003 units
