@@ -270,7 +270,17 @@ async fn deficit_attestation_suspends_and_owner_resume_needs_a_later_covering_at
     assert_eq!(ledger["unallocated"], "98");
     assert_eq!(ledger["reconciliation_required"], true);
     attest_receipt(&w, 2, &w.alice, 1, "5").await?;
-    assert!(!claim_receipt(&w, 2).await?);
+    // A suspended asset rejects claims at the entry point (deposit returned).
+    let blocked = w
+        .relayer
+        .call(w.backing.id(), "claim_receipt")
+        .args_json(json!({"transaction_hash": format!("0x{}", "02".repeat(32)), "log_index": 1}))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(blocked.into_result().is_err());
+    assert_eq!(view(&w, "get_ledger", json!({})).await?["custody"], "98");
     let resume = |caller: &Account| {
         caller
             .call(w.backing.id(), "resume")
