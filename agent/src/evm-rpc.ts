@@ -82,6 +82,14 @@ export class FetchEvmRpc implements EvmRpc {
     return big(await this.rpc("eth_blockNumber", []), "block number");
   }
 
+  /** Timestamp (seconds) of a block, from `eth_getBlockByNumber`. */
+  async blockTimestamp(blockNumber: bigint): Promise<bigint> {
+    const block = (await this.rpc("eth_getBlockByNumber", [`0x${blockNumber.toString(16)}`, false])) as {
+      timestamp?: unknown;
+    } | null;
+    return big(block?.timestamp, "block timestamp");
+  }
+
   async getTransactionCount(address: string, tag: "pending" | "latest"): Promise<bigint> {
     return big(await this.rpc("eth_getTransactionCount", [address, tag]), "nonce");
   }
@@ -115,8 +123,9 @@ export class FetchEvmRpc implements EvmRpc {
     return big(await this.rpc("eth_estimateGas", [tx]), "gas estimate");
   }
 
-  async call(tx: { to: string; data: string; from?: string }): Promise<string> {
-    const result = await this.rpc("eth_call", [tx, "latest"]);
+  /** `eth_call` at `block` when given (so several reads share one block), else at the latest block. */
+  async call(tx: { to: string; data: string; from?: string }, block?: bigint): Promise<string> {
+    const result = await this.rpc("eth_call", [tx, block === undefined ? "latest" : `0x${block.toString(16)}`]);
     if (typeof result !== "string") throw new Error("bad eth_call result");
     return result;
   }

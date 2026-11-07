@@ -30,6 +30,11 @@ export interface RuntimeDeps {
    * `execution_dex` and skips settlement work on a mismatch.
    */
   executionMode?: ExecutionMode;
+  /**
+   * Optional lifecycle audit refresh (GoPlus + LP) run every pass before locks and settlement,
+   * so approvals are renewed ahead of their TTL. Errors it reports count toward `errors`.
+   */
+  lifecycleAudit?: () => Promise<{ errors: number }>;
   log?: Logger;
   /** Wall clock in ms; injectable for tests. */
   nowMs?: () => number;
@@ -81,6 +86,13 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
   if (mismatch) {
     report.errors++;
     log.error(`${mismatch}; settlement is paused, other work continues`);
+  }
+
+  if (deps.lifecycleAudit) {
+    const audit = deps.lifecycleAudit;
+    await guard("lifecycle audit", {}, async () => {
+      report.errors += (await audit()).errors;
+    });
   }
 
   const before = await fetchAllBattles(deps.client);

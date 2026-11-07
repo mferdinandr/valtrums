@@ -15,7 +15,13 @@ import type {
 /** Minimal surface of near-kit that the client needs; lets tests stub the transport. */
 export interface NearTransport {
   view<T>(contractId: string, method: string, args: object): Promise<T | undefined>;
-  call(contractId: string, method: string, args: object, gas: string): Promise<unknown>;
+  call(
+    contractId: string,
+    method: string,
+    args: object,
+    gas: string,
+    attachedDeposit?: string,
+  ): Promise<unknown>;
 }
 
 const AGENT_CALL_GAS = "100 Tgas";
@@ -56,8 +62,12 @@ export function createNearTransport(cfg: AgentConfig): NearTransport {
   });
   return withViewRetries({
     view: (contractId, method, args) => near.view(contractId, method, args),
-    call: (contractId, method, args, gas) =>
-      near.call(contractId, method, args, { gas: gas as never, signerId: cfg.agentAccountId }),
+    call: (contractId, method, args, gas, attachedDeposit) =>
+      near.call(contractId, method, args, {
+        gas: gas as never,
+        signerId: cfg.agentAccountId,
+        ...(attachedDeposit ? { attachedDeposit: attachedDeposit as never } : {}),
+      }),
   });
 }
 

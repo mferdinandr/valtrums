@@ -47,6 +47,32 @@ export function withViewRetries(
           return transient;
         },
       }),
-    call: (contractId, method, args, gas) => transport.call(contractId, method, args, gas),
+    call: (contractId, method, args, gas, attachedDeposit) =>
+      transport.call(contractId, method, args, gas, attachedDeposit),
+  };
+}
+
+/** Read-only EVM calls used for evidence; every one is safe to retry. */
+export interface ReadOnlyEvmRpc {
+  chainId(): Promise<bigint>;
+  blockNumber(): Promise<bigint>;
+  /** Block timestamp in seconds. */
+  blockTimestamp(blockNumber: bigint): Promise<bigint>;
+  /** `eth_call` pinned to `block` when given. */
+  call(tx: { to: string; data: string }, block?: bigint): Promise<string>;
+}
+
+/** Retries read-only EVM calls on transient failures (rate limits, gateway and network errors). */
+export function withEvmReadRetries(
+  rpc: ReadOnlyEvmRpc,
+  opts: Partial<BackoffOptions> = {},
+): ReadOnlyEvmRpc {
+  const backoff = { ...DEFAULT_VIEW_RETRY, ...opts, shouldRetry: isTransientRpcError };
+  const retry = <T>(fn: () => Promise<T>) => withBackoff(fn, backoff);
+  return {
+    chainId: () => retry(() => rpc.chainId()),
+    blockNumber: () => retry(() => rpc.blockNumber()),
+    blockTimestamp: (n) => retry(() => rpc.blockTimestamp(n)),
+    call: (tx, block) => retry(() => rpc.call(tx, block)),
   };
 }

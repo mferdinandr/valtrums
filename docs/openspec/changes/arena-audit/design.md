@@ -11,6 +11,18 @@ Deliver goplus and liquidity audit and its acceptance scenarios without claiming
 - Contract: [capability requirements](specs/arena-audit/spec.md).
 - Integration boundary: Coordinate approval interface with lifecycle.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
+- Approval interface: the arena method `submit_lifecycle_audit(battle_id, community, asset, result, policy_hash, evidence_hash)`, callable only by a whitelisted agent. `pass` stores an approval bound to the community's asset identity and the policy hash; `reject` and `pending` withdraw it; a locked battle refuses changes. Auditor authority currently equals the agent whitelist.
+- Reference-token audit: GoPlus supports only mainnet `4663`. Testnet mock tokens carry `reference_chain_id`/`reference_address`; the mapping is trusted only from a protocol-controlled registry in configuration. Both GoPlus and liquidity are evaluated for the mainnet reference token, the record binds the testnet asset and the reference pair, and the record, `policyHash` and `evidenceHash` label it a reference-token audit. Approval attests the mainnet reference token, not the behaviour of the testnet mock contract. The reference pair is also committed in the on-chain community mapping (`asset-identity-v2`), so `submit_lifecycle_audit` requires the approval's asset to equal the committed asset including the pair; the agent compares the committed pair with the registry and holds Pending on any mismatch.
+- Policy `audit-policy-v1` is one versioned object: tax admissible up to and including 0.05; admin capabilities admissible only with renounced and unrecoverable ownership; evidence TTL configurable (default 600 s). Recovery after a live token-policy change and the minimum executable-depth policy remain OPEN.
+- Liquidity is read on-chain for the reference token through a separate read-only mainnet RPC. Valuation source `headline_quote_balance`: only the quote-side balance of each v2 or v3 pool at one block, an approximation and not executable depth. Quotes are an explicitly configured stablecoin (1 USD) or WETH priced from one configured v3 WETH/stablecoin pool's `slot0` with a configured floor; nothing is defaulted in code. Observation time is the block timestamp; the strict > USD 10000 rule is unchanged.
+
+## Future improvements (not scheduled)
+
+- Fallback audit for tokens GoPlus does not cover: Phase 1 static (Sourcify v2 verified source and ABI, plus on-chain owner, proxy slot and bytecode reads) can only fill admin and ownership context.
+- Buy/sell simulation (for example `eth_call` with state overrides against the DEX router) is deferred: it needs an RPC with state-override support (not verified) and a decision on mapping simulated results into tax and honeypot fields.
+- Until a tax and honeypot data source exists, tokens without GoPlus data stay Pending under the unknown-mandatory-field rule.
+
+## Decisions (continued)
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
 ## Risks / Migration

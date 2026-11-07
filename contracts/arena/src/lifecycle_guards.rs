@@ -322,6 +322,8 @@ fn approved_battle(creator: &str) -> (Arena, u64) {
         token_address: format!("0x{index:040x}"),
         representation: token(index),
         custody_domain: "vault".into(),
+        reference_chain_id: None,
+        reference_address: None,
     };
     context("owner.testnet", NearToken::from_yoctonear(0), 0);
     let mut arena = Arena::new(
