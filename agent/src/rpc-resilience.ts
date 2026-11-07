@@ -47,6 +47,7 @@ export function withViewRetries(
           return transient;
         },
       }),
-    call: (contractId, method, args, gas) => transport.call(contractId, method, args, gas),
+    call: (contractId, method, args, gas, attachedDeposit) =>
+      transport.call(contractId, method, args, gas, attachedDeposit),
   };
 }
