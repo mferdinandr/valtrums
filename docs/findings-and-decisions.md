@@ -27,9 +27,11 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 | D11 | The mock set is the tokens that have GoPlus data (see the token table below). | testnet setup | Decided; registry not built |
 | D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed (merged in #52) |
 | D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived (merged in #55) |
-| D14 | Resume policy after an asset is suspended (deficit, reorg or unresolved reconciliation) is flexible and changeable by the owner (hackathon). Planned modes: `OwnerWithEvidence` (default: owner resumes only after an attestation shows custody covers all liabilities), `Automatic` (a later covering attestation lifts the suspension) and `Disabled`. `Automatic` trades safety for speed: a wrong or manipulated attestation could reopen payouts while a shortfall remains. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
-| D15 | A late foreign deposit is refunded to the beneficiary named in the custody deposit event (not the token sender), after finality; it never enters a snapshot or vault. Refines D8. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
+| D14 | Resume policy after an asset is suspended (deficit, reorg or unresolved reconciliation) is flexible and changeable by the owner (hackathon). Planned modes: `OwnerWithEvidence` (default: owner resumes only after an attestation shows custody covers all liabilities), `Automatic` (a later covering attestation lifts the suspension) and `Disabled`. `Automatic` trades safety for speed: a wrong or manipulated attestation could reopen payouts while a shortfall remains. | arena-asset-representation | Implemented in [#83](https://github.com/mferdinandr/valtrum/pull/83) (open) |
+| D15 | A late foreign deposit is refunded to the beneficiary named in the custody deposit event (not the token sender), after finality; it never enters a snapshot or vault. Refines D8. | arena-asset-representation | Implemented in [#83](https://github.com/mferdinandr/valtrum/pull/83) (open); D15 is refined by D17 |
 | D16 | The `docs/` branch prefix is allowed for documentation-only branches. | repository conventions | Merged in #56 |
+| D17 | A late foreign deposit is refunded to an EVM address the depositor binds at deposit time. The deposit event currently names only a NEAR account as beneficiary, so this needs a new field in the custody contract, the verifier, the registry claim and backing, and a new mapping version. Refines D15. | arena-asset-representation | Issue [#82](https://github.com/mferdinandr/valtrum/issues/82) |
+| D18 | The audit policy-hash pin checked at lock stays optional (enforced only when the owner sets it). A pass approval lasts at most 24 hours (agent choice, not in the spec) and the agent lock is opt-in (`AUDIT_LOCK_ENABLED`). | arena-audit | Implemented in [#85](https://github.com/mferdinandr/valtrum/pull/85) (open) |
 
 Work in progress (not yet pushed): `feat/backing-reconciliation` (asset-representation tasks: reconciliation, suspend and resume policy, late-deposit refund) and `feat/payout-mpc-signing` (chain-signatures tasks: MPC signer call from the payout contract, restart reconciliation, explicit payout states). `arena-settlement` follows once the payout status interface exists.
 
@@ -94,6 +96,9 @@ All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #5
 | [#54](https://github.com/mferdinandr/valtrum/pull/54) | `chore/openspec-followups` |
 | [#55](https://github.com/mferdinandr/valtrum/pull/55) | `chore/archive-arena-scoring` |
 | [#56](https://github.com/mferdinandr/valtrum/pull/56) | `docs/branch-prefix-rule` (allows the `docs/` branch prefix in `Code/CLAUDE.md`) |
+| [#83](https://github.com/mferdinandr/valtrum/pull/83) | `feat/backing-reconciliation` (issue #61, open) |
+| [#84](https://github.com/mferdinandr/valtrum/pull/84) | `feat/payout-mpc-signing` (issue #62, open) |
+| [#85](https://github.com/mferdinandr/valtrum/pull/85) | `feat/lock-audit-expiry` (issue #63, open) |
 
 | Branch | Content | Verification so far |
 | --- | --- | --- |
@@ -105,6 +110,8 @@ All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #5
 OpenSpec validation on `main` after all merges: 10 passed, 0 failed (`--strict`). Baseline command: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
 
 ## Handoff: payout cluster (2026-11-07)
+
+Update: the priority-1 issues were completed after this handoff and are open as pull requests: #61 in [#83](https://github.com/mferdinandr/valtrum/pull/83) (two of three tasks; the late-deposit refund waits for #82), #62 in [#84](https://github.com/mferdinandr/valtrum/pull/84) and #63 in [#85](https://github.com/mferdinandr/valtrum/pull/85). They are verified with fixtures and the `mock-mpc` signer only: the payout path still must not be deployed or funded. The snapshot description below is kept for history.
 
 Work was stopped before it finished so the team can continue. Both branches below exist **only as local commits** in git worktrees on the maintainer's machine until someone pushes them: `git push -u origin feat/backing-reconciliation feat/payout-mpc-signing`. Their only commit is a snapshot ("save unfinished work for handoff"): it was **not built or tested**, and it may not compile. Treat it as a starting point, not as reviewed work. Worktree paths: `Code/.claude/worktrees/agent-a45a83ebf66dfe05c` (backing) and `Code/.claude/worktrees/agent-aec594fdf3cf7c496` (payout).
 
