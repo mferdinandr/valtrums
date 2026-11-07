@@ -11,14 +11,14 @@ Check tasks only after implementation and verification. Coordinate lifecycle sna
 
 ## Per-token allocation
 
-- [ ] Read each original losing vault from the frozen snapshot, including communities eliminated in overtime.
-- [ ] Aggregate each winning beneficiary's deposits and use the final winning vault as the weight denominator.
-- [ ] Compute each vault's total fee once with checked wide arithmetic and floor division; assign the remainder to the winner pool.
-- [ ] Split a user-created fee by floor creator share and protocol remainder; assign a protocol-created fee entirely to protocol.
-- [ ] Allocate the winner pool by largest remainder with canonical account-ID byte ordering for ties.
+- [x] Read each original losing vault from the frozen snapshot, including communities eliminated in overtime.
+- [x] Aggregate each winning beneficiary's deposits and use the final winning vault as the weight denominator.
+- [x] Compute each vault's total fee once with checked wide arithmetic and floor division; assign the remainder to the winner pool.
+- [x] Split a user-created fee by floor creator share and protocol remainder; assign a protocol-created fee entirely to protocol.
+- [x] Allocate the winner pool by largest remainder with canonical account-ID byte ordering for ties.
 - [ ] Persist an immutable allocation ID and asset-bound entitlements so retries cannot allocate or charge twice.
-- [ ] Handle zero recipient shares and tiny vaults without failing unrelated allocations.
-- [ ] Verify the 100000-unit 60/40 example, 10003-unit and 999/1000-unit fee cases, and 1:2:3 dust ordering.
+- [x] Handle zero recipient shares and tiny vaults without failing unrelated allocations.
+- [x] Verify the 100000-unit 60/40 example, 10003-unit and 999/1000-unit fee cases, and 1:2:3 dust ordering.
 - [ ] Verify per-token conservation and deterministic results across pagination, claim order and two/three communities.
 
 ## Entitlement boundary
