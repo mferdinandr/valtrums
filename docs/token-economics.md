@@ -20,7 +20,7 @@ All original nonwinning communities are losing vaults, including communities eli
 
 ## Integer rounding and conservation
 
-Protocol configures total `fee_bps` and `creator_share_bps` independently between 0 and 10,000 inclusive. Defaults are 10 bps (0.1%) and 5,000 bps (50% of fee). Snapshot both values and protocol recipient when a battle is created; changes affect future battles only. Use checked wide arithmetic. Protocol-created battles pay the whole fee to protocol.
+Protocol configures total `fee_bps` between 0 and 1,000 inclusive (a 10% ceiling) and `creator_share_bps` between 0 and 10,000 inclusive, independently. Defaults are 10 bps (0.1%) and 5,000 bps (50% of fee). Snapshot both values and protocol recipient when a battle is created; changes affect future battles only. Use checked wide arithmetic. Protocol-created battles pay the whole fee to protocol.
 
 1. Compute `fee_j = floor(L_j * fee_bps / 10000)` once for each losing token. The fractional fee remainder stays with winners: `Q_j = L_j - fee_j`.
 2. For a user-created battle, `creator_fee_j = floor(fee_j * creator_share_bps / 10000)` and `protocol_fee_j = fee_j - creator_fee_j`. The protocol receives the remainder after creator rounding. For a protocol-created battle, `creator_fee_j = 0` and `protocol_fee_j = fee_j`.

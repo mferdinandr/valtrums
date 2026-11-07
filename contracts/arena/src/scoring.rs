@@ -25,6 +25,7 @@ pub struct ObservationEvidence {
 }
 
 /// Values are selected and frozen by an observation policy, not defaults.
+#[near_sdk::near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SampleCoveragePolicy {
     pub boundary_tolerance_ns: u64,

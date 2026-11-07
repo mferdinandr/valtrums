@@ -15,6 +15,10 @@ pub const MAX_COMMUNITIES: usize = 16;
 /// transaction or storage budget for the entire battle.
 const MAX_METADATA_BYTES: usize = 256;
 
+/// Settlement reads every winning participant on each call, so the number of
+/// depositors per community is bounded to keep it inside one call's gas.
+pub const MAX_PARTICIPANTS_PER_COMMUNITY: u32 = 300;
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetIdentity {
@@ -245,6 +249,8 @@ pub enum LifecycleError {
     WinningVault,
     PositionNotRegistered,
     PositionAlreadyRegistered,
+    /// A community already has the most depositors settlement can process.
+    TooManyParticipants,
 }
 
 impl Battle {
@@ -492,6 +498,45 @@ impl Battle {
         self.hold_principal(winner)
     }
 
+    pub fn community_count(&self) -> usize {
+        self.communities.len()
+    }
+
+    /// The fee snapshotted when the battle was created.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        &self.fee
+    }
+
+    pub fn mode(&self) -> ScoringMode {
+        self.mode
+    }
+
+    /// The observation policy frozen at lock, if the battle is locked.
+    pub fn frozen_policy(&self) -> Option<&ObservationPolicy> {
+        self.snapshot.as_ref().map(|snapshot| &snapshot.observation)
+    }
+
+    /// One identifier per original community, binding chain, token and
+    /// representation account, in community order.
+    pub fn asset_labels(&self) -> Vec<String> {
+        self.communities
+            .iter()
+            .map(|community| {
+                format!(
+                    "{}:{}:{}",
+                    community.asset.chain_id,
+                    community.asset.token_address,
+                    community.asset.representation
+                )
+            })
+            .collect()
+    }
+
+    /// The held winning vault, once a unique winner has been recorded.
+    pub fn principal_hold(&self) -> Option<&PrincipalHold> {
+        self.principal_hold.as_ref()
+    }
+
     /// Expose frozen losing-vault inputs without consulting any DAO decision.
     /// The future settlement adapter must enforce exclusive allocation.
     pub fn losing_vault(&self, community: u32) -> Result<LosingVault, LifecycleError> {
@@ -613,6 +658,51 @@ impl crate::Arena {
         Ok(())
     }
 
+    /// Add an account to a community's participant index the first time it
+    /// holds a credited deposit. Registering a position alone adds nothing, so
+    /// accounts that never deposit cannot enlarge the settlement workload.
+    fn lifecycle_index_participant(
+        &mut self,
+        id: u64,
+        community: u32,
+        account: &AccountId,
+    ) -> Result<(), LifecycleError> {
+        let count = self
+            .lifecycle_participant_counts
+            .get(&(id, community))
+            .copied()
+            .unwrap_or(0);
+        if count >= MAX_PARTICIPANTS_PER_COMMUNITY {
+            return Err(LifecycleError::TooManyParticipants);
+        }
+        self.lifecycle_participants
+            .insert((id, community, count), account.clone());
+        self.lifecycle_participant_counts
+            .insert((id, community), count + 1);
+        Ok(())
+    }
+
+    /// Credited deposits of every participant of a community, in registration
+    /// order, omitting registered accounts that hold nothing.
+    pub fn lifecycle_participant_positions(
+        &self,
+        id: u64,
+        community: u32,
+    ) -> Vec<(AccountId, u128)> {
+        let count = self
+            .lifecycle_participant_counts
+            .get(&(id, community))
+            .copied()
+            .unwrap_or(0);
+        (0..count)
+            .filter_map(|index| self.lifecycle_participants.get(&(id, community, index)))
+            .filter_map(|account| {
+                let deposit = self.lifecycle_position(id, community, account);
+                (deposit > 0).then(|| (account.clone(), deposit))
+            })
+            .collect()
+    }
+
     pub fn lifecycle_credit(
         &mut self,
         id: u64,
@@ -633,6 +723,9 @@ impl crate::Arena {
             .copied()
             .ok_or(LifecycleError::PositionNotRegistered)?;
         let next = battle.credit(community as usize, token, sender, prior, amount)?;
+        if prior == 0 && next > 0 {
+            self.lifecycle_index_participant(id, community, sender)?;
+        }
         self.lifecycle_positions.insert(key, next);
         self.lifecycle_battles.insert(id, battle);
         Ok(())
@@ -1119,6 +1212,52 @@ mod tests {
     }
 
     #[test]
+    fn every_original_vault_settles_separately_including_eliminated_communities() {
+        use crate::settlement::{allocate_battle, Recipient, SettlementError};
+        let mut b = battle();
+        approve(&mut b);
+        deposit(&mut b, 0, "creator.testnet", 0, 600).expect("credit");
+        deposit(&mut b, 0, "other.testnet", 0, 400).expect("credit");
+        deposit(&mut b, 1, "other.testnet", 0, 100_000).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 200_000).expect("credit");
+        b.lock(policy("p")).expect("lock");
+        let winners = vec![
+            (account("creator.testnet"), 600),
+            (account("other.testnet"), 400),
+        ];
+        // No recorded winner yet: nothing can be allocated.
+        assert_eq!(
+            allocate_battle(1, &b, &winners),
+            Err(SettlementError::InvalidInput)
+        );
+        b.hold_principal(0).expect("hold");
+        let allocations = allocate_battle(1, &b, &winners).expect("allocate");
+        assert_eq!(
+            allocations.iter().map(|a| a.community).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let total = |a: &crate::settlement::VaultAllocation, kind: Recipient| {
+            a.entitlements
+                .iter()
+                .filter(|e| e.kind == kind)
+                .map(|e| e.amount)
+                .sum::<u128>()
+        };
+        // Each losing token keeps its own amounts and fees: 100000 -> 99900+50+50, 200000 -> 199800+100+100.
+        assert_eq!(total(&allocations[0], Recipient::Winner), 99_900);
+        assert_eq!(total(&allocations[1], Recipient::Winner), 199_800);
+        assert_eq!(total(&allocations[1], Recipient::Creator), 100);
+        assert_eq!(total(&allocations[1], Recipient::Protocol), 100);
+        // Repeating produces identical identities, so a retry cannot allocate twice.
+        assert_eq!(allocate_battle(1, &b, &winners), Ok(allocations.clone()));
+        // Weights that do not match the held winning vault are refused.
+        assert_eq!(
+            allocate_battle(1, &b, &winners[..1]),
+            Err(SettlementError::InvalidInput)
+        );
+    }
+
+    #[test]
     fn principal_hold_requires_lock_and_cannot_change_winner() {
         let mut b = battle();
         assert_eq!(b.hold_principal(0), Err(LifecycleError::NotLocked));
@@ -1291,6 +1430,153 @@ mod tests {
         assert_eq!(
             arena.lifecycle_position(id, 0, &account("creator.testnet")),
             0
+        );
+    }
+
+    #[test]
+    fn only_depositors_enter_the_participant_index_and_their_number_is_capped() {
+        use near_sdk::json_types::{U128, U64};
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        testing_env!(VMContextBuilder::new()
+            .predecessor_account_id(account("owner.testnet"))
+            .build());
+        let mut arena = crate::Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(0),
+            U64(60),
+        );
+        let id = arena.lifecycle_insert(battle()).expect("battle");
+        for index in 0..3 {
+            arena
+                .lifecycle_set_audit(id, index, Some(audit(index)))
+                .expect("audit");
+            arena
+                .lifecycle_set_backing(id, index, Some(backing(index)))
+                .expect("backing");
+        }
+        // Registering a position alone adds nobody to the index.
+        let people: Vec<AccountId> = (0..3).map(|i| account(&format!("p{i}.testnet"))).collect();
+        for person in &people {
+            arena
+                .lifecycle_register_position(id, 0, person)
+                .expect("register");
+        }
+        assert!(arena.lifecycle_participant_positions(id, 0).is_empty());
+        let token = asset(1).representation;
+        arena
+            .lifecycle_credit(id, 0, &token, &people[0], 5)
+            .expect("credit");
+        arena
+            .lifecycle_credit(id, 0, &token, &people[2], 5)
+            .expect("credit");
+        // A top-up by an existing depositor does not add a second entry.
+        arena
+            .lifecycle_credit(id, 0, &token, &people[0], 1)
+            .expect("top up");
+        assert_eq!(
+            arena.lifecycle_participant_positions(id, 0),
+            vec![(people[0].clone(), 6), (people[2].clone(), 5)]
+        );
+        // Depositors per community are capped, but existing ones can still top up.
+        let token = asset(2).representation;
+        let crowd: Vec<AccountId> = (0..=MAX_PARTICIPANTS_PER_COMMUNITY)
+            .map(|i| account(&format!("u{i}.testnet")))
+            .collect();
+        for person in &crowd {
+            arena
+                .lifecycle_register_position(id, 1, person)
+                .expect("register");
+        }
+        for person in &crowd[..MAX_PARTICIPANTS_PER_COMMUNITY as usize] {
+            arena
+                .lifecycle_credit(id, 1, &token, person, 1)
+                .expect("credit");
+        }
+        assert_eq!(
+            arena.lifecycle_credit(
+                id,
+                1,
+                &token,
+                &crowd[MAX_PARTICIPANTS_PER_COMMUNITY as usize],
+                1
+            ),
+            Err(LifecycleError::TooManyParticipants)
+        );
+        assert_eq!(arena.lifecycle_credit(id, 1, &token, &crowd[0], 1), Ok(()));
+        assert_eq!(
+            arena.lifecycle_participant_positions(id, 1).len(),
+            MAX_PARTICIPANTS_PER_COMMUNITY as usize
+        );
+    }
+
+    #[test]
+    fn only_the_protocol_changes_fees_within_bounds_and_only_for_future_battles() {
+        use near_sdk::json_types::{U128, U64};
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::{testing_env, NearToken};
+        let caller = |name: &str, deposit: NearToken| {
+            testing_env!(VMContextBuilder::new()
+                .predecessor_account_id(account(name))
+                .attached_deposit(deposit)
+                .build());
+        };
+        let panics = |f: &mut dyn FnMut()| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+        };
+        caller("owner.testnet", NearToken::from_yoctonear(0));
+        let mut arena = crate::Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(0),
+            U64(60),
+        );
+        caller("owner.testnet", NearToken::from_yoctonear(1));
+        arena.activate_lifecycle();
+        // No protocol account yet: nobody can change fees.
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        arena.set_lifecycle_protocol(account("protocol.testnet"));
+        assert_eq!(arena.get_lifecycle_fee(), (10, 5_000));
+        let create = |arena: &mut crate::Arena| {
+            caller("creator.testnet", NearToken::from_near(1));
+            arena.create_lifecycle_battle(
+                vec![asset(1).into(), asset(2).into()],
+                ScoringMode::PriceGain,
+            )
+        };
+        let first = create(&mut arena);
+        // The arena owner is not the protocol and cannot change the fee.
+        caller("owner.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        caller("creator.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        // The protocol can, within bounds: at most 1000 bps in total, 10000 for the share.
+        caller("protocol.testnet", NearToken::from_yoctonear(1));
+        assert!(panics(&mut || arena.set_lifecycle_fee(1_001, 5_000)));
+        assert!(panics(&mut || arena.set_lifecycle_fee(10, 10_001)));
+        caller("protocol.testnet", NearToken::from_yoctonear(0));
+        assert!(panics(&mut || arena.set_lifecycle_fee(20, 5_000)));
+        assert_eq!(arena.get_lifecycle_fee(), (10, 5_000));
+        caller("protocol.testnet", NearToken::from_yoctonear(1));
+        arena.set_lifecycle_fee(1_000, 10_000);
+        assert_eq!(arena.get_lifecycle_fee(), (1_000, 10_000));
+        arena.set_lifecycle_fee(0, 0);
+        assert_eq!(arena.get_lifecycle_fee(), (0, 0));
+        arena.set_lifecycle_fee(25, 2_500);
+        // The earlier battle keeps its snapshot; a new one uses the new settings.
+        let second = create(&mut arena);
+        let old = arena.lifecycle_battles.get(&first).expect("first");
+        let new = arena.lifecycle_battles.get(&second).expect("second");
+        assert_eq!(
+            (old.fee_policy().fee_bps, old.fee_policy().creator_share_bps),
+            (10, 5_000)
+        );
+        assert_eq!(
+            (new.fee_policy().fee_bps, new.fee_policy().creator_share_bps),
+            (25, 2_500)
         );
     }
 

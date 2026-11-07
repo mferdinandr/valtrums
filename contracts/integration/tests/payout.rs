@@ -63,6 +63,7 @@ async fn world() -> anyhow::Result<World> {
         .into_result()?;
     owner
         .call(payout.id(), "register_backing")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(json!({"backing": backing.id(), "config": {
             "chain_id": "46630", "token": token_bytes(), "custody_domain": "fixture",
             "sender": vec![2u8; 20], "path": "custody-1", "first_nonce": "5"
@@ -187,6 +188,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     for account in [&w.alice, &w.operator, &w.arena] {
         let attempt = account
             .call(w.payout.id(), "begin_signing")
+            .deposit(NearToken::from_yoctonear(1))
             .args_json(id(&w, 1))
             .max_gas()
             .transact()
@@ -195,6 +197,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     }
     w.relayer
         .call(w.payout.id(), "begin_signing")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(id(&w, 1))
         .max_gas()
         .transact()
@@ -208,6 +211,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     assert!(w
         .relayer
         .call(w.payout.id(), "record_signature")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(tampered)
         .max_gas()
         .transact()
@@ -220,6 +224,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     signed["max_fee_per_gas"] = json!("10");
     w.relayer
         .call(w.payout.id(), "record_signature")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(signed)
         .max_gas()
         .transact()
@@ -229,6 +234,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     broadcast["tx_hash"] = json!(vec![7u8; 32]);
     w.relayer
         .call(w.payout.id(), "record_broadcast")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(broadcast)
         .max_gas()
         .transact()
@@ -245,6 +251,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     for account in [&w.alice, &w.relayer] {
         assert!(account
             .call(w.payout.id(), "confirm_payout")
+            .deposit(NearToken::from_yoctonear(1))
             .args_json(confirm("60"))
             .max_gas()
             .transact()
@@ -255,6 +262,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     assert!(w
         .operator
         .call(w.payout.id(), "confirm_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(confirm("59"))
         .max_gas()
         .transact()
@@ -264,6 +272,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     assert_eq!(status(&w, 1).await?.as_deref(), Some("broadcast"));
     w.operator
         .call(w.payout.id(), "confirm_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(confirm("60"))
         .max_gas()
         .transact()
@@ -283,6 +292,7 @@ async fn payout_roles_are_separate_and_confirmation_consumes_backing_once() -> a
     // Replaying the same evidence changes nothing.
     w.operator
         .call(w.payout.id(), "confirm_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(confirm("60"))
         .max_gas()
         .transact()
@@ -307,6 +317,7 @@ async fn unsigned_payouts_can_be_cancelled_but_signed_ones_need_nonce_proof() ->
     for account in [&w.alice, &w.relayer] {
         assert!(account
             .call(w.payout.id(), "restore_payout")
+            .deposit(NearToken::from_yoctonear(1))
             .args_json({
                 let mut args = id(&w, 2);
                 args["proof"] = Value::Null;
@@ -325,6 +336,7 @@ async fn unsigned_payouts_can_be_cancelled_but_signed_ones_need_nonce_proof() ->
     };
     w.operator
         .call(w.payout.id(), "restore_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(cancel(2))
         .max_gas()
         .transact()
@@ -343,6 +355,7 @@ async fn unsigned_payouts_can_be_cancelled_but_signed_ones_need_nonce_proof() ->
     assert!(request(&w, 3, "38").await?);
     w.relayer
         .call(w.payout.id(), "begin_signing")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(id(&w, 3))
         .max_gas()
         .transact()
@@ -351,6 +364,7 @@ async fn unsigned_payouts_can_be_cancelled_but_signed_ones_need_nonce_proof() ->
     assert!(w
         .operator
         .call(w.payout.id(), "restore_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(cancel(3))
         .max_gas()
         .transact()
@@ -365,6 +379,7 @@ async fn unsigned_payouts_can_be_cancelled_but_signed_ones_need_nonce_proof() ->
         "finalized_head_hash": vec![9u8; 32]});
     w.operator
         .call(w.payout.id(), "restore_payout")
+        .deposit(NearToken::from_yoctonear(1))
         .args_json(proof)
         .max_gas()
         .transact()

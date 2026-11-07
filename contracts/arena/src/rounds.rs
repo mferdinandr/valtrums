@@ -55,6 +55,7 @@ pub struct CandidateObservation {
     pub data: ModeData,
 }
 
+#[near_sdk::near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PendingReason {
     /// Observations do not cover exactly the current candidate set.
@@ -65,6 +66,7 @@ pub enum PendingReason {
     Unscorable(u32),
 }
 
+#[near_sdk::near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolution {
     /// Nothing was recorded; the same round stays open.
@@ -151,12 +153,14 @@ impl ObservationTerms {
     }
 }
 
+#[near_sdk::near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Record {
     round_id: u64,
     outcome: Resolution,
 }
 
+#[near_sdk::near(serializers = [borsh])]
 #[derive(Clone, Debug)]
 pub struct Rounds {
     battle_id: u64,
@@ -253,6 +257,22 @@ impl Rounds {
 
     pub fn mode(&self) -> ScoringMode {
         self.mode
+    }
+
+    /// The identity every observation of the open round must carry, built from
+    /// the frozen configuration so a submitter cannot choose it. `None` when no
+    /// round is open or the community is unknown.
+    pub fn context_for(&self, community: u32) -> Option<ObservationContext> {
+        let (start_ns, end_ns) = self.window?;
+        Some(ObservationContext {
+            battle_id: self.battle_id,
+            round_id: self.round_id,
+            asset_id: self.assets.get(community as usize)?.clone(),
+            source: self.source.clone(),
+            policy_hash: self.policy_hash.clone(),
+            start_ns,
+            end_ns,
+        })
     }
     pub fn community_count(&self) -> usize {
         self.assets.len()

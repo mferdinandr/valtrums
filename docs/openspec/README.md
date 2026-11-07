@@ -23,7 +23,7 @@ The [shared design](arena-design.md) preserves the cross-cutting data flow, trus
 - Lifecycle owns battle state and freeze; backing owns custody and reservations; audit supplies approval evidence; scoring supplies results; settlement owns snapshotted fee arithmetic and entitlements; signing owns payout identity and reconciliation. DAO governance remains OPEN. Agent authorization, MCP and testnet acceptance are separate boundaries.
 - Shared interfaces: token identity binds chain/token/representation/custody; lifecycle exposes immutable snapshots; audit binds token and policy; scoring binds interval and source; settlement hands durable asset-bound entitlements to payout. Coordinate changes across dependent PRs.
 - Original requirements and scenarios remain in their corresponding capability specs; cross-cutting acceptance is in integration tasks. The prior implementation needs independent verification.
-- Default fee is 10 bps of each losing vault and creator share is 5000 bps of fee. Protocol may adjust both within 0–10000 bps for future battles; protocol-created battles pay the whole fee to protocol. Snapshot fee and recipient at creation.
+- Default fee is 10 bps of each losing vault and creator share is 5000 bps of fee. Protocol may adjust total fee within 0–1000 bps (a 10% ceiling) and creator share within 0–10000 bps for future battles; protocol-created battles pay the whole fee to protocol. Snapshot fee and recipient at creation.
 - Winning principal remains escrowed until DAO governance is designed; no owner-only decision or confirmation. Rewards are independent. Fixtures are not proof of live integration.
 
 Run from `docs/`:

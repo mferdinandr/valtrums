@@ -17,7 +17,7 @@ Check tasks only after implementation and verification. Arithmetic alone does no
 - [x] Validate required endpoint price and circulating-supply evidence for the selected mode.
 - [x] Verify deduplicated eligible quote-volume over `[t0, t1)` and distinguish complete zero volume from missing evidence.
 - [x] Validate ordered drawdown samples and policy-required boundary and intermediate coverage.
-- [ ] Hold the round Pending on stale, incomplete, conflicting, wrong-source or unauthenticated evidence.
+- [x] Hold the round Pending on stale, incomplete, conflicting, wrong-source or unauthenticated evidence.
 - [x] Test late, duplicate, out-of-order, overwritten and wrong-round observations and exact interval boundaries.
 
 ## Overtime and integration
