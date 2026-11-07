@@ -490,6 +490,11 @@ impl Arena {
             .map(lifecycle::Battle::view)
     }
 
+    /// Number of lifecycle battles created so far; ids run from 1 to this value.
+    pub fn get_lifecycle_battle_count(&self) -> u64 {
+        self.lifecycle_battle_count
+    }
+
     pub fn get_lifecycle_position(
         &self,
         battle_id: u64,

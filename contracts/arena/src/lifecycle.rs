@@ -1813,6 +1813,14 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_battle_count_follows_insertions() {
+        let (mut arena, _id) = audit_arena();
+        assert_eq!(arena.get_lifecycle_battle_count(), 1);
+        arena.lifecycle_insert(battle()).expect("battle");
+        assert_eq!(arena.get_lifecycle_battle_count(), 2);
+    }
+
+    #[test]
     #[should_panic(expected = "at least 1 yoctoNEAR")]
     fn audit_submission_requires_a_deposit() {
         use near_sdk::test_utils::VMContextBuilder;
