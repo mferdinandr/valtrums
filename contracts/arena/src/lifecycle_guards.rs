@@ -312,3 +312,178 @@ fn terms() -> crate::rounds_api::ObservationTermsInput {
         max_gap_ns: U64(ROUND),
     }
 }
+
+/// Builds an approved battle through the contract entry points. The creator is
+/// either an ordinary user or the protocol account.
+fn approved_battle(creator: &str) -> (Arena, u64) {
+    use crate::lifecycle::{AssetIdentity, AuditApproval, BackingApproval};
+    let asset = |index: u8| AssetIdentity {
+        chain_id: 46630,
+        token_address: format!("0x{index:040x}"),
+        representation: token(index),
+        custody_domain: "vault".into(),
+    };
+    context("owner.testnet", NearToken::from_yoctonear(0), 0);
+    let mut arena = Arena::new(
+        account("owner.testnet"),
+        account("usdc.testnet"),
+        account("treasury.testnet"),
+        U128(0),
+        U64(60),
+    );
+    context("owner.testnet", NearToken::from_yoctonear(1), 0);
+    arena.activate_lifecycle();
+    arena.set_lifecycle_protocol(account("protocol.testnet"));
+    context(creator, NearToken::from_near(1), 0);
+    let id = arena.create_lifecycle_battle(
+        vec![asset(1).into(), asset(2).into(), asset(3).into()],
+        crate::lifecycle::ScoringMode::PriceGain,
+    );
+    for index in 0..3u8 {
+        arena
+            .lifecycle_set_audit(
+                id,
+                index as usize,
+                Some(AuditApproval {
+                    asset: asset(index + 1),
+                    policy_hash: "policy".into(),
+                    evidence_hash: "audit".into(),
+                }),
+            )
+            .expect("audit fixture");
+        arena
+            .lifecycle_set_backing(
+                id,
+                index as usize,
+                Some(BackingApproval {
+                    asset: asset(index + 1),
+                    evidence_hash: "backing".into(),
+                }),
+            )
+            .expect("backing fixture");
+    }
+    (arena, id)
+}
+
+fn register(arena: &mut Arena, id: u64, who: &str, community: u32) {
+    context(who, NearToken::from_near(1), 0);
+    arena.register_lifecycle_position(id, community);
+}
+
+fn transfer(arena: &mut Arena, id: u64, who: &str, community: u32, amount: u128) -> u128 {
+    context(
+        &format!("token{}.testnet", community + 1),
+        NearToken::from_yoctonear(0),
+        0,
+    );
+    let msg =
+        format!(r#"{{"action":"lifecycle_deposit","battle_id":{id},"community":{community}}}"#);
+    match arena.ft_on_transfer(account(who), U128(amount), msg) {
+        PromiseOrValue::Value(unused) => unused.0,
+        PromiseOrValue::Promise(_) => panic!("unexpected promise"),
+    }
+}
+
+fn locks(arena: &mut Arena, id: u64) -> bool {
+    let battle = arena.lifecycle_battles.get(&id).expect("battle").clone();
+    let attempt = arena.lifecycle_lock(
+        id,
+        crate::lifecycle::ObservationPolicy {
+            version: 1,
+            policy_hash: "p".into(),
+        },
+    );
+    if attempt.is_err() {
+        // A refused lock leaves the battle untouched.
+        assert_eq!(arena.lifecycle_battles.get(&id), Some(&battle));
+    }
+    attempt.is_ok()
+}
+
+/// A user-created and a protocol-created battle need the same real stake
+/// from the account recorded as creator, and a nonempty vault per community.
+fn creator_stake_and_vaults_are_required(creator: &str) {
+    {
+        let protocol_created = creator == "protocol.testnet";
+        let (mut arena, id) = approved_battle(creator);
+        assert_eq!(
+            arena
+                .lifecycle_battles
+                .get(&id)
+                .expect("battle")
+                .fee_policy()
+                .protocol_created,
+            protocol_created
+        );
+        for community in 0..3 {
+            register(&mut arena, id, "other.testnet", community);
+        }
+        register(&mut arena, id, creator, 0);
+        // Nothing credited yet: every vault is empty.
+        assert!(!locks(&mut arena, id));
+        // Another account funds every community: still no creator stake.
+        for community in 0..3 {
+            assert_eq!(transfer(&mut arena, id, "other.testnet", community, 4), 0);
+        }
+        assert!(!locks(&mut arena, id), "{creator}: no creator position");
+        // A zero-amount transfer is not a stake.
+        assert_eq!(transfer(&mut arena, id, creator, 0, 0), 0);
+        assert!(!locks(&mut arena, id), "{creator}: zero is not a position");
+        assert_eq!(arena.lifecycle_position(id, 0, &account(creator)), 0);
+        // A positive credited position locks.
+        assert_eq!(transfer(&mut arena, id, creator, 0, 5), 0);
+        assert!(locks(&mut arena, id));
+        let view = arena.lifecycle_battles.get(&id).expect("battle").view();
+        assert_eq!(
+            view.communities
+                .iter()
+                .map(|c| c.vault.0)
+                .collect::<Vec<_>>(),
+            vec![9, 4, 4]
+        );
+        assert_eq!(view.protocol_created, protocol_created);
+    }
+}
+
+/// Each community is checked, not only the first or last one.
+fn single_empty_vault_blocks_lock(empty: u32) {
+    {
+        let (mut arena, id) = approved_battle("creator.testnet");
+        for community in 0..3 {
+            register(&mut arena, id, "creator.testnet", community);
+            if community != empty {
+                assert_eq!(transfer(&mut arena, id, "creator.testnet", community, 2), 0);
+            }
+        }
+        assert!(!locks(&mut arena, id), "community {empty} is empty");
+        assert_eq!(transfer(&mut arena, id, "creator.testnet", empty, 2), 0);
+        assert!(locks(&mut arena, id));
+    }
+}
+
+// Each scenario runs on its own thread: the mocked blockchain keeps
+// per-thread storage accounting that does not survive a second arena.
+#[test]
+fn user_created_battle_lock_requires_creator_stake_and_every_vault() {
+    creator_stake_and_vaults_are_required("creator.testnet");
+}
+
+#[test]
+fn protocol_created_battle_lock_requires_creator_stake_and_every_vault() {
+    creator_stake_and_vaults_are_required("protocol.testnet");
+}
+
+#[test]
+fn lock_is_refused_while_the_first_vault_is_empty() {
+    single_empty_vault_blocks_lock(0);
+}
+
+#[test]
+fn lock_is_refused_while_the_middle_vault_is_empty() {
+    single_empty_vault_blocks_lock(1);
+}
+
+#[test]
+fn lock_is_refused_while_the_last_vault_is_empty() {
+    single_empty_vault_blocks_lock(2);
+}
