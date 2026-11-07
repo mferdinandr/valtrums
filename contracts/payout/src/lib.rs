@@ -431,6 +431,14 @@ impl Payout {
             .ok_or(PayoutError::UnknownAttempt)?;
         if self.has_attempt(&tx_hash) {
             self.attempts.remove(index);
+            if matches!(self.status, Status::SigningRequested)
+                && !self
+                    .attempts
+                    .iter()
+                    .any(|a| a.state == AttemptState::Requested)
+            {
+                self.status = self.status_from_attempts();
+            }
             return Ok(false);
         }
         let attempt = &mut self.attempts[index];
@@ -447,9 +455,23 @@ impl Payout {
                 Status::SigningRequested | Status::ReconciliationRequired(Reason::SignerNoResponse)
             )
         {
-            self.status = Status::Signed;
+            self.status = self.status_from_attempts();
         }
         Ok(true)
+    }
+
+    /// The furthest live attempt decides the status once no request is
+    /// unanswered, so a late or replacement signature never moves a payout
+    /// backwards from `Broadcast` or `PendingFinality` to `Signed`.
+    fn status_from_attempts(&self) -> Status {
+        let has = |state| self.attempts.iter().any(|a| a.state == state);
+        if has(AttemptState::Pending) {
+            Status::PendingFinality
+        } else if has(AttemptState::Broadcast) {
+            Status::Broadcast
+        } else {
+            Status::Signed
+        }
     }
 
     /// The signer call failed: it produced no signature. The payout is held,
@@ -852,6 +874,22 @@ mod tests {
         assert_eq!(payout.status.state(), PayoutState::Signed);
         assert_eq!(payout.attempts.len(), 2);
         assert_eq!(payout.confirm(&evidence(1)), Ok(true));
+    }
+
+    #[test]
+    fn a_replacement_signature_never_moves_a_payout_backwards() {
+        let mut payout = signed(1, 10);
+        payout.record_broadcast([1; 32]).expect("broadcast");
+        payout.record_pending([1; 32]).expect("pending");
+        payout.request_signature(20).expect("replace");
+        assert_eq!(payout.status.state(), PayoutState::SigningRequested);
+        payout.signature_received(20, [2; 32], sig()).expect("sign");
+        assert_eq!(payout.status.state(), PayoutState::PendingFinality);
+        // The same signed transaction answered twice is a no-op that still resolves the request.
+        payout.request_signature(30).expect("replace again");
+        assert_eq!(payout.signature_received(30, [2; 32], sig()), Ok(false));
+        assert_eq!(payout.status.state(), PayoutState::PendingFinality);
+        assert_eq!(payout.attempts.len(), 2);
     }
 
     #[test]

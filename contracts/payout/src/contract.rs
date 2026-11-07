@@ -31,7 +31,6 @@ use near_sdk::{
 const REQUEST_DEPOSIT: NearToken = NearToken::from_millinear(30);
 /// Kept by the contract to pay for later signing attempts (at most `MAX_ATTEMPTS`).
 const ATTEMPT_RESERVE: NearToken = NearToken::from_millinear(10);
-const MAX_ATTEMPTS: usize = crate::MAX_ATTEMPTS;
 const BACKING_GAS: Gas = Gas::from_tgas(15);
 const CALLBACK_GAS: Gas = Gas::from_tgas(30);
 /// Gas for the signer call (the signer's own budget is up to 300 Tgas) and the
@@ -469,7 +468,7 @@ impl PayoutContract {
         let payout = Payout::authorize(authorization)
             .unwrap_or_else(|_| env::panic_str("Invalid payout authorization"));
         let before = env::storage_usage();
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         self.payouts.flush();
         self.index.push(PayoutKey {
             backing: backing.clone(),
@@ -550,7 +549,7 @@ impl PayoutContract {
             }),
         );
         // State is written before the external call; the callback only adds to it.
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         Promise::new(self.signer.clone())
             .function_call("sign".to_string(), args, SIGNER_DEPOSIT, SIGNER_GAS)
             .then(
@@ -605,7 +604,7 @@ impl PayoutContract {
         };
         match tx_hash {
             Some(hash) => emit(
-                "signature_ready",
+                "signature_received",
                 json!({
                     "backing": backing, "holder": holder, "request_id": evm::hex_encode(&request_id),
                     "tx_hash": evm::hex_encode(&hash),
@@ -620,7 +619,7 @@ impl PayoutContract {
                 }),
             ),
         }
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         fresh
     }
 
@@ -642,7 +641,7 @@ impl PayoutContract {
         let fresh = payout
             .record_broadcast(tx_hash)
             .unwrap_or_else(|error| env::panic_str(&format!("Broadcast rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         fresh
     }
 
@@ -667,7 +666,7 @@ impl PayoutContract {
         let fresh = payout
             .record_pending(tx_hash)
             .unwrap_or_else(|error| env::panic_str(&format!("Pending rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         fresh
     }
 
@@ -694,7 +693,7 @@ impl PayoutContract {
                 ReasonInput::EvidenceUnavailable => Reason::EvidenceUnavailable,
             })
             .unwrap_or_else(|error| env::panic_str(&format!("Hold rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
     }
 
     /// Operator only. Marks an attempt as finalized with failure.
@@ -715,7 +714,7 @@ impl PayoutContract {
         payout
             .record_revert(tx_hash)
             .unwrap_or_else(|error| env::panic_str(&format!("Revert rejected: {error:?}")));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
     }
 
     /// Operator only. Validates the attested transfer against the payout, has
@@ -777,7 +776,7 @@ impl PayoutContract {
         let fresh = payout
             .confirm(&PaymentEvidence::from(&evidence))
             .unwrap_or_else(|_| env::panic_str("Payout diverged from backing"));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         fresh
     }
 
@@ -830,7 +829,7 @@ impl PayoutContract {
         payout
             .restore(attested.as_ref())
             .unwrap_or_else(|_| env::panic_str("Payout diverged from backing"));
-        self.payouts.insert(id, payout);
+        self.save(id, payout);
         true
     }
 
@@ -934,6 +933,42 @@ impl PayoutContract {
 }
 
 impl PayoutContract {
+    /// Stores a payout and emits `payout_state_changed` when its public state
+    /// differs from the stored one (or the payout is new).
+    fn save(&mut self, id: PayoutId, payout: Payout) {
+        let previous = self.payouts.get(&id).map(|p| p.status.state());
+        let current = payout.status.state();
+        if previous != Some(current) {
+            let a = &payout.authorization;
+            emit(
+                "payout_state_changed",
+                json!({
+                    "backing": a.backing, "holder": a.holder,
+                    "request_id": evm::hex_encode(&a.request_id),
+                    "from": previous.map(PayoutState::label),
+                    "to": current.label(),
+                    "reason": Self::reason_of(&payout.status),
+                }),
+            );
+        }
+        self.payouts.insert(id, payout);
+    }
+
+    fn reason_of(status: &Status) -> Option<ReasonInput> {
+        match status {
+            Status::ReconciliationRequired(Reason::SignerNoResponse) => {
+                Some(ReasonInput::SignerNoResponse)
+            }
+            Status::ReconciliationRequired(Reason::BroadcastUnconfirmed) => {
+                Some(ReasonInput::BroadcastUnconfirmed)
+            }
+            Status::ReconciliationRequired(Reason::EvidenceUnavailable) => {
+                Some(ReasonInput::EvidenceUnavailable)
+            }
+            _ => None,
+        }
+    }
+
     fn config(&self, backing: &AccountId) -> BackingConfig {
         self.backings
             .get(backing)
@@ -981,18 +1016,7 @@ impl PayoutContract {
             holder: a.holder.clone(),
             request_id: a.request_id,
             state: payout.status.state(),
-            reason: match payout.status {
-                Status::ReconciliationRequired(Reason::SignerNoResponse) => {
-                    Some(ReasonInput::SignerNoResponse)
-                }
-                Status::ReconciliationRequired(Reason::BroadcastUnconfirmed) => {
-                    Some(ReasonInput::BroadcastUnconfirmed)
-                }
-                Status::ReconciliationRequired(Reason::EvidenceUnavailable) => {
-                    Some(ReasonInput::EvidenceUnavailable)
-                }
-                _ => None,
-            },
+            reason: Self::reason_of(&payout.status),
             terminal: payout.status.state().is_terminal(),
             chain_id: U64(a.chain_id),
             token: a.token,
