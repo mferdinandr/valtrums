@@ -27,6 +27,11 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 | D11 | The mock set is the tokens that have GoPlus data (see the token table below). | testnet setup | Decided; registry not built |
 | D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed (merged in #52) |
 | D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived (merged in #55) |
+| D14 | Resume policy after an asset is suspended (deficit, reorg or unresolved reconciliation) is flexible and changeable by the owner (hackathon). Planned modes: `OwnerWithEvidence` (default: owner resumes only after an attestation shows custody covers all liabilities), `Automatic` (a later covering attestation lifts the suspension) and `Disabled`. `Automatic` trades safety for speed: a wrong or manipulated attestation could reopen payouts while a shortfall remains. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
+| D15 | A late foreign deposit is refunded to the beneficiary named in the custody deposit event (not the token sender), after finality; it never enters a snapshot or vault. Refines D8. | arena-asset-representation | In progress on `feat/backing-reconciliation` |
+| D16 | The `docs/` branch prefix is allowed for documentation-only branches. | repository conventions | Merged in #56 |
+
+Work in progress (not yet pushed): `feat/backing-reconciliation` (asset-representation tasks: reconciliation, suspend and resume policy, late-deposit refund) and `feat/payout-mpc-signing` (chain-signatures tasks: MPC signer call from the payout contract, restart reconciliation, explicit payout states). `arena-settlement` follows once the payout status interface exists.
 
 ## Research findings (2026-11-07)
 
