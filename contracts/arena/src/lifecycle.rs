@@ -1935,6 +1935,7 @@ mod tests {
             mode: ScoringMode::PriceGain,
             fee: fee(),
             observation: policy("p"),
+            creator_participated: true,
         });
         arena.lifecycle_battles.insert(id, b);
         arena.submit_lifecycle_audit(
