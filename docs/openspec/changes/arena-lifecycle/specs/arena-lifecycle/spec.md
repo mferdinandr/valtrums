@@ -16,7 +16,8 @@ The system SHALL lock communities, deposits, mode, fee identity and policies bef
 
 #### Scenario: Late arrival
 - **WHEN** a cross-chain deposit arrives after lock
-- **THEN** it cannot change the snapshot and its attributed funds remain recoverable outside the live vault
+- **THEN** it cannot change the snapshot or enter any vault, and backing records it as unattributed and returns it to the original depositor after finality
+- **AND** the refund path belongs to the arena-asset-representation (backing) change and is not part of this change
 
 #### Scenario: Repeated lock
 - **WHEN** a scheduler repeats the same lock request
