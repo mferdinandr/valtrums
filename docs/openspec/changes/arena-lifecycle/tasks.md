@@ -10,7 +10,7 @@ Check tasks only after implementation and verification. Coordinate audit and bac
 - [ ] Integrate authenticated audit and backing approvals per community and reject mismatched asset evidence.
 - [ ] Credit only actual backed deposits to their attributed participant and community before lock.
 - [ ] Require a positive backed creator position and nonempty vault for every community, including protocol-created battles.
-- [ ] Verify two- and three-community creation, invalid identities, missing approvals, empty vaults and absent creator stake.
+- [x] Verify two- and three-community creation, invalid identities, missing approvals, empty vaults and absent creator stake.
 
 ## Lock and late arrivals
 
