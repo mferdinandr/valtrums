@@ -15,8 +15,15 @@ pub enum ReservationKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReservationStatus {
     Reserved,
-    Broadcast { transaction_hash: [u8; 32] },
-    Confirmed { evidence: FinalizedDebit },
+    Broadcast {
+        transaction_hash: [u8; 32],
+    },
+    Confirmed {
+        evidence: FinalizedDebit,
+    },
+    /// A payout reservation returned to the entitlement after definitive
+    /// no-spend proof. Terminal; only the payout authority can cause it.
+    Released,
 }
 
 /// A verifier must authenticate this evidence and finality before supplying it.
@@ -63,6 +70,8 @@ pub enum ReservationError {
     EvidenceMismatch,
     DebitAlreadyConsumed,
     WrongKind,
+    AlreadyConfirmed,
+    AlreadyReleased,
 }
 
 impl Reservation {
@@ -88,6 +97,7 @@ impl Reservation {
             {
                 Ok(false)
             }
+            ReservationStatus::Released => Err(ReservationError::AlreadyReleased),
             ReservationStatus::Broadcast { .. } | ReservationStatus::Confirmed { .. } => {
                 Err(ReservationError::ConflictingBroadcast)
             }

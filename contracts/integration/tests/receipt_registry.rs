@@ -30,7 +30,7 @@ async fn registry_rejects_cross_representation_replay_and_retains_disputes() -> 
             .into_result()?;
     }
     let key = json!({"chain_id": "46630", "transaction_hash": vec![1u8;32], "log_index": 1});
-    let mut claim = json!({"representation": first.id(), "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "mapping_version": "1", "arena": owner.id(), "beneficiary": first.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8;32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8;32], "evidence_hash": vec![4u8;32]});
+    let mut claim = json!({"representation": first.id(), "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "mapping_version": "1", "beneficiary": first.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8;32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8;32], "evidence_hash": vec![4u8;32]});
     let args = json!({"key": key, "claim": claim});
     let attack = first
         .call(registry.id(), "attest")
@@ -106,7 +106,7 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         "owner": owner.id(),
         "asset": { "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "source_decimals": 18, "representation_decimals": 18 },
         "name": "Representation fixture", "symbol": "TEST",
-        "registry": registry.id(), "mapping_version": "1", "arena": owner.id()
+        "registry": registry.id(), "mapping_version": "1", "arena": owner.id(), "payout": owner.id()
     })).max_gas().transact().await?.into_result()?;
     owner
         .call(registry.id(), "set_representation")
@@ -127,7 +127,7 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         .await?;
     assert!(!missing.into_result()?.json::<bool>()?);
     let key = json!({"chain_id": "46630", "transaction_hash": vec![1u8;32], "log_index": 1});
-    let claim = json!({"representation": backing.id(), "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "mapping_version": "1", "arena": owner.id(), "beneficiary": alice.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8;32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8;32], "evidence_hash": vec![4u8;32]});
+    let claim = json!({"representation": backing.id(), "token_address": "0x0000000000000000000000000000000000000001", "custody_domain": "fixture", "mapping_version": "1", "beneficiary": alice.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8;32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8;32], "evidence_hash": vec![4u8;32]});
     verifier
         .call(registry.id(), "attest")
         .args_json(json!({"key": key, "claim": claim}))
@@ -191,7 +191,11 @@ async fn backing_credits_registry_claim_once_and_only_to_the_attested_beneficiar
         .transact()
         .await?;
     assert!(paused.into_result()?.json::<bool>()?);
-    let ledger: serde_json::Value = backing.view("get_ledger").args_json(json!({})).await?.json()?;
+    let ledger: serde_json::Value = backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
     assert_eq!(ledger["paused"], true);
     assert_eq!(ledger["reconciliation_required"], true);
     assert_eq!(ledger["unallocated"], "98");
