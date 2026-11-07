@@ -67,6 +67,7 @@ describe("approval binding and refresh (fixture-only)", () => {
       result: "pass",
       policy_hash: r.policyHash,
       evidence_hash: r.evidenceHash,
+      expires_at_ms: String(Date.parse(r.expiresAt!)),
     });
   });
 
