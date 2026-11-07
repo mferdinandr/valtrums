@@ -2167,7 +2167,7 @@ impl Arena {
                 asset: asset.clone(),
                 policy_hash: "p".repeat(256),
                 evidence_hash: "a".repeat(256),
-                expires_at_ms: 1_000_000_000_000,
+                expires_at_ms: u64::MAX,
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture audit rejected"));
