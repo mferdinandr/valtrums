@@ -1813,6 +1813,39 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "at least 1 yoctoNEAR")]
+    fn audit_submission_requires_a_deposit() {
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        let (mut arena, id) = audit_arena();
+        let mut context = VMContextBuilder::new();
+        context.predecessor_account_id(account("auditor.testnet"));
+        testing_env!(context.build());
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Pass,
+            "goplus-v1".into(),
+            "ev1".into(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit references are too long")]
+    fn audit_references_are_bounded() {
+        let (mut arena, id) = audit_arena();
+        arena.submit_lifecycle_audit(
+            id,
+            0,
+            asset(1).into(),
+            AuditResult::Reject,
+            "goplus-v1".into(),
+            "e".repeat(257),
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "Audit result cannot be recorded")]
     fn audit_cannot_change_after_lock() {
         let (mut arena, id) = audit_arena();

@@ -361,6 +361,16 @@ impl Arena {
     ) {
         self.assert_agent();
         require!(!self.paused, "Arena is paused");
+        // A function-call access key cannot attach a deposit, so a nonzero deposit
+        // keeps this privileged call out of reach of such keys.
+        require!(
+            env::attached_deposit().as_yoctonear() >= 1,
+            "Requires attached deposit of at least 1 yoctoNEAR"
+        );
+        require!(
+            policy_hash.len() <= 256 && evidence_hash.len() <= 256,
+            "Audit references are too long"
+        );
         let caller = env::predecessor_account_id();
         let asset: lifecycle::AssetIdentity = asset.into();
         let evidence = match result {
