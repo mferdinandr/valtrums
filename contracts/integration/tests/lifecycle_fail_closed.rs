@@ -240,6 +240,7 @@ async fn fixture_deposits_freeze_and_principal_stays_held() -> anyhow::Result<()
     env.agent
         .call(env.arena.id(), "lock_lifecycle_battle")
         .args_json(json!({"battle_id": id}))
+        .deposit(NearToken::from_yoctonear(1))
         .max_gas()
         .transact()
         .await?

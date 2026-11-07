@@ -317,6 +317,12 @@ impl Arena {
     #[payable]
     pub fn lock_lifecycle_battle(&mut self, battle_id: u64) {
         self.assert_agent();
+        // A deposit cannot be attached by a function-call key, so this keeps a
+        // limited key from locking a battle even when the lock is a repeat.
+        require!(
+            !env::attached_deposit().is_zero(),
+            "Requires an attached deposit of at least 1 yoctoNEAR"
+        );
         require!(!self.paused, "Arena is paused");
         let policy = self
             .lifecycle_observation_policy
