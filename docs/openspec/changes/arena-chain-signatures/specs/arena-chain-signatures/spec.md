@@ -11,6 +11,10 @@ The signing policy SHALL reconstruct allowed chain, token, recipient, amount, cu
 - **WHEN** an infrastructure credential requests arbitrary spending of a player's funds
 - **THEN** the request is rejected
 
+#### Scenario: Contract-initiated signing
+- **WHEN** a payout is authorized from a reservation
+- **THEN** the payout contract itself requests the MPC signature for the reconstructed payload and accepts only the signature returned by the signer callback, never one reported by a relayer
+
 ### Requirement: Final receipt confirmation
 The system SHALL verify successful matching finalized execution before consuming backing as paid; a signature or broadcast alone SHALL NOT confirm a payout.
 

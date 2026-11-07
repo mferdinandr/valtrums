@@ -11,6 +11,7 @@ Deliver reservation-bound signing and payout and its acceptance scenarios withou
 - Contract: [capability requirements](specs/arena-chain-signatures/spec.md).
 - Integration boundary: Requires backing reservations and settlement entitlements.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
+- Known gap: the current payout contract makes no MPC signer call and builds no transaction; a relayer obtains the authorized payload and reports the signature. Until the contract calls the signer itself, the payout path must not be deployed or funded.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
 ## Risks / Migration
