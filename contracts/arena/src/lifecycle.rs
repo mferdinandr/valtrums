@@ -496,6 +496,31 @@ impl Battle {
         self.communities.len()
     }
 
+    pub fn mode(&self) -> ScoringMode {
+        self.mode
+    }
+
+    /// The observation policy frozen at lock, if the battle is locked.
+    pub fn frozen_policy(&self) -> Option<&ObservationPolicy> {
+        self.snapshot.as_ref().map(|snapshot| &snapshot.observation)
+    }
+
+    /// One identifier per original community, binding chain, token and
+    /// representation account, in community order.
+    pub fn asset_labels(&self) -> Vec<String> {
+        self.communities
+            .iter()
+            .map(|community| {
+                format!(
+                    "{}:{}:{}",
+                    community.asset.chain_id,
+                    community.asset.token_address,
+                    community.asset.representation
+                )
+            })
+            .collect()
+    }
+
     /// The held winning vault, once a unique winner has been recorded.
     pub fn principal_hold(&self) -> Option<&PrincipalHold> {
         self.principal_hold.as_ref()
