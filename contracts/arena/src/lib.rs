@@ -392,7 +392,9 @@ impl Arena {
                     item.chain_id.0 == asset.chain_id
                         && item.token_address == asset.token_address
                         && item.representation == asset.representation
-                        && item.custody_domain == asset.custody_domain,
+                        && item.custody_domain == asset.custody_domain
+                        && item.reference_chain_id.map(|id| id.0) == asset.reference_chain_id
+                        && item.reference_address == asset.reference_address,
                     "Audit asset does not match the community"
                 );
                 None
@@ -2107,6 +2109,8 @@ impl Arena {
             token_address: item.token_address.clone(),
             representation: item.representation.clone(),
             custody_domain: item.custody_domain.clone(),
+            reference_chain_id: item.reference_chain_id.map(|id| id.0),
+            reference_address: item.reference_address.clone(),
         };
         self.lifecycle_set_audit(
             battle_id,

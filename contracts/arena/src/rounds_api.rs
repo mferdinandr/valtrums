@@ -356,6 +356,8 @@ pub(crate) mod tests {
             token_address: format!("0x{index:040x}"),
             representation: account(&format!("token{index}.testnet")),
             custody_domain: "vault".into(),
+            reference_chain_id: None,
+            reference_address: None,
         }
     }
     fn terms() -> ObservationTermsInput {

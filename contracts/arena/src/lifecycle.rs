@@ -26,6 +26,11 @@ pub struct AssetIdentity {
     pub token_address: String,
     pub representation: AccountId,
     pub custody_domain: String,
+    /// Optional mainnet reference token this asset represents (both fields set or both unset).
+    /// Committed with the community so a later change cannot reuse an earlier audit approval.
+    pub reference_chain_id: Option<u64>,
+    /// 20-byte lowercase hex address of the reference token.
+    pub reference_address: Option<String>,
 }
 
 /// JSON-facing identity keeps 64-bit chain IDs exact in JavaScript clients.
@@ -36,6 +41,8 @@ pub struct AssetInput {
     pub token_address: String,
     pub representation: AccountId,
     pub custody_domain: String,
+    pub reference_chain_id: Option<U64>,
+    pub reference_address: Option<String>,
 }
 
 impl From<AssetInput> for AssetIdentity {
@@ -45,6 +52,8 @@ impl From<AssetInput> for AssetIdentity {
             token_address: value.token_address,
             representation: value.representation,
             custody_domain: value.custody_domain,
+            reference_chain_id: value.reference_chain_id.map(|id| id.0),
+            reference_address: value.reference_address.map(|a| a.to_ascii_lowercase()),
         }
     }
 }
@@ -57,6 +66,8 @@ impl From<AssetIdentity> for AssetInput {
             token_address: value.token_address,
             representation: value.representation,
             custody_domain: value.custody_domain,
+            reference_chain_id: value.reference_chain_id.map(U64),
+            reference_address: value.reference_address,
         }
     }
 }
@@ -173,6 +184,8 @@ pub struct CommunityView {
     pub token_address: String,
     pub representation: AccountId,
     pub custody_domain: String,
+    pub reference_chain_id: Option<U64>,
+    pub reference_address: Option<String>,
     pub vault: U128,
     pub audit_policy_hash: Option<String>,
     pub audit_evidence_hash: Option<String>,
@@ -265,6 +278,14 @@ pub enum LifecycleError {
     TooManyParticipants,
 }
 
+fn is_evm_address(text: &str) -> bool {
+    text.strip_prefix("0x")
+        .or_else(|| text.strip_prefix("0X"))
+        .is_some_and(|value| {
+            value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+}
+
 impl Battle {
     pub fn new(
         assets: Vec<AssetIdentity>,
@@ -284,6 +305,7 @@ impl Battle {
             return Err(LifecycleError::InvalidPolicy);
         }
         let mut original_assets = BTreeSet::new();
+        let mut references = BTreeSet::new();
         let mut representations = BTreeSet::new();
         let mut communities = Vec::with_capacity(assets.len());
         for asset in assets {
@@ -298,12 +320,24 @@ impl Battle {
             {
                 return Err(LifecycleError::InvalidAsset);
             }
+            // The reference pair is both-or-neither, a valid 20-byte address, stored lowercase.
+            match (asset.reference_chain_id, asset.reference_address.as_deref()) {
+                (None, None) => {}
+                (Some(chain), Some(address)) if chain > 0 && is_evm_address(address) => {
+                    if !references.insert((chain, address.to_ascii_lowercase())) {
+                        return Err(LifecycleError::DuplicateAsset);
+                    }
+                }
+                _ => return Err(LifecycleError::InvalidAsset),
+            }
             // Chain IDs identify EVM chains; their hex addresses are case-insensitive.
             if !original_assets.insert((asset.chain_id, asset.token_address.to_ascii_lowercase()))
                 || !representations.insert(asset.representation.clone())
             {
                 return Err(LifecycleError::DuplicateAsset);
             }
+            let mut asset = asset;
+            asset.reference_address = asset.reference_address.map(|a| a.to_ascii_lowercase());
             communities.push(Community {
                 asset,
                 vault: 0,
@@ -340,6 +374,8 @@ impl Battle {
                     token_address: community.asset.token_address.clone(),
                     representation: community.asset.representation.clone(),
                     custody_domain: community.asset.custody_domain.clone(),
+                    reference_chain_id: community.asset.reference_chain_id.map(U64),
+                    reference_address: community.asset.reference_address.clone(),
                     vault: U128(community.vault),
                     audit_policy_hash: community.audit.as_ref().map(|e| e.policy_hash.clone()),
                     audit_evidence_hash: community.audit.as_ref().map(|e| e.evidence_hash.clone()),
@@ -806,6 +842,8 @@ mod tests {
             token_address: format!("0x{index:040x}"),
             representation: account(&format!("token{index}.testnet")),
             custody_domain: "vault".into(),
+            reference_chain_id: None,
+            reference_address: None,
         }
     }
     fn fee() -> FeePolicy {
@@ -1873,5 +1911,161 @@ mod tests {
             "goplus-v1".into(),
             "ev1".into(),
         );
+    }
+    fn with_reference(mut a: AssetIdentity, chain: u64, address: &str) -> AssetIdentity {
+        a.reference_chain_id = Some(chain);
+        a.reference_address = Some(address.into());
+        a
+    }
+    const REF_A: &str = "0x00000000000000000000000000000000000000AA";
+    const REF_B: &str = "0x00000000000000000000000000000000000000bb";
+
+    fn new_battle(assets: Vec<AssetIdentity>) -> Result<Battle, LifecycleError> {
+        Battle::new(assets, ScoringMode::PriceGain, fee())
+    }
+
+    #[test]
+    fn reference_pair_is_optional_and_normalized_to_lowercase() {
+        assert!(new_battle(vec![asset(1), asset(2)]).is_ok());
+        let b = new_battle(vec![
+            with_reference(asset(1), 4663, REF_A),
+            with_reference(asset(2), 4663, REF_B),
+        ])
+        .expect("battle");
+        let view = b.view();
+        assert_eq!(view.communities[0].reference_chain_id, Some(U64(4663)));
+        assert_eq!(
+            view.communities[0].reference_address.as_deref(),
+            Some(REF_A.to_ascii_lowercase().as_str())
+        );
+        // Mixed: one community with a pair, one without, is allowed.
+        assert!(new_battle(vec![with_reference(asset(1), 4663, REF_A), asset(2)]).is_ok());
+    }
+
+    #[test]
+    fn one_sided_or_malformed_reference_pair_is_rejected() {
+        let mut only_chain = asset(1);
+        only_chain.reference_chain_id = Some(4663);
+        let mut only_addr = asset(1);
+        only_addr.reference_address = Some(REF_A.into());
+        for bad in [
+            only_chain,
+            only_addr,
+            with_reference(asset(1), 4663, "0x1234"),
+            with_reference(asset(1), 4663, "00000000000000000000000000000000000000aa"),
+            with_reference(asset(1), 4663, "0xzz00000000000000000000000000000000000000"),
+            with_reference(asset(1), 0, REF_A),
+        ] {
+            assert_eq!(
+                new_battle(vec![bad, asset(2)]).err(),
+                Some(LifecycleError::InvalidAsset)
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_reference_pair_is_rejected_case_insensitively() {
+        let lower = REF_A.to_ascii_lowercase();
+        assert_eq!(
+            new_battle(vec![
+                with_reference(asset(1), 4663, REF_A),
+                with_reference(asset(2), 4663, &lower),
+            ])
+            .err(),
+            Some(LifecycleError::DuplicateAsset)
+        );
+        // Same address on a different reference chain is a different token.
+        assert!(new_battle(vec![
+            with_reference(asset(1), 4663, REF_A),
+            with_reference(asset(2), 1, REF_A),
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn audit_must_equal_the_committed_reference_pair() {
+        let mut b = new_battle(vec![
+            with_reference(asset(1), 4663, REF_A),
+            with_reference(asset(2), 4663, REF_B),
+        ])
+        .expect("battle");
+        let committed = b.communities[0].asset.clone();
+        let approval = |asset: AssetIdentity| AuditApproval {
+            asset,
+            policy_hash: "p".into(),
+            evidence_hash: "e".into(),
+        };
+        assert_eq!(b.set_audit(0, Some(approval(committed.clone()))), Ok(()));
+        // Missing pair, other address and other chain are all refused.
+        let mut missing = committed.clone();
+        missing.reference_chain_id = None;
+        missing.reference_address = None;
+        let other_addr = with_reference(asset(1), 4663, REF_B);
+        let other_chain = with_reference(asset(1), 1, REF_A);
+        for bad in [missing, other_addr, other_chain] {
+            assert_eq!(
+                b.set_audit(0, Some(approval(bad))),
+                Err(LifecycleError::InvalidApproval)
+            );
+        }
+    }
+
+    #[test]
+    fn arena_audit_submission_checks_the_reference_pair_and_input_json_is_backward_compatible() {
+        use near_sdk::json_types::U64;
+        let without: AssetInput = near_sdk::serde_json::from_value(near_sdk::serde_json::json!({
+            "chain_id": "46630", "token_address": "0x0000000000000000000000000000000000000001",
+            "representation": "token.testnet", "custody_domain": "vault"
+        }))
+        .expect("input without pair");
+        assert!(without.reference_chain_id.is_none());
+        let (mut arena, _) = audit_arena();
+        let mut a = asset(5);
+        a.reference_chain_id = Some(4663);
+        a.reference_address = Some(REF_A.into());
+        let mut b = asset(6);
+        b.reference_chain_id = Some(4663);
+        b.reference_address = Some(REF_B.into());
+        let id = arena
+            .lifecycle_insert(new_battle(vec![a.clone(), b]).expect("battle"))
+            .expect("insert");
+        // The committed pair is accepted whatever the case of the submitted address.
+        let mut input: AssetInput = a.clone().into();
+        input.reference_address = Some(REF_A.to_ascii_uppercase().replace("0X", "0x"));
+        arena.submit_lifecycle_audit(id, 0, input, AuditResult::Pass, "p".into(), "e".into());
+        assert!(arena.get_lifecycle_battle(id).expect("view").communities[0]
+            .audit_evidence_hash
+            .is_some());
+        let view = arena.get_lifecycle_battle(id).expect("view");
+        assert_eq!(view.communities[1].reference_chain_id, Some(U64(4663)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit result cannot be recorded")]
+    fn arena_pass_with_a_different_reference_pair_is_refused() {
+        let (mut arena, _) = audit_arena();
+        let a = with_reference(asset(5), 4663, REF_A);
+        let b = with_reference(asset(6), 4663, REF_B);
+        let id = arena
+            .lifecycle_insert(new_battle(vec![a.clone(), b]).expect("battle"))
+            .expect("insert");
+        let mut wrong: AssetInput = a.into();
+        wrong.reference_address = Some(REF_B.into());
+        arena.submit_lifecycle_audit(id, 0, wrong, AuditResult::Pass, "p".into(), "e".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Audit asset does not match the community")]
+    fn arena_reject_with_a_missing_reference_pair_is_refused() {
+        let (mut arena, _) = audit_arena();
+        let a = with_reference(asset(5), 4663, REF_A);
+        let b = with_reference(asset(6), 4663, REF_B);
+        let id = arena
+            .lifecycle_insert(new_battle(vec![a.clone(), b]).expect("battle"))
+            .expect("insert");
+        let mut wrong: AssetInput = a.into();
+        wrong.reference_chain_id = None;
+        wrong.reference_address = None;
+        arena.submit_lifecycle_audit(id, 0, wrong, AuditResult::Reject, "p".into(), "e".into());
     }
 }
