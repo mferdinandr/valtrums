@@ -4,7 +4,8 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 ## GoPlus evidence and field mapping
 
-- [ ] Verify the authenticated provider boundary (GoPlus credential and request scheme) against the live API; the client currently sends the credential from the environment as an assumed `Authorization` header and is fixture-verified only.
+- [ ] Verify the optional credential scheme (`GOPLUS_ACCESS_TOKEN`) against the live API. The endpoint works without a credential (rate limited); the client sends an `Authorization` header only when a token is set, and that scheme is an unverified assumption.
+- [x] Retry a rate-limited response (HTTP 429 or provider rate-limit code) with bounded backoff and hold it Pending, never pass or reject.
 - [x] Bind evidence to chain, token, representation, custody domain, mapping version, reference pair and policy.
 - [x] Retain raw response, digest, provider/API version and query time for reproducible inspection.
 - [x] Normalize required string flags explicitly as true, false or unknown and retain per-field reasons.

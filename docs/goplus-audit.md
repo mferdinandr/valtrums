@@ -24,6 +24,8 @@ On 2026-11-06 22:50 UTC, an unauthenticated request to the Token Security v1 end
 
 On the same date, a request for chain `4663` and the same address returned code `1` with an empty result. The endpoint accepted that chain ID but returned no token evidence, so this does not establish coverage of a particular token. The [Robinhood network configuration](https://docs.robinhood.com/chain/connecting/) identifies `4663` as mainnet and `46630` as testnet; their responses cannot be substituted for one another.
 
+No credential is required: the Token Security endpoint answers unauthenticated requests (HTTP 200, code 1) but is rate limited. `GOPLUS_ACCESS_TOKEN` is optional; the client sends an `Authorization` header only when it is set, and that header scheme is an unverified assumption. A rate-limited response (HTTP 429 or a provider rate-limit code) is retried with bounded backoff and, if it persists, holds the token Pending. An owner check on 2026-11-07 found that only 1 of 6 candidate Robinhood tokens returned GoPlus data on chain `4663`; tokens without coverage stay Pending, which is intended. These are reported observations, not repository tests.
+
 ## Evidence and normalization
 
 Source: [GoPlus Token Security Response Details](https://docs.gopluslabs.io/reference/response-details), reviewed 2026-11-06; request schema: [Token Security API](https://docs.gopluslabs.io/reference/tokensecurityusingget_1). Preserve the raw response and its hash so later API/schema changes can be detected.
