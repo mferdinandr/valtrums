@@ -2,7 +2,8 @@ import type { NearTransport } from "../near-client.js";
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
 import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
 import type { LifecycleLocker } from "./lifecycle-lock.js";
-import { AuditReportStore } from "./report.js";
+import type { ArchiveProvenance, ReportArchive } from "./report-archive.js";
+import { AuditReportStore, buildAuditReport } from "./report.js";
 
 /** Subset of the arena's `LifecycleView` this pass reads. */
 export interface LifecycleBattleView {
@@ -57,10 +58,19 @@ export function assetsOf(view: LifecycleBattleView): CommittedAsset[] {
   }));
 }
 
+/** Durable report sink; only `put` is used so the lifecycle pass cannot read or mutate history. */
+export type ReportArchiveSink = Pick<ReportArchive, "put">;
+
 export interface LifecycleAuditPassDeps {
   source: LifecycleAuditSource;
   refresh: Omit<RefreshDeps, "isLocked">;
   reports?: AuditReportStore;
+  /** Optional durable archive sink for report history; `arena` is required when it is set. */
+  archive?: ReportArchiveSink;
+  /** Trusted arena/domain label stored with every archived observation. Never derived from a key string. */
+  arena?: string;
+  /** Provenance recorded for archived observations (default "recorded"). */
+  provenance?: ArchiveProvenance;
   /** Optional lock step (see lifecycle-lock.ts); runs only after a refresh that left every community ready. */
   lock?: Pick<LifecycleLocker, "tryLock">;
   log?: Logger;
@@ -70,9 +80,20 @@ export interface LifecycleAuditPassDeps {
  * One scheduler step: refresh the audit of every unlocked lifecycle battle that is missing,
  * stale (within the refresh-ahead margin), changed or not passed. A failure in one battle is
  * logged and does not block the others. Locked battles are never touched.
+ *
+ * When an archive sink is injected, each community's current report is persisted with trusted
+ * arena/battle/community attribution (the community index comes from the current view, never from
+ * splitting a record key), and a bounded structured summary is logged. A sink failure is surfaced
+ * as an error and logged, isolates the other battles, and never changes policy evaluation, the
+ * `ready` count or on-chain submission. Because a still-fresh approval is re-archived every pass
+ * with an idempotent put, a failed archive can be retried on the next pass with no provider call.
  */
 export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Promise<{ checked: number; ready: number; errors: number }> {
   const log = deps.log ?? silentLogger;
+  if (deps.archive && (deps.arena === undefined || deps.arena.length === 0)) {
+    throw new Error("lifecycle audit archive requires a non-empty arena label for attribution");
+  }
+  const provenance: ArchiveProvenance = deps.provenance ?? "recorded";
   return async () => {
     let checked = 0;
     let ready = 0;
@@ -86,8 +107,45 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
           ...deps.refresh,
           isLocked: async () => false,
         });
-        for (const [key, record] of deps.refresh.records) {
-          if (key.startsWith(`${id}:`)) deps.reports?.put(record);
+        // Attribution is bounded to the current view's communities and their trusted indices.
+        for (let i = 0; i < view.communities.length; i++) {
+          const record = deps.refresh.records.get(`${id}:${i}`);
+          if (!record) continue;
+          const report = deps.reports ? deps.reports.put(record) : undefined;
+          if (!deps.archive) continue;
+          const built = report ?? buildAuditReport(record);
+          try {
+            const put = await deps.archive.put({
+              report: built,
+              attribution: { arena: deps.arena!, battleId: id, community: i },
+              provenance,
+            });
+            log.info("audit report archived", {
+              arena: deps.arena,
+              battleId: id,
+              community: i,
+              evidenceHash: built.evidenceHash,
+              policyVersion: built.policy.version,
+              policyHash: built.policy.hash,
+              result: built.result,
+              auditKind: built.auditKind,
+              referenceToken: built.reference?.token ?? null,
+              assetToken: built.asset.token,
+              network: built.asset.custodyDomain,
+              expiresAt: built.times.expiresAt,
+              reasonCodes: built.reasons.map((r) => r.code).slice(0, 32),
+              observationId: put.observation.observationId,
+              archived: put.created,
+            });
+          } catch (err) {
+            errors++;
+            log.error("audit report archive failed", {
+              battleId: id,
+              community: i,
+              evidenceHash: built.evidenceHash,
+              error: errorMessage(err),
+            });
+          }
         }
         checked++;
         if (result.ready) ready++;
