@@ -12,6 +12,7 @@ pub mod lifecycle;
 pub mod math;
 pub mod mpc;
 pub mod rounds;
+pub mod rounds_api;
 pub mod scoring;
 pub mod settlement;
 pub mod types;
@@ -61,6 +62,7 @@ enum StorageKey {
     SignRequests,
     LifecycleBattles,
     LifecyclePositions,
+    LifecycleRounds,
 }
 
 #[ext_contract(ext_ft)]
@@ -166,6 +168,9 @@ pub struct Arena {
     lifecycle_protocol: Option<AccountId>,
     lifecycle_observation_policy: Option<lifecycle::ObservationPolicy>,
     lifecycle_exclusive: bool,
+    /// The only account that opens rounds and submits observations. Set once.
+    lifecycle_oracle: Option<AccountId>,
+    lifecycle_rounds: LookupMap<u64, rounds::Rounds>,
 }
 
 #[near]
@@ -207,7 +212,19 @@ impl Arena {
             lifecycle_protocol: None,
             lifecycle_observation_policy: None,
             lifecycle_exclusive: false,
+            lifecycle_oracle: None,
+            lifecycle_rounds: LookupMap::new(StorageKey::LifecycleRounds),
         }
+    }
+
+    /// Fix the oracle account once. It cannot be changed or removed afterwards,
+    /// so the owner cannot swap the data source after battles lock.
+    #[payable]
+    pub fn set_lifecycle_oracle(&mut self, oracle: AccountId) {
+        self.assert_owner();
+        near_sdk::assert_one_yocto();
+        require!(self.lifecycle_oracle.is_none(), "Oracle is already set");
+        self.lifecycle_oracle = Some(oracle);
     }
 
     /// Permanently isolate a fresh contract from legacy battles before enabling
