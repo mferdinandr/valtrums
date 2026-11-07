@@ -47,7 +47,8 @@ pnpm -C web build
 ## Conventions
 
 - Commits and PR titles: `feat|fix|chore|style: short English sentence` (imperative, lowercase, no trailing period). `docs`, `test`, `refactor` allowed when they fit.
-- One feature = one branch (`feat/…`, `fix/…`, `chore/…`, `style/…`) = one PR to `main`. Each PR has several small logical commits, never one large commit.
+- One feature = one branch (`feat/…`, `fix/…`, `chore/…`, `style/…`, `docs/…`) = one PR to `main`. Each PR has several small logical commits, never one large commit.
+- Use `docs/…` for documentation-only branches (specs, OpenSpec artifacts, the findings log); the PR title then starts with `docs:`.
 - Never push to `main`. Open a PR from the feature branch, then wait for the owner's review. Merge only after the owner approves, using a merge commit or rebase (not squash). Approval applies to that PR only.
 - Run tests before opening a PR. Rust: no `unwrap()` in contract code paths, checked math only. TypeScript: strict mode.
 - No secrets in the repo; use `.env` files (git-ignored).
