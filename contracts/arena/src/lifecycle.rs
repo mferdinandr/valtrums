@@ -492,6 +492,15 @@ impl Battle {
         self.hold_principal(winner)
     }
 
+    pub fn community_count(&self) -> usize {
+        self.communities.len()
+    }
+
+    /// The held winning vault, once a unique winner has been recorded.
+    pub fn principal_hold(&self) -> Option<&PrincipalHold> {
+        self.principal_hold.as_ref()
+    }
+
     /// Expose frozen losing-vault inputs without consulting any DAO decision.
     /// The future settlement adapter must enforce exclusive allocation.
     pub fn losing_vault(&self, community: u32) -> Result<LosingVault, LifecycleError> {
@@ -1116,6 +1125,52 @@ mod tests {
         // The eliminated and the earlier-tied loser both retain their full vaults.
         assert_eq!(b.losing_vault(2).expect("eliminated").amount, 13);
         assert_eq!(b.losing_vault(1).expect("loser").amount, 11);
+    }
+
+    #[test]
+    fn every_original_vault_settles_separately_including_eliminated_communities() {
+        use crate::settlement::{allocate_battle, Recipient, SettlementError};
+        let mut b = battle();
+        approve(&mut b);
+        deposit(&mut b, 0, "creator.testnet", 0, 600).expect("credit");
+        deposit(&mut b, 0, "other.testnet", 0, 400).expect("credit");
+        deposit(&mut b, 1, "other.testnet", 0, 100_000).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 200_000).expect("credit");
+        b.lock(policy("p")).expect("lock");
+        let winners = vec![
+            (account("creator.testnet"), 600),
+            (account("other.testnet"), 400),
+        ];
+        // No recorded winner yet: nothing can be allocated.
+        assert_eq!(
+            allocate_battle(1, &b, &winners),
+            Err(SettlementError::InvalidInput)
+        );
+        b.hold_principal(0).expect("hold");
+        let allocations = allocate_battle(1, &b, &winners).expect("allocate");
+        assert_eq!(
+            allocations.iter().map(|a| a.community).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let total = |a: &crate::settlement::VaultAllocation, kind: Recipient| {
+            a.entitlements
+                .iter()
+                .filter(|e| e.kind == kind)
+                .map(|e| e.amount)
+                .sum::<u128>()
+        };
+        // Each losing token keeps its own amounts and fees: 100000 -> 99900+50+50, 200000 -> 199800+100+100.
+        assert_eq!(total(&allocations[0], Recipient::Winner), 99_900);
+        assert_eq!(total(&allocations[1], Recipient::Winner), 199_800);
+        assert_eq!(total(&allocations[1], Recipient::Creator), 100);
+        assert_eq!(total(&allocations[1], Recipient::Protocol), 100);
+        // Repeating produces identical identities, so a retry cannot allocate twice.
+        assert_eq!(allocate_battle(1, &b, &winners), Ok(allocations.clone()));
+        // Weights that do not match the held winning vault are refused.
+        assert_eq!(
+            allocate_battle(1, &b, &winners[..1]),
+            Err(SettlementError::InvalidInput)
+        );
     }
 
     #[test]
