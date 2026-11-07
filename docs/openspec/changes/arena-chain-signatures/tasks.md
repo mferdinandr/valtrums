@@ -4,7 +4,7 @@ Check tasks only after implementation and verification. Backing reservations and
 
 ## Identity and constrained signing
 
-- [ ] Define a globally unambiguous payout identity including backing contract or asset identity and local reservation ID.
+- [x] Define a globally unambiguous payout identity including backing contract or asset identity and local reservation ID.
 - [ ] Persist the authorized reservation, destination binding, chain, token, amount, custody path, nonce and payload hash.
 - [ ] Reconstruct the permitted transaction from the reservation instead of trusting relayer-supplied parameters.
 - [ ] Reject changed recipient, token, amount, chain, path or nonce and reject infrastructure access to player spending.
@@ -20,7 +20,7 @@ Check tasks only after implementation and verification. Backing reservations and
 
 ## Verification
 
-- [ ] Test two backing contracts issuing the same local payout ID without status or payload collision.
+- [x] Test two backing contracts issuing the same local payout ID without status or payload collision.
 - [ ] Test tampering, role misuse, duplicate requests and signer callback without a final receipt.
-- [ ] Test timeout, crash, same-transaction rebroadcast, replacement, revert and final receipt replay.
-- [ ] Test partial or mismatched transfer evidence remains unconfirmed and does not trigger a duplicate payment.
+- [x] Test timeout, crash, same-transaction rebroadcast, replacement, revert and final receipt replay.
+- [x] Test partial or mismatched transfer evidence remains unconfirmed and does not trigger a duplicate payment.
