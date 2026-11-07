@@ -81,7 +81,19 @@ Every community SHALL pass a separate evidence-backed LP check strictly greater 
 - **THEN** approval remains Pending
 
 ### Requirement: Explicit GoPlus field mapping
-The auditor SHALL follow the selected field mapping in [GoPlus audit policy](../../../../../goplus-audit.md). It SHALL normalize string flags explicitly, preserve unknowns, interpret tax values as exact decimal fractions and bind evidence to the source chain/token. True `is_honeypot`, `cannot_sell_all` or `cannot_buy` SHALL reject eligibility. A tax fraction of exactly 1 SHALL reject the corresponding trading/custody path. Tax limits and privilege admissibility SHALL follow the versioned owner policy; while that policy is unresolved they stay Pending.
+The auditor SHALL follow the selected field mapping in [GoPlus audit policy](../../../../../goplus-audit.md), normalizing flags and tax values explicitly and binding evidence to the source chain/token.
+
+#### Scenario: Critical flags reject
+- **WHEN** `is_honeypot`, `cannot_sell_all` or `cannot_buy` is true
+- **THEN** eligibility is rejected
+
+#### Scenario: Unknowns and exact decimals
+- **WHEN** a value is missing, empty or malformed, or a tax is given as a decimal fraction
+- **THEN** the unknown is preserved and never read as zero, and the tax is compared as an exact decimal fraction, never a float
+
+#### Scenario: Limits follow the owner policy
+- **WHEN** tax limits or privilege admissibility are evaluated
+- **THEN** the versioned owner policy decides, and while it is unresolved the result stays Pending
 
 #### Scenario: Flag normalization
 - **WHEN** a required flag is the string "0" or is absent
