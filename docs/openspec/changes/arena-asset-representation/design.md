@@ -11,6 +11,7 @@ Deliver backed asset representation and its acceptance scenarios without claimin
 - Contract: [capability requirements](specs/arena-asset-representation/spec.md).
 - Integration boundary: Define deposit and custody interface with lifecycle.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
+- Late foreign deposits (owner decision): a deposit that arrives after lock never enters a snapshot or vault. Backing records it as unattributed and returns it to the original depositor after finality. Lifecycle owns the lock boundary; this change owns the recording and the refund path.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
 ## Risks / Migration

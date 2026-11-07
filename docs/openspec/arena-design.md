@@ -14,7 +14,7 @@ Deliver the permissionless multi-community game with correct original-token cust
 4. Snapshot protocol-configured fee and creator share at battle creation. Collect floor(vault * fee_bps / 10000), allocate floor(fee * creator_share_bps / 10000) to the creator and the remainder to protocol; a protocol creator sends the entire fee to protocol. Default fee is 10 bps and creator share is 5000 bps. Allocate only the winner pool using deterministic largest remainder. Replace its locked representations with exclusively backed entitlements. Keep winner principal in DAO escrow.
 5. Separate availability from foreign execution. Reserve before requesting a signature, bind nonce/payload to payout identity, reconcile before retry, confirm only matching final receipt.
 6. Separate infrastructure evidence/scheduling/relay roles from user-specific token-spending grants. Model text is never authorization.
-7. Apply the selected [GoPlus mapping](../goplus-audit.md): critical flag/tax-path rejection, required unknown-data hold and independent LP > USD 10,000. Tax/admin admissibility and evidence freshness remain OPEN.
+7. Apply the selected [GoPlus mapping](../goplus-audit.md): critical flag/tax-path rejection, required unknown-data hold and independent LP > USD 10,000. Audit policy v1 (owner decision 2026-11-07) fixes tax at most 5%, renounced-only admin privileges and a configurable 10-minute evidence lifetime; behavior after a live token-policy change remains OPEN. On testnet, mock tokens are audited through their mainnet reference tokens.
 
 ## Data flow
 
@@ -55,4 +55,4 @@ Use isolated new testnet deployments after implementation. Existing deployment b
 
 ## Open Questions
 
-DAO mechanism including membership, weight, quorum, deadlines and fallback; audit tax/admin admissibility and freshness policy (critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.
+DAO mechanism including membership, weight, quorum, deadlines and fallback; behavior after a live token-policy change and minimum executable liquidity depth (audit policy v1 and critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.

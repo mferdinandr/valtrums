@@ -37,7 +37,7 @@ The target requires authenticated source receipts, versioned audit/observation p
 | Underbacking or duplicate spend | Per-asset B = M + E + P + D + U and exclusive reservations | Conservation/property/recovery tests |
 | 30-second oracle manipulation | Frozen sources, endpoint/cadence policy, provenance, exact scores, complete coverage | Supply trust, wash-volume and manipulation limits OPEN |
 | Late/duplicate scheduling | Immutable interval, expected round/state checks, once-only transitions | Outage/restart/repeated-overtime tests |
-| Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Use the [selected field map](goplus-audit.md); coverage, freshness and tax/admin admissibility remain OPEN |
+| Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Use the [selected field map](goplus-audit.md); audit policy v1 fixes tax/admin admissibility and evidence lifetime; coverage and live-change behavior remain OPEN |
 | Creator/protocol spoofing | Actual mandatory creator stake and frozen authenticated fee identity | Protocol verification policy OPEN |
 | Arbitrary MPC transaction | Exact chain/token/recipient/amount/path/nonce from reservation | Tampering, signer, nonce/replacement/gas tests |
 | Lost response / duplicate payout | Durable identity and reserve; reconcile before new spend; finalized matching receipt | Broadcast crash, timeout, reverted/replaced tx, concurrency |
@@ -47,7 +47,7 @@ The target requires authenticated source receipts, versioned audit/observation p
 | Prompt injection | Typed bounded actions, canonical preview hash and revalidation | Metadata/provider injection and mismatch tests |
 | Indexer reorg/stale status | Finalized cursor/hash, provisional labels, replay/reconciliation | Finality policy/recovery drills |
 | Storage/gas exhaustion | Pagination, funded storage, bounded work with continuation | Limits OPEN; cannot impose an overtime cap |
-| Tax/rebase/admin token risk | Actual receipt credit, explicit eligibility policy, deficit detection | Tax/admin policy OPEN; short receipt cannot count as full payment |
+| Tax/rebase/admin token risk | Actual receipt credit, explicit eligibility policy, deficit detection | Audit policy v1 applies (tax at most 5%, renounced-only admin); short receipt cannot count as full payment |
 | Operator/signer compromise | Least privilege, disclosed powers, constrained signing, monitoring | Rotation/revocation and incident response |
 
 Rewards remain independent of DAO decisions while still requiring valid backing and payout authorization. Available rights must never imply confirmed Robinhood receipt.

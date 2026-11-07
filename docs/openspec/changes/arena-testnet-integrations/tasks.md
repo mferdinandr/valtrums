@@ -8,8 +8,9 @@ Check tasks only after implementation and verification. Research can proceed ind
 - [ ] Verify signer account, custody path, derived address, gas funding and deployed code hashes for the isolated testnet setup.
 - [ ] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration.
 - [ ] Record actual source receipt, attribution, finality and reorg-verification evidence.
-- [ ] Verify GoPlus testnet and independent liquidity coverage for selected assets; explicitly record unsupported or missing fields.
-- [ ] Verify price, circulating supply, eligible volume, drawdown sampling and finality sources against the frozen 30-second policy.
+- [ ] Verify GoPlus (chain `4663`) and independent liquidity coverage for the mainnet reference token of each testnet mock; explicitly record unsupported or missing fields.
+- [ ] Maintain a protocol-controlled registry mapping each testnet mock token to its Robinhood mainnet reference token, shared by audit and scoring; reject unregistered mappings.
+- [ ] Verify price, circulating supply, eligible volume, drawdown sampling and finality sources for the mainnet reference tokens against the frozen 30-second policy.
 - [ ] Label fixtures and distinguish adapter demonstrations from verified public-service integrations.
 
 ## Intents and Bitte
