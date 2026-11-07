@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateCommunity } from "../../src/audit/decision.js";
 import { AuditReportStore, buildAuditReport, formatAuditReport, fractionToPercent } from "../../src/audit/report.js";
 import { resolveReference } from "../../src/audit/reference.js";
-import { FIXTURE_RESOLVED, NOW, REF_TOKEN, asset, goplus, lp, refGoplus, registry } from "./fixtures.js";
+import { FIXTURE_RESOLVED, NOW, REF_TOKEN, asset, goplus, lp, refGoplus, refLp, registry } from "./fixtures.js";
 
 const OWNER = "0x00000000000000000000000000000000000000cc";
 
@@ -70,14 +70,16 @@ describe("audit report (fixture-only)", () => {
     const rec = evaluateCommunity({
       asset: { ...asset, reference: m.reference },
       goplus: refGoplus(),
-      lp: lp("10001"),
+      lp: refLp("10001"),
       policy: FIXTURE_RESOLVED,
       now: NOW,
     });
     const r = buildAuditReport(rec);
     expect(r.auditKind).toBe("reference_token");
     expect(r.reference).toMatchObject({ chainId: "4663", token: REF_TOKEN });
-    expect(r.attestation).toContain("not the behaviour of the chain 46630 contract");
+    expect(r.attestation).toContain("both the GoPlus risk check and the liquidity check describe the chain 4663");
+    expect(r.attestation).toContain("was not itself audited");
+    expect(r.liquidity.measuredOn).toEqual({ chainId: "4663", token: REF_TOKEN });
     const text = formatAuditReport(r);
     expect(text).toContain(`Audit report ${rec.evidenceHash}`);
     expect(text).toContain("Reference mapping: chain 4663");

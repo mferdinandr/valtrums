@@ -98,5 +98,11 @@ export const registry = [{ chainId: CHAIN, token: TOKEN, referenceChainId: REF_C
 export const refGoplus = (overrides: Record<string, string | undefined> = {}) =>
   goplus(overrides, { chainId: REF_CHAIN, queryToken: REF_TOKEN });
 
+/** LP evidence for the mainnet reference token (the subject of a reference-token audit). */
+export function refLp(usd: string, extra: Partial<LpEvidence["pools"][number]> = {}): LpEvidence {
+  const base = lp(usd, { chainId: REF_CHAIN, token: REF_TOKEN, ...extra });
+  return { ...base, chainId: REF_CHAIN, token: REF_TOKEN };
+}
+
 /** The real v1 policy (owner decisions) with the default 600 s TTL. */
 export const FIXTURE_RESOLVED: AuditPolicy = buildAuditPolicy();

@@ -2,8 +2,9 @@
 import { describe, expect, it } from "vitest";
 import { approvalStatus, refreshBattleAudit, AuditSubmitter, type RefreshDeps } from "../../src/audit/approval.js";
 import { evaluateCommunity, goplusTarget, type AuditAsset } from "../../src/audit/decision.js";
+import type { LpEvidence } from "../../src/audit/liquidity.js";
 import { resolveReference, validateRegistry } from "../../src/audit/reference.js";
-import { CHAIN, FIXTURE_RESOLVED, NOW, REF_CHAIN, REF_TOKEN, TOKEN, asset, goplus, lp, refGoplus, registry } from "./fixtures.js";
+import { CHAIN, FIXTURE_RESOLVED, NOW, REF_CHAIN, REF_TOKEN, TOKEN, asset, goplus, lp, refGoplus, refLp, registry } from "./fixtures.js";
 
 const mapped = (): AuditAsset => {
   const r = resolveReference(asset, registry);
@@ -11,8 +12,11 @@ const mapped = (): AuditAsset => {
   return { ...asset, reference: r.reference };
 };
 
-const evalWith = (a: AuditAsset, g: ReturnType<typeof goplus> | null) =>
-  evaluateCommunity({ asset: a, goplus: g, lp: lp("10001"), policy: FIXTURE_RESOLVED, now: NOW });
+const evalWith = (
+  a: AuditAsset,
+  g: ReturnType<typeof goplus> | null,
+  l: LpEvidence | null = a.reference ? refLp("10001") : lp("10001"),
+) => evaluateCommunity({ asset: a, goplus: g, lp: l, policy: FIXTURE_RESOLVED, now: NOW });
 
 describe("reference-token audit (fixture-only)", () => {
   it("resolves only from the registry; self-declared or conflicting mappings hold", () => {
@@ -46,6 +50,27 @@ describe("reference-token audit (fixture-only)", () => {
     expect(r.auditKind).toBe("reference_token");
     expect(r.asset.chainId).toBe(CHAIN);
     expect(r.asset.reference?.chainId).toBe(REF_CHAIN);
+    expect(r.evidenceSubject).toEqual({
+      chainId: REF_CHAIN,
+      token: REF_TOKEN,
+      covers: ["goplus", "lp"],
+      assetItselfAudited: false,
+    });
+  });
+
+  it("liquidity evidence for the testnet mock cannot satisfy a mapped asset; only the reference token's can", () => {
+    const g = refGoplus();
+    expect(evalWith(mapped(), g, lp("50000")).result).toBe("pending");
+    expect(evalWith(mapped(), g, refLp("10000")).result).toBe("pending");
+    expect(evalWith(mapped(), g, refLp("10001")).result).toBe("pass");
+    expect(evalWith(mapped(), g, null).result).toBe("pending");
+    expect(evalWith(asset, goplus()).evidenceSubject.assetItselfAudited).toBe(true);
+  });
+
+  it("the evidence hash commits to the evidence subject", () => {
+    const a = evalWith(mapped(), refGoplus());
+    const b = evalWith(mapped(), refGoplus(), refLp("10002"));
+    expect(a.evidenceHash).not.toBe(b.evidenceHash);
   });
 
   it("evidence hash differs between a reference and a direct audit of the same asset", () => {
@@ -104,7 +129,7 @@ describe("reference-token audit (fixture-only)", () => {
         queries.push(q);
         return refGoplus();
       },
-      fetchLp: async () => lp("10001"),
+      fetchLp: async () => refLp("10001"),
       submitter: new AuditSubmitter("arena.testnet", { call: async (...a: unknown[]) => void calls.push(a) } as never),
       records: new Map(),
       isLocked: async () => false,

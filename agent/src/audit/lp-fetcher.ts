@@ -1,11 +1,13 @@
 import { SEL_BALANCE_OF, isAddress, normalizeAddress, selector } from "../evm-abi.js";
-import type { EvmRpc } from "../evm-rpc.js";
+import type { ReadOnlyEvmRpc } from "../rpc-resilience.js";
 import { formatDecimal } from "./decimal.js";
-import type { AuditAsset } from "./decision.js";
+import { goplusTarget, type AuditAsset } from "./decision.js";
 import type { LpEvidence, PoolEvidence } from "./liquidity.js";
 
 /**
- * Independent LP evidence read on-chain through the Robinhood RPC.
+ * Independent LP evidence read on-chain for the REFERENCE token (Robinhood mainnet 4663) when the
+ * asset is mapped, never from the testnet mock's pools; testnet pools do not represent the real
+ * market. An unmapped asset is read on its own chain. The RPC must serve that chain.
  *
  * Valuation rule: only the reserve of an explicitly configured stablecoin is valued
  * (1 unit = 1 USD). The paired token side is not valued, so a pool is never credited more
@@ -22,11 +24,11 @@ export interface PoolConfig {
 }
 
 export interface LpFetcherDeps {
-  rpc: Pick<EvmRpc, "chainId" | "blockNumber" | "call">;
+  /** Read-only mainnet RPC (REFERENCE_RPC_URL), wrapped with the shared retry policy by the caller. */
+  rpc: ReadOnlyEvmRpc;
   /** Lowercase stablecoin address to token decimals; the explicit allow list. */
   stablecoins: ReadonlyMap<string, number>;
   pools: readonly PoolConfig[];
-  now: () => Date;
 }
 
 const SEL_TOKEN0 = selector("token0()");
@@ -56,11 +58,14 @@ export function validateStablecoins(map: Record<string, unknown>): Map<string, n
 
 export function createLpFetcher(deps: LpFetcherDeps): (asset: AuditAsset) => Promise<LpEvidence | null> {
   return async (asset) => {
-    // Pools are read on the RPC's chain; refuse to read evidence for a different chain.
-    if ((await deps.rpc.chainId()) !== BigInt(asset.chainId)) return null;
-    const token = normalizeAddress(asset.token);
+    // The evidence subject is the reference token when mapped, else the asset itself.
+    const target = goplusTarget(asset);
+    // Refuse to read evidence for a chain the RPC does not serve.
+    if ((await deps.rpc.chainId()) !== BigInt(target.chainId)) return null;
+    const token = normalizeAddress(target.token);
     const block = await deps.rpc.blockNumber();
-    const observedAt = deps.now().toISOString();
+    // Observation time is the block's own timestamp, not the local clock.
+    const observedAt = new Date(Number(await deps.rpc.blockTimestamp(block)) * 1000).toISOString();
     const pools: PoolEvidence[] = [];
 
     for (const cfg of deps.pools) {
@@ -81,7 +86,7 @@ export function createLpFetcher(deps: LpFetcherDeps): (asset: AuditAsset) => Pro
         reserve = wordUint(await deps.rpc.call({ to: stable, data }), 0);
       }
       pools.push({
-        chainId: asset.chainId,
+        chainId: target.chainId,
         poolId: pool,
         token,
         quoteAsset: stable,
@@ -94,6 +99,6 @@ export function createLpFetcher(deps: LpFetcherDeps): (asset: AuditAsset) => Pro
         observedBlock: block.toString(),
       });
     }
-    return { chainId: asset.chainId, token, pools };
+    return { chainId: target.chainId, token, pools };
   };
 }

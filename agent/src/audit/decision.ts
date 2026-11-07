@@ -32,6 +32,11 @@ export interface AuditRecord {
   asset: AuditAsset;
   /** `reference_token`: GoPlus evidence attests the reference token, not the asset contract. */
   auditKind: AuditKind;
+  /**
+   * What both the GoPlus and the LP evidence describe. For a reference-token audit this is the
+   * mainnet reference token and `assetItselfAudited` is false: the testnet mock was not audited.
+   */
+  evidenceSubject: { chainId: string; token: string; covers: ["goplus", "lp"]; assetItselfAudited: boolean };
   result: AuditResult;
   reasons: Reason[];
   policy: AuditPolicy;
@@ -78,7 +83,8 @@ export function evaluateCommunity(input: AuditInput): AuditRecord {
   const { asset, policy, now } = input;
   const reasons: Reason[] = [];
   const auditKind: AuditKind = asset.reference ? "reference_token" : "direct";
-  const lp = evaluateLiquidity(asset, input.lp);
+  // LP depth is measured for the same subject GoPlus audits: the reference token when mapped.
+  const lp = evaluateLiquidity(goplusTarget(asset), input.lp);
   let rejected = false;
   let pending = false;
   const hold = (r: Reason) => {
@@ -156,9 +162,16 @@ export function evaluateCommunity(input: AuditInput): AuditRecord {
   const rawText = input.goplus?.rawText ?? "";
   const rawResponseHash = hex(rawText);
   const pHash = policyHash(policy);
+  const evidenceSubject = {
+    chainId: target.chainId,
+    token: target.token.toLowerCase(),
+    covers: ["goplus", "lp"] as ["goplus", "lp"],
+    assetItselfAudited: !asset.reference,
+  };
   const evidenceHash = hex(
     JSON.stringify({
       auditKind,
+      evidenceSubject,
       asset,
       rawResponseHash,
       providerVersion: input.goplus?.providerVersion ?? null,
@@ -170,6 +183,7 @@ export function evaluateCommunity(input: AuditInput): AuditRecord {
   return {
     asset,
     auditKind,
+    evidenceSubject,
     result,
     reasons,
     policy,

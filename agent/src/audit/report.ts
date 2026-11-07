@@ -36,6 +36,8 @@ export interface AuditReport {
   };
   inspection: { isOpenSource: Tri; isProxy: Tri };
   liquidity: {
+    /** Chain and token whose pools were measured. */
+    measuredOn: { chainId: string; token: string };
     state: "pass" | "fail" | "pending";
     totalUsd: string | null;
     headlineUsd: string | null;
@@ -71,8 +73,9 @@ export function buildAuditReport(record: AuditRecord): AuditReport {
     result: record.result,
     auditKind: record.auditKind,
     attestation: reference
-      ? `Reference-token audit: GoPlus evidence describes the chain ${reference.chainId} token ${reference.token}, ` +
-        `not the behaviour of the chain ${record.asset.chainId} contract ${record.asset.token}.`
+      ? `Reference-token audit: both the GoPlus risk check and the liquidity check describe the chain ` +
+        `${reference.chainId} (mainnet) token ${reference.token}. The chain ${record.asset.chainId} test token ` +
+        `${record.asset.token} was not itself audited, and this result says nothing about its contract behaviour.`
       : `Direct audit of chain ${record.asset.chainId} token ${record.asset.token}.`,
     policy: {
       version: record.policyVersion,
@@ -130,6 +133,7 @@ export function buildAuditReport(record: AuditRecord): AuditReport {
     },
     inspection: { isOpenSource: g.context.isOpenSource.state, isProxy: g.context.isProxy.state },
     liquidity: {
+      measuredOn: { chainId: record.evidenceSubject.chainId, token: record.evidenceSubject.token },
       state: record.lp.state,
       totalUsd: record.lp.totalUsd,
       headlineUsd: record.lp.headlineUsd,
@@ -179,7 +183,7 @@ export function formatAuditReport(r: AuditReport): string {
   );
   lines.push(`Inspection: open source ${r.inspection.isOpenSource}, proxy ${r.inspection.isProxy}`);
   lines.push(
-    `Liquidity: ${r.liquidity.state} total ${r.liquidity.totalUsd ?? "n/a"} USD ` +
+    `Liquidity (measured on chain ${r.liquidity.measuredOn.chainId} token ${r.liquidity.measuredOn.token}): ${r.liquidity.state} total ${r.liquidity.totalUsd ?? "n/a"} USD ` +
       `(required strictly above ${r.liquidity.requiredAboveUsd}); pools ${r.liquidity.pools.join(", ") || "none"}`,
   );
   lines.push("Reasons:");
