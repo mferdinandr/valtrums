@@ -1,6 +1,6 @@
 # Findings and decisions log
 
-Team log of owner decisions, research findings and the state of each work branch. Newest entries go at the top of each section. Entries are facts at the date shown; re-verify before relying on them. Nothing here is a live-integration claim: tests are fixture-based unless a row says otherwise, and nothing listed has been merged yet.
+Team log of owner decisions, research findings and the state of each work branch. Newest entries go at the top of each section. Entries are facts at the date shown; re-verify before relying on them. Nothing here is a live-integration claim: tests are fixture-based unless a row says otherwise, and the pull requests listed below were merged on 2026-11-07.
 
 Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-audit.md), [OpenSpec coordination](openspec/README.md).
 
@@ -14,19 +14,19 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 
 | # | Decision | Applies to | Status |
 | --- | --- | --- | --- |
-| D1 | Audit policy v1: buy, sell and transfer tax are each admissible up to and including 5% (above 5% rejects; exactly 100% still rejects). Privileged token administration (mint, pause, blacklist or whitelist, balance changes, tax changes) is admissible only when ownership is renounced and unrecoverable; otherwise Reject. Unknown fields stay Pending. | arena-audit | Decided; implemented on `feat/arena-audit` (unmerged) |
-| D2 | Evidence lifetime defaults to 10 minutes, configurable, refreshed before lock. Behavior after a live token-policy change stays OPEN. | arena-audit | Decided; implemented on `feat/arena-audit` (unmerged) |
-| D3 | Everything the audit shows a user is written down for them: per-field results, tax as percentages, each admin capability with ownership status, reasons, policy version, expiry and reference mapping. | arena-audit, later MCP/UI | Report built on `feat/arena-audit`; no UI yet |
-| D4 | Liquidity: independent on-chain headline value of the quote-side balance of Uniswap v2 and v3 pools, strictly above USD 10,000. A WETH quote is priced through one configured WETH/USDG pool. Minimum executable depth stays OPEN. | arena-audit | In progress on `feat/arena-audit` |
-| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address comes from DexScreener and is not verified on-chain by us. | arena-audit | In progress on `feat/arena-audit` |
-| D6 | GoPlus supports only Robinhood mainnet `4663` (not testnet `46630`). On testnet each mock token carries a mainnet reference token. GoPlus and liquidity are measured on the reference token, always. Approval attests the reference token, not the mock contract. Mappings come only from a protocol-controlled registry. | arena-audit, arena-lifecycle | Implemented in agent code on `feat/arena-audit`; on-chain part in progress |
-| D7 | The reference pair (`reference_chain_id`, `reference_address`) becomes part of the committed community mapping (`asset-identity-v2`); a later change invalidates approval. | arena-lifecycle, arena-asset-representation | In progress on `feat/arena-audit` |
+| D1 | Audit policy v1: buy, sell and transfer tax are each admissible up to and including 5% (above 5% rejects; exactly 100% still rejects). Privileged token administration (mint, pause, blacklist or whitelist, balance changes, tax changes) is admissible only when ownership is renounced and unrecoverable; otherwise Reject. Unknown fields stay Pending. | arena-audit | Decided; implemented (merged in #53) |
+| D2 | Evidence lifetime defaults to 10 minutes, configurable, refreshed before lock. Behavior after a live token-policy change stays OPEN. | arena-audit | Decided; implemented (merged in #53) |
+| D3 | Everything the audit shows a user is written down for them: per-field results, tax as percentages, each admin capability with ownership status, reasons, policy version, expiry and reference mapping. | arena-audit, later MCP/UI | Report built (merged in #53); no UI yet |
+| D4 | Liquidity: independent on-chain headline value of the quote-side balance of Uniswap v2 and v3 pools, strictly above USD 10,000. A WETH quote is priced through one configured WETH/USDG pool. Minimum executable depth stays OPEN. | arena-audit | Implemented (merged in #53) |
+| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address comes from DexScreener and is not verified on-chain by us. | arena-audit | Implemented (merged in #53) |
+| D6 | GoPlus supports only Robinhood mainnet `4663` (not testnet `46630`). On testnet each mock token carries a mainnet reference token. GoPlus and liquidity are measured on the reference token, always. Approval attests the reference token, not the mock contract. Mappings come only from a protocol-controlled registry. | arena-audit, arena-lifecycle | Implemented (merged in #53) |
+| D7 | The reference pair (`reference_chain_id`, `reference_address`) becomes part of the committed community mapping (`asset-identity-v2`); a later change invalidates approval. | arena-lifecycle, arena-asset-representation | Implemented (merged in #53) |
 | D8 | A foreign deposit arriving after lock never enters a snapshot or vault; backing records it as unattributed and refunds the original depositor after finality. | arena-lifecycle, arena-asset-representation | Recorded in specs; refund path not implemented |
 | D9 | Scoring data for mock tokens also comes from the mainnet reference token. Recorded as integration tasks, not yet specified in scoring. | arena-testnet-integrations | Recorded as tasks |
 | D10 | No buy/sell simulation for now, and the whole fallback audit for tokens without GoPlus data is deferred. Tokens without GoPlus data stay Pending. | arena-audit | Deferred |
 | D11 | The mock set is the tokens that have GoPlus data (see the token table below). | testnet setup | Decided; registry not built |
-| D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed on `feat/arena-lifecycle-unblocked` (unmerged) |
-| D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived on `chore/archive-arena-scoring` (unmerged) |
+| D12 | `lock_lifecycle_battle` requires a non-zero attached deposit. | arena-lifecycle | Fixed (merged in #52) |
+| D13 | `arena-scoring` archived (all 18 tasks complete; archived 2026-11-07). Open items remain in its notes: single trusted oracle that cannot be rotated, and provider, cadence and tolerance values. | arena-scoring | Archived (merged in #55) |
 
 ## Research findings (2026-11-07)
 
@@ -80,7 +80,7 @@ Third-party sources only; not checked against an official Uniswap or Robinhood p
 
 ## Work branches
 
-Opened as pull requests on 2026-11-07 and waiting for the owner's review; none is merged. Suggested merge order: #52, then #53 (one documentation conflict in `arena-lifecycle/implementation-notes.md`), then #54 and #55. Commits carry no AI attribution.
+All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #56. #53 needed a documentation conflict fixed in `arena-lifecycle/implementation-notes.md`, and its first CI run failed because #52 and #53 each added a field to a struct that the other's new tests construct (no textual conflict); fixed in `e1d1a36`. Lesson: re-run CI after merging `main` into a branch, even when git reports no conflicts. Commits carry no AI attribution.
 
 | PR | Branch |
 | --- | --- |
@@ -88,6 +88,7 @@ Opened as pull requests on 2026-11-07 and waiting for the owner's review; none i
 | [#53](https://github.com/mferdinandr/valtrum/pull/53) | `feat/arena-audit` |
 | [#54](https://github.com/mferdinandr/valtrum/pull/54) | `chore/openspec-followups` |
 | [#55](https://github.com/mferdinandr/valtrum/pull/55) | `chore/archive-arena-scoring` |
+| [#56](https://github.com/mferdinandr/valtrum/pull/56) | `docs/branch-prefix-rule` (allows the `docs/` branch prefix in `Code/CLAUDE.md`) |
 
 | Branch | Content | Verification so far |
 | --- | --- | --- |
@@ -96,7 +97,7 @@ Opened as pull requests on 2026-11-07 and waiting for the owner's review; none i
 | `chore/openspec-followups` | Tasks and spec text for the late-deposit refund (asset representation), the missing MPC signer call (chain signatures) and the mainnet reference registry (testnet integrations); this log; updates to docs that listed decided items as OPEN; shortened long requirements in the settlement spec. | `openspec validate --all --strict` (see below) |
 | `chore/archive-arena-scoring` | Archive of `arena-scoring` and creation of its main spec; fixed two links and the placeholder Purpose. | 317 arena tests passed on `main`-equivalent code before the archive |
 
-OpenSpec validation baseline after the follow-ups: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
+OpenSpec validation on `main` after all merges: 10 passed, 0 failed (`--strict`). Baseline command: run `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`. Before the settlement fix, `arena-audit` and `arena-settlement` failed only on warnings that a requirement text exceeds 500 characters.
 
 ## Open items and who acts
 
