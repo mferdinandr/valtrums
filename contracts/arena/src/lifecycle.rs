@@ -15,6 +15,10 @@ pub const MAX_COMMUNITIES: usize = 16;
 /// transaction or storage budget for the entire battle.
 const MAX_METADATA_BYTES: usize = 256;
 
+/// Settlement reads every winning participant on each call, so the number of
+/// depositors per community is bounded to keep it inside one call's gas.
+pub const MAX_PARTICIPANTS_PER_COMMUNITY: u32 = 300;
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetIdentity {
@@ -245,6 +249,8 @@ pub enum LifecycleError {
     WinningVault,
     PositionNotRegistered,
     PositionAlreadyRegistered,
+    /// A community already has the most depositors settlement can process.
+    TooManyParticipants,
 }
 
 impl Battle {
@@ -649,16 +655,30 @@ impl crate::Arena {
             return Err(LifecycleError::PositionAlreadyRegistered);
         }
         self.lifecycle_positions.insert(key, 0);
+        Ok(())
+    }
+
+    /// Add an account to a community's participant index the first time it
+    /// holds a credited deposit. Registering a position alone adds nothing, so
+    /// accounts that never deposit cannot enlarge the settlement workload.
+    fn lifecycle_index_participant(
+        &mut self,
+        id: u64,
+        community: u32,
+        account: &AccountId,
+    ) -> Result<(), LifecycleError> {
         let count = self
             .lifecycle_participant_counts
             .get(&(id, community))
             .copied()
             .unwrap_or(0);
-        let next = count.checked_add(1).ok_or(LifecycleError::Overflow)?;
+        if count >= MAX_PARTICIPANTS_PER_COMMUNITY {
+            return Err(LifecycleError::TooManyParticipants);
+        }
         self.lifecycle_participants
             .insert((id, community, count), account.clone());
         self.lifecycle_participant_counts
-            .insert((id, community), next);
+            .insert((id, community), count + 1);
         Ok(())
     }
 
@@ -703,6 +723,9 @@ impl crate::Arena {
             .copied()
             .ok_or(LifecycleError::PositionNotRegistered)?;
         let next = battle.credit(community as usize, token, sender, prior, amount)?;
+        if prior == 0 && next > 0 {
+            self.lifecycle_index_participant(id, community, sender)?;
+        }
         self.lifecycle_positions.insert(key, next);
         self.lifecycle_battles.insert(id, battle);
         Ok(())
@@ -1407,6 +1430,85 @@ mod tests {
         assert_eq!(
             arena.lifecycle_position(id, 0, &account("creator.testnet")),
             0
+        );
+    }
+
+    #[test]
+    fn only_depositors_enter_the_participant_index_and_their_number_is_capped() {
+        use near_sdk::json_types::{U128, U64};
+        use near_sdk::test_utils::VMContextBuilder;
+        use near_sdk::testing_env;
+        testing_env!(VMContextBuilder::new()
+            .predecessor_account_id(account("owner.testnet"))
+            .build());
+        let mut arena = crate::Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(0),
+            U64(60),
+        );
+        let id = arena.lifecycle_insert(battle()).expect("battle");
+        for index in 0..3 {
+            arena
+                .lifecycle_set_audit(id, index, Some(audit(index)))
+                .expect("audit");
+            arena
+                .lifecycle_set_backing(id, index, Some(backing(index)))
+                .expect("backing");
+        }
+        // Registering a position alone adds nobody to the index.
+        let people: Vec<AccountId> = (0..3).map(|i| account(&format!("p{i}.testnet"))).collect();
+        for person in &people {
+            arena
+                .lifecycle_register_position(id, 0, person)
+                .expect("register");
+        }
+        assert!(arena.lifecycle_participant_positions(id, 0).is_empty());
+        let token = asset(1).representation;
+        arena
+            .lifecycle_credit(id, 0, &token, &people[0], 5)
+            .expect("credit");
+        arena
+            .lifecycle_credit(id, 0, &token, &people[2], 5)
+            .expect("credit");
+        // A top-up by an existing depositor does not add a second entry.
+        arena
+            .lifecycle_credit(id, 0, &token, &people[0], 1)
+            .expect("top up");
+        assert_eq!(
+            arena.lifecycle_participant_positions(id, 0),
+            vec![(people[0].clone(), 6), (people[2].clone(), 5)]
+        );
+        // Depositors per community are capped, but existing ones can still top up.
+        let token = asset(2).representation;
+        let crowd: Vec<AccountId> = (0..=MAX_PARTICIPANTS_PER_COMMUNITY)
+            .map(|i| account(&format!("u{i}.testnet")))
+            .collect();
+        for person in &crowd {
+            arena
+                .lifecycle_register_position(id, 1, person)
+                .expect("register");
+        }
+        for person in &crowd[..MAX_PARTICIPANTS_PER_COMMUNITY as usize] {
+            arena
+                .lifecycle_credit(id, 1, &token, person, 1)
+                .expect("credit");
+        }
+        assert_eq!(
+            arena.lifecycle_credit(
+                id,
+                1,
+                &token,
+                &crowd[MAX_PARTICIPANTS_PER_COMMUNITY as usize],
+                1
+            ),
+            Err(LifecycleError::TooManyParticipants)
+        );
+        assert_eq!(arena.lifecycle_credit(id, 1, &token, &crowd[0], 1), Ok(()));
+        assert_eq!(
+            arena.lifecycle_participant_positions(id, 1).len(),
+            MAX_PARTICIPANTS_PER_COMMUNITY as usize
         );
     }
 
