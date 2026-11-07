@@ -152,6 +152,8 @@ pub struct Snapshot {
     pub mode: ScoringMode,
     pub fee: FeePolicy,
     pub observation: ObservationPolicy,
+    /// The creator held a credited position when the battle locked.
+    pub creator_participated: bool,
 }
 
 #[near(serializers = [json])]
@@ -586,6 +588,7 @@ impl Battle {
                 mode: self.mode,
                 fee: self.fee.clone(),
                 observation,
+                creator_participated: self.creator_has_position,
             });
         }
         self.snapshot.as_ref().ok_or(LifecycleError::InvalidPolicy)
@@ -876,6 +879,37 @@ mod tests {
         );
         assert_eq!(b.set_audit(0, None), Err(LifecycleError::Locked));
         assert_eq!(b.lock(policy("changed")), Ok(&frozen));
+    }
+
+    #[test]
+    fn snapshot_freezes_identities_mode_fee_policy_and_creator_participation() {
+        let mut b = battle();
+        approve(&mut b);
+        deposit(&mut b, 0, "creator.testnet", 0, 7).expect("credit");
+        deposit(&mut b, 1, "other.testnet", 0, 11).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 13).expect("credit");
+        let frozen = b.lock(policy("original")).expect("lock").clone();
+        assert_eq!(
+            frozen
+                .communities
+                .iter()
+                .map(|c| c.asset.clone())
+                .collect::<Vec<_>>(),
+            vec![asset(1), asset(2), asset(3)]
+        );
+        assert_eq!(frozen.mode, ScoringMode::PriceGain);
+        assert_eq!(frozen.fee, fee());
+        assert_eq!(frozen.observation, policy("original"));
+        assert!(frozen.creator_participated);
+        // Nothing the battle exposes can alter the frozen record afterwards.
+        assert_eq!(b.set_audit(0, None), Err(LifecycleError::Locked));
+        assert_eq!(b.set_backing(0, None), Err(LifecycleError::Locked));
+        assert_eq!(
+            deposit(&mut b, 2, "creator.testnet", 0, 1),
+            Err(LifecycleError::Locked)
+        );
+        assert_eq!(b.lock(policy("other")), Ok(&frozen));
+        assert_eq!(b.view().communities[0].vault, U128(7));
     }
 
     #[test]
