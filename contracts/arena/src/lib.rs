@@ -1,6 +1,6 @@
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json};
-use near_sdk::store::{IterableSet, LookupMap};
+use near_sdk::store::{IterableMap, IterableSet, LookupMap};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     Promise, PromiseError, PromiseOrValue,
@@ -14,6 +14,7 @@ pub mod lifecycle_backing;
 mod lifecycle_guards;
 pub mod math;
 pub mod mpc;
+pub mod reference_registry;
 pub mod rounds;
 pub mod rounds_api;
 pub mod scoring;
@@ -71,6 +72,7 @@ enum StorageKey {
     LifecycleParticipantCounts,
     LifecycleSettlement,
     LifecycleTrustedRepresentations,
+    LifecycleReferenceRegistry,
 }
 
 #[ext_contract(ext_ft)]
@@ -193,6 +195,11 @@ pub struct Arena {
     /// Representation contracts the owner accepts as backing sources; only these
     /// can produce a backing approval (see `lifecycle_backing`).
     lifecycle_trusted_representations: LookupMap<AccountId, bool>,
+    /// Owner-controlled mainnet reference token per testnet token, keyed by
+    /// (chain id, lowercase address); see `reference_registry`.
+    lifecycle_reference_registry: IterableMap<(u64, String), reference_registry::ReferenceEntry>,
+    /// Bumped on every registry change.
+    lifecycle_reference_registry_version: u64,
 }
 
 /// Total fee on a losing vault can never be set above 10%.
@@ -249,6 +256,8 @@ impl Arena {
             lifecycle_trusted_representations: LookupMap::new(
                 StorageKey::LifecycleTrustedRepresentations,
             ),
+            lifecycle_reference_registry: IterableMap::new(StorageKey::LifecycleReferenceRegistry),
+            lifecycle_reference_registry_version: 0,
         }
     }
 
@@ -511,7 +520,9 @@ impl Arena {
             creator: creator.clone(),
             protocol,
         };
-        let assets = assets.into_iter().map(Into::into).collect();
+        let assets: Vec<lifecycle::AssetIdentity> = assets.into_iter().map(Into::into).collect();
+        // A reference pair is accepted only when it equals the protocol registry entry.
+        self.assert_registered_references(&assets);
         let battle = lifecycle::Battle::new(assets, mode, fee)
             .unwrap_or_else(|_| env::panic_str("Invalid lifecycle battle"));
         let before = env::storage_usage();
