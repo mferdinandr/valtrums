@@ -242,7 +242,7 @@ export const READ_TOOLS: readonly ReadTool[] = [
         }
       }
       return live(deps, "inspect_escrow", deps.arena.info, { accountId: account, escrow: held }, [
-        "DAO governance and burn-or-return disposition are an open owner decision; no disposition is implied",
+        "no disposition vote is implemented yet (D22 governance is decided, execution is #75); principal stays escrowed until a valid vote",
         "escrow is an accounting hold; source-chain disposition is not verified here",
       ]);
     },

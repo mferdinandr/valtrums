@@ -79,11 +79,11 @@ describe("read-only MCP and terminal tools", () => {
     expect(pay.limitations.join(" ")).toContain("not confirmed until its receipt is verified");
   });
 
-  it("reports escrow without implying a DAO disposition and entitlements as unavailable, not zero", async () => {
+  it("reports escrow without implying a disposition and entitlements as unavailable, not zero", async () => {
     const deps = await makeDeps();
     const escrow = await callReadTool("inspect_escrow", { session: deps.aliceToken }, deps);
     expect(escrow.data).toMatchObject({ escrow: [{ battleId: 2, community: 0, amount: "250", disposition: "undecided" }] });
-    expect(escrow.limitations.join(" ")).toContain("open owner decision");
+    expect(escrow.limitations.join(" ")).toContain("stays escrowed until a valid vote");
     const ent = await callReadTool("inspect_entitlements", { session: deps.aliceToken }, deps);
     expect(ent.data).toMatchObject({ available: false, entitlements: [] });
   });
