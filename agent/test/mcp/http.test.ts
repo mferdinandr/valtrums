@@ -6,7 +6,7 @@ describe("read API over HTTP", () => {
   it("runs read tools with GET and lists them", async () => {
     const deps = await makeDeps();
     const list = await handleReadRequest({ method: "GET", url: "/tools" }, deps);
-    expect(JSON.parse(list.body).tools).toHaveLength(8);
+    expect(JSON.parse(list.body).tools).toHaveLength(10);
     const res = await handleReadRequest({ method: "GET", url: "/tools/list_battles?mode=LowestDrawdown&limit=5" }, deps);
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ network: "near-testnet", source: { kind: "fixture" }, freshness: "fresh" });

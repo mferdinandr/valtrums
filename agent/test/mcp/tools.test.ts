@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryReportArchive } from "../../src/audit/report-archive.js";
+import { FixtureStateSource } from "../../src/mcp/account-state.js";
 import { FIXTURE_LIMITATION, envelope, freshnessOf } from "../../src/mcp/envelope.js";
 import type { ArenaReadSource } from "../../src/mcp/read-source.js";
 import { OPEN_SESSION_TOOL, buildMcpServer, handleMcpToolCall } from "../../src/mcp/server.js";
@@ -34,6 +35,7 @@ describe("read-only MCP and terminal tools", () => {
     expect(READ_TOOL_NAMES).toEqual([
       "list_battles", "inspect_battle", "inspect_round", "inspect_audit",
       "inspect_positions", "inspect_entitlements", "inspect_payouts", "inspect_escrow",
+      "inspect_account_state", "list_recovery_alerts",
     ]);
     const all = [...READ_TOOL_NAMES, OPEN_SESSION_TOOL.name];
     for (const n of all) expect(n).not.toMatch(/submit|sign_tx|send|transfer|deposit|withdraw|approve|grant|reserve|execute/);
@@ -46,6 +48,7 @@ describe("read-only MCP and terminal tools", () => {
     for (const name of READ_TOOL_NAMES) {
       const out = await callReadTool(name, argsFor(name, deps.aliceToken), {
         ...deps, arena: proxy, audits: { archive, info: { network: "near-testnet", kind: "fixture", name: "archive" } },
+        state: new FixtureStateSource("near-testnet", {}),
       });
       expect(out.tool).toBe(name);
       expect(out.network).toBe("near-testnet");
@@ -83,7 +86,7 @@ describe("read-only MCP and terminal tools", () => {
     const deps = await makeDeps();
     const escrow = await callReadTool("inspect_escrow", { session: deps.aliceToken }, deps);
     expect(escrow.data).toMatchObject({ escrow: [{ battleId: 2, community: 0, amount: "250", disposition: "undecided" }] });
-    expect(escrow.limitations.join(" ")).toContain("stays escrowed until a valid vote");
+    expect(escrow.limitations.join(" ")).toContain("use inspect_account_state for the D22 vote status");
     const ent = await callReadTool("inspect_entitlements", { session: deps.aliceToken }, deps);
     expect(ent.data).toMatchObject({ available: false, entitlements: [] });
   });
