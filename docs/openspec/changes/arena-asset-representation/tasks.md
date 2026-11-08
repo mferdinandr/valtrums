@@ -21,7 +21,7 @@ Check tasks only after implementation and verification. Custody verification, fi
 - [x] Disable or burn representations when reserving redemption and retain the reservation while execution is unresolved.
 - [x] Reconcile finalized payment or disposal evidence before consuming backing; restore only after definitive no-spend proof.
 - [x] Suspend affected minting and payouts on deficit, reorg or unresolved reconciliation.
-- [ ] Record a foreign deposit that arrives after lock as unattributed to any battle and return it to the original depositor after finality, without entering a snapshot or vault.
+- [x] Record a foreign deposit that arrives after lock as unattributed to any battle and return it to the original depositor after finality, without entering a snapshot or vault.
 
 ## Verification
 

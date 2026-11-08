@@ -59,3 +59,7 @@ The system SHALL record a verified foreign deposit that arrives after a battle l
 #### Scenario: Refund address binding
 - **WHEN** a deposit names no refund address, or a refund targets another address
 - **THEN** the deposit is rejected at the source or credits nothing, and the refund reservation fails
+
+#### Scenario: Refund through payout
+- **WHEN** the beneficiary requests a late refund through the payout contract
+- **THEN** only the bound address is reserved, signed for and confirmable
