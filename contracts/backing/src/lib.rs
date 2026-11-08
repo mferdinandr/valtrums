@@ -66,6 +66,8 @@ trait ArenaLifecycle {
 pub struct LateDeposit {
     pub battle_id: U64,
     pub beneficiary: AccountId,
+    /// EVM address bound at deposit time; the only refund destination for these units (D17).
+    pub refund_address: [u8; 20],
     /// Representation units recorded in bucket U.
     pub units: U128,
     /// Sub-unit source residue attributed to the beneficiary.
@@ -85,6 +87,7 @@ enum StorageKey {
     EntitlementBalances,
     Late,
     LateReceipts,
+    LateByRefund,
 }
 
 /// Identity and precision are immutable for this contract instance.
@@ -209,6 +212,8 @@ pub struct Backing {
     attestation: Option<CustodyAttestation>,
     attestation_sequence: u64,
     late_by_account: LookupMap<AccountId, u128>,
+    /// Same units as `late_by_account`, split by the refund address bound at deposit.
+    late_by_refund: LookupMap<(AccountId, [u8; 20]), u128>,
     late_total: u128,
     late_receipts: LookupMap<receipt::ReceiptId, LateDeposit>,
 }
@@ -296,6 +301,7 @@ impl Backing {
             attestation: None,
             attestation_sequence: 0,
             late_by_account: LookupMap::new(StorageKey::Late),
+            late_by_refund: LookupMap::new(StorageKey::LateByRefund),
             late_total: 0,
             late_receipts: LookupMap::new(StorageKey::LateReceipts),
         }
@@ -885,6 +891,16 @@ impl Backing {
         U128(self.late_by_account.get(&account).copied().unwrap_or(0))
     }
 
+    /// Late units refundable to one bound refund address of `account`.
+    pub fn late_balance_of_refund(&self, account: AccountId, refund_address: [u8; 20]) -> U128 {
+        U128(
+            self.late_by_refund
+                .get(&(account, refund_address))
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
     pub fn get_late_deposit(
         &self,
         transaction_hash: String,
@@ -976,6 +992,10 @@ impl Backing {
     }
 }
 
+fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Rust-only adapter boundary. These methods are not exported as contract
 /// entry points and do not by themselves authenticate a verifier or prove
 /// finality. Future adapters must establish both before calling them.
@@ -1026,6 +1046,7 @@ impl Backing {
         let candidate = receipt::Receipt {
             id: id.clone(),
             beneficiary: claim.beneficiary.clone(),
+            refund_address: claim.refund_address,
             actual_source_amount: claim.actual_received.0,
             source_block_hash: claim.block_hash,
             status: receipt::ReceiptStatus::Provisional,
@@ -1055,6 +1076,7 @@ impl Backing {
         if let Some(existing) = self.receipts.get(&candidate.id) {
             return if existing.id == candidate.id
                 && existing.beneficiary == candidate.beneficiary
+                && existing.refund_address == candidate.refund_address
                 && existing.actual_source_amount == candidate.actual_source_amount
                 && existing.source_block_hash == candidate.source_block_hash
             {
@@ -1142,6 +1164,15 @@ impl Backing {
         }
         if normalized.representation_units > 0 {
             if late.is_some() {
+                let by_refund = self
+                    .late_by_refund
+                    .get(&(account.clone(), item.refund_address))
+                    .copied()
+                    .unwrap_or(0)
+                    .checked_add(normalized.representation_units)
+                    .ok_or(ReceiptProcessingError::Overflow)?;
+                self.late_by_refund
+                    .insert((account.clone(), item.refund_address), by_refund);
                 self.late_by_account.insert(account.clone(), unallocated);
             } else {
                 self.unallocated_by_account
@@ -1155,6 +1186,7 @@ impl Backing {
                 LateDeposit {
                     battle_id: U64(battle_id),
                     beneficiary: account.clone(),
+                    refund_address: item.refund_address,
                     units: U128(normalized.representation_units),
                     source_residue: U128(normalized.source_residue),
                 },
@@ -1164,6 +1196,7 @@ impl Backing {
                 near_sdk::serde_json::json!({
                     "battle_id": battle_id.to_string(),
                     "beneficiary": account,
+                    "refund_address": format!("0x{}", hex_lower(&item.refund_address)),
                     "units": normalized.representation_units.to_string(),
                 }),
             );
@@ -1582,6 +1615,15 @@ impl Backing {
                     .late_total
                     .checked_add(item.amount)
                     .ok_or(ReservationError::InvalidLedger)?;
+                let by_refund = self
+                    .late_by_refund
+                    .get(&(holder.clone(), item.destination))
+                    .copied()
+                    .unwrap_or(0)
+                    .checked_add(item.amount)
+                    .ok_or(ReservationError::InvalidLedger)?;
+                self.late_by_refund
+                    .insert((holder.clone(), item.destination), by_refund);
                 self.late_by_account.insert(holder, balance);
                 self.late_total = total;
             }
@@ -1705,6 +1747,15 @@ impl Backing {
         let remaining = available
             .checked_sub(amount)
             .ok_or(ReservationError::InsufficientBalance)?;
+        // The destination must be an address the depositor bound at deposit time.
+        let bound = self
+            .late_by_refund
+            .get(&(beneficiary.clone(), destination))
+            .copied()
+            .ok_or(ReservationError::UnboundRefundAddress)?;
+        let bound_remaining = bound
+            .checked_sub(amount)
+            .ok_or(ReservationError::InsufficientBalance)?;
         let total = self
             .late_total
             .checked_sub(amount)
@@ -1713,6 +1764,8 @@ impl Backing {
         next.move_liability(ledger::Bucket::Unallocated, ledger::Bucket::Payouts, amount)
             .map_err(|_| ReservationError::InvalidLedger)?;
         self.late_by_account.insert(beneficiary.clone(), remaining);
+        self.late_by_refund
+            .insert((beneficiary.clone(), destination), bound_remaining);
         self.late_total = total;
         self.ledger = next;
         self.reservations.insert(
@@ -1911,6 +1964,7 @@ impl Backing {
         let item = receipt::Receipt {
             id,
             beneficiary,
+            refund_address: [0xbe; 20], // fixture value, not live evidence
             actual_source_amount: amount.0,
             source_block_hash: [7; 32],
             status: receipt::ReceiptStatus::Provisional,
@@ -2000,6 +2054,7 @@ mod tests {
                 log_index: index,
             },
             beneficiary: account("alice.testnet"),
+            refund_address: [0xbe; 20],
             actual_source_amount: amount,
             source_block_hash: [7; 32],
             status: receipt::ReceiptStatus::Provisional,
@@ -2422,6 +2477,7 @@ mod tests {
             custody_domain: "fixture".into(),
             mapping_version: U64(1),
             beneficiary: account("bob.testnet"),
+            refund_address: [0xbe; 20],
             battle_id: U64(1),
             actual_received: U128(amount),
             block_number: U64(3),
@@ -2926,16 +2982,16 @@ mod tests {
         let mut contract = late_contract();
         let bob = account("bob.testnet");
         context("payout.testnet", 1);
-        let first = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [9; 20]);
+        let first = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [0xbe; 20]);
         assert_eq!((first.created, first.source_amount), (true, U128(60)));
-        let repeat = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [9; 20]);
+        let repeat = contract.reserve_late_refund(bob.clone(), [1; 32], U128(60), [0xbe; 20]);
         assert!(!repeat.created);
         assert_eq!(
             contract.reserve_late(bob.clone(), [1; 32], 60, [8; 20]),
             Err(ReservationError::ConflictingRequest)
         );
         assert_eq!(
-            contract.reserve_late(bob.clone(), [2; 32], 39, [9; 20]),
+            contract.reserve_late(bob.clone(), [2; 32], 39, [0xbe; 20]),
             Err(ReservationError::InsufficientBalance)
         );
         assert_eq!(
@@ -2954,7 +3010,7 @@ mod tests {
         assert_eq!(contract.entitlement_of(bob.clone()), U128(0));
         assert_eq!(contract.get_ledger().payouts, U128(0));
         // Reserve again and confirm with matching evidence.
-        contract.reserve_late_refund(bob.clone(), [3; 32], U128(98), [9; 20]);
+        contract.reserve_late_refund(bob.clone(), [3; 32], U128(98), [0xbe; 20]);
         let confirmed = contract.confirm_payout(
             bob.clone(),
             [3; 32],
@@ -2962,7 +3018,7 @@ mod tests {
                 chain_id: U64(46630),
                 token_address: asset().token_address,
                 custody_domain: "fixture".into(),
-                destination: [9; 20],
+                destination: [0xbe; 20],
                 source_amount: U128(98),
                 recipient_received: U128(98),
                 transaction_hash: [7; 32],
@@ -2984,7 +3040,7 @@ mod tests {
     fn only_the_payout_authority_reserves_late_refunds() {
         let mut contract = late_contract();
         context("bob.testnet", 1);
-        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [9; 20]);
+        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [0xbe; 20]);
     }
 
     #[test]
@@ -2992,7 +3048,75 @@ mod tests {
     fn late_refund_reservation_requires_one_yocto() {
         let mut contract = late_contract();
         context("payout.testnet", 0);
-        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [9; 20]);
+        contract.reserve_late_refund(account("bob.testnet"), [1; 32], U128(1), [0xbe; 20]);
+    }
+
+    #[test]
+    fn late_refund_only_goes_to_the_address_bound_at_deposit() {
+        use reservation::ReservationError;
+        let mut contract = late_contract();
+        let bob = account("bob.testnet");
+        context("payout.testnet", 1);
+        assert_eq!(
+            contract.late_balance_of_refund(bob.clone(), [0xbe; 20]),
+            U128(98)
+        );
+        assert_eq!(
+            contract
+                .get_late_deposit(format!("0x{}", "ab".repeat(32)), 1)
+                .map(|d| d.refund_address),
+            Some([0xbe; 20])
+        );
+        // Neither a different address nor an unrelated account can receive the units.
+        assert_eq!(
+            contract.reserve_late(bob.clone(), [1; 32], 10, [9; 20]),
+            Err(ReservationError::UnboundRefundAddress)
+        );
+        assert_eq!(
+            contract.reserve_late(account("mallory.testnet"), [2; 32], 10, [0xbe; 20]),
+            Err(ReservationError::UnknownHolder)
+        );
+        assert_eq!(contract.get_ledger().payouts, U128(0));
+        // A reservation and its release keep the per-address balance in step.
+        contract.reserve_late_refund(bob.clone(), [3; 32], U128(98), [0xbe; 20]);
+        assert_eq!(
+            contract.late_balance_of_refund(bob.clone(), [0xbe; 20]),
+            U128(0)
+        );
+        assert!(contract.release_payout(bob.clone(), [3; 32]));
+        assert_eq!(contract.late_balance_of_refund(bob, [0xbe; 20]), U128(98));
+    }
+
+    #[test]
+    fn late_deposits_with_different_bound_addresses_stay_separate() {
+        use reservation::ReservationError;
+        let mut contract = late_contract();
+        let bob = account("bob.testnet");
+        let mut second = registry_claim(50);
+        second.refund_address = [0xca; 20];
+        // Second receipt (different log index) bound to another address.
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(account("alice.near"))
+            .predecessor_account_id(account("alice.near"))
+            .attached_deposit(CLAIM_STORAGE_DEPOSIT)
+            .build());
+        assert!(contract.apply_registry_claim(&format!("0x{}", "cd".repeat(32)), 0, &second, true));
+        context("payout.testnet", 1);
+        assert_eq!(contract.late_balance_of(bob.clone()), U128(148));
+        assert_eq!(
+            contract.reserve_late(bob.clone(), [1; 32], 98, [0xca; 20]),
+            Err(ReservationError::InsufficientBalance)
+        );
+        assert_eq!(contract.reserve_late(bob, [2; 32], 50, [0xca; 20]), Ok(true));
+    }
+
+    #[test]
+    fn a_claim_without_a_refund_address_credits_nothing() {
+        let mut contract = contract();
+        let mut claim = registry_claim(98);
+        claim.refund_address = [0; 20];
+        assert!(!claim_callback_in(&mut contract, Ok(Some(claim)), Some(true)));
+        assert_eq!(contract.get_ledger().custody, U128(0));
     }
 
     // ---- deficit suspension and resume policy -------------------------------

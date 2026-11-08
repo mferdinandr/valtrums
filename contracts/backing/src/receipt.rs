@@ -24,6 +24,8 @@ pub enum ReceiptStatus {
 pub struct Receipt {
     pub id: ReceiptId,
     pub beneficiary: AccountId,
+    /// Refund destination bound at deposit time (D17).
+    pub refund_address: [u8; 20],
     pub actual_source_amount: u128,
     pub source_block_hash: [u8; 32],
     pub status: ReceiptStatus,
@@ -96,6 +98,7 @@ mod tests {
         Receipt {
             id: ReceiptId::from_hex(46630, &format!("0x{}", "ab".repeat(32)), 1).expect("hash"),
             beneficiary: "alice.testnet".parse().expect("account"),
+            refund_address: [0xbe; 20],
             actual_source_amount: 98,
             source_block_hash: [7; 32],
             status: ReceiptStatus::Provisional,
