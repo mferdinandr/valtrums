@@ -172,6 +172,14 @@ export function parseBlock(block: RecordedBlock, config: IndexerConfig): ParsedB
         });
       };
 
+      // Authenticate the emitter (the receipt executor) BEFORE parsing, size-checking or storing the
+      // raw body. A log from an account outside the allowlist is never our state, so it must not be
+      // able to grow quarantine with a large raw body or degrade the indexer with a malformed one: it
+      // is recorded without its raw body and never degrades health.
+      if (!allow.has(emitter)) return quarantine("wrong_emitter", { rawLog: "" });
+      // A failed outcome's logs are not state either; record a bounded marker, never the raw body.
+      if (!outcome.success) return quarantine("failed_outcome", { rawLog: "" });
+
       if (Buffer.byteLength(log, "utf8") > MAX_LOG_BYTES) return quarantine("malformed_payload");
 
       let envelope: JsonValue;
@@ -190,14 +198,14 @@ export function parseBlock(block: RecordedBlock, config: IndexerConfig): ParsedB
         return quarantine("unsupported_version", { standard: String(standard), version: typeof version === "string" ? version : undefined });
       }
       if (typeof event !== "string") return quarantine("malformed_envelope", { standard: config.standard, version });
+      // An unknown event from an allowlisted emitter is a coverage gap (the contract emits something we
+      // do not model), so it degrades health rather than being silently dropped.
+      if (!isSupported(event)) return quarantine("unknown_event", { standard: config.standard, version, event });
       const dataArr = env.data;
       if (!Array.isArray(dataArr)) return quarantine("malformed_envelope", { standard: config.standard, version, event });
 
       dataArr.forEach((item, itemIndex) => {
         const tag = { standard: config.standard, version, event };
-        if (!isSupported(event)) return quarantine("unknown_event", tag, itemIndex);
-        if (!allow.has(emitter)) return quarantine("wrong_emitter", tag, itemIndex);
-        if (!outcome.success) return quarantine("failed_outcome", tag, itemIndex);
         if (!item || typeof item !== "object" || Array.isArray(item)) return quarantine("malformed_payload", tag, itemIndex);
         try {
           const normalized = normalize(event, item as Record<string, JsonValue>);

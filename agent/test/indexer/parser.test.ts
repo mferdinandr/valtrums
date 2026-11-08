@@ -57,6 +57,22 @@ describe("parseBlock quarantines bad input without applying it", () => {
     expect(diagnostics[0]!.reason).toBe("failed_outcome");
   });
 
+  const oversized = `EVENT_JSON:${JSON.stringify({ standard: "valtrum", version: "1.0.0", event: "lifecycle_battle_created", data: [{ battle_id: 1, creator: "a.testnet", pad: "x".repeat(20_000) }] })}`;
+
+  it("drops an oversized foreign-emitter log as wrong_emitter without storing its body", () => {
+    const { accepted, diagnostics } = parse1(oversized, { executorId: "evil.testnet" });
+    expect(accepted).toHaveLength(0);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]!.reason).toBe("wrong_emitter"); // emitter is checked before the size check
+    expect(diagnostics[0]!.rawLog).toBe(""); // the large raw body is never stored
+  });
+
+  it("quarantines an oversized log from an allowlisted emitter as malformed_payload", () => {
+    const { accepted, diagnostics } = parse1(oversized); // default emitter is allowlisted
+    expect(accepted).toHaveLength(0);
+    expect(diagnostics[0]!.reason).toBe("malformed_payload");
+  });
+
   it("rejects an unsafe numeric amount but keeps the raw for diagnosis", () => {
     const { accepted, diagnostics } = parse1(emitRaw("lifecycle_deposit", '{"battle_id":1,"community":0,"account_id":"b.testnet","amount":1.5}'));
     expect(accepted).toHaveLength(0);
