@@ -21,3 +21,26 @@ NEAR AI output SHALL be validated as a proposed bounded action and SHALL NOT wid
 #### Scenario: Metadata injection
 - **WHEN** token text instructs the agent to send funds to another destination
 - **THEN** the existing user policy and preview checks reject the action
+
+### Requirement: Persistent grants and atomic budget reservations
+A persistent policy contract SHALL authenticate grant creation and revocation from the NEAR caller and bind each grant to a user, delegate, immutable asset identity, bounded scope, per-action and cumulative token caps, gas bound and expiry. It SHALL reserve budget atomically against a canonical action and hold no spending authority: a reservation is an authorization and a budget hold, not a token transfer, and the normal build SHALL expose no fabricated execution-confirmation or release path.
+
+#### Scenario: Atomic cumulative reservation
+- **WHEN** two competing actions together exceed the cumulative token cap
+- **THEN** at most one reserves and the invariant `consumed + reserved <= authorized_limit` holds
+
+#### Scenario: Idempotent request and changed action
+- **WHEN** the same request identity is submitted twice, or reused with a changed amount, destination, method, asset or grant version
+- **THEN** the identical repeat reserves once and the changed action is rejected without altering counters
+
+#### Scenario: Exactly-once outcome and retained ambiguity
+- **WHEN** an outcome confirms execution, safely restores a never-dispatched reservation, or is ambiguous after dispatch
+- **THEN** budget is consumed or released exactly once, conflicting terminal outcomes fail closed, and an ambiguous dispatched obligation is retained for reconciliation rather than released
+
+#### Scenario: Caller authority
+- **WHEN** an infrastructure role or the owner attempts to originate a reservation, or a delegate attempts to create or widen its own authority
+- **THEN** it is denied; only the user creates or revokes their grant and only the delegate or user reserves within it
+
+#### Scenario: Version change cannot evade obligations
+- **WHEN** a grant is revised to a new version
+- **THEN** old records and the shared budget counters are preserved, so unresolved obligations are not reset and the cumulative cap is not evaded
