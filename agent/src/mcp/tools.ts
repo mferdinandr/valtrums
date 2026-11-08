@@ -2,6 +2,7 @@ import type { ReportArchive } from "../audit/report-archive.js";
 import { QueryValidationError, type ReportQuery, queryObservations } from "../audit/report-query.js";
 import { type ReadEnvelope, type SourceInfo, envelope } from "./envelope.js";
 import type { ArenaReadSource, PayoutView } from "./read-source.js";
+import { PAYOUT_DISPLAY_LABELS, payoutDisplayState } from "./payout-display.js";
 import { SearchValidationError, parseSearchParams, searchBattles } from "./search.js";
 import { type ReadSessions, SessionError } from "./session.js";
 
@@ -216,7 +217,18 @@ export const READ_TOOLS: readonly ReadTool[] = [
       if (!complete) limitations.push(`only the first ${MAX_PAYOUT_PAGES * PAYOUT_PAGE} payout index positions were scanned`);
       return live(deps, "inspect_payouts", deps.arena.info, {
         accountId: caller,
-        payouts: mine.map((p) => ({ state: p.state, terminal: p.terminal, chainId: p.chain_id, amount: p.amount, backing: p.backing })),
+        payouts: mine.map((p) => {
+          const display = payoutDisplayState(p.state);
+          return {
+            state: p.state,
+            displayState: display,
+            displayLabel: PAYOUT_DISPLAY_LABELS[display],
+            terminal: p.terminal,
+            chainId: p.chain_id,
+            amount: p.amount,
+            backing: p.backing,
+          };
+        }),
       }, limitations);
     },
   },
