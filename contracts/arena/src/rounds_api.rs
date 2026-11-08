@@ -428,6 +428,7 @@ pub(crate) mod tests {
                     Some(BackingApproval {
                         asset: identity.clone(),
                         evidence_hash: format!("backing-{index}"),
+                        expires_at_ms: 1_000_000_000_000,
                     }),
                 )
                 .expect("backing");
