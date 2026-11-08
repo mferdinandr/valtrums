@@ -17,9 +17,9 @@ Check tasks only after implementation and verification. Governance is decided (D
 
 ## Decision-bound execution
 
-- [ ] Bind each approved decision to escrow identity, authorized burn/return portions and destination or disposal action.
-- [ ] Ensure total reserved portions do not exceed escrow and the same backing cannot be returned, redeemed and burned.
-- [ ] Execute each decision portion at most once through exclusive reservations.
-- [ ] Verify source-chain return or underlying burn/sink separately from destruction of NEAR representations.
-- [ ] Expose pending versus confirmed source disposition accurately.
-- [ ] Test split decisions, replay, competing reservations, unauthorized decisions and representation-only burn evidence.
+- [x] Bind each approved decision to escrow identity, authorized burn/return portions and destination or disposal action. (`arena/src/dao_api.rs`: releases derive from the contract's own tally, carry ids bound to arena, battle and position, and name the escrow id; returns name the winner, the burn the backing's frozen sink.)
+- [x] Ensure total reserved portions do not exceed escrow and the same backing cannot be returned, redeemed and burned. (`backing/src/dao.rs`: per-escrow release totals are bounded by the escrow; returns move escrow to entitlements, the burn to disposal; one id cannot be both.)
+- [x] Execute each decision portion at most once through exclusive reservations. (Idempotent release ids in the backing; batched execution with a cursor that only advances after every backing call succeeded.)
+- [x] Verify source-chain return or underlying burn/sink separately from destruction of NEAR representations. (A burn is confirmed only by a finalized debit to the sink through `confirm_payout`; returns pay out through the entitlement payout path. Representation burns at escrow time never count.)
+- [x] Expose pending versus confirmed source disposition accurately. (`get_lifecycle_disposition` and `get_lifecycle_disposition_releases` on the arena; `get_escrow_disposition` on the backing separates burn pending and burn confirmed.)
+- [x] Test split decisions, replay, competing reservations, unauthorized decisions and representation-only burn evidence. (Unit tests in `dao_api.rs` and backing `lib.rs`; sandbox: `lifecycle_integration` two-community battle votes, executes and confirms the burn; `payout` DAO burn through signing and confirmation. Fixtures only.)
