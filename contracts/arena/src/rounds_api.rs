@@ -310,6 +310,9 @@ impl Arena {
                     .hold_principal_from_scoring(&rounds)
                     .unwrap_or_else(|_| env::panic_str("Winner cannot be recorded"));
                 self.lifecycle_battles.insert(battle_id.0, battle);
+                // The DAO vote on the winning principal opens now.
+                self.lifecycle_winner_at
+                    .insert(battle_id.0, env::block_timestamp());
                 RoundOutcome::Winner { community }
             }
         };
