@@ -1,3 +1,4 @@
+// FIXTURE: in-memory demo arena (accounts, battles, prices); used only in demo mode and tests, never live evidence.
 import { CREDIT_TTL_NS, NS_PER_MS, coinToUsdc, pow10, splitProfit, toBigInt, usdcToCoin } from "../amounts";
 import { previewClaimForBattle } from "./payout";
 import type {

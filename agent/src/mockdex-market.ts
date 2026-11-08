@@ -18,6 +18,7 @@ interface RateView {
 /**
  * Market data read from the mock DEX the arena executes on. The DEX owner can
  * change a rate at any time, which is how a testnet demo moves a price.
+ * FIXTURE: prices and liquidity here are demonstration values, not a verified market data source.
  *
  * Units: `get_rate { token_in, token_out }` gives `out = in * num / den` in base
  * units, `get_liquidity { token }` the DEX's holding of the token in base units.
