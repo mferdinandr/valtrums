@@ -7,6 +7,7 @@ use near_sdk::{
 };
 
 pub mod credit;
+pub mod escrow_api;
 pub mod events;
 pub mod lifecycle;
 pub mod lifecycle_backing;
@@ -73,6 +74,7 @@ enum StorageKey {
     LifecycleSettlement,
     LifecycleTrustedRepresentations,
     LifecycleReferenceRegistry,
+    LifecycleEscrow,
 }
 
 #[ext_contract(ext_ft)]
@@ -200,6 +202,9 @@ pub struct Arena {
     lifecycle_reference_registry: IterableMap<(u64, String), reference_registry::ReferenceEntry>,
     /// Bumped on every registry change.
     lifecycle_reference_registry_version: u64,
+    /// Battles whose winning principal the backing has recorded in its exclusive
+    /// escrow bucket (see `escrow_api`).
+    lifecycle_escrow: LookupMap<u64, bool>,
 }
 
 /// Total fee on a losing vault can never be set above 10%.
@@ -258,6 +263,7 @@ impl Arena {
             ),
             lifecycle_reference_registry: IterableMap::new(StorageKey::LifecycleReferenceRegistry),
             lifecycle_reference_registry_version: 0,
+            lifecycle_escrow: LookupMap::new(StorageKey::LifecycleEscrow),
         }
     }
 
