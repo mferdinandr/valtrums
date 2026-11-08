@@ -70,3 +70,15 @@ Rewards SHALL remain each original losing token on Robinhood. The system SHALL d
 #### Scenario: One token fails
 - **WHEN** B payout confirms while C payout is pending
 - **THEN** B remains confirmed and C remains independently owed
+
+### Requirement: Per-token entitlement states
+The read model SHALL report, per losing token and holder, available, reserved, broadcast, confirmation-pending and confirmed amounts that sum to the entitlement. Only confirmed counts as paid; a signature, broadcast or hash never does.
+
+#### Scenario: States sum to the entitlement
+- **WHEN** a holder is entitled to 100 and 60 is reserved for a payout
+- **THEN** available is 40, reserved is 60 and the states sum to 100
+
+#### Scenario: Broadcast is not payment
+- **WHEN** a payout is signed, broadcast or pending finality
+- **THEN** confirmed stays 0 until the payout authority records a verified final debit
+

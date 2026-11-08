@@ -22,6 +22,7 @@ pub struct RegistryClaim {
     pub custody_domain: String,
     pub mapping_version: U64,
     pub beneficiary: AccountId,
+    pub refund_address: [u8; 20],
     pub battle_id: U64,
     pub actual_received: U128,
     pub block_number: U64,
@@ -46,6 +47,7 @@ pub fn matches_asset(
             .eq_ignore_ascii_case(&asset.token_address)
         && claim.custody_domain == asset.custody_domain
         && claim.mapping_version.0 == mapping_version
+        && claim.refund_address != [0; 20]
         && claim.actual_received.0 > 0
         && claim.block_number.0 <= claim.finalized_head_number.0
         && claim.block_hash != [0; 32]
@@ -77,6 +79,7 @@ mod tests {
             custody_domain: "custody".into(),
             mapping_version: U64(1),
             beneficiary: account("alice.testnet"),
+            refund_address: [0xbe; 20],
             battle_id: U64(1),
             actual_received: U128(98),
             block_number: U64(3),
@@ -117,6 +120,14 @@ mod tests {
         ));
         wrong = valid.clone();
         wrong.evidence_hash = [0; 32];
+        assert!(!matches_asset(
+            &wrong,
+            &asset(),
+            &account("token.testnet"),
+            1
+        ));
+        wrong = valid.clone();
+        wrong.refund_address = [0; 20];
         assert!(!matches_asset(
             &wrong,
             &asset(),

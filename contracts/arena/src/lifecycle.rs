@@ -172,7 +172,14 @@ pub struct LockCheck {
 pub struct BackingApproval {
     pub asset: AssetIdentity,
     pub evidence_hash: String,
+    /// Block time in milliseconds at or after which the approval no longer
+    /// supports a lock. Set only by the authenticated backing check.
+    pub expires_at_ms: u64,
 }
+
+/// Life of a backing approval (10 minutes, the default audit evidence lifetime of D2).
+/// Lock re-verifies it so a backing suspended after the check cannot be locked.
+pub const BACKING_APPROVAL_MS: u64 = 600_000;
 
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -478,6 +485,7 @@ impl Battle {
             if approval.asset != entry.asset
                 || approval.evidence_hash.trim().is_empty()
                 || approval.evidence_hash.len() > MAX_METADATA_BYTES
+                || approval.expires_at_ms == 0
             {
                 return Err(LifecycleError::InvalidApproval);
             }
@@ -571,6 +579,21 @@ impl Battle {
         self.hold_principal(winner)
     }
 
+    /// The committed asset of a community, if it exists.
+    pub fn community_asset(&self, community: usize) -> Option<&AssetIdentity> {
+        self.communities.get(community).map(|entry| &entry.asset)
+    }
+
+    pub fn backing_of(&self, community: usize) -> Option<&BackingApproval> {
+        self.communities
+            .get(community)
+            .and_then(|entry| entry.backing.as_ref())
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.snapshot.is_some()
+    }
+
     pub fn community_count(&self) -> usize {
         self.communities.len()
     }
@@ -634,8 +657,9 @@ impl Battle {
         })
     }
 
-    /// Every community's audit approval must still bind its committed asset
-    /// (and the pinned policy, if any) and must not be expired. Fails closed.
+    /// Every community's audit and backing approval must still bind its committed
+    /// asset (and the pinned audit policy, if any) and must not be expired.
+    /// Fails closed.
     fn check_audit_fresh(&self, check: &LockCheck) -> Result<(), LifecycleError> {
         for entry in &self.communities {
             let approval = entry
@@ -651,6 +675,16 @@ impl Battle {
                 }
             }
             if check.now_ms >= approval.expires_at_ms {
+                return Err(LifecycleError::ExpiredApproval);
+            }
+            let backing = entry
+                .backing
+                .as_ref()
+                .ok_or(LifecycleError::MissingApproval)?;
+            if backing.asset != entry.asset {
+                return Err(LifecycleError::ApprovalMismatch);
+            }
+            if check.now_ms >= backing.expires_at_ms {
                 return Err(LifecycleError::ExpiredApproval);
             }
         }
@@ -946,6 +980,7 @@ mod tests {
         BackingApproval {
             asset: asset(index as u8 + 1),
             evidence_hash: format!("backing-{index}"),
+            expires_at_ms: FAR,
         }
     }
     fn approve(b: &mut Battle) {
@@ -2292,6 +2327,115 @@ mod tests {
             b.lock(policy("p"), &ck()),
             Err(LifecycleError::MissingApproval)
         );
+    }
+
+    #[test]
+    fn expired_backing_refuses_lock_and_a_refresh_allows_it() {
+        let mut b = battle();
+        funded(&mut b);
+        b.communities[1]
+            .backing
+            .as_mut()
+            .expect("backing")
+            .expires_at_ms = 1_000;
+        assert_eq!(
+            b.lock(policy("p"), &check_at(1_000)),
+            Err(LifecycleError::ExpiredApproval)
+        );
+        assert!(!b.view().locked);
+        let mut fresh = backing(1);
+        fresh.expires_at_ms = 5_000;
+        b.set_backing(1, Some(fresh)).expect("refresh");
+        assert!(b.lock(policy("p"), &check_at(1_000)).is_ok());
+    }
+
+    #[test]
+    fn backing_for_another_asset_is_refused_at_storage_and_at_lock() {
+        let mut b = battle();
+        let mut wrong = backing(0);
+        wrong.asset = asset(9);
+        assert_eq!(
+            b.set_backing(0, Some(wrong)),
+            Err(LifecycleError::InvalidApproval)
+        );
+        funded(&mut b);
+        b.communities[0].backing.as_mut().expect("backing").asset = asset(9);
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::ApprovalMismatch)
+        );
+        let mut zero = backing(0);
+        zero.expires_at_ms = 0;
+        assert_eq!(
+            b.set_backing(0, Some(zero)),
+            Err(LifecycleError::InvalidApproval)
+        );
+    }
+
+    #[test]
+    fn deposits_need_backing_for_every_community_and_the_right_representation() {
+        let mut b = battle();
+        for i in 0..3 {
+            b.set_audit(i, Some(audit(i))).expect("audit");
+        }
+        // No backing yet: nothing is credited.
+        assert_eq!(
+            deposit(&mut b, 0, "creator.testnet", 0, 5),
+            Err(LifecycleError::MissingApproval)
+        );
+        for i in 0..2 {
+            b.set_backing(i, Some(backing(i))).expect("backing");
+        }
+        assert_eq!(
+            deposit(&mut b, 0, "creator.testnet", 0, 5),
+            Err(LifecycleError::MissingApproval)
+        );
+        b.set_backing(2, Some(backing(2))).expect("backing");
+        // A transfer from another token is not a backed deposit of this community.
+        assert_eq!(
+            b.credit(
+                0,
+                &asset(2).representation,
+                &account("creator.testnet"),
+                0,
+                5
+            ),
+            Err(LifecycleError::WrongRepresentation)
+        );
+        assert_eq!(deposit(&mut b, 0, "creator.testnet", 0, 5), Ok(5));
+        // Only a creator deposit counts as creator participation.
+        deposit(&mut b, 1, "other.testnet", 0, 5).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 5).expect("credit");
+        assert!(b.lock(policy("p"), &ck()).is_ok());
+    }
+
+    #[test]
+    fn a_protocol_created_battle_also_needs_a_protocol_position_and_every_vault() {
+        let protocol = account("protocol.testnet");
+        let fee = FeePolicy {
+            creator: protocol.clone(),
+            protocol_created: true,
+            ..fee()
+        };
+        let mut b = Battle::new(
+            vec![asset(1), asset(2), asset(3)],
+            ScoringMode::PriceGain,
+            fee,
+        )
+        .expect("battle");
+        approve(&mut b);
+        deposit(&mut b, 1, "other.testnet", 0, 5).expect("credit");
+        deposit(&mut b, 2, "other.testnet", 0, 5).expect("credit");
+        assert_eq!(b.lock(policy("p"), &ck()), Err(LifecycleError::EmptyVault));
+        // A protocol deposit alone is not enough without every other vault, and a
+        // third party's deposit never counts as the protocol's position.
+        deposit(&mut b, 0, "other.testnet", 0, 5).expect("credit");
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::CreatorHasNoPosition)
+        );
+        deposit(&mut b, 0, "protocol.testnet", 0, 5).expect("credit");
+        assert!(b.lock(policy("p"), &ck()).is_ok());
     }
 
     #[test]

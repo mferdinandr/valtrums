@@ -28,6 +28,7 @@ import { createLpFetcher } from "./audit/lp-fetcher.js";
 import { buildAuditPolicy } from "./audit/policy.js";
 import { AuditReportStore } from "./audit/report.js";
 import { withEvmReadRetries } from "./rpc-resilience.js";
+import { createPayoutReconciler, loadPayoutReconcileConfig } from "./payout-wiring.js";
 
 async function main(): Promise<void> {
   const log = createJsonLogger();
@@ -145,6 +146,11 @@ async function main(): Promise<void> {
       })
     : undefined;
 
+  // Payout restart reconciliation: only when PAYOUT_RECONCILE_ENABLED=true. It runs before the
+  // first pass and on every pass; it never requests a signature or creates a spend.
+  const payoutCfg = loadPayoutReconcileConfig(process.env);
+  const payoutReconciler = payoutCfg ? createPayoutReconciler(payoutCfg, cfg, log) : undefined;
+
   const health = new HealthState(rt.intervalSecs * 1000);
   const healthServer = await startHealthServer(
     parseHealthPort(process.env),
@@ -195,6 +201,10 @@ async function main(): Promise<void> {
 
   await runLoop({
     pass: async (watchdog) => {
+      if (payoutReconciler) {
+        const payouts = await payoutReconciler.reconcile();
+        log.info("payout reconciliation complete", { unresolved: payouts.unresolved, errors: payouts.errors });
+      }
       const report = await runOnce({ ...deps, watchdog, ...(lifecycleAudit ? { lifecycleAudit } : {}) });
       if (report.errors === 0) health.markPassSucceeded();
       log.info("pass complete", { ...report, watchdog });

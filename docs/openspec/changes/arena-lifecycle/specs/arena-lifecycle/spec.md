@@ -11,6 +11,21 @@ The system SHALL require at least two distinct token communities and a positive 
 - **WHEN** three approved distinct communities have positive vaults and creator participation
 - **THEN** all three can be frozen in the starting snapshot
 
+### Requirement: Authenticated audit and backing approvals
+A battle SHALL lock only when every community has an unexpired audit approval and an unexpired backing approval that both equal its committed asset. Backing approvals SHALL come only from the community's owner-trusted representation contract and be withdrawn when it is mismatched, suspended, unbalanced or unavailable.
+
+#### Scenario: Backing mismatch or suspension
+- **WHEN** the representation reports another asset, a suspension, an unbalanced ledger or no answer
+- **THEN** no backing approval is stored, an earlier one is withdrawn and the battle cannot lock
+
+#### Scenario: Only backed deposits are credited
+- **WHEN** a transfer comes from a token other than the community's representation, or before every community is approved
+- **THEN** nothing is credited and the transfer is returned
+
+#### Scenario: Protocol-created battle
+- **WHEN** the protocol is the creator but holds no credited position or a vault is empty
+- **THEN** the battle cannot lock
+
 ### Requirement: Optional committed reference pair
 A community MAY commit a mainnet reference pair with its asset identity, and the system SHALL validate it at creation.
 
@@ -31,8 +46,8 @@ The system SHALL lock communities, deposits, mode, fee identity and policies bef
 
 #### Scenario: Late arrival
 - **WHEN** a cross-chain deposit arrives after lock
-- **THEN** it cannot change the snapshot or enter any vault, and backing records it as unattributed and returns it to the original depositor after finality
-- **AND** the refund path belongs to the arena-asset-representation (backing) change and is not part of this change
+- **THEN** it cannot change the snapshot or enter any vault
+- **AND** backing reads the arena's lock state on every claim, records a locked-battle deposit as a refund-only late deposit for the beneficiary in the claim, and the payout authority can reserve its refund
 
 #### Scenario: Repeated lock
 - **WHEN** a scheduler repeats the same lock request

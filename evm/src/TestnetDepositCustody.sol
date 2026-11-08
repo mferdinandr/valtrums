@@ -17,6 +17,7 @@ contract TestnetDepositCustody {
         address indexed depositor,
         uint64 battleId,
         uint64 mappingVersion,
+        address refundAddress,
         string beneficiary,
         uint256 requested,
         uint256 received
@@ -27,15 +28,23 @@ contract TestnetDepositCustody {
     error TransferFailed();
     error InvalidBalanceChange();
 
-    /// @dev Token eligibility and finalized source evidence must be checked
+    /// @dev `refundAddress` is the EVM address a late deposit is returned to (D17); it is bound at
+    /// deposit time and cannot be changed afterwards. Token eligibility and finalized source evidence must be checked
     /// independently. A malicious token can lie about balance or callbacks.
-    function deposit(address token, uint64 battleId, uint64 mappingVersion, string calldata beneficiary, uint256 amount)
+    function deposit(
+        address token,
+        uint64 battleId,
+        uint64 mappingVersion,
+        address refundAddress,
+        string calldata beneficiary,
+        uint256 amount
+    )
         external
         returns (uint256 depositId, uint256 received)
     {
         if (entered != 1) revert ReentrantDeposit();
         if (
-            token.code.length == 0 || mappingVersion == 0 || bytes(beneficiary).length < 2
+            token.code.length == 0 || mappingVersion == 0 || refundAddress == address(0) || bytes(beneficiary).length < 2
                 || bytes(beneficiary).length > 64 || amount == 0
         ) {
             revert InvalidDeposit();
@@ -53,7 +62,9 @@ contract TestnetDepositCustody {
         received = afterBalance - beforeBalance;
         if (received > amount) revert InvalidBalanceChange();
         depositId = ++nextDepositId;
-        emit Deposited(depositId, token, msg.sender, battleId, mappingVersion, beneficiary, amount, received);
+        emit Deposited(
+            depositId, token, msg.sender, battleId, mappingVersion, refundAddress, beneficiary, amount, received
+        );
         entered = 1;
     }
 }

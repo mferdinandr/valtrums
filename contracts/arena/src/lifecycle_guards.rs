@@ -361,6 +361,7 @@ fn approved_battle(creator: &str) -> (Arena, u64) {
                 Some(BackingApproval {
                     asset: asset(index + 1),
                     evidence_hash: "backing".into(),
+                    expires_at_ms: 1_000_000_000_000,
                 }),
             )
             .expect("backing fixture");

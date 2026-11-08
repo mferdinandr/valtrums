@@ -14,7 +14,7 @@ Check tasks only after implementation and verification. Backing reservations and
 ## Broadcast and reconciliation
 
 - [x] Persist signature attempts, broadcast transaction hashes and replacement history under the same payout identity.
-- [ ] Reconcile pending transactions and replacements after restart or lost response before creating another spend.
+- [x] Reconcile pending transactions and replacements after restart or lost response before creating another spend.
 - [x] Verify successful finalized receipt, sender, token, recipient and exact amount before confirming payment and consuming backing.
 - [x] Distinguish signer response, broadcast, pending finality, revert, reconciliation-required and confirmed states.
 - [x] Restore a liability only after proving no executable transaction or actual debit remains.

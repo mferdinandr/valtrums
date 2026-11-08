@@ -13,6 +13,8 @@ Deliver settlement and adjustable fees and its acceptance scenarios without clai
 - Asset identity binds source chain/token, NEAR representation and custody domain.
 - Keep custody verifier, oracle, signer, operator and player authorization boundaries explicit. Fixtures do not prove live execution. DAO governance and provider/finality choices remain OPEN.
 
+- Entitlement states are a read model in `agent/src/settlement-states.ts` built from `entitlement_of`, `get_allocation` and `get_payout`; it changes no allocation, signing or confirmation logic.
+
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.
