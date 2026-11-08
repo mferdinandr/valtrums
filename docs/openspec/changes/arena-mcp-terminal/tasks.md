@@ -4,10 +4,10 @@ Check tasks only after implementation and verification. Player authorization and
 
 ## Read interfaces
 
-- [ ] Expose battle, round and audit reads with network, source, freshness and known limitations.
-- [ ] Expose account-scoped positions, entitlements, payouts and principal escrow without granting signing authority.
+- [x] Expose battle, round and audit reads with network, source, freshness and known limitations. (`agent/src/mcp/tools.ts`, `envelope.ts`)
+- [x] Expose account-scoped positions, entitlements, payouts and principal escrow without granting signing authority. Entitlements report `available: false` until a contract exposes them; escrow disposition stays `undecided` until the D22 vote is implemented (#75).
 - [ ] Show available, reserved, broadcast, confirmation-pending and confirmed payout states separately.
-- [ ] Use backend search and filtering for searchable lists and dropdowns; debounce text requests and prevent stale results.
+- [x] Use backend search and filtering for searchable lists and dropdowns; debounce text requests and prevent stale results. (`list_battles`, `web/src/hooks/use-battle-search.ts`); no new-arena list UI exists yet to wire it into.
 
 ## Preview and execution
 
@@ -20,7 +20,7 @@ Check tasks only after implementation and verification. Player authorization and
 
 ## Verification
 
-- [ ] Test read-only calls cannot sign or spend and account-scoped reads do not expose another user's data.
+- [x] Test read-only calls cannot sign or spend and account-scoped reads do not expose another user's data.
 - [ ] Test changed recipient, amount, policy or expired preview and revoked or missing authorization.
 - [ ] Test broadcast hash remains pending until verified receipt and unsupported routes submit no funds.
-- [ ] Test backend search parameters, debounce, cancellation and stale-response protection where search is provided.
+- [x] Test backend search parameters, debounce, cancellation and stale-response protection where search is provided.
