@@ -23,10 +23,15 @@ Check tasks only after implementation and verification. Research can proceed ind
 ## Observability and recovery
 
 - [ ] Persist finalized indexer cursors, block hashes and deduplication keys and reconcile chain state after restart.
+  - [x] Read-only indexing foundation (`agent/src/indexer/`): injectable `BlockSource`, validated NEP-297 parser with receipt-executor provenance and lossless u64 handling, pure deterministic projection, atomic single-snapshot store with single-writer lock, dedup keyed by network|contract|receipt|logIndex|itemIndex, restart recovery that verifies source identity/hash/ancestry before advancing, and a runnable recorded-import/status/replay CLI. Fail closed on corrupt state; never silently reset.
+  - [ ] Verify against a live NEAR archival/indexing provider and record source identity, finality and reorg evidence (live-adapter integration remains open).
 - [ ] Detect reorgs, retract provisional projections and suspend affected confirmations until finality is restored.
+  - [x] Read-model reorg handling in the engine: parent/hash continuity, common-ancestor rollback of provisional effects, canonical replay, finality promoted only along the source-declared finalized ancestor chain, and a visible healthy/pending/degraded/reconciliation-required status. Retraction is read-only and never touches custody/payouts; a conflict at or below the finalized boundary stops and requires reconciliation instead of rewriting finalized state.
+  - [ ] Suspend real custody/payout confirmations on reorg (belongs to backing/payout services, not the indexer; remains open).
 - [ ] Display entitlement, transfer and DAO principal states separately, with source and freshness.
 - [ ] Add recovery alerts for missing audit/market data, deficits, unresolved payouts and indexer reconciliation.
 - [ ] Test replay and restart without duplicate allocation or payment.
+  - [x] Deterministic replay/restart of the read model proven on disk: identical projection/digest for full replay vs incremental ingest, idempotent re-sync, and no write side effects (read-only dependencies). Actual contract allocation/payment end-to-end remains open.
 
 ## End-to-end acceptance
 

@@ -22,6 +22,25 @@ The demo SHALL record two/three-community flows, protocol creator, all scoring m
 - **WHEN** events are replayed after restart
 - **THEN** the same projection results without duplicate allocation or payment
 
+### Requirement: Persistent arena event indexing foundation
+A read-only indexer SHALL parse Valtrum NEP-297 logs with receipt provenance, persist a replayable journal and cursors, resume after restart, replay deterministically, and roll back provisional forks. It SHALL keep provisional and finalized status distinct, treat a source label as a declared assertion rather than verified finality, and hold no write authority: it never submits, signs, allocates, confirms foreign payments or releases custody, and a retraction is a read-model operation only.
+
+#### Scenario: Deterministic replay and restart
+- **WHEN** the committed journal is replayed, or ingest is restarted from the persisted cursor
+- **THEN** the normalized projection and its digest are identical, with no duplicate activity and no write side effect
+
+#### Scenario: Provisional fork replacement
+- **WHEN** a provisional block above the finalized boundary is replaced by a different canonical block
+- **THEN** the orphaned effects are retracted and the replacement branch is replayed exactly once
+
+#### Scenario: Finality conflict is not rewritten
+- **WHEN** the source contradicts or regresses a finalized block, or evidence is corrupt
+- **THEN** the indexer reports a pending/degraded/reconciliation-required status, preserves committed state and evidence, and never rewrites finalized state or resets to an empty cursor
+
+#### Scenario: Honest provenance and identity
+- **WHEN** a log is from a non-allowlisted emitter or failed outcome, carries an unsafe numeric value, or reuses an event identity with a different payload
+- **THEN** it is quarantined with bounded provenance rather than applied, and recorded coverage is labeled a declared source assertion, not verified finality
+
 ### Requirement: Four-track demonstration mapping
 The documentation and acceptance evidence SHALL identify Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms as the selected hackathon tracks without claiming completed integrations or award eligibility.
 
