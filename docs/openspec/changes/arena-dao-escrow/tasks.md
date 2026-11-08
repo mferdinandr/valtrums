@@ -4,10 +4,10 @@ Check tasks only after implementation and verification. Governance is decided (D
 
 ## Principal isolation
 
-- [ ] Bind the winning principal hold to the frozen winning asset, amount and participant attribution.
-- [ ] Integrate an exclusive backing reservation for escrow without blocking losing-token entitlements.
-- [ ] Keep principal escrowed indefinitely while no valid governance decision exists.
-- [ ] Test unresolved governance, independent reward availability and denial of owner-only or worker-only disposition.
+- [x] Bind the winning principal hold to the frozen winning asset, amount and participant attribution. (`lifecycle_guards.rs`; the escrow record is bound to battle, community and amount, `escrow_api.rs`)
+- [x] Integrate an exclusive backing reservation for escrow without blocking losing-token entitlements. (backing `escrow` bucket and `reserve_principal_escrow`, arena `reserve_lifecycle_escrow`; sandbox-tested)
+- [x] Keep principal escrowed indefinitely while no valid governance decision exists. (no method moves units out of `escrow`; the D22 vote is #75)
+- [x] Test unresolved governance, independent reward availability and denial of owner-only or worker-only disposition.
 
 ## Governance design gate
 
