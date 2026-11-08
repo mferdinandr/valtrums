@@ -2,11 +2,15 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Near, verifyNep413Signature } from "near-kit";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
+import { NearRpcReceiptVerifier } from "./actions/receipt.js";
+import { ActionService } from "./actions/service.js";
+import { NearActionReadSource } from "./actions/source.js";
+import { ActionStore } from "./actions/store.js";
+import type { ActionToolDeps } from "./actions/tools.js";
 import { startReadServer } from "./http.js";
 import { NearArenaReadSource } from "./read-source.js";
 import { buildMcpServer } from "./server.js";
 import { ReadSessions } from "./session.js";
-import type { ReadToolDeps } from "./tools.js";
 
 /**
  * Entry point: `node dist/mcp/cli.js mcp` serves MCP over stdio, `node dist/mcp/cli.js http`
@@ -15,7 +19,9 @@ import type { ReadToolDeps } from "./tools.js";
  *
  * Env: NEAR_NETWORK, NEAR_RPC_URL, ARENA_CONTRACT_ID, PAYOUT_CONTRACT_ID (optional),
  * READ_SESSION_SECRET (hex, >= 32 bytes), READ_SESSION_RECIPIENT, AUDIT_ARCHIVE_PATH (optional),
- * READ_API_HOST (default 127.0.0.1), READ_API_PORT (default 8790).
+ * READ_API_HOST (default 127.0.0.1), READ_API_PORT (default 8790). Actions (optional): ACTION_STORE_PATH
+ * enables them; PLAYER_POLICY_CONTRACT_ID for grant reservations; ACTION_RECIPIENT (NEP-413
+ * recipient, default READ_SESSION_RECIPIENT).
  */
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -24,7 +30,7 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return v;
 }
 
-export function depsFromEnv(env: NodeJS.ProcessEnv): ReadToolDeps {
+export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
   const network = env.NEAR_NETWORK?.trim() || "testnet";
   if (network !== "testnet" && network !== "mainnet") throw new Error('NEAR_NETWORK must be "testnet" or "mainnet"');
   const secretHex = required(env, "READ_SESSION_SECRET");
@@ -44,9 +50,31 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ReadToolDeps {
     verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
   });
   const archivePath = env.AUDIT_ARCHIVE_PATH?.trim();
+  // Actions are enabled only with a durable store; the service never holds a key either.
+  const storePath = env.ACTION_STORE_PATH?.trim();
+  const actions = storePath
+    ? new ActionService({
+        source: new NearActionReadSource(
+          { network: `near-${network}`, kind: "live", name: required(env, "ARENA_CONTRACT_ID") },
+          (contractId, method, args) => near.view(contractId, method, args),
+          { arena: required(env, "ARENA_CONTRACT_ID"), policy: env.PLAYER_POLICY_CONTRACT_ID?.trim() || null },
+        ),
+        ctx: {
+          network: `near-${network}`,
+          arena: required(env, "ARENA_CONTRACT_ID"),
+          payout: env.PAYOUT_CONTRACT_ID?.trim() || null,
+          policy: env.PLAYER_POLICY_CONTRACT_ID?.trim() || null,
+        },
+        store: new ActionStore(storePath),
+        recipient: env.ACTION_RECIPIENT?.trim() || required(env, "READ_SESSION_RECIPIENT"),
+        verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
+        receipts: new NearRpcReceiptVerifier(env.NEAR_RPC_URL?.trim() || `https://rpc.${network}.near.org`),
+      })
+    : undefined;
   return {
     arena,
     sessions,
+    ...(actions ? { actions } : {}),
     now: Date.now,
     ...(archivePath
       ? { audits: { archive: new JsonFileReportArchive(archivePath), info: { network: `near-${network}`, kind: "recorded" as const, name: "audit-report-archive" } } }

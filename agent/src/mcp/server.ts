@@ -1,11 +1,15 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ACTION_TOOLS, ACTION_TOOL_NAMES, type ActionToolDeps, callActionTool } from "./actions/tools.js";
 import { READ_SESSION_MESSAGE, SessionError } from "./session.js";
-import { AccessDeniedError, READ_TOOLS, type ReadToolDeps, ToolInputError, callReadTool } from "./tools.js";
+import { AccessDeniedError, READ_TOOLS, ToolInputError, callReadTool } from "./tools.js";
 
 /**
- * MCP server exposing only the read tools plus `open_read_session`. A model connected to it gets
- * no signing, spending or delegation authority: none of these handlers can reach a signer.
+ * MCP server exposing the read tools, `open_read_session` and, when configured, the action tools.
+ * A model connected to it gets no signing, spending or delegation authority: none of these
+ * handlers can reach a signer. Action tools only build previews, bind a user's NEP-413 signature
+ * (or a grant delegate) to one exact preview, and hand the unsigned transaction to the signer's
+ * own wallet; model output is never accepted as authorization.
  */
 
 export const OPEN_SESSION_TOOL = {
@@ -32,11 +36,12 @@ const text = (value: unknown, isError = false) => ({
 });
 
 /** Handles one tool call; exported so it can be tested without a transport. */
-export async function handleMcpToolCall(name: string, args: Record<string, unknown>, deps: ReadToolDeps) {
+export async function handleMcpToolCall(name: string, args: Record<string, unknown>, deps: ActionToolDeps) {
   try {
     if (name === OPEN_SESSION_TOOL.name) {
       return text(await deps.sessions.open(args as never));
     }
+    if (ACTION_TOOL_NAMES.includes(name)) return text(await callActionTool(name, args, deps));
     return text(await callReadTool(name, args, deps));
   } catch (err) {
     if (err instanceof ToolInputError || err instanceof AccessDeniedError || err instanceof SessionError) {
@@ -46,12 +51,13 @@ export async function handleMcpToolCall(name: string, args: Record<string, unkno
   }
 }
 
-export function buildMcpServer(deps: ReadToolDeps): Server {
+export function buildMcpServer(deps: ActionToolDeps): Server {
   const server = new Server({ name: "valtrum-read", version: "0.1.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       ...READ_TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
       OPEN_SESSION_TOOL,
+      ...(deps.actions ? ACTION_TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) : []),
     ],
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req) =>
