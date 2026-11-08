@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TRANSFER_TOPIC, encodeTransfer, fromHex, toHex } from "../src/evm-abi.js";
 import type { EvmReceipt } from "../src/evm-rpc.js";
+import { FakeEvmRpc } from "../src/fake-evm-rpc.js";
 import { encodeTx, txHash } from "../src/evm-tx.js";
 import { NearPayoutLedger } from "../src/near-payout-client.js";
 import type { NearTransport } from "../src/near-client.js";
@@ -72,6 +73,8 @@ function payout(state: PayoutView["state"], attempts: Array<PayoutAttemptView & 
 
 class FakeLedger implements PayoutLedger {
   readonly calls: string[] = [];
+  /** Calls that actually changed stored state; a repeat the contract would accept as a no-op is not listed. */
+  readonly effects: string[] = [];
   readonly args: Array<{ method: string; arg: unknown }> = [];
   readonly raws = new Map<string, string>();
   constructor(
@@ -81,17 +84,26 @@ class FakeLedger implements PayoutLedger {
     if (!operator) return;
     this.recordRevert = async (p, h) => {
       this.note("record_revert", h);
-      const a = this.find(p, h);
+      const s = this.stored(p);
+      const a = this.find(s, h);
+      if (a.state === "reverted") return;
       a.state = "reverted";
-      if (p.attempts.every((x) => x.state === "reverted")) p.state = "reverted";
+      if (s.attempts.every((x) => x.state === "reverted")) s.state = "reverted";
+      this.effects.push("record_revert");
     };
     this.confirmPayout = async (p, e: PaymentEvidenceInput) => {
       this.note("confirm_payout", e);
-      p.state = "confirmed";
+      const s = this.stored(p);
+      if (s.state === "confirmed") return;
+      s.state = "confirmed";
+      this.effects.push("confirm_payout");
     };
     this.restorePayout = async (p, proof: NoSpendProofInput) => {
       this.note("restore_payout", proof);
-      p.state = "restored";
+      const s = this.stored(p);
+      if (s.state === "restored") return;
+      s.state = "restored";
+      this.effects.push("restore_payout");
     };
   }
   recordRevert?: PayoutLedger["recordRevert"];
@@ -101,31 +113,53 @@ class FakeLedger implements PayoutLedger {
     this.calls.push(method);
     this.args.push({ method, arg });
   }
+  private stored(p: PayoutView): PayoutView {
+    const s = this.payouts.find((x) => x.backing === p.backing && x.holder === p.holder && toHex(Uint8Array.from(x.request_id)) === toHex(Uint8Array.from(p.request_id)));
+    if (!s) throw new Error("unknown payout");
+    return s;
+  }
   private find(p: PayoutView, h: Hash): PayoutAttemptView {
     const a = p.attempts.find((x) => toHex(Uint8Array.from(x.tx_hash)) === toHex(Uint8Array.from(h)));
     if (!a) throw new Error("unknown attempt");
     return a;
   }
+  /** Fresh copies, like a real view call: a stale snapshot never aliases stored state. */
   async listOpenPayouts(): Promise<PayoutView[]> {
-    return this.payouts.filter((p) => !p.terminal && p.state !== "confirmed" && p.state !== "restored");
+    await Promise.resolve();
+    return structuredClone(this.payouts.filter((p) => p.state !== "confirmed" && p.state !== "restored"));
   }
   async getSignedTransaction(_p: PayoutView, h: Hash): Promise<string | null> {
     return this.raws.get(toHex(Uint8Array.from(h))) ?? null;
   }
   async recordBroadcast(p: PayoutView, h: Hash): Promise<void> {
     this.note("record_broadcast", h);
-    this.find(p, h).state = "broadcast";
-    p.state = "broadcast";
+    await Promise.resolve();
+    const s = this.stored(p);
+    const a = this.find(s, h);
+    if (a.state === "broadcast" || a.state === "pending") return;
+    a.state = "broadcast";
+    s.state = "broadcast";
+    this.effects.push("record_broadcast");
   }
   async recordPendingFinality(p: PayoutView, h: Hash): Promise<void> {
     this.note("record_pending_finality", h);
-    this.find(p, h).state = "pending";
-    p.state = "pending_finality";
+    await Promise.resolve();
+    const s = this.stored(p);
+    const a = this.find(s, h);
+    if (a.state === "pending") return;
+    if (a.state !== "broadcast") throw new Error("WrongState");
+    a.state = "pending";
+    s.state = "pending_finality";
+    this.effects.push("record_pending_finality");
   }
   async requireReconciliation(p: PayoutView, reason: PayoutHoldReason): Promise<void> {
     this.note("require_reconciliation", reason);
-    p.state = "reconciliation_required";
-    p.reason = reason;
+    await Promise.resolve();
+    const s = this.stored(p);
+    if (s.state === "reconciliation_required" && s.reason === reason) return;
+    s.state = "reconciliation_required";
+    s.reason = reason;
+    this.effects.push("require_reconciliation");
   }
 }
 
@@ -572,5 +606,222 @@ describe("loadPayoutReconcileConfig", () => {
     expect(
       loadPayoutReconcileConfig({ ...base, PAYOUT_OPERATOR_ACCOUNT_ID: "op.testnet", PAYOUT_OPERATOR_PRIVATE_KEY: "ed25519:x" })?.operator,
     ).toMatchObject({ accountId: "op.testnet" });
+  });
+});
+
+// ─── the existing FakeEvmRpc as the chain: acceptance scenarios, concurrency, idempotence ───
+
+const blockHashOf = (n: bigint): string => `0x${n.toString(16).padStart(64, "0")}`;
+
+/** Adds what the reconciler needs (finalized head, block hashes, log indexes) on top of FakeEvmRpc. */
+class FakeRpcChain implements PayoutChainReader {
+  constructor(readonly rpc: FakeEvmRpc) {}
+  chainId = () => this.rpc.chainId();
+  async getFinalizedBlock() {
+    return { number: this.rpc.head, hash: blockHashOf(this.rpc.head) };
+  }
+  async getBlockHash(n: bigint): Promise<string | null> {
+    await Promise.resolve();
+    return n <= this.rpc.head ? blockHashOf(n) : null;
+  }
+  async getTransactionCount(a: string): Promise<bigint> {
+    await Promise.resolve();
+    return this.rpc.getTransactionCount(a);
+  }
+  async getTransactionReceipt(h: string): Promise<EvmReceipt | null> {
+    await Promise.resolve();
+    const r = await this.rpc.getTransactionReceipt(h);
+    return r ? { ...r, blockHash: blockHashOf(r.blockNumber), logs: r.logs.map((l, i) => ({ ...l, logIndex: i })) } : null;
+  }
+  async isTransactionKnown(h: string): Promise<boolean> {
+    await Promise.resolve();
+    return this.rpc.isTransactionKnown(h);
+  }
+  async sendRawTransaction(raw: string): Promise<string> {
+    await Promise.resolve();
+    return this.rpc.sendRawTransaction(raw);
+  }
+}
+
+/** A signed transfer whose sender the fake chain reads from `r`. */
+function fakeSigned(fee: bigint): { raw: string; hash: string } {
+  const r = new Uint8Array(32);
+  r.set(fromHex(SENDER), 12);
+  const raw = encodeTx(
+    {
+      chainId: CHAIN,
+      nonce: NONCE,
+      maxPriorityFeePerGas: fee,
+      maxFeePerGas: fee,
+      gasLimit: 120_000n,
+      to: TOKEN,
+      value: 0n,
+      data: encodeTransfer(DEST, AMOUNT),
+    },
+    { yParity: 1, r, s: new Uint8Array(32).fill(2) },
+  );
+  return { raw, hash: txHash(raw) };
+}
+
+function world(states: Array<[bigint, AttemptState]>, manualMining = false) {
+  const rpc = new FakeEvmRpc();
+  rpc.chain = CHAIN;
+  rpc.manualMining = manualMining;
+  rpc.nonces.set(SENDER, NONCE);
+  rpc.setToken(TOKEN, SENDER, 10n * AMOUNT);
+  const txs = states.map(([fee, st]) => ({ fee, ...fakeSigned(fee), st }));
+  const overall: PayoutView["state"] = txs.some((t) => t.st === "pending") ? "pending_finality" : txs.some((t) => t.st === "broadcast") ? "broadcast" : "signed";
+  const p = payout(
+    overall,
+    txs.map((t) => ({ tx_hash: bytes(t.hash), max_fee_per_gas: t.fee.toString(), state: t.st })),
+  );
+  const ledger = new FakeLedger([p]);
+  for (const t of txs) ledger.raws.set(t.hash, t.raw);
+  const chain = new FakeRpcChain(rpc);
+  const make = () => new PayoutReconciler(ledger, chain);
+  const delivered = () => rpc.tokenBalance(TOKEN, DEST);
+  const distinctSent = () => new Set(rpc.broadcasts).size;
+  return { rpc, ledger, p, txs, make, delivered, distinctSent };
+}
+
+describe("acceptance scenarios on FakeEvmRpc: no second spend", () => {
+  it("restart with a pending transaction: records it, then confirms once it is final", async () => {
+    const w = world([[100n, "broadcast"]], true);
+    const t = w.txs[0] as (typeof w.txs)[number];
+    await w.rpc.sendRawTransaction(t.raw); // sent before the crash, not yet mined
+    const sentBefore = w.rpc.broadcasts.length;
+    await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_pending_finality"]);
+    expect(w.rpc.broadcasts.length).toBe(sentBefore);
+    w.rpc.mine();
+    await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_pending_finality", "confirm_payout"]);
+    expect(w.delivered()).toBe(AMOUNT);
+    expect(w.rpc.broadcasts.length).toBe(sentBefore);
+  });
+
+  it("replacement: sends only the highest-fee attempt and confirms that one", async () => {
+    const w = world([
+      [100n, "broadcast"],
+      [200n, "signed"],
+    ]);
+    await w.make().reconcile();
+    expect(w.distinctSent()).toBe(1);
+    await w.make().reconcile();
+    const evidence = w.ledger.args.find((x) => x.method === "confirm_payout")?.arg as PaymentEvidenceInput;
+    expect(evidence.tx_hash).toEqual(bytes((w.txs[1] as (typeof w.txs)[number]).hash));
+    expect(w.delivered()).toBe(AMOUNT);
+    expect(w.distinctSent()).toBe(1);
+  });
+
+  it("lost response: the signed but unsent transaction goes out once and the payout confirms", async () => {
+    const w = world([[100n, "signed"]]);
+    await w.make().reconcile();
+    await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_broadcast", "confirm_payout"]);
+    expect(w.distinctSent()).toBe(1);
+    expect(w.delivered()).toBe(AMOUNT);
+  });
+
+  it("reverted attempt: recorded, restored with a proof, and nothing is sent again", async () => {
+    const w = world([[100n, "signed"]]);
+    w.rpc.shouldRevert = () => true;
+    await w.make().reconcile();
+    await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_broadcast", "record_revert", "restore_payout"]);
+    expect(w.distinctSent()).toBe(1);
+    expect(w.delivered()).toBe(0n);
+  });
+});
+
+describe("concurrent and repeated runs on FakeEvmRpc", () => {
+  const settle = async (w: ReturnType<typeof world>) => {
+    for (let i = 0; i < 3; i++) {
+      const [a, b] = await Promise.all([w.make().reconcile(), w.make().reconcile()]);
+      for (const o of [...a.outcomes, ...b.outcomes]) expect(o.kind).not.toBe("error");
+    }
+  };
+
+  it("two concurrent instances on a lost response conflict nowhere and pay once", async () => {
+    const w = world([[100n, "signed"]]);
+    await settle(w);
+    expect(w.ledger.effects).toEqual(["record_broadcast", "confirm_payout"]);
+    expect(w.distinctSent()).toBe(1);
+    expect(w.delivered()).toBe(AMOUNT);
+    expect(w.p.state).toBe("confirmed");
+  });
+
+  it("two concurrent instances on a replacement send one distinct transaction", async () => {
+    const w = world([
+      [100n, "broadcast"],
+      [200n, "signed"],
+    ]);
+    await settle(w);
+    expect(w.distinctSent()).toBe(1);
+    expect(w.ledger.effects.filter((e) => e === "confirm_payout")).toHaveLength(1);
+    expect(w.delivered()).toBe(AMOUNT);
+  });
+
+  it("two concurrent instances on a revert restore once and never resend", async () => {
+    const w = world([[100n, "signed"]]);
+    w.rpc.shouldRevert = () => true;
+    await settle(w);
+    expect(w.ledger.effects).toEqual(["record_broadcast", "record_revert", "restore_payout"]);
+    expect(w.distinctSent()).toBe(1);
+    expect(w.delivered()).toBe(0n);
+  });
+
+  it("two concurrent instances on a pending transaction record the sighting once", async () => {
+    const w = world([[100n, "broadcast"]], true);
+    await w.rpc.sendRawTransaction((w.txs[0] as (typeof w.txs)[number]).raw);
+    await Promise.all([w.make().reconcile(), w.make().reconcile()]);
+    expect(w.ledger.effects).toEqual(["record_pending_finality"]);
+  });
+
+  it("a repeated run changes nothing: no ledger write, no broadcast, same state", async () => {
+    const w = world([[100n, "broadcast"]], true);
+    await w.rpc.sendRawTransaction((w.txs[0] as (typeof w.txs)[number]).raw);
+    await w.make().reconcile();
+    const snapshot = JSON.stringify(w.p);
+    const calls = w.ledger.calls.length;
+    const sent = w.rpc.broadcasts.length;
+    for (let i = 0; i < 3; i++) await w.make().reconcile();
+    expect(w.ledger.calls.length).toBe(calls);
+    expect(w.rpc.broadcasts.length).toBe(sent);
+    expect(JSON.stringify(w.p)).toBe(snapshot);
+  });
+
+  it("a held payout is not held again by a later run", async () => {
+    const w = world([[100n, "broadcast"]]);
+    w.rpc.nonces.set(SENDER, NONCE + 1n); // slot used by something else, no attempt of ours on chain
+    await w.make().reconcile();
+    const calls = w.ledger.calls.length;
+    await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["require_reconciliation"]);
+    expect(w.ledger.calls.length).toBe(calls);
+    expect(w.distinctSent()).toBe(0);
+  });
+});
+
+describe("operator reporting", () => {
+  it("reports findings through the agent log at a level that matches their urgency", async () => {
+    const lines: Array<{ level: string; kind: unknown }> = [];
+    const log = {
+      info: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "info", kind: f?.kind }),
+      warn: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "warn", kind: f?.kind }),
+      error: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "error", kind: f?.kind }),
+    };
+    const held = payout("reconciliation_required", [], 1);
+    const idle = payout("authorized", [], 2);
+    const needs = payout("pending_finality", [attemptOf(100n, "pending")], 3);
+    const ledger = new FakeLedger([held, idle, needs], false);
+    const chain = new FakeChain();
+    chain.receipt(txHash(attemptOf(100n, "pending").raw));
+    await new PayoutReconciler(ledger, chain, { log }).reconcile();
+    expect(lines).toEqual([
+      { level: "warn", kind: "held" },
+      { level: "info", kind: "idle" },
+      { level: "warn", kind: "needs_operator" },
+    ]);
   });
 });

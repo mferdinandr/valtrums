@@ -249,7 +249,9 @@ export class PayoutReconciler {
       }
       this.allowed.set(keyOf(p), outcome.spendAllowed);
       outcomes.push(outcome);
-      const level = outcome.kind === "error" ? "error" : "info";
+      // The operator reads the agent's structured log: findings that need a person are warnings or errors.
+      const level =
+        outcome.kind === "error" ? "error" : outcome.kind === "held" || outcome.kind === "needs_operator" ? "warn" : "info";
       this.log[level]("payout reconciled", { ...outcome });
     }
     // A complete pass is one that listed the payouts; per-payout errors keep their own gate closed.
