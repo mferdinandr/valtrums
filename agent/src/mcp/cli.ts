@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Near, verifyNep413Signature } from "near-kit";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
+import { NearStateSource } from "./account-state.js";
 import { parseDelegateGrants } from "./actions/proposal.js";
 import { NearRpcReceiptVerifier } from "./actions/receipt.js";
 import { ActionService } from "./actions/service.js";
@@ -23,7 +24,8 @@ import { ReadSessions } from "./session.js";
  * READ_API_HOST (default 127.0.0.1), READ_API_PORT (default 8790). Actions (optional): ACTION_STORE_PATH
  * enables them; PLAYER_POLICY_CONTRACT_ID for grant reservations; ACTION_RECIPIENT (NEP-413
  * recipient, default READ_SESSION_RECIPIENT); PLAYER_AGENT_GRANTS (JSON, delegate -> grants it may
- * propose under; operator configuration, never model output).
+ * propose under; operator configuration, never model output). INDEXER_STATE_DIR (optional, read-only)
+ * feeds indexer health into the recovery alerts.
  */
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -74,8 +76,15 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
         delegateGrants: parseDelegateGrants(env.PLAYER_AGENT_GRANTS),
       })
     : undefined;
+  const state = new NearStateSource(
+    { network: `near-${network}`, kind: "live", name: required(env, "ARENA_CONTRACT_ID") },
+    (contractId, method, args) => near.view(contractId, method, args),
+    required(env, "ARENA_CONTRACT_ID"),
+    env.INDEXER_STATE_DIR?.trim() || null,
+  );
   return {
     arena,
+    state,
     sessions,
     ...(actions ? { actions } : {}),
     now: Date.now,
