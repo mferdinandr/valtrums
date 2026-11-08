@@ -30,6 +30,8 @@ pub struct Claim {
     pub custody_domain: String,
     pub mapping_version: U64,
     pub beneficiary: AccountId,
+    /// EVM address bound at deposit time that a late deposit is returned to (D17).
+    pub refund_address: [u8; 20],
     pub battle_id: U64,
     pub actual_received: U128,
     pub block_number: U64,
@@ -120,6 +122,7 @@ impl ReceiptRegistry {
             !claim.custody_domain.trim().is_empty() && claim.custody_domain.len() <= 256,
             "Invalid custody domain"
         );
+        require!(claim.refund_address != [0; 20], "Missing refund address");
         require!(
             claim.actual_received.0 > 0
                 && claim.block_hash != [0; 32]
@@ -247,6 +250,7 @@ mod tests {
             custody_domain: "custody".into(),
             mapping_version: U64(1),
             beneficiary: account("alice.testnet"),
+            refund_address: [0xbe; 20],
             battle_id: U64(1),
             actual_received: U128(98),
             block_number: U64(3),
@@ -281,6 +285,25 @@ mod tests {
         conflicting.representation = account("other.testnet");
         registry.attest(key(), conflicting);
     }
+    #[test]
+    #[should_panic(expected = "Missing refund address")]
+    fn claim_without_refund_address_is_rejected() {
+        let mut registry = registry();
+        let mut invalid = claim();
+        invalid.refund_address = [0; 20];
+        registry.attest(key(), invalid);
+    }
+
+    #[test]
+    #[should_panic(expected = "Conflicting receipt claim")]
+    fn refund_address_is_immutable_claim_data() {
+        let mut registry = registry();
+        registry.attest(key(), claim());
+        let mut changed = claim();
+        changed.refund_address = [0xca; 20];
+        registry.attest(key(), changed);
+    }
+
     #[test]
     #[should_panic(expected = "Only verifier")]
     fn untrusted_caller_cannot_consume_receipt() {

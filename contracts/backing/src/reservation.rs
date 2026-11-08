@@ -67,6 +67,8 @@ pub enum ReservationError {
     InsufficientBalance,
     UnrepresentableAmount,
     InvalidDestination,
+    /// A late refund must go to an address bound at deposit time.
+    UnboundRefundAddress,
     ConflictingRequest,
     MissingReservation,
     ConflictingBroadcast,
