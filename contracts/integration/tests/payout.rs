@@ -17,6 +17,8 @@ struct World {
     payout: Contract,
     /// Sandbox fixture standing in for the NEAR MPC signer; not live evidence.
     mpc: Contract,
+    registry: Contract,
+    verifier: Account,
     arena: Account,
     alice: Account,
     relayer: Account,
@@ -90,7 +92,7 @@ async fn world() -> anyhow::Result<World> {
         .into_result()?;
     // The arena receives the attested custody and holds it as the locked vault.
     let key = json!({"chain_id": "46630", "transaction_hash": vec![1u8; 32], "log_index": 1});
-    let claim = json!({"representation": backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": arena.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
+    let claim = json!({"representation": backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": arena.id(), "refund_address": vec![0xbeu8; 20], "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
     verifier
         .call(registry.id(), "attest")
         .args_json(json!({"key": key, "claim": claim}))
@@ -134,6 +136,8 @@ async fn world() -> anyhow::Result<World> {
         backing,
         payout,
         mpc,
+        registry,
+        verifier,
         arena,
         alice,
         relayer,
@@ -737,5 +741,201 @@ async fn a_conflicting_repeat_request_never_changes_the_authorized_payout() -> a
         w.payout.view("get_payout_count").await?.json::<String>()?,
         "1"
     );
+    Ok(())
+}
+
+/// Late deposit (fixture, not live evidence): the arena reports battle 1 locked,
+/// so a finalized receipt bound to refund address 0xbe.. becomes a late balance.
+async fn late_deposit(w: &World, amount: &str) -> anyhow::Result<()> {
+    w.arena
+        .call(w.arena.id(), "set_battle")
+        .args_json(json!({"battle_id": "1", "locked": true}))
+        .transact()
+        .await?
+        .into_result()?;
+    let key = json!({"chain_id": "46630", "transaction_hash": vec![0x21u8; 32], "log_index": 0});
+    let claim = json!({"representation": w.backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": w.alice.id(), "refund_address": vec![0xbeu8; 20], "battle_id": "1", "actual_received": amount, "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
+    w.verifier
+        .call(w.registry.id(), "attest")
+        .args_json(json!({"key": key, "claim": claim}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let credited = w
+        .relayer
+        .call(w.backing.id(), "claim_receipt")
+        .args_json(json!({"transaction_hash": format!("0x{}", "21".repeat(32)), "log_index": 0}))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(credited.into_result()?.json::<bool>()?);
+    Ok(())
+}
+
+/// Starts a late refund as `account` for `beneficiary`. The beneficiary attaches
+/// the storage deposit; the operator attaches exactly `operator_deposit` yocto.
+async fn refund_request(
+    w: &World,
+    account: &Account,
+    beneficiary: &Account,
+    request: u8,
+    amount: &str,
+    address: u8,
+    deposit: NearToken,
+) -> anyhow::Result<bool> {
+    Ok(account
+        .call(w.payout.id(), "request_late_refund")
+        .args_json(json!({"backing": w.backing.id(), "beneficiary": beneficiary.id(), "request_id": vec![request; 32], "amount": amount, "refund_address": vec![address; 20]}))
+        .deposit(deposit)
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json::<bool>()
+        .unwrap_or(false))
+}
+
+const STORAGE: NearToken = NearToken::from_millinear(30);
+const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
+
+#[tokio::test]
+async fn late_refund_goes_only_to_the_address_bound_at_deposit() -> anyhow::Result<()> {
+    let w = world().await?;
+    late_deposit(&w, "50").await?;
+    let late: String = w
+        .backing
+        .view("late_balance_of")
+        .args_json(json!({"account": w.alice.id()}))
+        .await?
+        .json()?;
+    assert_eq!(late, "50");
+
+    // A destination the NEAR beneficiary picks later is rejected and reserves nothing;
+    // an account with no late balance cannot start a refund either.
+    assert!(!refund_request(&w, &w.alice, &w.alice, 7, "50", 4, STORAGE).await?);
+    assert_eq!(status(&w, 7).await?, None);
+    let ledger: Value = w
+        .backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(ledger["payouts"], "0");
+    assert_eq!(ledger["late_refundable"], "50");
+
+    // The bound address is accepted, idempotently, and drives the existing signing path.
+    assert!(refund_request(&w, &w.alice, &w.alice, 7, "50", 0xbe, STORAGE).await?);
+    assert!(refund_request(&w, &w.alice, &w.alice, 7, "50", 0xbe, STORAGE).await?);
+    assert_eq!(status(&w, 7).await?.as_deref(), Some("authorized"));
+    let authorized = view(&w, 7).await?;
+    assert_eq!(authorized["destination"], json!(vec![0xbeu8; 20]));
+    assert_eq!(authorized["amount"], "50");
+    assert!(sign(&w, 7, "10").await?);
+    let signed = view(&w, 7).await?;
+    let tx_hash = attempt_hash(&signed, 0);
+    let raw: Option<String> = w
+        .payout
+        .view("get_signed_transaction")
+        .args_json(with(id(&w, 7), json!({"tx_hash": tx_hash})))
+        .await?
+        .json()?;
+    let raw = raw.expect("signed transaction");
+    let call = format!("a9059cbb{}{}{:064x}", "0".repeat(24), "be".repeat(20), 50);
+    assert!(raw.contains(&call), "calldata pays the bound address");
+    assert!(!raw.contains(&"04".repeat(20)));
+
+    // Finality evidence for another recipient cannot consume the refund.
+    let hash_args = with(id(&w, 7), json!({"tx_hash": tx_hash}));
+    assert!(drive(&w, &w.relayer, "record_broadcast", hash_args.clone()).await?);
+    assert!(drive(&w, &w.operator, "record_pending_finality", hash_args).await?);
+    let confirm = |recipient: u8| {
+        let mut e = evidence("50", &tx_hash);
+        e["recipient"] = json!(vec![recipient; 20]);
+        with(id(&w, 7), json!({"evidence": e}))
+    };
+    assert!(!drive(&w, &w.operator, "confirm_payout", confirm(4)).await?);
+    assert_eq!(status(&w, 7).await?.as_deref(), Some("pending_finality"));
+    assert!(drive(&w, &w.operator, "confirm_payout", confirm(0xbe)).await?);
+    assert_eq!(status(&w, 7).await?.as_deref(), Some("confirmed"));
+    let ledger: Value = w
+        .backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(ledger["custody"], "98");
+    assert_eq!(ledger["payouts"], "0");
+    assert_eq!(ledger["late_refundable"], "0");
+    assert_eq!(ledger["accounting_balanced"], true);
+    Ok(())
+}
+
+#[tokio::test]
+async fn operator_can_start_a_late_refund_but_only_to_the_bound_address() -> anyhow::Result<()> {
+    let w = world().await?;
+    late_deposit(&w, "50").await?;
+    let stranger = w.relayer.clone();
+    let bob = w.arena.clone();
+    // A stranger, and a beneficiary naming someone else, are rejected outright.
+    assert!(
+        refund_request(&w, &stranger, &w.alice, 8, "50", 0xbe, STORAGE)
+            .await
+            .is_err()
+    );
+    assert!(refund_request(&w, &w.alice, &bob, 8, "50", 0xbe, STORAGE)
+        .await
+        .is_err());
+    // The operator needs exactly one yocto.
+    assert!(refund_request(
+        &w,
+        &w.operator,
+        &w.alice,
+        8,
+        "50",
+        0xbe,
+        NearToken::from_yoctonear(0)
+    )
+    .await
+    .is_err());
+    assert!(
+        refund_request(&w, &w.operator, &w.alice, 8, "50", 0xbe, STORAGE)
+            .await
+            .is_err()
+    );
+    assert_eq!(status(&w, 8).await?, None);
+    // The operator cannot pick another address, nor refund a beneficiary without a late balance.
+    assert!(!refund_request(&w, &w.operator, &w.alice, 8, "50", 4, ONE_YOCTO).await?);
+    assert!(!refund_request(&w, &w.operator, &bob, 8, "50", 0xbe, ONE_YOCTO).await?);
+    assert_eq!(status(&w, 8).await?, None);
+    let ledger: Value = w
+        .backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(
+        (&ledger["payouts"], &ledger["late_refundable"]),
+        (&json!("0"), &json!("50"))
+    );
+    // With the bound address it works, idempotently, for the beneficiary named.
+    assert!(refund_request(&w, &w.operator, &w.alice, 8, "50", 0xbe, ONE_YOCTO).await?);
+    assert!(refund_request(&w, &w.operator, &w.alice, 8, "50", 0xbe, ONE_YOCTO).await?);
+    assert_eq!(status(&w, 8).await?.as_deref(), Some("authorized"));
+    let started = view(&w, 8).await?;
+    assert_eq!(started["holder"], json!(w.alice.id()));
+    assert_eq!(started["destination"], json!(vec![0xbeu8; 20]));
+    let ledger: Value = w
+        .backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(
+        (&ledger["payouts"], &ledger["late_refundable"]),
+        (&json!("50"), &json!("0"))
+    );
+    assert_eq!(ledger["accounting_balanced"], true);
     Ok(())
 }

@@ -23,5 +23,16 @@ Not done, so the matching tasks stay open:
 
 - Backing refunds of unused entitlement storage go to the arena contract (the caller of the backing), not back to the settler. Fees are `Protocol`/`Creator` entitlements like any other; nothing yet withdraws unused refunds.
 - The plan is recomputed on every call (reads every winner position), so a very large winning community can exceed one call's gas; there is no stored plan. Rewards are limited by what the arena actually holds in each backing.
-- Protocol-only fee configuration and its snapshot at battle creation (lifecycle work), and a combined view of entitlement and payout states, remain open.
+- Protocol-only fee configuration and its snapshot at battle creation (lifecycle work), remain open.
 - A lost response is covered by unit tests of the cursor callback and by idempotent repeats, not by a sandbox test that drops a real callback.
+
+## Entitlement and payout states (`agent/src/settlement-states.ts`)
+
+A read model, not a contract change. `readSettlementStates` reads, per losing token (backing) and holder, `get_allocation` for the known allocation ids (entitled), `entitlement_of` (available; reservations are already taken out of it) and `get_payout` for the holder's known request ids. Tokens are read independently; a failing backing reports its own error and does not hide the others. Amounts are representation units; payout amounts (source units) are converted exactly.
+
+- `signing_requested`, `signed`, `authorized`, `reverted` count as reserved; `broadcast` as broadcast; `pending_finality` as confirmation-pending; `confirmed` as confirmed (the only paid state); `restored` is already back in available.
+- `reconciliation_required` counts as confirmation-pending when any attempt was broadcast or pending (a spend may have happened), otherwise as reserved. An unknown future state stays reserved. This classification is an assumption.
+- `balanced` is false when available plus the four payout states differ from the entitlement; it is reported, not hidden. Request ids and allocation ids are deduplicated, so a lost-response retry reproduces the same result and does not count an allocation or fee twice; two different payout views under one request id are rejected. A payout of another backing or holder is rejected.
+- Confirmed payouts are not listed by `list_open_payouts`, so the caller must supply the request ids it used (the agent's own record). A reservation whose request id is unknown to the caller appears as `balanced: false`.
+- Tests (`agent/test/settlement-states.test.ts`) use fixture views, not live evidence: B confirmed while C pending, rewards payable with no DAO input, restored and conflicting cases, lost-response retry, one backing failing. The contract-level lost-callback case remains covered only by the existing payout sandbox tests; no sandbox test drops a real callback.
+
