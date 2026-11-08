@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Near, verifyNep413Signature } from "near-kit";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
+import { parseDelegateGrants } from "./actions/proposal.js";
 import { NearRpcReceiptVerifier } from "./actions/receipt.js";
 import { ActionService } from "./actions/service.js";
 import { NearActionReadSource } from "./actions/source.js";
@@ -21,7 +22,8 @@ import { ReadSessions } from "./session.js";
  * READ_SESSION_SECRET (hex, >= 32 bytes), READ_SESSION_RECIPIENT, AUDIT_ARCHIVE_PATH (optional),
  * READ_API_HOST (default 127.0.0.1), READ_API_PORT (default 8790). Actions (optional): ACTION_STORE_PATH
  * enables them; PLAYER_POLICY_CONTRACT_ID for grant reservations; ACTION_RECIPIENT (NEP-413
- * recipient, default READ_SESSION_RECIPIENT).
+ * recipient, default READ_SESSION_RECIPIENT); PLAYER_AGENT_GRANTS (JSON, delegate -> grants it may
+ * propose under; operator configuration, never model output).
  */
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -69,6 +71,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
         recipient: env.ACTION_RECIPIENT?.trim() || required(env, "READ_SESSION_RECIPIENT"),
         verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
         receipts: new NearRpcReceiptVerifier(env.NEAR_RPC_URL?.trim() || `https://rpc.${network}.near.org`),
+        delegateGrants: parseDelegateGrants(env.PLAYER_AGENT_GRANTS),
       })
     : undefined;
   return {

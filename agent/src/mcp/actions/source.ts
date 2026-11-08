@@ -26,6 +26,14 @@ export interface BudgetView {
   available: string;
 }
 
+/** `player-policy.get_reservation` view. */
+export interface ReservationView {
+  state: "reserved" | "dispatched" | "consumed" | "released" | "reconciliation_required";
+  amount: string;
+  version: string;
+  action_hash: number[];
+}
+
 export interface ActionReadSource {
   readonly info: SourceInfo;
   battle(battleId: number): Promise<LifecycleBattleView | null>;
@@ -37,6 +45,7 @@ export interface ActionReadSource {
   entitlement(backing: string, account: string): Promise<bigint>;
   grant(user: string, localId: number[]): Promise<GrantView | null>;
   budget(user: string, localId: number[]): Promise<BudgetView | null>;
+  reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null>;
 }
 
 const big = (value: unknown, what: string): bigint => {
@@ -80,6 +89,11 @@ export class NearActionReadSource implements ActionReadSource {
     if (!this.contracts.policy) return null;
     return ((await this.view(this.contracts.policy, "get_budget", { user, local_id: localId })) ?? null) as BudgetView | null;
   }
+  async reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null> {
+    if (!this.contracts.policy) return null;
+    return ((await this.view(this.contracts.policy, "get_reservation", { user, local_id: localId, request_id: requestId })) ??
+      null) as ReservationView | null;
+  }
 }
 
 /** In-memory source for tests and demos; `info.kind` is always `fixture`. */
@@ -95,6 +109,7 @@ export class FixtureActionReadSource implements ActionReadSource {
       entitlements?: Map<string, bigint>;
       grants?: Map<string, GrantView>;
       budgets?: Map<string, BudgetView>;
+      reservations?: Map<string, ReservationView>;
     },
   ) {
     this.info = { network, kind: "fixture", name: "fixture-actions" };
@@ -122,5 +137,8 @@ export class FixtureActionReadSource implements ActionReadSource {
   }
   async budget(user: string, localId: number[]) {
     return this.data.budgets?.get(FixtureActionReadSource.key(user, localId.join(","))) ?? null;
+  }
+  async reservation(user: string, localId: number[], requestId: number[]) {
+    return this.data.reservations?.get(FixtureActionReadSource.key(user, localId.join(","), requestId.join(","))) ?? null;
   }
 }

@@ -21,7 +21,11 @@ export interface ActionTool {
   name: string;
   description: string;
   inputSchema: { type: "object"; properties: Record<string, unknown>; required: string[]; additionalProperties: false };
-  run(args: Args, actions: ActionService, caller: string): Promise<ActionRecord | { record: ActionRecord; transaction: unknown }>;
+  run(
+    args: Args,
+    actions: ActionService,
+    caller: string,
+  ): Promise<ActionRecord | { record: ActionRecord; transaction?: unknown; attribution?: unknown }>;
 }
 
 const session = { session: { type: "string", description: "Read session token from open_read_session (NEP-413)." } };
@@ -60,12 +64,23 @@ export const ACTION_TOOLS: readonly ActionTool[] = [
   },
   {
     name: "action_status",
-    description: "Read an action's durable status; a broadcast action is checked against its final receipt.",
+    description:
+      "Read an action's durable status and attribution (user, signer, position, grant state, on-chain reservation). A broadcast action " +
+      "is checked against its final receipt; a revoked grant rejects actions not yet prepared while prepared ones stay attributable.",
     inputSchema: { type: "object", properties: { ...session, ...actionId }, required: ["session", "actionId"], additionalProperties: false },
     run: async (args, actions, caller) => {
       await actions.status(String(args.actionId), caller);
-      return actions.refresh(String(args.actionId), caller);
+      const record = await actions.refresh(String(args.actionId), caller);
+      return { record, attribution: await actions.attribution(String(args.actionId), caller) };
     },
+  },
+  {
+    name: "propose_action",
+    description:
+      "Player agents: submit model output as an untrusted proposal ({action:'deposit', user, battleId, community, amount, rationale?}). " +
+      "It becomes a grant preview under this delegate's configured grant for that user; any other field rejects it. Moves nothing.",
+    inputSchema: { type: "object", properties: { ...session, proposal: {} }, required: ["session", "proposal"], additionalProperties: false },
+    run: (args, actions, caller) => actions.propose(caller, args.proposal),
   },
 ];
 

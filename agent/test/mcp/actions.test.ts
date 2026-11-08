@@ -263,7 +263,9 @@ describe("shared MCP and HTTP boundary", () => {
     const id = (JSON.parse(created.body) as { data: { actionId: string } }).data.actionId;
     const viaMcp = await handleMcpToolCall("action_status", { session: alice, actionId: id }, deps);
     expect(viaMcp.isError).toBeUndefined();
-    expect(JSON.parse(viaMcp.content[0]!.text).data.status).toBe("previewed");
+    const statusData = JSON.parse(viaMcp.content[0]!.text).data;
+    expect(statusData.record.status).toBe("previewed");
+    expect(statusData.attribution).toMatchObject({ user: "alice.testnet", signer: "alice.testnet", authorization: "user_signature" });
     await expect(callActionTool("action_status", { session: bob, actionId: id }, deps)).rejects.toBeInstanceOf(AccessDeniedError);
     await expect(callActionTool("action_status", { actionId: id }, deps)).rejects.toBeInstanceOf(AccessDeniedError);
     const unsupported = await handleReadRequest(
