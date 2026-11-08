@@ -31,7 +31,8 @@ export interface ReceiptRequest { transactionHash: string; logIndex: number; bat
 export interface FinalizedAttestation {
   chainId: bigint; transactionHash: string; logIndex: number;
   representation: string; token: string; custodyDomain: string; mappingVersion: bigint;
-  beneficiary: string; battleId: bigint; actualReceived: bigint;
+  beneficiary: string; /** EVM address bound at deposit time that a late deposit is returned to (D17). */ refundAddress: string;
+  battleId: bigint; actualReceived: bigint;
   blockNumber: bigint; blockHash: string; finalizedHeadNumber: bigint; finalizedHeadHash: string;
   evidenceHash: string;
 }
@@ -145,7 +146,7 @@ export async function verifyDeposit(
       chainId: mapping.chainId.toString(), tx: request.transactionHash.toLowerCase(), logIndex: request.logIndex,
       block: [receipt.blockNumber.toString(), receipt.blockHash.toLowerCase()],
       finalized: [finalized.number.toString(), finalized.hash.toLowerCase()],
-      token, custody, depositId: target.depositId.toString(), requested: target.requested.toString(),
+      token, custody, depositId: target.depositId.toString(), refundAddress: target.refundAddress, requested: target.requested.toString(),
       received: target.received.toString(), balances: [before.toString(), after.toString()],
     });
     return {
@@ -153,7 +154,7 @@ export async function verifyDeposit(
       attestation: {
         chainId: mapping.chainId, transactionHash: request.transactionHash.toLowerCase(), logIndex: request.logIndex,
         representation: mapping.representation, token, custodyDomain: mapping.custodyDomain,
-        mappingVersion: mapping.mappingVersion, beneficiary: target.beneficiary, battleId: target.battleId,
+        mappingVersion: mapping.mappingVersion, beneficiary: target.beneficiary, refundAddress: target.refundAddress, battleId: target.battleId,
         actualReceived: target.received, blockNumber: receipt.blockNumber, blockHash: receipt.blockHash.toLowerCase(),
         finalizedHeadNumber: finalized.number, finalizedHeadHash: finalized.hash.toLowerCase(),
         evidenceHash: toHex(keccak(new TextEncoder().encode(evidence))),

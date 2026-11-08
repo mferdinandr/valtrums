@@ -5,20 +5,21 @@ import { TRANSFER_TOPIC, keccakHex } from "../src/evm-abi.js";
 const custody = "0x0000000000000000000000000000000000000123";
 const token = "0x00000000000000000000000000000000000000ab";
 const other = "0x00000000000000000000000000000000000000ee";
+const refund = "0x000000000000000000000000000000000000beef";
 const sender = "0x00000000000000000000000000000000000000cd";
 const tx = `0x${"11".repeat(32)}`;
 const hashOf = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const word = (v: bigint) => v.toString(16).padStart(64, "0");
 const topicAddr = (a: string) => `0x${a.slice(2).padStart(64, "0")}`;
 const mapping: AssetMapping = { chainId: 46630n, token, custody, custodyDomain: "robinhood-testnet", representation: "rep.testnet", mappingVersion: 3n };
-const DEPOSIT = keccakHex("Deposited(uint256,address,address,uint64,uint64,string,uint256,uint256)");
+const DEPOSIT = keccakHex("Deposited(uint256,address,address,uint64,uint64,address,string,uint256,uint256)");
 
-function depositLog(opts: { token?: string; received?: bigint; version?: bigint; beneficiary?: string; logIndex?: number } = {}): SourceLog {
+function depositLog(opts: { token?: string; received?: bigint; version?: bigint; beneficiary?: string; logIndex?: number; refund?: bigint } = {}): SourceLog {
   const ben = Buffer.from(opts.beneficiary ?? "alice.testnet", "utf8");
   return {
     address: custody, logIndex: opts.logIndex ?? 1, blockHash: hashOf(5), transactionHash: tx,
     topics: [DEPOSIT, `0x${word(1n)}`, topicAddr(opts.token ?? token), topicAddr(sender)],
-    data: `0x${word(7n)}${word(opts.version ?? 3n)}${word(160n)}${word(100n)}${word(opts.received ?? 98n)}${word(BigInt(ben.length))}${ben.toString("hex").padEnd(64, "0")}`,
+    data: `0x${word(7n)}${word(opts.version ?? 3n)}${word(opts.refund ?? BigInt(refund))}${word(192n)}${word(100n)}${word(opts.received ?? 98n)}${word(BigInt(ben.length))}${ben.toString("hex").padEnd(64, "0")}`,
   };
 }
 const transferLog = (amount: bigint, t = token): SourceLog => ({
@@ -47,7 +48,7 @@ describe("finalized custody deposit verifier", () => {
     const v = await run(chain(), {}, 7n);
     expect(v.status).toBe("verified");
     if (v.status !== "verified") return;
-    expect(v.attestation).toMatchObject({ actualReceived: 98n, beneficiary: "alice.testnet", blockNumber: 5n, finalizedHeadNumber: 8n, mappingVersion: 3n, representation: "rep.testnet" });
+    expect(v.attestation).toMatchObject({ actualReceived: 98n, beneficiary: "alice.testnet", refundAddress: refund, blockNumber: 5n, finalizedHeadNumber: 8n, mappingVersion: 3n, representation: "rep.testnet" });
     expect(v.attestation.evidenceHash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
@@ -67,6 +68,13 @@ describe("finalized custody deposit verifier", () => {
     expect((await run(chain({ status: false }))).status).toBe("rejected");
     expect((await run(chain({ logs: [transferLog(98n), depositLog({ beneficiary: "Not A Near!" })] }))).status).toBe("rejected");
     expect((await run(chain({ logs: [transferLog(98n), depositLog({ logIndex: 2 })] }))).status).toBe("rejected");
+  });
+
+  it("rejects a deposit with no bound refund address and carries the bound one into the evidence", async () => {
+    expect((await run(chain({ logs: [transferLog(98n), depositLog({ refund: 0n })] }))).status).toBe("rejected");
+    const a = await run(chain({ logs: [transferLog(98n), depositLog({ refund: 0xbeefn })] }));
+    const b = await run(chain({ logs: [transferLog(98n), depositLog({ refund: 0xcafen })] }));
+    expect(a.status === "verified" && b.status === "verified" && a.attestation.evidenceHash !== b.attestation.evidenceHash).toBe(true);
   });
 
   it("rejects declared amounts that custody did not actually receive", async () => {
