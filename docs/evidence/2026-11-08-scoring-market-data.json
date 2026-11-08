@@ -1,0 +1,526 @@
+{
+ "label": "RECORDED PUBLIC-SERVICE RESPONSES (2026-11-08). Third-party aggregator data, not on-chain verified. Excerpts only.",
+ "requests": [
+  {
+   "file": "cg-coin-cash-cat",
+   "url": "https://api.coingecko.com/api/v3/coins/cash-cat?localization=false&tickers=false&community_data=false&developer_data=false",
+   "fetched_at": "2026-11-08T13:29:10Z",
+   "http": "200"
+  },
+  {
+   "file": "cg-coin-rebate",
+   "url": "https://api.coingecko.com/api/v3/coins/rebate?localization=false&tickers=false&community_data=false&developer_data=false",
+   "fetched_at": "2026-11-08T13:29:17Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-BTCETHUSDT",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0xAE2Df3c1749daEE721c1BFcbbFDde5D61ae7cb99",
+   "fetched_at": "2026-11-08T13:20:01Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-CASHCAT",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetched_at": "2026-11-08T13:19:46Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-CHAD",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x025Be9469fB7D8c22cE5404F77302611feE74e67",
+   "fetched_at": "2026-11-08T13:21:11Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-HODL",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0xc943274a0FE0A19e8678bc2f4a61A9a6d107c026",
+   "fetched_at": "2026-11-08T13:20:59Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-OAK",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x6511c233790Ec10f7d673c64DC82C3F941D57828",
+   "fetched_at": "2026-11-08T13:20:11Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-PENNY",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x4124277673E3ecaaF4AaDc5C6169cf1D7812d647",
+   "fetched_at": "2026-11-08T13:20:21Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-REBATE",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0xb7Ff57631B97000d950236ef63bD463da5bEBA7e",
+   "fetched_at": "2026-11-08T13:20:06Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-RICO",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x36F205a6F54468FC65257eAC0D8FED8DbB486435",
+   "fetched_at": "2026-11-08T13:20:49Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-ROBIN",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x4c92177Dc03430058929f1E115E0d51a3D1d62bA",
+   "fetched_at": "2026-11-08T13:20:36Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-Rabbit",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0xCD1cca2B3d0A11b295c42fe765ea8f895c2D0901",
+   "fetched_at": "2026-11-08T13:20:31Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-STRATEGY",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x168661C52E5922288dFb2b3f323b6Cf90eb21e18",
+   "fetched_at": "2026-11-08T13:20:16Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-VLADIUS",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x2e6ab6302E1903AF8601Fe03B7A7982545883A02",
+   "fetched_at": "2026-11-08T13:20:54Z",
+   "http": "200"
+  },
+  {
+   "file": "ds-token-WIF",
+   "url": "https://api.dexscreener.com/latest/dex/tokens/0x96c5d997A462Bce2577bEE9527A1A08101927519",
+   "fetched_at": "2026-11-08T13:20:26Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-BTCETHUSDT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x708aEf3736C15FCc1c0b3606C5b9a33fe8656784/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:22:04Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:19:55Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-CHAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x4911c6b88e93b7e69c629c9d376a648719d073a24296f69722b76e28080b4e7b/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:29:02Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-HODL",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x08a037500676448bfe3c7616f93c60452fbcece6730b89d0a2fc5a6730819905/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:28:09Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-OAK",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb324dde34ef01debe23f8f8ab4bb6053154b5dea8646dec9d8ea65e414fad59/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:23:22Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-PENNY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x06970e87789a22d79c23861c6f18daf2795eb65f505e0bbf5b5efe7084b22c20/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:25:08Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-REBATE",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdfc96a1bc3455ffce6564e1833270c1b0664b761626db961012068007851d83c/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:22:59Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-ROBIN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xC3698e57BAeDFf8FCF8D0464A3EA9FDf4Fbe08Bf/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:26:53Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-Rabbit",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x1684d2d3fd510dfbf60a3899fa948da695b481ab4796ae28176df2f675a3e269/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:26:01Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-STRATEGY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xa6975f4720a95aa9cdfa9b010a065b0e941534c93f9fa708104c08f0ac029ca0/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:24:15Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-min-VLADIUS",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x93F51cc6C3a2f302064579F1007cD83158A889F3/ohlcv/minute?aggregate=1&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:27:17Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-ohlcv-sec-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/ohlcv/second?aggregate=15&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:19:58Z",
+   "http": "401"
+  },
+  {
+   "file": "gt-ohlcv-sec-CHAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x4911c6b88e93b7e69c629c9d376a648719d073a24296f69722b76e28080b4e7b/ohlcv/second?aggregate=15&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:21:21Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-ohlcv-sec-HODL",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x08a037500676448bfe3c7616f93c60452fbcece6730b89d0a2fc5a6730819905/ohlcv/second?aggregate=15&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:21:09Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-ohlcv-sec-ROBIN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xc3698e57baedff8fcf8d0464a3ea9fdf4fbe08bf/ohlcv/second?aggregate=15&limit=60&currency=usd&token=base",
+   "fetched_at": "2026-11-08T13:20:46Z",
+   "http": "401"
+  },
+  {
+   "file": "gt-pools-BTCETHUSDT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xAE2Df3c1749daEE721c1BFcbbFDde5D61ae7cb99/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:03Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4/pools?page=1",
+   "fetched_at": "2026-11-08T13:19:49Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-pools-CHAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x025Be9469fB7D8c22cE5404F77302611feE74e67/pools?page=1",
+   "fetched_at": "2026-11-08T13:21:14Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-pools-HODL",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xc943274a0FE0A19e8678bc2f4a61A9a6d107c026/pools?page=1",
+   "fetched_at": "2026-11-08T13:21:02Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-pools-OAK",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x6511c233790Ec10f7d673c64DC82C3F941D57828/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:13Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-PENNY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x4124277673E3ecaaF4AaDc5C6169cf1D7812d647/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:24Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-REBATE",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xb7Ff57631B97000d950236ef63bD463da5bEBA7e/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:09Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-RICO",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x36F205a6F54468FC65257eAC0D8FED8DbB486435/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:51Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-ROBIN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x4c92177Dc03430058929f1E115E0d51a3D1d62bA/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:39Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-pools-Rabbit",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xCD1cca2B3d0A11b295c42fe765ea8f895c2D0901/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:33Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-STRATEGY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x168661C52E5922288dFb2b3f323b6Cf90eb21e18/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:18Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-VLADIUS",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x2e6ab6302E1903AF8601Fe03B7A7982545883A02/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:56Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-pools-WIF",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x96c5d997A462Bce2577bEE9527A1A08101927519/pools?page=1",
+   "fetched_at": "2026-11-08T13:20:29Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-token-BTCETHUSDT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xAE2Df3c1749daEE721c1BFcbbFDde5D61ae7cb99",
+   "fetched_at": "2026-11-08T13:21:49Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetched_at": "2026-11-08T13:19:46Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-CHAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x025Be9469fB7D8c22cE5404F77302611feE74e67",
+   "fetched_at": "2026-11-08T13:28:17Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-HODL",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xc943274a0FE0A19e8678bc2f4a61A9a6d107c026",
+   "fetched_at": "2026-11-08T13:27:54Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-OAK",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x6511c233790Ec10f7d673c64DC82C3F941D57828",
+   "fetched_at": "2026-11-08T13:23:06Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-PENNY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x4124277673E3ecaaF4AaDc5C6169cf1D7812d647",
+   "fetched_at": "2026-11-08T13:24:22Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-REBATE",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xb7Ff57631B97000d950236ef63bD463da5bEBA7e",
+   "fetched_at": "2026-11-08T13:22:13Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-RICO",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x36F205a6F54468FC65257eAC0D8FED8DbB486435",
+   "fetched_at": "2026-11-08T13:20:49Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-token-ROBIN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x4c92177Dc03430058929f1E115E0d51a3D1d62bA",
+   "fetched_at": "2026-11-08T13:26:08Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-Rabbit",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xCD1cca2B3d0A11b295c42fe765ea8f895c2D0901",
+   "fetched_at": "2026-11-08T13:25:15Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-STRATEGY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x168661C52E5922288dFb2b3f323b6Cf90eb21e18",
+   "fetched_at": "2026-11-08T13:24:00Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-VLADIUS",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x2e6ab6302E1903AF8601Fe03B7A7982545883A02",
+   "fetched_at": "2026-11-08T13:27:01Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-token-WIF",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x96c5d997A462Bce2577bEE9527A1A08101927519",
+   "fetched_at": "2026-11-08T13:20:26Z",
+   "http": "429"
+  },
+  {
+   "file": "gt-trades-BTCETHUSDT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x708aEf3736C15FCc1c0b3606C5b9a33fe8656784/trades",
+   "fetched_at": "2026-11-08T13:21:57Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/trades",
+   "fetched_at": "2026-11-08T13:19:52Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-CHAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x4911c6b88e93b7e69c629c9d376a648719d073a24296f69722b76e28080b4e7b/trades",
+   "fetched_at": "2026-11-08T13:28:55Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-HODL",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x08a037500676448bfe3c7616f93c60452fbcece6730b89d0a2fc5a6730819905/trades",
+   "fetched_at": "2026-11-08T13:28:02Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-OAK",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb324dde34ef01debe23f8f8ab4bb6053154b5dea8646dec9d8ea65e414fad59/trades",
+   "fetched_at": "2026-11-08T13:23:15Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-PENNY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x06970e87789a22d79c23861c6f18daf2795eb65f505e0bbf5b5efe7084b22c20/trades",
+   "fetched_at": "2026-11-08T13:25:00Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-REBATE",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdfc96a1bc3455ffce6564e1833270c1b0664b761626db961012068007851d83c/trades",
+   "fetched_at": "2026-11-08T13:22:21Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-ROBIN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xC3698e57BAeDFf8FCF8D0464A3EA9FDf4Fbe08Bf/trades",
+   "fetched_at": "2026-11-08T13:26:46Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-Rabbit",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x1684d2d3fd510dfbf60a3899fa948da695b481ab4796ae28176df2f675a3e269/trades",
+   "fetched_at": "2026-11-08T13:25:23Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-STRATEGY",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xa6975f4720a95aa9cdfa9b010a065b0e941534c93f9fa708104c08f0ac029ca0/trades",
+   "fetched_at": "2026-11-08T13:24:07Z",
+   "http": "200"
+  },
+  {
+   "file": "gt-trades-VLADIUS",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x93F51cc6C3a2f302064579F1007cD83158A889F3/trades",
+   "fetched_at": "2026-11-08T13:27:09Z",
+   "http": "200"
+  }
+ ],
+ "excerpts": {
+  "dexscreener_pair_CASHCAT": {
+   "chainId": "robinhood",
+   "dexId": "uniswap",
+   "labels": [
+    "v3"
+   ],
+   "pairAddress": "0xA70fc67C9F69da90B63a0e4C05D229954574E313",
+   "priceUsd": "0.08478",
+   "priceNative": "0.00003784",
+   "volume": {
+    "h24": 281355.31,
+    "h6": 130930.56,
+    "h1": 21386.64,
+    "m5": 4039.44
+   },
+   "txns": {
+    "m5": {
+     "buys": 3,
+     "sells": 0
+    },
+    "h1": {
+     "buys": 4,
+     "sells": 19
+    },
+    "h6": {
+     "buys": 134,
+     "sells": 126
+    },
+    "h24": {
+     "buys": 227,
+     "sells": 327
+    }
+   },
+   "liquidity": {
+    "usd": 1741554.13,
+    "base": 11757227,
+    "quote": 332.4407
+   },
+   "marketCap": 83744077,
+   "fdv": 83744077
+  },
+  "geckoterminal_trade_CASHCAT": {
+   "block_number": 109254405,
+   "block_timestamp": "2026-11-08T13:18:47Z",
+   "tx_hash": "0xabd155997d800d6f73743c1fea3e04302de9b24337c209795a1cb06f471441a2",
+   "tx_from_address": "0xce94090458719c167af5477db61c9bc985961d1b",
+   "kind": "sell",
+   "from_token_address": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+   "to_token_address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "from_token_amount": "28863.694797227",
+   "to_token_amount": "1.09277995117885",
+   "price_from_in_usd": "0.0848719340044958",
+   "price_to_in_usd": "2241.73",
+   "price_from_in_currency_token": "0.0000378600161502482",
+   "price_to_in_currency_token": "1.0",
+   "volume_in_usd": "2449.71759995616",
+   "is_anomalous": false
+  },
+  "geckoterminal_ohlcv_minute_CASHCAT_first3": [
+   [
+    1794143880,
+    0.0847563556139018,
+    0.085428665984757,
+    0.0846375147028134,
+    0.08487193400449579,
+    34968.06653526451
+   ],
+   [
+    1794143820,
+    0.08417218097061199,
+    0.0847563556139018,
+    0.08417218097061199,
+    0.0847563556139018,
+    2035.7586984661796
+   ],
+   [
+    1794143760,
+    0.0841151429657965,
+    0.08417218097061199,
+    0.0841151429657965,
+    0.08417218097061199,
+    6.006045509371039
+   ]
+  ],
+  "geckoterminal_ohlcv_second_error": {
+   "errors": [
+    {
+     "status": "401",
+     "title": "timeframe=second is exclusive to Paid plan subscribers only. Upgrade to Analyst plan & above to access: https://www.coingecko.com/en/api/pricing."
+    }
+   ],
+   "meta": {
+    "ref_id": "e58729a7-608e-497b-a7be-6ca45b664252"
+   }
+  },
+  "geckoterminal_token_CASHCAT": {
+   "address": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+   "symbol": "CASHCAT",
+   "decimals": 18,
+   "total_supply": "1000000000000000000000000000.0",
+   "normalized_total_supply": "1000000000.0",
+   "market_cap_usd": "83829616.9076648",
+   "fdv_usd": "83829616.9076648",
+   "coingecko_coin_id": "cash-cat"
+  },
+  "coingecko_cash-cat": {
+   "circulating_supply": 987718942.5567261,
+   "total_supply": 987718942.5567261,
+   "max_supply": 1000000000.0,
+   "last_updated": "2026-11-08T13:27:51.000Z"
+  },
+  "coingecko_rebate": {
+   "circulating_supply": 980960963.1338613,
+   "total_supply": 980960963.1338613,
+   "max_supply": 1000000000.0,
+   "last_updated": "2026-11-08T13:28:51.000Z"
+  }
+ }
+}
