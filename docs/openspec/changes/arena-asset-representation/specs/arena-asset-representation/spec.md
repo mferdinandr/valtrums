@@ -54,4 +54,8 @@ The system SHALL record a verified foreign deposit that arrives after a battle l
 
 #### Scenario: Refund destination
 - **WHEN** the refund is executed
-- **THEN** it is reserved through the payout identity (`reserve_late_refund`) for the beneficiary named in the deposit event, and consumed once by `confirm_payout` or returned by `release_payout`
+- **THEN** it is reserved through the payout identity (`reserve_late_refund`) for the beneficiary named in the deposit event, only to the EVM refund address bound at deposit, and consumed once by `confirm_payout` or returned by `release_payout`
+
+#### Scenario: Refund address binding
+- **WHEN** a deposit names no refund address, or a refund targets another address
+- **THEN** the deposit is rejected at the source or credits nothing, and the refund reservation fails
