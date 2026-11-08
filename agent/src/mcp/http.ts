@@ -1,12 +1,15 @@
 import { type Server, createServer } from "node:http";
+import { type ActionToolDeps, callActionTool } from "./actions/tools.js";
 import { SessionError, type ReadSessions } from "./session.js";
-import { AccessDeniedError, READ_TOOLS, type ReadToolDeps, ToolInputError, callReadTool } from "./tools.js";
+import { AccessDeniedError, READ_TOOLS, ToolInputError, callReadTool } from "./tools.js";
 
 /**
- * HTTP surface of the read tools for the web terminal. `GET /tools/:name` runs a read tool,
- * `POST /session` exchanges a NEP-413 signature for a read session. There is no route that signs,
- * sends or reserves anything. The session token travels only in the Authorization header, never in
- * the URL, so it does not end up in access logs. Every response is JSON with `no-store`.
+ * HTTP surface for the web terminal. `GET /tools/:name` runs a read tool, `POST /session`
+ * exchanges a NEP-413 signature for a read session, and `/actions` exposes the action boundary
+ * (preview, authorize, prepare, broadcast, status). No route signs, sends or reserves anything:
+ * the user's wallet signs the prepared transaction. The session token travels only in the
+ * Authorization header, never in the URL, so it does not end up in access logs. Every response
+ * is JSON with `no-store`.
  */
 
 export interface ReadHttpRequest {
@@ -21,7 +24,7 @@ export interface ReadHttpResponse {
   body: string;
 }
 
-export interface ReadHttpDeps extends ReadToolDeps {
+export interface ReadHttpDeps extends ActionToolDeps {
   sessions: ReadSessions;
 }
 
@@ -74,6 +77,8 @@ export async function handleReadRequest(req: ReadHttpRequest, deps: ReadHttpDeps
     }
   }
 
+  if (segments[0] === "actions") return handleActionRequest(req, segments, deps);
+
   if (segments[0] !== "tools" || segments.length > 2) return reply(404, { error: "not found" });
   if (req.method !== "GET") return reply(405, { error: "method not allowed" });
   if (segments.length === 1) {
@@ -95,6 +100,50 @@ export async function handleReadRequest(req: ReadHttpRequest, deps: ReadHttpDeps
     if (err instanceof ToolInputError) return reply(400, { error: err.message });
     if (err instanceof AccessDeniedError) return reply(403, { error: err.message });
     return reply(503, { error: "read source unavailable" });
+  }
+}
+
+/**
+ * Action routes (same boundary as the MCP action tools):
+ *   POST /actions                  {request}  -> preview_action
+ *   POST /actions/:id/authorize    {proof}    -> authorize_action
+ *   POST /actions/:id/prepare                 -> prepare_action (unsigned transaction)
+ *   POST /actions/:id/broadcast    {txHash}   -> report_broadcast
+ *   GET  /actions/:id                         -> action_status (checks the receipt)
+ * The read session travels only in the Authorization header.
+ */
+async function handleActionRequest(req: ReadHttpRequest, segments: string[], deps: ReadHttpDeps): Promise<ReadHttpResponse> {
+  const token = bearer(req.authorization);
+  let body: Record<string, unknown> = {};
+  if (req.method === "POST") {
+    try {
+      const parsed: unknown = JSON.parse(req.body || "{}");
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return reply(400, { error: "body must be a JSON object" });
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return reply(400, { error: "body must be JSON" });
+    }
+  }
+  const route = (): [string, Record<string, unknown>] | null => {
+    if (segments.length === 1 && req.method === "POST") return ["preview_action", { request: body.request }];
+    const id = segments[1];
+    if (segments.length === 2 && req.method === "GET") return ["action_status", { actionId: id }];
+    if (segments.length === 3 && req.method === "POST") {
+      if (segments[2] === "authorize") return ["authorize_action", { actionId: id, proof: body.proof }];
+      if (segments[2] === "prepare") return ["prepare_action", { actionId: id }];
+      if (segments[2] === "broadcast") return ["report_broadcast", { actionId: id, txHash: body.txHash }];
+    }
+    return null;
+  };
+  const target = route();
+  if (!target) return reply(404, { error: "not found" });
+  const [name, args] = target;
+  try {
+    return reply(200, await callActionTool(name, { ...args, ...(token ? { session: token } : {}) }, deps));
+  } catch (err) {
+    if (err instanceof ToolInputError) return reply(400, { error: err.message });
+    if (err instanceof AccessDeniedError) return reply(403, { error: err.message });
+    return reply(503, { error: "action service unavailable" });
   }
 }
 

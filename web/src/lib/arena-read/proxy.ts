@@ -53,6 +53,40 @@ export async function proxyReadTool(
   return forward(`${base}/tools/${tool}${query ? `?${query}` : ""}`, { method: "GET", headers }, doFetch);
 }
 
+export const ACTION_STEPS = ["authorize", "prepare", "broadcast"] as const;
+export type ActionStep = (typeof ACTION_STEPS)[number];
+const ACTION_ID = /^act_[0-9a-f]{32}$/;
+
+/**
+ * Forwards the action boundary (`/actions`, `/actions/:id`, `/actions/:id/:step`) to the agent
+ * action API. Only those paths are reachable; the server never signs or sends: the user's wallet
+ * signs the transaction returned by `prepare`.
+ */
+export async function proxyAction(
+  target: { method: "GET" | "POST"; id?: string; step?: string },
+  body: string,
+  authorization: string | null,
+  env: Record<string, string | undefined>,
+  doFetch: FetchLike = (u, i) => fetch(u, i),
+): Promise<ProxyResult> {
+  if (body.length > MAX_SESSION_BODY) return { status: 413, body: { error: "body too large" } };
+  if (target.id !== undefined && !ACTION_ID.test(target.id)) return { status: 404, body: { error: "unknown action" } };
+  if (target.step !== undefined && !(ACTION_STEPS as readonly string[]).includes(target.step)) {
+    return { status: 404, body: { error: "unknown action step" } };
+  }
+  const valid =
+    (target.method === "POST" && target.id === undefined && target.step === undefined) ||
+    (target.method === "GET" && target.id !== undefined && target.step === undefined) ||
+    (target.method === "POST" && target.id !== undefined && target.step !== undefined);
+  if (!valid) return { status: 405, body: { error: "method not allowed" } };
+  const base = baseUrl(env);
+  if (!base) return { status: 503, body: { error: "read API is not configured" } };
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (authorization && /^Bearer [A-Za-z0-9._-]{1,1024}$/.test(authorization)) headers.authorization = authorization;
+  const path = ["actions", target.id, target.step].filter(Boolean).join("/");
+  return forward(`${base}/${path}`, target.method === "GET" ? { method: "GET", headers } : { method: "POST", headers, body }, doFetch);
+}
+
 export async function proxyOpenSession(
   body: string,
   env: Record<string, string | undefined>,
