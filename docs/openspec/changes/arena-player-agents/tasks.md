@@ -19,12 +19,14 @@ Check tasks only after implementation and verification. Player grants and infras
 
 ## Strategy and integration
 
-- [ ] Treat NEAR AI output and token metadata as untrusted proposed actions rather than authorization.
-  - [x] A proposed action is accepted only as a typed `CanonicalAction` checked against the grant; malformed, out-of-scope or metadata-driven destination/amount changes cannot create or widen authorization. NEAR AI and canonical preview persistence remain out of scope.
-- [ ] Validate proposed actions through deterministic schema, preview and grant checks without widening scope.
-  - [x] Deterministic typed schema + grant validation in the module (unknown fields/variants cannot hide a wider action). The preview/MCP surface remains out of scope.
-- [ ] Bind accepted deposits and subsequent status to the authorizing user and participant position.
-- [ ] Integrate action status and revocation with the MCP/terminal boundary.
+- [x] Treat NEAR AI output and token metadata as untrusted proposed actions rather than authorization.
+  - [x] A proposed action is accepted only as a typed `CanonicalAction` checked against the grant; malformed, out-of-scope or metadata-driven destination/amount changes cannot create or widen authorization.
+  - [x] Agent side (#77, `agent/src/mcp/actions/proposal.ts`): model output is parsed as exactly one JSON object and may only name user, battle, community, amount and a rationale that is never an input; any other field rejects the proposal. The grant comes from the operator's `PLAYER_AGENT_GRANTS`, never from the proposal.
+- [x] Validate proposed actions through deterministic schema, preview and grant checks without widening scope.
+  - [x] Deterministic typed schema + grant validation in the module (unknown fields/variants cannot hide a wider action).
+  - [x] A proposal goes through the #76 preview, grant pre-check and revalidation path; token, recipient, route, request id and signer come from chain state and configuration; the contract's `reserve` re-checks the full scope.
+- [x] Bind accepted deposits and subsequent status to the authorizing user and participant position. (`ActionService.attribution`: user, signer, battle, community, the user's current position, grant state and the on-chain reservation.)
+- [x] Integrate action status and revocation with the MCP/terminal boundary. (`action_status` returns status and attribution; a revoked or expired grant rejects actions not yet prepared, while prepared or reserved ones stay attributable; MCP tool `propose_action`.)
 
 ## Verification
 

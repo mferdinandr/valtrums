@@ -28,6 +28,13 @@ Deliver bounded player agents and its acceptance scenarios without claiming unre
 - The fixture execution-admission boundary requires the queued reservation's version to equal the current grant version. Regranting after expiry or revocation cannot revive an old queued action; prior dispatched obligations remain resolvable through their original reservation.
 - All policy events use NEP-297 `data: [record]`, matching the arena emitter. Canonical grant/action input records reject unknown fields, including nested asset/battle fields, rather than silently discarding uncommitted data.
 - Regression coverage includes on-chain replacement rollback, each immutable asset field, cap boundaries, unknown JSON fields, event array shape, expired/revoked version replacement and reconciliation after a grant replacement. These are fixture/policy tests, not evidence of live spending enforcement.
+- Player-agent proposals (#77, D26), in `agent/src/mcp/actions/proposal.ts`, on the #76 action boundary.
+  - **Input:** NEAR AI output is untrusted. It must be exactly one JSON object (optionally one ```json fence), `{action: "deposit", user, battleId, community, amount, rationale?}`. Any other field rejects the whole proposal; `rationale` is never an input.
+  - **Grant:** comes only from the operator's `PLAYER_AGENT_GRANTS` for the calling delegate.
+  - **Conversion:** the proposal becomes a grant deposit request and follows preview, grant pre-check, revalidation and the delegate's `reserve`. Token, recipient (the arena), route, request id and signer come from chain state and configuration.
+  - **Status:** `action_status` adds an attribution: user, signer, battle and community, the user's current position, the grant state (revoked, expired, missing), and the on-chain reservation state.
+  - **Revocation:** a revoked or expired grant rejects actions that were not prepared; prepared or reserved ones stay attributable.
+  - **Not covered:** calling a NEAR AI model and executing a reservation after `reserve` (the reviewed executor adapter) are still open.
 
 ## Risks / Migration
 
