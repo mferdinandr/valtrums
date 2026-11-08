@@ -8,8 +8,9 @@ export interface GoPlusClientOptions {
   baseUrl?: string;
   /**
    * Optional credential from the git-ignored environment (GOPLUS_ACCESS_TOKEN). The endpoint works
-   * without one (rate limited); the header is sent only when a token is set. The `Authorization`
-   * scheme is an assumption and is NOT verified. Never logged or stored in evidence.
+   * without one (rate limited; verified 2026-11-08); the header is sent only when a token is set,
+   * as `Authorization: Bearer <token>` per the GoPlus token_security reference. That scheme is
+   * documented but not exercised live with a real token. Never logged or stored in evidence.
    */
   accessToken?: string;
   fetchImpl?: typeof fetch;
@@ -40,7 +41,8 @@ export async function fetchGoPlusTokenSecurity(
     query.chainId,
   )}?contract_addresses=${encodeURIComponent(query.token)}`;
   const headers: Record<string, string> = { accept: "application/json" };
-  if (opts.accessToken) headers.authorization = opts.accessToken;
+  // GoPlus documents `Authorization: Bearer <token>`; accept a value that already carries the prefix.
+  if (opts.accessToken) headers.authorization = `Bearer ${opts.accessToken.replace(/^Bearer\s+/i, "")}`;
   const now = opts.now ?? (() => new Date());
 
   const once = async (): Promise<RawGoPlusResponse> => {

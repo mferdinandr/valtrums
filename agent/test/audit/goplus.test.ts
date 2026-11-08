@@ -55,7 +55,9 @@ describe("goplus normalization (fixture-only)", () => {
     expect(raw.rawText).toBe('{"code":1,"result":{}}');
     expect(seen?.url).toContain("/token_security/46630?contract_addresses=");
     expect(seen?.url).not.toContain("secret");
-    expect(seen?.auth).toBe("secret");
+    expect(seen?.auth).toBe("Bearer secret");
+    await fetchGoPlusTokenSecurity({ chainId: "4663", token: TOKEN }, { fetchImpl, accessToken: "Bearer secret" });
+    expect(seen?.auth).toBe("Bearer secret");
     const failing = (async () => {
       throw new Error("boom");
     }) as unknown as typeof fetch;
