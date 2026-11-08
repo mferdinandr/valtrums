@@ -4,7 +4,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 ## GoPlus evidence and field mapping
 
-- [ ] Verify the optional credential scheme (`GOPLUS_ACCESS_TOKEN`) against the live API. The endpoint works without a credential (rate limited); the client sends an `Authorization` header only when a token is set, and that scheme is an unverified assumption.
+- [x] Verify that the Token Security endpoint works without a credential and send an optional `GOPLUS_ACCESS_TOKEN` in the documented scheme. Verified 2026-11-08: 26 unauthenticated requests for chain `4663` returned HTTP 200 (25 with code 1, one rate-limited with code `4029`, held Pending). The client now sends `Authorization: Bearer <token>` as the GoPlus reference documents; that scheme was not exercised live with a real token.
 - [x] Retry a rate-limited response (HTTP 429 or provider rate-limit code) with bounded backoff and hold it Pending, never pass or reject.
 - [x] Bind evidence to chain, token, representation, custody domain, mapping version, reference pair and policy.
 - [x] Retain raw response, digest, provider/API version and query time for reproducible inspection.
@@ -38,7 +38,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 - [x] Evaluate independent exact USD valuation strictly above 10000; hold missing or unreliable evidence Pending.
 - [x] Test 9999, 10000 and 10001 USD, absent LP evidence, duplicate pools and mismatched asset identity.
 - [ ] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity (OPEN).
-- [ ] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain; they come from DexScreener and are unverified by us.
+- [x] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain. Verified 2026-11-08 with two independent RPC providers at the same block (not a finalized block): WETH (18 decimals), USDG "Global Dollar" (6 decimals, an upgradeable EIP-1967 proxy), the v3 pool (token0 WETH, token1 USDG, fee 100, returned by its factory's `getPool`) with about USD 2.29M on the USDG side, above the USD 1,000,000 floor. See `docs/evidence/2026-11-08-arena-audit-verification.json`.
 
 ## User-facing report
 
@@ -53,6 +53,6 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
   - [x] Add an optional async archive sink to `createLifecycleAuditPass` with consistent bounded structured logs (evidence/policy ids, arena/battle/community, result, reason codes, expiry, reference-token label, archive outcome), backward compatible when disabled; a sink failure is surfaced and isolated and is retryable without a provider refresh.
   - [x] Expose a passive read-only report API and runnable service (`report-query.ts`, `report-server.ts`, `report-cli.ts`): evidence lookup, backend filters, bounded stable pagination, and safe errors. JSON, HTTP text and CLI text preserve provenance, observation/attribution and historical-only limitations; freshness remains distinct from historical result and current approval is not established. No write endpoint.
   - [ ] Wire the report reasons into MCP/terminal and UI clients (deferred to #70/#76/#79).
-- [ ] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations.
+- [x] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations. Recorded 2026-11-08 by running the agent's own GoPlus client, LP fetcher and decision code for the 13 candidate tokens (see `docs/goplus-audit.md`, "Live coverage"): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, ten stay Pending.
 - [x] Label fixtures as adapter verification and retain Pending for unsupported or unmapped coverage; mainnet `4663` evidence is accepted only through the registry reference mapping.
 - [x] Test pre-lock expiry and changed mapping, idempotent refresh and post-lock snapshot protection.

@@ -18,7 +18,7 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 | D2 | Evidence lifetime defaults to 10 minutes, configurable, refreshed before lock. Behavior after a live token-policy change stays OPEN. | arena-audit | Decided; implemented (merged in #53) |
 | D3 | Everything the audit shows a user is written down for them: per-field results, tax as percentages, each admin capability with ownership status, reasons, policy version, expiry and reference mapping. | arena-audit, later MCP/UI | Report built (merged in #53); no UI yet |
 | D4 | Liquidity: independent on-chain headline value of the quote-side balance of Uniswap v2 and v3 pools, strictly above USD 10,000. A WETH quote is priced through one configured WETH/USDG pool. Minimum executable depth stays OPEN. | arena-audit | Implemented (merged in #53) |
-| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address comes from DexScreener and is not verified on-chain by us. | arena-audit | Implemented (merged in #53) |
+| D5 | WETH price pool: Uniswap v3 WETH/USDG `0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca` with a floor of USD 1,000,000 on its stablecoin side. Address verified on-chain 2026-11-08 (token0 WETH, token1 USDG, fee 100, about USD 2.29M on the USDG side; see [goplus-audit.md](goplus-audit.md)). | arena-audit | Implemented (merged in #53) |
 | D6 | GoPlus supports only Robinhood mainnet `4663` (not testnet `46630`). On testnet each mock token carries a mainnet reference token. GoPlus and liquidity are measured on the reference token, always. Approval attests the reference token, not the mock contract. Mappings come only from a protocol-controlled registry. | arena-audit, arena-lifecycle | Implemented (merged in #53) |
 | D7 | The reference pair (`reference_chain_id`, `reference_address`) becomes part of the committed community mapping (`asset-identity-v2`); a later change invalidates approval. | arena-lifecycle, arena-asset-representation | Implemented (merged in #53) |
 | D8 | A foreign deposit arriving after lock never enters a snapshot or vault; backing records it as unattributed and refunds the original depositor after finality. | arena-lifecycle, arena-asset-representation | Recorded in specs; refund path not implemented |
@@ -47,7 +47,7 @@ Work in progress (not yet pushed): `feat/backing-reconciliation` (asset-represen
 
 Method: tokens found through DexScreener (224 from keyword searches plus 24 from quote-asset pool lists), then each checked against GoPlus Token Security without credentials. 13 of roughly 250 tokens had GoPlus data (about 5%). The candidate set is not exhaustive: DexScreener endpoints return at most 30 pools per query. Liquidity and pool types come from DexScreener and were not verified on-chain. Authenticity was not verified: many names have look-alike tokens at other addresses, so check each token on the official explorer before it enters the registry.
 
-"Expected result" is our reading of audit policy v1 and the 10,000 USD liquidity rule, not the output of the audit code.
+"Expected result" is our reading of audit policy v1 and the 10,000 USD liquidity rule, not the output of the audit code. It is superseded by the live run of the audit code on 2026-11-08 ([goplus-audit.md, "Live coverage"](goplus-audit.md#live-coverage-2026-11-08)): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, and REBATE, OAK, Rabbit and RICO stay Pending because GoPlus omits `cannot_sell_all`.
 
 | Token | Mainnet 4663 address | Liquidity | Pool | Expected result |
 | --- | --- | --- | --- | --- |
@@ -102,6 +102,15 @@ Full record: [scoring-market-data.md](scoring-market-data.md) (issue [#68](https
 - Outside CASHCAT (43%), at most about 16% of 30-second windows contain a trade, so illiquid pairs tie at zero and repeat without a cap.
 - WIF and RICO had no pools on 2026-11-08 (they had pools on 2026-11-07). The two aggregators rank CASHCAT's top pool differently.
 - Options for provider, cadence, boundary and anti-manipulation limits are listed in the record; none is adopted (owner decision).
+
+## Research findings (2026-11-08): arena-audit verification
+
+Issue [#71](https://github.com/mferdinandr/valtrum/issues/71); evidence in [evidence/2026-11-08-arena-audit-verification.json](evidence/2026-11-08-arena-audit-verification.json).
+
+- Two keyless public RPC providers for `4663` (PublicNode, dRPC, from the chainlist registry) returned chain id `4663` and identical block hashes and state. Blocks carry `l1BlockNumber` (an Arbitrum Nitro-style chain); `finalized` trailed `latest` by about 8,200 blocks (about 14 minutes). Both free tiers refuse state older than a few seconds.
+- WETH, USDG and the WETH/USDG v3 price pool are verified on-chain (D5). USDG is an upgradeable EIP-1967 proxy.
+- The GoPlus reference documents `Authorization: Bearer <token>`; the client now sends that format. Unauthenticated access works and is rate limited (code `4029` observed).
+- The agent's audit code run live: CASHCAT and BTCETHUSDT pass, STRATEGY rejects, ten tokens stay Pending (GoPlus omits `cannot_sell_all` for 8 tokens, v4-only liquidity, or liquidity at or below USD 10,000).
 
 ## Work branches
 
@@ -186,7 +195,7 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 
 | Item | Needed from | Notes |
 | --- | --- | --- |
-| Read-only mainnet RPC (`REFERENCE_RPC_URL`, https) in a git-ignored `.env` | Owner | Needed for the liquidity fetcher and an on-chain token scan |
+| Read-only mainnet RPC (`REFERENCE_RPC_URL`, https) in a git-ignored `.env` | Owner | Needed for the liquidity fetcher and an on-chain token scan. On 2026-11-08 the Robinhood-hosted RPC served an expired certificate; keyless third-party RPCs from the chainlist registry worked for current-block reads but refuse finalized or older state without a key |
 | Verify token authenticity on the official explorer before building the registry | Owner or team | Many look-alike tokens exist |
 | Decide whether to add Uniswap v4 liquidity reading (would add REBATE and OAK) | Owner | Feasibility research started; see above |
 | Dedicated auditor role instead of the shared agent whitelist | Owner | Today an auditor has the same authority as any whitelisted agent |
