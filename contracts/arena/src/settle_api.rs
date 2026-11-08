@@ -16,7 +16,7 @@ use near_sdk::{
 
 /// Forwarded with each backing call to pay for the entitlement's storage. The
 /// backing refunds what it does not use to this contract.
-const ENTITLEMENT_DEPOSIT: NearToken = NearToken::from_millinear(10);
+pub(crate) const ENTITLEMENT_DEPOSIT: NearToken = NearToken::from_millinear(10);
 const ALLOCATE_GAS: Gas = Gas::from_tgas(12);
 const CALLBACK_GAS: Gas = Gas::from_tgas(20);
 /// Keeps `MAX_BATCH * ALLOCATE_GAS + CALLBACK_GAS` well inside one transaction.
