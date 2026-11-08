@@ -417,7 +417,8 @@ impl World {
         let key = json!({"chain_id": CHAIN, "transaction_hash": vec![tx; 32], "log_index": 1});
         let claim = json!({
             "representation": rep.id(), "token_address": token_address, "custody_domain": DOMAIN,
-            "mapping_version": "1", "beneficiary": who.id(), "battle_id": battle.to_string(),
+            "mapping_version": "1", "beneficiary": who.id(), "refund_address": vec![3u8; 20],
+            "battle_id": battle.to_string(),
             "actual_received": amount.to_string(), "block_number": "3", "block_hash": vec![2u8; 32],
             "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32],
             "evidence_hash": vec![4u8; 32]

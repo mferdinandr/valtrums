@@ -96,7 +96,7 @@ async fn attest_receipt(
     amount: &str,
 ) -> anyhow::Result<()> {
     let key = json!({"chain_id": "46630", "transaction_hash": vec![tx; 32], "log_index": 1});
-    let claim = json!({"representation": w.backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": beneficiary.id(), "battle_id": battle.to_string(), "actual_received": amount, "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
+    let claim = json!({"representation": w.backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": beneficiary.id(), "refund_address": vec![3u8; 20], "battle_id": battle.to_string(), "actual_received": amount, "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
     w.verifier
         .call(w.registry.id(), "attest")
         .args_json(json!({"key": key, "claim": claim}))
@@ -196,6 +196,15 @@ async fn deposit_after_lock_is_unattributed_refund_only_and_unknown_battle_fails
         .await?;
     assert!(mint.into_result().is_err());
     assert_eq!(view(&w, "ft_total_supply", json!({})).await?, "0");
+    // The refund can only go to the address bound at deposit time (D17).
+    let wrong_destination = w
+        .payout
+        .call(w.backing.id(), "reserve_late_refund")
+        .args_json(json!({"beneficiary": w.alice.id(), "request_id": vec![1u8; 32], "amount": "98", "destination": vec![4u8; 20]}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?;
+    assert!(wrong_destination.into_result().is_err());
     // Only the payout authority, with one yocto, can start the refund.
     let args = json!({"beneficiary": w.alice.id(), "request_id": vec![1u8; 32], "amount": "98", "destination": vec![3u8; 20]});
     let outsider = w
