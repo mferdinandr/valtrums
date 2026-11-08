@@ -70,6 +70,24 @@ The contract calls `sign` on the configured signer with `{"request": {"path": <r
 
 Not verified against the official documentation or a live signer: the gas to attach (250 Tgas is a conservative choice), the value of `domain_id` for secp256k1 on testnet (0 is assumed), the exact serialized response of the deployed testnet signer (the parser accepts the tagged and untagged forms and the `affine_point` and `scalar` wrappers), and the current testnet fee. The signer account is only configured at initialization.
 
+## Restart reconciliation worker
+
+`agent/src/payout-reconciler.ts` (`PayoutReconciler.reconcile()`) runs before every agent pass when `PAYOUT_RECONCILE_ENABLED=true` (`PAYOUT_CONTRACT_ID`, `PAYOUT_EVM_RPC_URL` https, optional `PAYOUT_OPERATOR_ACCOUNT_ID` and `PAYOUT_OPERATOR_PRIVATE_KEY`, `PAYOUT_SIGNING_GRACE_SECS` default 300). The agent account acts as the relayer; the operator methods are only called when an operator key is configured, otherwise the outcome is `needs_operator`. It reads `list_open_payouts` (all pages), the node's `finalized` block and each attempt's receipt, then decides per payout:
+
+| Chain shows | Worker does |
+| --- | --- |
+| nothing signed, state `authorized` | nothing; spend gate open |
+| `signing_requested` with no hash | wait; hold as `SignerNoResponse` after the grace period (kept in memory, so a restart restarts the wait) |
+| success receipt, not finalized | `record_broadcast` and `record_pending_finality` as needed |
+| success receipt, finalized, canonical block, exact Transfer log (token, sender, recipient, amount) | operator `confirm_payout` with evidence (log index, block hash, finalized head, `evidence_hash` = keccak256 of chain, tx hash, block hash, log index, token, sender, recipient, amount) |
+| success receipt, finalized, no exact matching log or non-canonical block | `require_reconciliation(EvidenceUnavailable)`; never confirm, never pay again |
+| revert receipt, finalized | operator `record_revert`; then, once the finalized nonce exceeds the payout nonce and no request is outstanding, operator `restore_payout` with an `OurTxReverted` proof |
+| known to the node (mempool), no receipt | `record_broadcast`/`record_pending_finality` as needed |
+| unknown to the node, nonce unused | send the identical stored signed bytes again (verified against the hash, chain, token, recipient, amount, nonce, zero value), then `record_broadcast` |
+| unknown to the node, nonce used, no attempt receipt | `require_reconciliation(EvidenceUnavailable)`; the consuming transaction hash is needed for a `ForeignTx` proof, which the worker does not build |
+
+`spendAllowed(backing, holder, requestId)` is true only after a complete pass and only for a payout that was `authorized` with no attempt; every other outcome, error, chain id mismatch or unavailable finalized head keeps it false. Spend-creating code (a future relayer worker) must check it. Not covered: a replacement signature requested after a hold is outside this worker; `get_signed_transaction` is trusted only after the hash check. Tests use an in-memory chain and ledger (fixtures), not a live node or the deployed contract.
+
 ## Nonce gaps (operational procedure, not a protocol rule)
 
 Nonces are a counter per registered backing starting at `first_nonce`. A payout that is released, never broadcast, or whose nonce a foreign transaction consumed leaves a gap, and later transactions from the same custody sender stay queued behind it. Procedure for the operator: (1) read the custody sender's confirmed transaction count on the source chain and compare it with the lowest open nonce from `list_open_payouts`; (2) if the nonce below an open payout is unused and has no pending transaction, do not invent a new rule: decide with the owner whether to fund and sign a no-op (self-transfer) for that nonce through a separate reviewed path, or to wait; (3) record the proof for any released payout (`restore_payout`); (4) never reuse a nonce for a different recipient. The contract does not create no-op transactions and does not renumber nonces.
@@ -78,7 +96,6 @@ Nonces are a counter per registered backing starting at `first_nonce`. A payout 
 
 Evidence is a trusted-operator attestation of finalized source-chain state, as for deposits, not a proof. Not done:
 
-- Reconciling pending transactions after a worker restart belongs to a separate task (issue #64); an off-chain worker must use the views and operator methods above.
 - `pending_finality` is entered by an explicit report from the relayer or operator (`record_pending_finality`), not detected by the contract.
 - The returned signature is not checked on chain against the custody address (for example with `ecrecover`); a wrong signature would only produce a transaction the chain rejects. Recommended hardening, not done because the mock signer returns invalid signatures.
 - The contract has no storage-management or owner withdrawal, and its 0.01 NEAR per-payout reserve is not tracked as a balance.

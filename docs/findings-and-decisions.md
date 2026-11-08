@@ -145,7 +145,7 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 | P1 | [#61](https://github.com/mferdinandr/valtrum/issues/61) | backing reconciliation, suspension and late-deposit refund | asset-representation (3) |
 | P1 | [#62](https://github.com/mferdinandr/valtrum/issues/62) | payout contract calls the MPC signer; explicit payout states | chain-signatures (2) |
 | P1 | [#63](https://github.com/mferdinandr/valtrum/issues/63) | refuse lock on expired or changed audit evidence end to end | audit (1) |
-| P2 | [#64](https://github.com/mferdinandr/valtrum/issues/64) | reconcile pending payouts after a worker restart | chain-signatures (1) |
+| P2 | [#64](https://github.com/mferdinandr/valtrum/issues/64) | reconcile pending payouts after a worker restart | chain-signatures (1); implemented on `feat/restart-reconciliation` with fixtures only (agent worker `agent/src/payout-reconciler.ts`; the agent account is assumed to be the payout relayer, operator methods need an operator key) |
 | P2 | [#65](https://github.com/mferdinandr/valtrum/issues/65) | payout and entitlement states per token in settlement | settlement (2) |
 | P2 | [#66](https://github.com/mferdinandr/valtrum/issues/66) | connect audit and backing approvals to lifecycle; finish lifecycle verification | lifecycle (6) |
 | P3 | [#67](https://github.com/mferdinandr/valtrum/issues/67) | refuse signing and receipts on RPC chain id mismatch | testnet-integrations (1) |
