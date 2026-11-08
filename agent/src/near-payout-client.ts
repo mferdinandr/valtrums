@@ -1,10 +1,5 @@
 import type { NearTransport } from "./near-client.js";
-import type {
-  Hash,
-  NoSpendProofInput,
-  PayoutLedger,
-  PaymentEvidenceInput,
-} from "./payout-reconciler.js";
+import type { Hash, PayoutLedger } from "./payout-reconciler.js";
 import type { PayoutHoldReason, PayoutPage, PayoutView } from "./payout-status.js";
 
 /** Gas for payout calls that only change state or call the backing once. */
@@ -14,30 +9,16 @@ const ONE_YOCTO = "1 yocto";
 const PAGE_LIMIT = "50";
 
 /**
- * PayoutLedger over the payout contract. `relayer` signs the relayer methods;
- * `operator` (optional, a transport signed by the operator account) signs the
- * operator methods. Without it those methods are left undefined so the
- * reconciler reports `needs_operator` instead of calling them.
+ * PayoutLedger over the payout contract. Only the relayer transport exists
+ * here: the operator-only methods (`confirm_payout`, `record_revert`,
+ * `restore_payout`) are deliberately not implemented, so this process can
+ * never call them (owner decision, see the implementation notes).
  */
 export class NearPayoutLedger implements PayoutLedger {
-  recordRevert?: PayoutLedger["recordRevert"];
-  confirmPayout?: PayoutLedger["confirmPayout"];
-  restorePayout?: PayoutLedger["restorePayout"];
-
   constructor(
     private readonly contractId: string,
     private readonly relayer: NearTransport,
-    operator?: NearTransport,
-  ) {
-    if (operator) {
-      this.recordRevert = (p, txHash) =>
-        this.write(operator, "record_revert", { ...this.key(p), tx_hash: txHash });
-      this.confirmPayout = (p, evidence: PaymentEvidenceInput) =>
-        this.write(operator, "confirm_payout", { ...this.key(p), evidence });
-      this.restorePayout = (p, proof: NoSpendProofInput) =>
-        this.write(operator, "restore_payout", { ...this.key(p), proof });
-    }
-  }
+  ) {}
 
   private key(p: PayoutView): { backing: string; holder: string; request_id: Hash } {
     return { backing: p.backing, holder: p.holder, request_id: p.request_id };

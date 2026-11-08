@@ -7,9 +7,9 @@ import { NearPayoutLedger } from "../src/near-payout-client.js";
 import type { NearTransport } from "../src/near-client.js";
 import {
   type Hash,
-  type NoSpendProofInput,
   type PaymentEvidenceInput,
   type PayoutChainReader,
+  type PayoutOutcome,
   type PayoutLedger,
   PayoutReconciler,
 } from "../src/payout-reconciler.js";
@@ -77,38 +77,7 @@ class FakeLedger implements PayoutLedger {
   readonly effects: string[] = [];
   readonly args: Array<{ method: string; arg: unknown }> = [];
   readonly raws = new Map<string, string>();
-  constructor(
-    readonly payouts: PayoutView[],
-    operator = true,
-  ) {
-    if (!operator) return;
-    this.recordRevert = async (p, h) => {
-      this.note("record_revert", h);
-      const s = this.stored(p);
-      const a = this.find(s, h);
-      if (a.state === "reverted") return;
-      a.state = "reverted";
-      if (s.attempts.every((x) => x.state === "reverted")) s.state = "reverted";
-      this.effects.push("record_revert");
-    };
-    this.confirmPayout = async (p, e: PaymentEvidenceInput) => {
-      this.note("confirm_payout", e);
-      const s = this.stored(p);
-      if (s.state === "confirmed") return;
-      s.state = "confirmed";
-      this.effects.push("confirm_payout");
-    };
-    this.restorePayout = async (p, proof: NoSpendProofInput) => {
-      this.note("restore_payout", proof);
-      const s = this.stored(p);
-      if (s.state === "restored") return;
-      s.state = "restored";
-      this.effects.push("restore_payout");
-    };
-  }
-  recordRevert?: PayoutLedger["recordRevert"];
-  confirmPayout?: PayoutLedger["confirmPayout"];
-  restorePayout?: PayoutLedger["restorePayout"];
+  constructor(readonly payouts: PayoutView[]) {}
   private note(method: string, arg: unknown): void {
     this.calls.push(method);
     this.args.push({ method, arg });
@@ -222,8 +191,8 @@ class FakeChain implements PayoutChainReader {
   }
 }
 
-function setup(payouts: PayoutView[], opts: { operator?: boolean; now?: () => number } = {}) {
-  const ledger = new FakeLedger(payouts, opts.operator ?? true);
+function setup(payouts: PayoutView[], opts: { now?: () => number } = {}) {
+  const ledger = new FakeLedger(payouts);
   const chain = new FakeChain();
   const reconciler = new PayoutReconciler(ledger, chain, { ...(opts.now ? { now: opts.now } : {}), signingGraceMs: 60_000 });
   return { ledger, chain, reconciler };
@@ -347,15 +316,31 @@ describe("restart: transaction on the network", () => {
   });
 });
 
-describe("confirmation", () => {
-  it("confirms a finalized exact transfer with evidence built from the receipt", async () => {
+const OPERATOR_METHODS = ["confirm_payout", "record_revert", "restore_payout"];
+
+/** The reconciler never calls an operator method; it reports the proof for one. */
+const noOperatorCall = (ledger: FakeLedger): void => {
+  for (const m of OPERATOR_METHODS) expect(ledger.calls).not.toContain(m);
+};
+
+describe("confirmation is reported, never sent", () => {
+  it("reports confirm_payout with evidence built from a finalized exact transfer", async () => {
     const a = attemptOf(100n, "pending");
     const p = payout("pending_finality", [a]);
     const { reconciler, ledger, chain } = setup([p]);
     chain.receipt(txHash(a.raw));
     const r = await reconciler.reconcile();
-    expect(r.outcomes[0]).toMatchObject({ kind: "confirmed" });
-    const evidence = ledger.args.find((x) => x.method === "confirm_payout")?.arg as PaymentEvidenceInput;
+    expect(r.outcomes[0]).toMatchObject({ kind: "needs_operator", spendAllowed: false });
+    noOperatorCall(ledger);
+    expect(ledger.calls).toEqual([]);
+    const call = r.outcomes[0]?.proof?.calls[0];
+    expect(call?.method).toBe("confirm_payout");
+    const evidence = (call as { evidence: PaymentEvidenceInput }).evidence;
+    expect(r.outcomes[0]?.proof?.facts).toMatchObject({
+      tx_hash: txHash(a.raw),
+      block_hash: `0x${"cd".repeat(32)}`,
+      evidence_hash: toHex(Uint8Array.from(evidence.evidence_hash)),
+    });
     expect(evidence).toMatchObject({
       chain_id: CHAIN.toString(),
       amount: AMOUNT.toString(),
@@ -370,15 +355,16 @@ describe("confirmation", () => {
     expect(chain.sent).toEqual([]);
   });
 
-  it("confirms the replacement that was mined, not the replaced attempt", async () => {
+  it("reports the replacement that was mined, not the replaced attempt", async () => {
     const low = attemptOf(100n, "broadcast");
     const high = attemptOf(200n, "pending");
     const p = payout("pending_finality", [low, high]);
     const { reconciler, ledger, chain } = setup([p]);
     chain.receipt(txHash(high.raw));
-    await reconciler.reconcile();
-    const evidence = ledger.args.find((x) => x.method === "confirm_payout")?.arg as PaymentEvidenceInput;
-    expect(evidence.tx_hash).toEqual(high.tx_hash);
+    const r = await reconciler.reconcile();
+    const call = r.outcomes[0]?.proof?.calls[0] as { evidence: PaymentEvidenceInput };
+    expect(call.evidence.tx_hash).toEqual(high.tx_hash);
+    noOperatorCall(ledger);
     expect(chain.sent).toEqual([]);
   });
 
@@ -405,19 +391,10 @@ describe("confirmation", () => {
     expect(ledger.calls).toEqual(["require_reconciliation"]);
   });
 
-  it("reports needs_operator when no operator method is configured", async () => {
-    const a = attemptOf(100n, "pending");
-    const p = payout("pending_finality", [a]);
-    const { reconciler, ledger, chain } = setup([p], { operator: false });
-    chain.receipt(txHash(a.raw));
-    const r = await reconciler.reconcile();
-    expect(r.outcomes[0]).toMatchObject({ kind: "needs_operator", spendAllowed: false });
-    expect(ledger.calls).toEqual([]);
-  });
 });
 
-describe("revert and release", () => {
-  it("records a finalized revert and restores only after the nonce slot is finalized", async () => {
+describe("revert and release are reported, never sent", () => {
+  it("reports record_revert and restore_payout only after the nonce slot is finalized", async () => {
     const a = attemptOf(100n, "pending");
     const p = payout("pending_finality", [a]);
     const { reconciler, ledger, chain } = setup([p]);
@@ -425,13 +402,18 @@ describe("revert and release", () => {
     chain.finalizedNonce = NONCE; // slot not finalized yet
     let r = await reconciler.reconcile();
     expect(r.outcomes[0]).toMatchObject({ kind: "waiting" });
-    expect(ledger.calls).toEqual(["record_revert"]);
+    expect(r.outcomes[0]?.proof).toBeUndefined();
     chain.finalizedNonce = NONCE + 1n;
     r = await reconciler.reconcile();
-    expect(r.outcomes[0]).toMatchObject({ kind: "restored" });
-    const proof = ledger.args.find((x) => x.method === "restore_payout")?.arg as NoSpendProofInput;
-    expect(proof.outcome).toEqual({ OurTxReverted: a.tx_hash });
-    expect(proof.finalized_nonce).toBe((NONCE + 1n).toString());
+    expect(r.outcomes[0]).toMatchObject({ kind: "needs_operator", spendAllowed: false });
+    const calls = r.outcomes[0]?.proof?.calls ?? [];
+    expect(calls.map((c) => c.method)).toEqual(["record_revert", "restore_payout"]);
+    const restore = calls[1] as { proof: { outcome: unknown; finalized_nonce: string } };
+    expect(restore.proof.outcome).toEqual({ OurTxReverted: a.tx_hash });
+    expect(restore.proof.finalized_nonce).toBe((NONCE + 1n).toString());
+    expect(r.outcomes[0]?.proof?.facts).toMatchObject({ reverted_hash: txHash(a.raw), finalized_nonce: "8", payout_nonce: "7" });
+    noOperatorCall(ledger);
+    expect(ledger.calls).toEqual([]);
     expect(chain.sent).toEqual([]);
   });
 
@@ -514,7 +496,7 @@ describe("failure isolation", () => {
     chain.failReceiptFor = txHash(a.raw);
     chain.receipt(txHash(b.raw));
     const r = await reconciler.reconcile();
-    expect(r.outcomes.map((o) => o.kind)).toEqual(["error", "confirmed"]);
+    expect(r.outcomes.map((o) => o.kind)).toEqual(["error", "needs_operator"]);
   });
 });
 
@@ -561,21 +543,16 @@ describe("NearPayoutLedger", () => {
     expect(calls[1]?.args.reason).toBe("EvidenceUnavailable");
   });
 
-  it("leaves operator methods undefined without an operator transport", () => {
-    const { t } = transport();
-    const ledger = new NearPayoutLedger("payout.testnet", t);
-    expect(ledger.confirmPayout).toBeUndefined();
-    expect(ledger.restorePayout).toBeUndefined();
-    expect(ledger.recordRevert).toBeUndefined();
-  });
-
-  it("signs operator methods with the operator transport", async () => {
-    const relayer = transport();
-    const operator = transport();
-    const ledger = new NearPayoutLedger("payout.testnet", relayer.t, operator.t);
-    await ledger.recordRevert?.(payout("signed", [], 1), Array(32).fill(5));
-    expect(operator.calls[0]).toMatchObject({ method: "record_revert", deposit: "1 yocto" });
-    expect(relayer.calls).toEqual([]);
+  it("has no operator method at all and only ever calls relayer methods", async () => {
+    const { t, calls } = transport();
+    const ledger = new NearPayoutLedger("payout.testnet", t) as unknown as Record<string, unknown>;
+    for (const name of ["confirmPayout", "restorePayout", "recordRevert"]) expect(ledger[name]).toBeUndefined();
+    const p = payout("signed", [], 1);
+    const l = ledger as unknown as NearPayoutLedger;
+    await l.recordBroadcast(p, Array(32).fill(5));
+    await l.recordPendingFinality(p, Array(32).fill(5));
+    await l.requireReconciliation(p, "SignerNoResponse");
+    expect(calls.map((c) => c.method)).toEqual(["record_broadcast", "record_pending_finality", "require_reconciliation"]);
   });
 
   it("does not loop on a page that does not advance", async () => {
@@ -596,16 +573,21 @@ describe("loadPayoutReconcileConfig", () => {
     expect(loadPayoutReconcileConfig({})).toBeNull();
   });
 
-  it("requires the contract and an https EVM RPC, and both operator values or neither", () => {
+  it("requires the contract and an https EVM RPC", () => {
     const on = { PAYOUT_RECONCILE_ENABLED: "true" };
     expect(() => loadPayoutReconcileConfig(on)).toThrow(/PAYOUT_CONTRACT_ID/);
     expect(() => loadPayoutReconcileConfig({ ...on, PAYOUT_CONTRACT_ID: "p.testnet", PAYOUT_EVM_RPC_URL: "http://x" })).toThrow(/https/);
     const base = { ...on, PAYOUT_CONTRACT_ID: "p.testnet", PAYOUT_EVM_RPC_URL: "https://rpc.example" };
-    expect(() => loadPayoutReconcileConfig({ ...base, PAYOUT_OPERATOR_ACCOUNT_ID: "op.testnet" })).toThrow(/both/);
     expect(loadPayoutReconcileConfig(base)).toMatchObject({ contractId: "p.testnet", signingGraceMs: 300_000 });
-    expect(
-      loadPayoutReconcileConfig({ ...base, PAYOUT_OPERATOR_ACCOUNT_ID: "op.testnet", PAYOUT_OPERATOR_PRIVATE_KEY: "ed25519:x" })?.operator,
-    ).toMatchObject({ accountId: "op.testnet" });
+  });
+
+  it("fails closed when an operator variable is set, enabled or not", () => {
+    const base = { PAYOUT_RECONCILE_ENABLED: "true", PAYOUT_CONTRACT_ID: "p.testnet", PAYOUT_EVM_RPC_URL: "https://rpc.example" };
+    for (const name of ["PAYOUT_OPERATOR_ACCOUNT_ID", "PAYOUT_OPERATOR_PRIVATE_KEY"]) {
+      expect(() => loadPayoutReconcileConfig({ ...base, [name]: "x" })).toThrow(/never holds the operator key/);
+      expect(() => loadPayoutReconcileConfig({ [name]: "x" })).toThrow(/never holds the operator key/);
+    }
+    expect(loadPayoutReconcileConfig({ ...base, PAYOUT_OPERATOR_ACCOUNT_ID: "" })).not.toBeNull();
   });
 });
 
@@ -684,51 +666,62 @@ function world(states: Array<[bigint, AttemptState]>, manualMining = false) {
   return { rpc, ledger, p, txs, make, delivered, distinctSent };
 }
 
-describe("acceptance scenarios on FakeEvmRpc: no second spend", () => {
-  it("restart with a pending transaction: records it, then confirms once it is final", async () => {
+const only = <T,>(w: { txs: T[] }): T => w.txs[0] as T;
+const proofMethods = (o: { proof?: { calls: Array<{ method: string }> } } | undefined): string[] =>
+  o?.proof?.calls.map((c) => c.method) ?? [];
+
+describe("acceptance scenarios on FakeEvmRpc: no second spend, operator writes only reported", () => {
+  it("restart with a pending transaction: records the sighting, then reports the confirmation proof", async () => {
     const w = world([[100n, "broadcast"]], true);
-    const t = w.txs[0] as (typeof w.txs)[number];
-    await w.rpc.sendRawTransaction(t.raw); // sent before the crash, not yet mined
+    await w.rpc.sendRawTransaction(only(w).raw); // sent before the crash, not yet mined
     const sentBefore = w.rpc.broadcasts.length;
     await w.make().reconcile();
     expect(w.ledger.effects).toEqual(["record_pending_finality"]);
     expect(w.rpc.broadcasts.length).toBe(sentBefore);
     w.rpc.mine();
-    await w.make().reconcile();
-    expect(w.ledger.effects).toEqual(["record_pending_finality", "confirm_payout"]);
+    const r = await w.make().reconcile();
+    expect(r.outcomes[0]).toMatchObject({ kind: "needs_operator" });
+    expect(proofMethods(r.outcomes[0])).toEqual(["confirm_payout"]);
+    expect(w.ledger.effects).toEqual(["record_pending_finality"]);
+    noOperatorCall(w.ledger);
     expect(w.delivered()).toBe(AMOUNT);
     expect(w.rpc.broadcasts.length).toBe(sentBefore);
   });
 
-  it("replacement: sends only the highest-fee attempt and confirms that one", async () => {
+  it("replacement: sends only the highest-fee attempt and reports that one", async () => {
     const w = world([
       [100n, "broadcast"],
       [200n, "signed"],
     ]);
     await w.make().reconcile();
     expect(w.distinctSent()).toBe(1);
-    await w.make().reconcile();
-    const evidence = w.ledger.args.find((x) => x.method === "confirm_payout")?.arg as PaymentEvidenceInput;
-    expect(evidence.tx_hash).toEqual(bytes((w.txs[1] as (typeof w.txs)[number]).hash));
+    const r = await w.make().reconcile();
+    const call = r.outcomes[0]?.proof?.calls[0] as { evidence: PaymentEvidenceInput };
+    expect(call.evidence.tx_hash).toEqual(bytes((w.txs[1] as (typeof w.txs)[number]).hash));
+    noOperatorCall(w.ledger);
     expect(w.delivered()).toBe(AMOUNT);
     expect(w.distinctSent()).toBe(1);
   });
 
-  it("lost response: the signed but unsent transaction goes out once and the payout confirms", async () => {
+  it("lost response: the signed but unsent transaction goes out once, then the confirmation is reported", async () => {
     const w = world([[100n, "signed"]]);
     await w.make().reconcile();
-    await w.make().reconcile();
-    expect(w.ledger.effects).toEqual(["record_broadcast", "confirm_payout"]);
+    const r = await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_broadcast"]);
+    expect(proofMethods(r.outcomes[0])).toEqual(["confirm_payout"]);
+    noOperatorCall(w.ledger);
     expect(w.distinctSent()).toBe(1);
     expect(w.delivered()).toBe(AMOUNT);
   });
 
-  it("reverted attempt: recorded, restored with a proof, and nothing is sent again", async () => {
+  it("reverted attempt: the revert and release are reported with a proof and nothing is sent again", async () => {
     const w = world([[100n, "signed"]]);
     w.rpc.shouldRevert = () => true;
     await w.make().reconcile();
-    await w.make().reconcile();
-    expect(w.ledger.effects).toEqual(["record_broadcast", "record_revert", "restore_payout"]);
+    const r = await w.make().reconcile();
+    expect(w.ledger.effects).toEqual(["record_broadcast"]);
+    expect(proofMethods(r.outcomes[0])).toEqual(["record_revert", "restore_payout"]);
+    noOperatorCall(w.ledger);
     expect(w.distinctSent()).toBe(1);
     expect(w.delivered()).toBe(0n);
   });
@@ -736,19 +729,23 @@ describe("acceptance scenarios on FakeEvmRpc: no second spend", () => {
 
 describe("concurrent and repeated runs on FakeEvmRpc", () => {
   const settle = async (w: ReturnType<typeof world>) => {
+    let last: PayoutOutcome | undefined;
     for (let i = 0; i < 3; i++) {
       const [a, b] = await Promise.all([w.make().reconcile(), w.make().reconcile()]);
       for (const o of [...a.outcomes, ...b.outcomes]) expect(o.kind).not.toBe("error");
+      last = b.outcomes[0];
     }
+    return last;
   };
 
   it("two concurrent instances on a lost response conflict nowhere and pay once", async () => {
     const w = world([[100n, "signed"]]);
-    await settle(w);
-    expect(w.ledger.effects).toEqual(["record_broadcast", "confirm_payout"]);
+    const last = await settle(w);
+    expect(w.ledger.effects).toEqual(["record_broadcast"]);
+    expect(proofMethods(last)).toEqual(["confirm_payout"]);
+    noOperatorCall(w.ledger);
     expect(w.distinctSent()).toBe(1);
     expect(w.delivered()).toBe(AMOUNT);
-    expect(w.p.state).toBe("confirmed");
   });
 
   it("two concurrent instances on a replacement send one distinct transaction", async () => {
@@ -756,36 +753,44 @@ describe("concurrent and repeated runs on FakeEvmRpc", () => {
       [100n, "broadcast"],
       [200n, "signed"],
     ]);
-    await settle(w);
+    const last = await settle(w);
     expect(w.distinctSent()).toBe(1);
-    expect(w.ledger.effects.filter((e) => e === "confirm_payout")).toHaveLength(1);
+    expect(proofMethods(last)).toEqual(["confirm_payout"]);
+    noOperatorCall(w.ledger);
     expect(w.delivered()).toBe(AMOUNT);
   });
 
-  it("two concurrent instances on a revert restore once and never resend", async () => {
+  it("two concurrent instances on a revert report the same proof and never resend", async () => {
     const w = world([[100n, "signed"]]);
     w.rpc.shouldRevert = () => true;
-    await settle(w);
-    expect(w.ledger.effects).toEqual(["record_broadcast", "record_revert", "restore_payout"]);
+    const last = await settle(w);
+    expect(w.ledger.effects).toEqual(["record_broadcast"]);
+    expect(proofMethods(last)).toEqual(["record_revert", "restore_payout"]);
+    noOperatorCall(w.ledger);
     expect(w.distinctSent()).toBe(1);
     expect(w.delivered()).toBe(0n);
   });
 
   it("two concurrent instances on a pending transaction record the sighting once", async () => {
     const w = world([[100n, "broadcast"]], true);
-    await w.rpc.sendRawTransaction((w.txs[0] as (typeof w.txs)[number]).raw);
+    await w.rpc.sendRawTransaction(only(w).raw);
     await Promise.all([w.make().reconcile(), w.make().reconcile()]);
     expect(w.ledger.effects).toEqual(["record_pending_finality"]);
   });
 
-  it("a repeated run changes nothing: no ledger write, no broadcast, same state", async () => {
+  it("a repeated run changes nothing: no ledger write, no broadcast, same state, same report", async () => {
     const w = world([[100n, "broadcast"]], true);
-    await w.rpc.sendRawTransaction((w.txs[0] as (typeof w.txs)[number]).raw);
+    await w.rpc.sendRawTransaction(only(w).raw);
     await w.make().reconcile();
+    w.rpc.mine();
+    const first = await w.make().reconcile();
     const snapshot = JSON.stringify(w.p);
     const calls = w.ledger.calls.length;
     const sent = w.rpc.broadcasts.length;
-    for (let i = 0; i < 3; i++) await w.make().reconcile();
+    for (let i = 0; i < 3; i++) {
+      const again = await w.make().reconcile();
+      expect(again.outcomes).toEqual(first.outcomes);
+    }
     expect(w.ledger.calls.length).toBe(calls);
     expect(w.rpc.broadcasts.length).toBe(sent);
     expect(JSON.stringify(w.p)).toBe(snapshot);
@@ -805,23 +810,25 @@ describe("concurrent and repeated runs on FakeEvmRpc", () => {
 
 describe("operator reporting", () => {
   it("reports findings through the agent log at a level that matches their urgency", async () => {
-    const lines: Array<{ level: string; kind: unknown }> = [];
+    const lines: Array<{ level: string; kind: unknown; proof?: boolean }> = [];
+    const add = (level: string, f?: Record<string, unknown>) =>
+      lines.push({ level, kind: f?.kind, ...(f?.proof ? { proof: true } : {}) });
     const log = {
-      info: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "info", kind: f?.kind }),
-      warn: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "warn", kind: f?.kind }),
-      error: (_m: string, f?: Record<string, unknown>) => lines.push({ level: "error", kind: f?.kind }),
+      info: (_m: string, f?: Record<string, unknown>) => add("info", f),
+      warn: (_m: string, f?: Record<string, unknown>) => add("warn", f),
+      error: (_m: string, f?: Record<string, unknown>) => add("error", f),
     };
     const held = payout("reconciliation_required", [], 1);
     const idle = payout("authorized", [], 2);
     const needs = payout("pending_finality", [attemptOf(100n, "pending")], 3);
-    const ledger = new FakeLedger([held, idle, needs], false);
+    const ledger = new FakeLedger([held, idle, needs]);
     const chain = new FakeChain();
     chain.receipt(txHash(attemptOf(100n, "pending").raw));
     await new PayoutReconciler(ledger, chain, { log }).reconcile();
     expect(lines).toEqual([
       { level: "warn", kind: "held" },
       { level: "info", kind: "idle" },
-      { level: "warn", kind: "needs_operator" },
+      { level: "warn", kind: "needs_operator", proof: true },
     ]);
   });
 });

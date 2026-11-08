@@ -15,11 +15,12 @@ import type { PayoutAttemptView, PayoutHoldReason, PayoutView } from "./payout-s
  * it is true only for a payout this process reconciled and found to have no
  * transaction that could still execute.
  *
- * Authority stays with the contract roles. The relayer ledger methods
- * (`recordBroadcast`, `recordPendingFinality`, `requireReconciliation`) are
- * required; the operator methods (`recordRevert`, `confirmPayout`,
- * `restorePayout`) are optional and, when absent, the outcome is
- * `needs_operator` instead of an action. Evidence is the worker's own read of
+ * Authority stays with the contract roles. The ledger holds relayer methods
+ * only (`recordBroadcast`, `recordPendingFinality`, `requireReconciliation`).
+ * Owner decision: this worker never holds the operator key, so anything that
+ * needs `confirm_payout`, `record_revert` or `restore_payout` is reported as
+ * `needs_operator` with the proof in the outcome (and the log line) for a human
+ * or a separate operator process. Evidence is the worker's own read of
  * finalized chain state, a trusted attestation like deposits, not a proof.
  */
 
@@ -61,10 +62,6 @@ export interface PayoutLedger {
   recordBroadcast(payout: PayoutView, txHash: Hash): Promise<void>;
   recordPendingFinality(payout: PayoutView, txHash: Hash): Promise<void>;
   requireReconciliation(payout: PayoutView, reason: PayoutHoldReason): Promise<void>;
-  // Operator (optional)
-  recordRevert?(payout: PayoutView, txHash: Hash): Promise<void>;
-  confirmPayout?(payout: PayoutView, evidence: PaymentEvidenceInput): Promise<void>;
-  restorePayout?(payout: PayoutView, proof: NoSpendProofInput): Promise<void>;
 }
 
 /** Source-chain reads and the one write (rebroadcast of an already signed transaction). */
@@ -86,9 +83,6 @@ export type OutcomeKind =
   /** The contract was moved towards a state the chain proves (broadcast, pending). */
   | "progressed"
   | "rebroadcast"
-  | "confirmed"
-  | "reverted"
-  | "restored"
   /** Held for reconciliation; the reservation stays. */
   | "held"
   /** The chain proves something only the operator role may record. */
@@ -104,6 +98,20 @@ export interface PayoutOutcome {
   detail: string;
   /** True only when no transaction of this payout can still execute. */
   spendAllowed: boolean;
+  /** Set with `needs_operator`: the exact operator calls and the evidence behind them. */
+  proof?: OperatorProof;
+}
+
+/** What an operator (a person or a separate process) must do, with the chain facts that justify it. */
+export interface OperatorProof {
+  /** Operator-only contract calls to make, in order. */
+  calls: Array<
+    | { method: "confirm_payout"; evidence: PaymentEvidenceInput }
+    | { method: "record_revert"; tx_hash: Hash }
+    | { method: "restore_payout"; proof: NoSpendProofInput }
+  >;
+  /** The same facts for reading: attempt hashes, block hashes, evidence hash inputs, nonce evidence. */
+  facts: Record<string, string>;
 }
 
 export interface ReconcileReport {
@@ -263,7 +271,13 @@ export class PayoutReconciler {
     };
   }
 
-  private make(p: PayoutView, kind: OutcomeKind, detail: string, spendAllowed: boolean): PayoutOutcome {
+  private make(
+    p: PayoutView,
+    kind: OutcomeKind,
+    detail: string,
+    spendAllowed: boolean,
+    proof?: OperatorProof,
+  ): PayoutOutcome {
     return {
       backing: p.backing,
       holder: p.holder,
@@ -272,6 +286,7 @@ export class PayoutReconciler {
       kind,
       detail,
       spendAllowed,
+      ...(proof ? { proof } : {}),
     };
   }
 
@@ -304,32 +319,19 @@ export class PayoutReconciler {
     const success = obs.find((o) => o.receipt?.status === true);
     if (success?.receipt) return this.onSuccess(p, success, fin);
 
-    // 2. Attempts that finalized with failure.
-    let revertedNow = 0;
-    const needsOperator: string[] = [];
+    // 2. Attempts that finalized with failure (recording them is operator-only).
     for (const o of obs) {
       if (o.attempt.state === "reverted") continue;
       if (o.receipt && !o.receipt.status && o.receipt.blockNumber <= fin.number) {
         if (!(await this.isCanonical(o.receipt))) {
           return this.hold(p, "EvidenceUnavailable", `receipt block of ${o.hash} is not on the canonical chain`);
         }
-        if (!this.ledger.recordRevert) {
-          needsOperator.push(`record_revert ${o.hash}`);
-          continue;
-        }
-        await this.ledger.recordRevert(p, o.attempt.tx_hash);
-        revertedNow++;
       }
     }
     const finalFailed = (o: Observation): boolean =>
       o.attempt.state === "reverted" ||
       (o.receipt !== null && !o.receipt.status && o.receipt.blockNumber <= fin.number);
-    if (obs.every(finalFailed)) {
-      if (needsOperator.length > 0) {
-        return this.make(p, "needs_operator", needsOperator.join("; "), false);
-      }
-      return this.afterReverts(p, obs, fin, revertedNow);
-    }
+    if (obs.every(finalFailed)) return this.afterReverts(p, obs, fin);
 
     // 3. Something may still execute. Look at what the network knows.
     const open = obs.filter((o) => !finalFailed(o));
@@ -391,9 +393,6 @@ export class PayoutReconciler {
       // Partial, mismatched or unindexed evidence never confirms and never allows a second payment.
       return this.hold(p, "EvidenceUnavailable", `${o.hash} finalized without an exact matching transfer`);
     }
-    if (!this.ledger.confirmPayout) {
-      return this.make(p, "needs_operator", `confirm_payout with finalized receipt ${o.hash}`, false);
-    }
     const base = {
       chain_id: p.chain_id,
       token: p.token,
@@ -407,15 +406,27 @@ export class PayoutReconciler {
       finalized_head_number: fin.number.toString(),
       finalized_head_hash: bytes(fin.hash),
     };
-    await this.ledger.confirmPayout(p, { ...base, evidence_hash: evidenceHash(base) });
-    return this.make(p, "confirmed", `confirmed with ${o.hash}`, false);
+    const evidence = { ...base, evidence_hash: evidenceHash(base) };
+    return this.make(p, "needs_operator", `confirm_payout with finalized receipt ${o.hash}`, false, {
+      calls: [{ method: "confirm_payout", evidence }],
+      facts: {
+        tx_hash: o.hash,
+        block_hash: receipt.blockHash,
+        block_number: receipt.blockNumber.toString(),
+        log_index: String(transfer.logIndex),
+        finalized_head_number: fin.number.toString(),
+        finalized_head_hash: fin.hash,
+        evidence_hash: hex(evidence.evidence_hash),
+        evidence_hash_inputs: "keccak256(chain_id|tx_hash|block_hash|log_index|token|sender|recipient|amount)",
+      },
+    });
   }
 
+  /** Every attempt failed on a finalized block: report the operator calls that record and release it. */
   private async afterReverts(
     p: PayoutView,
     obs: Observation[],
     fin: { number: bigint; hash: string },
-    revertedNow: number,
   ): Promise<PayoutOutcome> {
     const nonce = BigInt(p.nonce);
     const finalizedNonce = await this.chain.getTransactionCount(hex(p.sender), "finalized");
@@ -425,23 +436,37 @@ export class PayoutReconciler {
     if (p.attempts.some((a) => a.state === "requested")) {
       return this.make(p, "waiting", "a signer answer is still outstanding", false);
     }
+    const unrecorded = obs.filter((o) => o.attempt.state !== "reverted");
     const proofHash = (obs[0] as Observation).attempt.tx_hash;
-    if (!this.ledger.restorePayout) {
-      return this.make(p, "needs_operator", "restore_payout with a reverted-attempt proof", false);
-    }
-    await this.ledger.restorePayout(p, {
-      chain_id: p.chain_id,
-      sender: p.sender,
-      finalized_nonce: finalizedNonce.toString(),
-      outcome: { OurTxReverted: proofHash },
-      finalized_head_number: fin.number.toString(),
-      finalized_head_hash: bytes(fin.hash),
-    });
     return this.make(
       p,
-      "restored",
-      `nonce slot ${nonce} finalized with ${revertedNow} revert(s) recorded now; liability restored`,
+      "needs_operator",
+      `record_revert for ${unrecorded.length} attempt(s), then restore_payout; nonce slot ${nonce} is finalized`,
       false,
+      {
+        calls: [
+          ...unrecorded.map((o) => ({ method: "record_revert" as const, tx_hash: o.attempt.tx_hash })),
+          {
+            method: "restore_payout" as const,
+            proof: {
+              chain_id: p.chain_id,
+              sender: p.sender,
+              finalized_nonce: finalizedNonce.toString(),
+              outcome: { OurTxReverted: proofHash },
+              finalized_head_number: fin.number.toString(),
+              finalized_head_hash: bytes(fin.hash),
+            },
+          },
+        ],
+        facts: {
+          attempt_hashes: obs.map((o) => o.hash).join(","),
+          reverted_hash: hex(proofHash),
+          payout_nonce: nonce.toString(),
+          finalized_nonce: finalizedNonce.toString(),
+          finalized_head_number: fin.number.toString(),
+          finalized_head_hash: fin.hash,
+        },
+      },
     );
   }
 
