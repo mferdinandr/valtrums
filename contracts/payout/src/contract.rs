@@ -284,6 +284,13 @@ trait BackingPayouts {
         evidence: FinalizedDebitArgs,
     ) -> bool;
     fn release_payout(&mut self, beneficiary: AccountId, request_id: Hash) -> bool;
+    fn reserve_late_refund(
+        &mut self,
+        beneficiary: AccountId,
+        request_id: Hash,
+        amount: U128,
+        destination: [u8; 20],
+    ) -> ReservedPayout;
 }
 
 #[near(contract_state)]
@@ -406,6 +413,45 @@ impl PayoutContract {
                     .with_static_gas(CALLBACK_GAS)
                     .with_attached_deposit(env::attached_deposit())
                     .on_payout_reserved(holder, backing, request_id, destination),
+            )
+    }
+
+    /// The beneficiary asks for a late deposit to be returned on the source
+    /// chain. The destination is not a free choice: backing reserves the refund
+    /// only for an EVM address that the depositor bound at deposit time (D17) and
+    /// rejects any other value, so the payout can never be redirected. After the
+    /// reservation the refund follows the same signing, confirmation and release
+    /// path as a payout. Repeating an identical request after a failure is safe.
+    #[payable]
+    pub fn request_late_refund(
+        &mut self,
+        backing: AccountId,
+        request_id: Hash,
+        amount: U128,
+        refund_address: [u8; 20],
+    ) -> Promise {
+        require!(
+            self.backings.get(&backing).is_some(),
+            "Backing not registered"
+        );
+        require!(
+            env::attached_deposit() >= REQUEST_DEPOSIT,
+            "Insufficient storage deposit"
+        );
+        require!(
+            amount.0 > 0 && refund_address != [0; 20] && request_id != [0; 32],
+            "Invalid refund request"
+        );
+        let holder = env::predecessor_account_id();
+        ext_backing::ext(backing.clone())
+            .with_static_gas(BACKING_GAS)
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .reserve_late_refund(holder.clone(), request_id, amount, refund_address)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .with_attached_deposit(env::attached_deposit())
+                    .on_payout_reserved(holder, backing, request_id, refund_address),
             )
     }
 
