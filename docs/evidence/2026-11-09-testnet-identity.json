@@ -1,0 +1,100 @@
+{
+ "label": "RECORDED READ-ONLY EVIDENCE (UTC). Public keyless RPC providers named, endpoints not committed. Nothing was signed or sent.",
+ "collectedAt": "2026-11-08T21:56:14Z",
+ "requests": {
+  "near": "JSON-RPC `status` to two NEAR testnet providers (NEAR official RPC, FastNEAR)",
+  "robinhood": "JSON-RPC eth_chainId, eth_blockNumber, eth_getBlockByNumber(latest-5 and 'finalized') to two providers (PublicNode, dRPC)",
+  "accounts": "JSON-RPC query view_account (finality final) and call_function get_config / get_lifecycle_battle_count on NEAR testnet"
+ },
+ "near": {
+  "near-rpc-official": {
+   "chain_id": "testnet",
+   "genesis_hash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+   "protocol_version": 88,
+   "latest_block_height": 276833192,
+   "syncing": false
+  },
+  "fastnear": {
+   "chain_id": "testnet",
+   "genesis_hash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+   "protocol_version": 88,
+   "latest_block_height": 276833193,
+   "syncing": false
+  }
+ },
+ "robinhood": {
+  "chainIdHex": {
+   "publicnode": "0xb626",
+   "drpc": "0xB626"
+  },
+  "chainId": {
+   "publicnode": 46630,
+   "drpc": 46630
+  },
+  "block": 150568583,
+  "hashes": {
+   "publicnode": "0xa3907d019501f78c83ef962612252185f81a8135b9065c885c43cc02bd4dcd00",
+   "drpc": "0xa3907d019501f78c83ef962612252185f81a8135b9065c885c43cc02bd4dcd00"
+  },
+  "providersAgree": true,
+  "l1BlockNumber": 12093257,
+  "finalizedHead": 150561297,
+  "finalizedLagBlocks": 7286,
+  "timestamp": 1794174978,
+  "officialRpcTls": "curl: (35) LibreSSL/3.3.6: error:1404B42E:SSL routines:ST_CONNECT:tlsv1 alert protocol version"
+ },
+ "historicalDeployment": {
+  "valtrum-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "11111111111111111111111111111111",
+   "block_height": 276833263
+  },
+  "valtrum-arena-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "7vkio81ZYuCSneKgMLir9oTzrx73XW1fKQuPm4fVcRez",
+   "block_height": 276833268,
+   "get_config": {
+    "owner": "valtrum-8875bb.testnet",
+    "usdc": "valtrum-usdc-8875bb.testnet",
+    "treasury": "treasury.valtrum-8875bb.testnet",
+    "bond": "5000000",
+    "deposit_window_secs": "60",
+    "agents": [
+     "agent.valtrum-8875bb.testnet"
+    ],
+    "router": "valtrum-router-8875bb.testnet",
+    "execution_dex": "valtrum-refdex-8875bb.testnet",
+    "burn_account": "burn.valtrum-8875bb.testnet",
+    "paused": false,
+    "treasury_accrued": "9984821"
+   },
+   "has_lifecycle_api": false,
+   "lifecycle_probe": "wasm execution failed with error: MethodResolveError(MethodNotFound)"
+  },
+  "valtrum-router-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "4Tk8UUEVu8xKLqSar23WAqZrZwave1Xpp1txyQAeMjbT",
+   "block_height": 276833274
+  },
+  "valtrum-dex-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "7L2qavugy3FWed9rsRdTFTjjvAukx91VZhkNkuCV8zVc",
+   "block_height": 276833280
+  },
+  "valtrum-usdc-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "3whKeDVBQWBNWGNhA3yUXJv2vL55eUnPy2NNVZkNxY8P",
+   "block_height": 276833285
+  },
+  "valtrum-pepe-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "3whKeDVBQWBNWGNhA3yUXJv2vL55eUnPy2NNVZkNxY8P",
+   "block_height": 276833293
+  },
+  "valtrum-shib-8875bb.testnet": {
+   "exists": true,
+   "code_hash": "3whKeDVBQWBNWGNhA3yUXJv2vL55eUnPy2NNVZkNxY8P",
+   "block_height": 276833300
+  }
+ }
+}
