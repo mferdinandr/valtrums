@@ -39,6 +39,8 @@ pub fn wasm(name: &str) -> Vec<u8> {
                 "-p",
                 "valtrum-payout",
                 "-p",
+                "valtrum-player-policy",
+                "-p",
                 "valtrum-receipt-registry",
                 "-p",
                 "valtrum-router",
