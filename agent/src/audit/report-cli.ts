@@ -22,6 +22,8 @@ import { buildAuditReport, formatAuditReport } from "./report.js";
 
 export const DEFAULT_ARCHIVE_DIR = "./.agent-state/audit-reports";
 const archivePath = (dir: string): string => `${dir}/archive.json`;
+/** Hosts that keep the passive server on the local machine; anything else is flagged when bound. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export interface CliIo {
   out: (line: string) => void;
@@ -193,6 +195,7 @@ export async function runCli(
   makeArchive: (dir: string) => ReportArchive = (dir) => new JsonFileReportArchive(archivePath(dir)),
 ): Promise<number> {
   const parsed = parseArgs(args);
+  const explicitDir = parsed.flags.get("dir") ?? env.AUDIT_REPORT_DIR?.trim();
   const dir = resolveDir(parsed, env);
   const archive = makeArchive(dir);
   const now = () => new Date();
@@ -208,6 +211,12 @@ export async function runCli(
       if (port === 0) {
         io.err("refusing to serve on port 0; pass --port or set AUDIT_REPORT_PORT");
         return 1;
+      }
+      if (!LOOPBACK_HOSTS.has(host)) {
+        io.err(
+          `warning: binding non-loopback host ${host}; this read-only API has no authentication, ` +
+            `so keep it on 127.0.0.1 unless a trusted proxy fronts it`,
+        );
       }
       const server = await startReportServer(port, { archive, now }, host);
       const addr = server?.address();
@@ -249,6 +258,15 @@ export async function runCli(
       return 0;
     }
     case "seed-demo": {
+      // Fixtures must never silently land in the recorded/production archive. Require an explicit
+      // target directory so the default path cannot be polluted by a stray `seed-demo`.
+      if (dir === DEFAULT_ARCHIVE_DIR && explicitDir === undefined) {
+        io.err(
+          `refusing to seed demo fixtures into the default archive directory ${DEFAULT_ARCHIVE_DIR}; ` +
+            `pass --dir <path> (or set AUDIT_REPORT_DIR) to a throwaway directory so fixtures never mix with history`,
+        );
+        return 1;
+      }
       const inputs = buildDemoObservations();
       let created = 0;
       for (const input of inputs) {

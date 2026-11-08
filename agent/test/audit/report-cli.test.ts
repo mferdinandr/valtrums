@@ -69,6 +69,25 @@ describe("report CLI", () => {
     expect(listed.items[0].historicalResult).toBe("reject");
   });
 
+  it("filters the list by custody domain", async () => {
+    await runCli(["seed-demo", "--dir", dir], {}, capture().io);
+    const matched = capture();
+    await runCli(["list", "--dir", dir, "--custodyDomain", "demo-vault"], {}, matched.io);
+    const inDomain = JSON.parse(matched.out.join("\n"));
+    expect(inDomain.items).toHaveLength(3);
+    expect(inDomain.items.every((i: { domain: { custodyDomain: string } }) => i.domain.custodyDomain === "demo-vault")).toBe(true);
+
+    const absent = capture();
+    await runCli(["list", "--dir", dir, "--custodyDomain", "no-such-vault"], {}, absent.io);
+    expect(JSON.parse(absent.out.join("\n")).items).toHaveLength(0);
+  });
+
+  it("refuses to seed demo fixtures into the default archive directory", async () => {
+    const c = capture();
+    expect(await runCli(["seed-demo"], {}, c.io)).toBe(1);
+    expect(c.err.join("\n")).toContain("refusing to seed demo fixtures");
+  });
+
   it("errors on an unknown command and on a missing report", async () => {
     expect(await runCli(["bogus", "--dir", dir], {}, capture().io)).toBe(1);
     const c = capture();
