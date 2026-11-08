@@ -318,6 +318,46 @@ describe("engine health persistence and coverage (review #59)", () => {
 });
 
 describe("engine durability and exclusivity", () => {
+  it("serializes overlapping sync calls without duplicate blocks or competing commits", async () => {
+    const source = new RecordedBlockSource(chainFile(baseChain(), { finalizedHeight: "2" }));
+    const { engine } = await engineOn(source);
+    const results = await Promise.all([engine.sync(), engine.sync(), engine.sync()]);
+    expect(results.every((h) => h.status === "healthy")).toBe(true);
+    await engine.close();
+    const persisted = await store().read();
+    expect(persisted!.blocks.map((b) => b.height)).toEqual(["1", "2", "3", "4", "5"]);
+    expect(persisted!.journal).toHaveLength(5);
+  });
+
+  it("waits for queued syncs before close and rejects new work while closing", async () => {
+    const original = new RecordedBlockSource(chainFile(baseChain(), { finalizedHeight: "2" }));
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let first = true;
+    const source: BlockSource = {
+      identity: () => original.identity(),
+      head: async () => {
+        if (first) { first = false; enter(); await gate; }
+        return original.head();
+      },
+      blockAt: (h) => original.blockAt(h),
+    };
+    const { engine } = await engineOn(source);
+    const sync = engine.sync();
+    const queued = engine.sync();
+    await entered;
+    const closing = engine.close();
+    await expect(engine.sync()).rejects.toThrow(/not open/);
+    await expect(store().open(config())).rejects.toBeInstanceOf(StoreLockedError);
+    release();
+    await Promise.all([sync, queued, closing, engine.close()]);
+    const next = await engineOn(original);
+    expect(next.engine.health().processedHead?.height).toBe("5");
+    await next.engine.close();
+  });
+
   it("rejects a second concurrent writer on the same state directory", async () => {
     const source = new RecordedBlockSource(chainFile(baseChain(), { finalizedHeight: "2" }));
     const first = await engineOn(source);
@@ -356,5 +396,49 @@ describe("engine durability and exclusivity", () => {
     for (const m of ["call", "sign", "sendTransaction", "submit"]) expect(source[m]).toBeUndefined();
     const engine = new IndexerEngine(new RecordedBlockSource(chainFile(baseChain(), {})), store(), config(), {}) as unknown as Record<string, unknown>;
     for (const m of ["call", "sign", "sendTransaction", "submit"]) expect(engine[m]).toBeUndefined();
+  });
+});
+
+describe("durable conflict severity independent of quarantine retention", () => {
+  const conflictingChain = () => linked([
+    { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+    { height: "2", outcomes: [
+      outcome("r1", [created(1, "mallory.testnet")]),
+      outcome("unknowns", [emitLog("unknown_a", {}), emitLog("unknown_b", {})]),
+    ] },
+  ]);
+
+  it("keeps reconciliation after allowlisted diagnostics evict a conflict and after restart", async () => {
+    const source = new RecordedBlockSource(chainFile(conflictingChain(), { finalizedHeight: "1" }));
+    const first = new IndexerEngine(source, store(), config(), { maxDiagnostics: 1 });
+    await first.open();
+    expect((await first.sync()).status).toBe("reconciliation_required");
+    source.replace(chainFile([...conflictingChain(), block({ height: "3", hash: "blk3", parentHash: "blk2", outcomes: [] })], { finalizedHeight: "3" }));
+    expect((await first.sync()).status).toBe("reconciliation_required");
+    expect(first.health().processedHead?.height).toBe("2");
+    expect(first.health().finalizedHead).toBeNull();
+    await first.close();
+    const state = await store().read();
+    expect(state!.diagnostics.some((d) => d.reason === "conflict_payload")).toBe(false);
+    expect(state!.conflictBlocks).toEqual(["blk2"]);
+    const second = await engineOn(source);
+    expect((await second.engine.sync()).status).toBe("reconciliation_required");
+    await second.engine.close();
+  });
+
+  it("clears only the conflict and overflow markers belonging to an orphaned provisional block", async () => {
+    const source = new RecordedBlockSource(chainFile(conflictingChain(), { finalizedHeight: "1" }));
+    const engine = new IndexerEngine(source, store(), config(), { maxDiagnostics: 1 });
+    await engine.open();
+    await engine.sync();
+    source.replace(chainFile(linked([
+      { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+      { height: "2", hash: "replacement2", outcomes: [outcome("r2", [deposit(1, 0, "bob.testnet", "2")])] },
+    ]), { finalizedHeight: "1" }));
+    expect((await engine.sync()).status).toBe("healthy");
+    await engine.close();
+    const state = await store().read();
+    expect(state!.conflictBlocks).toEqual([]);
+    expect(state!.diagnosticOverflowBlocks).toEqual([]);
   });
 });

@@ -56,6 +56,12 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(sort(value));
 }
 
+/** Recompute the normalized payload commitment when validating persisted journal entries. */
+export function eventPayloadDigest(event: AcceptedEvent): string {
+  const { dedupKey: _key, provenance: _provenance, payloadDigest: _digest, ...payload } = event;
+  return hex(canonicalJson(payload));
+}
+
 export interface ParsedBlock {
   accepted: AcceptedEvent[];
   diagnostics: DiagnosticRecord[];

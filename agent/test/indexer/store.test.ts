@@ -1,5 +1,5 @@
 // FIXTURE-ONLY: a real temp state directory; no network.
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,7 +11,8 @@ import {
   StoreLockedError,
   type StoreState,
 } from "../../src/indexer/store.js";
-import { config } from "./fixtures.js";
+import { parseBlock } from "../../src/indexer/parser.js";
+import { block, config, deposit, outcome } from "./fixtures.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -27,6 +28,8 @@ const freshState = (cfg = config()): StoreState => ({
   diagnostics: [],
   diagnosticsDropped: 0,
   ignoredLogs: 0,
+  conflictBlocks: [],
+  diagnosticOverflowBlocks: [],
   cursors: { processedHead: { height: "1", hash: "h1" }, finalizedHead: { height: "1", hash: "h1" } },
   health: { status: "healthy", reason: "test fixture" },
 });
@@ -87,5 +90,54 @@ describe("JsonFileIndexerStore configuration and exclusivity", () => {
   it("refuses to commit without holding the lock", async () => {
     const s = new JsonFileIndexerStore(dir);
     await expect(s.commit(freshState())).rejects.toThrow(/writer lock/);
+  });
+
+  it("never steals an aged lock from a still-running writer", async () => {
+    const a = new JsonFileIndexerStore(dir, { lockStaleMs: 1 });
+    await a.open(config());
+    const old = new Date(0);
+    await utimes(join(dir, "state.lock"), old, old);
+    const b = new JsonFileIndexerStore(dir, { lockStaleMs: 1 });
+    await expect(b.open(config())).rejects.toBeInstanceOf(StoreLockedError);
+    await a.commit(freshState());
+    await a.close();
+    await expect(b.open(config())).resolves.toBeTruthy();
+    await b.close();
+  });
+});
+
+describe("semantic snapshot integrity", () => {
+  const withDeposit = (): StoreState => {
+    const state = freshState();
+    const blk = block({ height: "1", hash: "h1", timestampMs: state.blocks[0]!.timestampMs, outcomes: [outcome("r1", [deposit(1, 0, "alice.testnet", "100")])] });
+    state.journal = parseBlock(blk, config()).accepted;
+    return state;
+  };
+
+  it("rejects changed journal payloads whose stored digest no longer matches", async () => {
+    const state = withDeposit();
+    const event = state.journal[0]!;
+    if (event.name !== "lifecycle_deposit") throw new Error("expected deposit fixture");
+    event.amount = "1";
+    const encoded = JSON.stringify(state);
+    await writeFile(join(dir, "state.json"), encoded);
+    await expect(new JsonFileIndexerStore(dir).read()).rejects.toThrow(/digest mismatch/);
+    expect(await readFile(join(dir, "state.json"), "utf8")).toBe(encoded);
+  });
+
+  it.each([
+    ["duplicate blocks", (s: StoreState) => s.blocks.push({ ...s.blocks[0]! })],
+    ["cursor mismatch", (s: StoreState) => { s.cursors.processedHead!.height = "9"; }],
+    ["finality mismatch", (s: StoreState) => { s.blocks[0]!.finalized = false; }],
+    ["duplicate events", (s: StoreState) => s.journal.push({ ...s.journal[0]! })],
+    ["wrong provenance", (s: StoreState) => { s.journal[0]!.provenance.blockHash = "absent"; }],
+    ["wrong event key", (s: StoreState) => { s.journal[0]!.dedupKey = "wrong"; }],
+    ["unknown health", (s: StoreState) => { (s.health as { status: string }).status = "fine"; }],
+    ["invalid counter", (s: StoreState) => { s.diagnosticsDropped = -1; }],
+  ] as const)("rejects %s", async (_name, corrupt) => {
+    const state = withDeposit();
+    corrupt(state);
+    await writeFile(join(dir, "state.json"), JSON.stringify(state));
+    await expect(new JsonFileIndexerStore(dir).read()).rejects.toBeInstanceOf(StoreCorruptError);
   });
 });

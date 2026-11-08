@@ -68,6 +68,11 @@ export class IndexerEngine {
   private readonly maxDiag: number;
   private readonly log: Logger;
   private lastSyncMs: number | null = null;
+  private operations: Promise<void> = Promise.resolve();
+  private opened = false;
+  private opening = false;
+  private closing = false;
+  private closeTask: Promise<void> | null = null;
 
   constructor(
     private readonly source: BlockSource,
@@ -78,20 +83,37 @@ export class IndexerEngine {
     this.now = opts.now ?? Date.now;
     this.maxPerSync = opts.maxBlocksPerSync ?? 10_000;
     this.maxDiag = opts.maxDiagnostics ?? MAX_DIAGNOSTICS;
+    if (!Number.isSafeInteger(this.maxPerSync) || this.maxPerSync < 1) throw new Error("maxBlocksPerSync must be a positive safe integer");
+    if (!Number.isSafeInteger(this.maxDiag) || this.maxDiag < 1 || this.maxDiag > MAX_DIAGNOSTICS) throw new Error("maxDiagnostics must be within the store diagnostic limit");
     this.log = opts.log ?? silentLogger;
   }
 
   async open(): Promise<void> {
-    const id = this.source.identity();
-    if (id.network !== this.config.network) {
-      throw new Error("source network does not match the configured network");
+    if (this.opened || this.opening || this.closing) throw new Error("indexer engine already opened or closing");
+    this.opening = true;
+    try {
+      const id = this.source.identity();
+      if (id.network !== this.config.network) {
+        throw new Error("source network does not match the configured network");
+      }
+      this.state = await this.store.open(this.config);
+      this.rebuildDedup();
+      this.opened = true;
+    } finally {
+      this.opening = false;
     }
-    this.state = await this.store.open(this.config);
-    this.rebuildDedup();
   }
 
   async close(): Promise<void> {
-    await this.store.close();
+    if (this.opening) throw new Error("cannot close indexer while opening");
+    if (this.closeTask) return this.closeTask;
+    if (!this.opened) return;
+    this.closing = true;
+    this.closeTask = this.operations.then(async () => {
+      await this.store.close();
+      this.opened = false;
+    });
+    return this.closeTask;
   }
 
   private rebuildDedup(): void {
@@ -124,12 +146,23 @@ export class IndexerEngine {
 
   /** One ingest + reconcile pass. Commits the resulting state. Returns the new health. */
   async sync(): Promise<IndexerHealth> {
+    if (!this.opened || this.closing) throw new Error("indexer engine is not open for sync");
+    const operation = this.operations.then(() => this.syncOnce());
+    this.operations = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  private async syncOnce(): Promise<IndexerHealth> {
     const flags: SyncFlags = { reconciliation: false, degraded: false, pending: false, reason: "" };
     const committedFinalBefore = this.committedFinalizedHeight();
 
     const { latest, finalized } = await this.source.head();
 
     await this.reconcileProvisional(flags);
+    if (this.state.conflictBlocks.length > 0) {
+      flags.reconciliation = true;
+      flags.reason ||= "unresolved event conflicts remain in the retained source chain";
+    }
     if (!flags.reconciliation) await this.extend(flags);
     if (!flags.reconciliation) this.promoteFinality(finalized, committedFinalBefore, flags);
 
@@ -191,6 +224,8 @@ export class IndexerEngine {
     this.state.blocks = this.state.blocks.filter((b) => !orphan.has(b.hash));
     this.state.journal = this.state.journal.filter((e) => !orphan.has(e.provenance.blockHash));
     this.state.diagnostics = this.state.diagnostics.filter((d) => !orphan.has(d.provenance.blockHash));
+    this.state.conflictBlocks = this.state.conflictBlocks.filter((hash) => !orphan.has(hash));
+    this.state.diagnosticOverflowBlocks = this.state.diagnosticOverflowBlocks.filter((hash) => !orphan.has(hash));
     this.rebuildDedup();
     const tip = [...this.state.blocks].sort((a, b) => cmpHeight(a.height, b.height)).at(-1) ?? null;
     this.state.cursors.processedHead = tip ? { height: tip.height, hash: tip.hash } : null;
@@ -236,6 +271,7 @@ export class IndexerEngine {
       this.applyBlock(blk, flags);
       headHash = blk.header.hash;
       this.state.cursors.processedHead = { height: blk.header.height, hash: blk.header.hash };
+      if (flags.reconciliation) return;
       height = BigInt(blk.header.height) + 1n;
     }
   }
@@ -249,6 +285,7 @@ export class IndexerEngine {
         this.dedup.set(e.dedupKey, e.payloadDigest);
       } else if (prev !== e.payloadDigest) {
         // Same identity, different payload: a conflict requiring reconciliation, never last-write-wins.
+        if (!this.state.conflictBlocks.includes(e.provenance.blockHash)) this.state.conflictBlocks.push(e.provenance.blockHash);
         this.state.diagnostics.push({
           dedupKey: e.dedupKey,
           reason: "conflict_payload",
@@ -301,8 +338,8 @@ export class IndexerEngine {
 
   private deriveStatus(flags?: SyncFlags): IndexerHealthStatus {
     const diag = this.state?.diagnostics ?? [];
-    const hasConflict = diag.some((d) => d.reason === "conflict_payload");
-    const hasDegrading = diag.some((d) => DEGRADING_REASONS.has(d.reason)) || (this.state?.diagnosticsDropped ?? 0) > 0;
+    const hasConflict = this.state.conflictBlocks.length > 0 || diag.some((d) => d.reason === "conflict_payload");
+    const hasDegrading = diag.some((d) => DEGRADING_REASONS.has(d.reason)) || this.state.diagnosticOverflowBlocks.length > 0;
     if (flags?.reconciliation || hasConflict) return "reconciliation_required";
     if (flags?.degraded || hasDegrading) return "degraded";
     if (flags?.pending) return "pending";
@@ -329,6 +366,9 @@ export class IndexerEngine {
   private capDiagnostics(): void {
     const over = this.state.diagnostics.length - this.maxDiag;
     if (over > 0) {
+      for (const d of this.state.diagnostics.slice(0, over)) {
+        if (!this.state.diagnosticOverflowBlocks.includes(d.provenance.blockHash)) this.state.diagnosticOverflowBlocks.push(d.provenance.blockHash);
+      }
       this.state.diagnostics = this.state.diagnostics.slice(over);
       this.state.diagnosticsDropped += over;
     }
