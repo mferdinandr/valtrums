@@ -472,10 +472,14 @@ async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconcilia
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?;
-    let error = stale_dispatch
-        .into_result()
-        .expect_err("replacement must not revive the queued v1 action");
-    assert!(error.to_string().contains("Grant version changed"));
+    // The raw `cargo build` wasm used by these sandbox tests reports every contract panic as a
+    // WebAssembly `unreachable` trap, so the panic text is not observable here. The reason
+    // ("Grant version changed") is asserted by the unit tests; this test checks the outcome: the
+    // call fails and the queued v1 reservation is left untouched.
+    assert!(
+        stale_dispatch.into_result().is_err(),
+        "replacement must not revive the queued v1 action"
+    );
     let queued_state: Value = policy
         .view("get_reservation")
         .args_json(queued)
