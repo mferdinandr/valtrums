@@ -136,6 +136,7 @@ export async function runIndexerCli(
           journal: state.journal.length,
           quarantined: state.diagnostics.length,
           diagnosticsDropped: state.diagnosticsDropped,
+          ignoredLogs: state.ignoredLogs,
           blocks: state.blocks.length,
         }),
       );

@@ -26,6 +26,15 @@ const DEGRADING_REASONS: ReadonlySet<DiagnosticReason> = new Set<DiagnosticReaso
   "unknown_event",
 ]);
 
+/**
+ * Reasons worth persisting and acting on: conflicts plus allowlisted-emitter integrity/coverage gaps.
+ * Everything else (`wrong_emitter`, `failed_outcome` — logs an untrusted account can spam at will) is
+ * merely counted, never stored, so it can neither evict a conflict record nor poison health.
+ */
+function isAttentionReason(reason: DiagnosticReason): boolean {
+  return reason === "conflict_payload" || DEGRADING_REASONS.has(reason);
+}
+
 const REASON_BY_STATUS: Record<IndexerHealthStatus, string> = {
   healthy: "caught up to the source head with consistent finality",
   pending: "awaiting finality or further source coverage",
@@ -147,6 +156,7 @@ export class IndexerEngine {
       finalizedHead: this.state.cursors.finalizedHead?.height ?? null,
       quarantined: this.state.diagnostics.length,
       diagnosticsDropped: this.state.diagnosticsDropped,
+      ignoredLogs: this.state.ignoredLogs,
     });
     return health;
   }
@@ -250,7 +260,13 @@ export class IndexerEngine {
         flags.reason = `event ${e.dedupKey} reappeared with a different payload`;
       }
     }
-    for (const d of diagnostics) this.state.diagnostics.push(d);
+    for (const d of diagnostics) {
+      // Only attention-worthy quarantine (a conflict, or an integrity/coverage gap from an allowlisted
+      // emitter) is persisted and can affect health. Benign records a foreign account can spam are
+      // counted only, so an untrusted flood can neither evict these records nor degrade health.
+      if (isAttentionReason(d.reason)) this.state.diagnostics.push(d);
+      else this.state.ignoredLogs += 1;
+    }
     this.state.blocks.push({
       height: blk.header.height,
       hash: blk.header.hash,
@@ -305,7 +321,11 @@ export class IndexerEngine {
     };
   }
 
-  /** Bound quarantine growth: keep the most recent records and count the rest so health still degrades. */
+  /**
+   * Bound the attention-quarantine list: keep the most recent records and count the rest. Only
+   * conflict/degrading records (from allowlisted emitters) ever reach this list, so an overflow here
+   * is a real trusted-side signal that legitimately degrades health; a foreign flood never gets here.
+   */
   private capDiagnostics(): void {
     const over = this.state.diagnostics.length - this.maxDiag;
     if (over > 0) {

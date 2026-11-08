@@ -261,22 +261,59 @@ describe("engine health persistence and coverage (review #59)", () => {
     await engine.close();
   });
 
-  it("caps quarantine growth and stays degraded instead of wedging commit", async () => {
-    // Five foreign-emitter logs in one block; with a tiny cap the engine keeps only the most recent
-    // and counts the rest, so commit never fails and health reflects the overflow.
+  it("does not let an untrusted foreign-log flood poison health", async () => {
+    // An untrusted account emits many well-formed logs. They are never our state, so even a flood far
+    // past the cap must not degrade the indexer or occupy quarantine.
     const foreign = Array.from({ length: 5 }, (_, i) => created(1, `acct${i}.testnet`));
     const chain = linked([{ height: "1", outcomes: [outcome("r1", foreign, { executorId: "evil.testnet" })] }]);
     const source = new RecordedBlockSource(chainFile(chain, { finalizedHeight: "1" }));
     const engine = new IndexerEngine(source, store(), config(), { now: () => 1, maxDiagnostics: 2 });
     await engine.open();
     const health = await engine.sync();
+    expect(health.status).toBe("healthy"); // foreign spam cannot force degraded
+    expect(health.quarantined).toBe(0); // foreign logs are counted, not stored
+    await engine.close();
+  });
+
+  it("caps attention quarantine and degrades when allowlisted integrity gaps overflow", async () => {
+    // Five unmodelled events from the allowlisted emitter: all degrading. With a tiny cap the engine
+    // keeps the most recent and counts the rest, so health degrades and commit never wedges.
+    const unknowns = Array.from({ length: 5 }, (_, i) => emitLog("mystery_event", { x: i }));
+    const chain = linked([{ height: "1", outcomes: [outcome("r1", unknowns)] }]);
+    const source = new RecordedBlockSource(chainFile(chain, { finalizedHeight: "1" }));
+    const engine = new IndexerEngine(source, store(), config(), { now: () => 1, maxDiagnostics: 2 });
+    await engine.open();
+    const health = await engine.sync();
     expect(health.quarantined).toBe(2); // capped, not five
-    expect(health.status).toBe("degraded"); // dropped records degrade health
+    expect(health.status).toBe("degraded");
     await engine.close();
 
     const second = await engineOn(source); // the capped state committed without a StoreLimitError wedge
     expect(second.engine.health().status).toBe("degraded");
     await second.engine.close();
+  });
+
+  it("does not let a foreign-log flood evict a prior conflict or downgrade reconciliation", async () => {
+    // Block 2 both conflicts with block 1's event (same dedup key, new payload) and carries a flood of
+    // foreign logs. The conflict must survive and the status must stay reconciliation_required.
+    const foreign = Array.from({ length: 5 }, (_, i) => created(1, `acct${i}.testnet`));
+    const chain = linked([
+      { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+      {
+        height: "2",
+        outcomes: [
+          outcome("r1", [created(1, "mallory.testnet")]), // same dedup key as block 1 -> conflict_payload
+          outcome("rF", foreign, { executorId: "evil.testnet" }),
+        ],
+      },
+    ]);
+    const source = new RecordedBlockSource(chainFile(chain, { finalizedHeight: "1" }));
+    const engine = new IndexerEngine(source, store(), config(), { now: () => 1, maxDiagnostics: 2 });
+    await engine.open();
+    const health = await engine.sync();
+    expect(health.status).toBe("reconciliation_required"); // not downgraded to degraded
+    expect(health.quarantined).toBe(1); // the conflict survived; foreign logs did not evict it
+    await engine.close();
   });
 });
 

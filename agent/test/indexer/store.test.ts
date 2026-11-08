@@ -26,6 +26,7 @@ const freshState = (cfg = config()): StoreState => ({
   journal: [],
   diagnostics: [],
   diagnosticsDropped: 0,
+  ignoredLogs: 0,
   cursors: { processedHead: { height: "1", hash: "h1" }, finalizedHead: { height: "1", hash: "h1" } },
   health: { status: "healthy", reason: "test fixture" },
 });

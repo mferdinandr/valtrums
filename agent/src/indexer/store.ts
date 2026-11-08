@@ -30,9 +30,16 @@ export interface StoreState {
   blocks: StoredBlock[];
   /** Accepted events; order is not relied upon (the reducer sorts canonically). */
   journal: AcceptedEvent[];
+  /**
+   * Attention-worthy quarantine only: conflicts and integrity/coverage gaps from an allowlisted
+   * emitter. Benign records an untrusted account can spam (`wrong_emitter`, `failed_outcome`) are
+   * never stored here, so they cannot evict these records or poison health.
+   */
   diagnostics: DiagnosticRecord[];
-  /** Quarantine records discarded once the cap was reached; a positive count degrades health. */
+  /** Attention-worthy records dropped once the cap was reached; a positive count degrades health. */
   diagnosticsDropped: number;
+  /** Count of benign/ignored logs (foreign emitter, failed outcome); never affects health. */
+  ignoredLogs: number;
   cursors: { processedHead: BlockRef | null; finalizedHead: BlockRef | null };
   /** Last computed health, persisted so a restart never silently reports healthy. */
   health: { status: IndexerHealthStatus; reason: string };
@@ -114,6 +121,7 @@ export class JsonFileIndexerStore {
     // Default fields added after the first schema cut, so a snapshot that predates them loads with a
     // safe (non-healthy) health rather than being treated as corrupt.
     if (typeof s.diagnosticsDropped !== "number") s.diagnosticsDropped = 0;
+    if (typeof s.ignoredLogs !== "number") s.ignoredLogs = 0;
     if (!s.health || typeof s.health.status !== "string" || typeof s.health.reason !== "string") {
       s.health = { status: "pending", reason: "restored state predates health persistence" };
     }
@@ -133,6 +141,7 @@ export class JsonFileIndexerStore {
           journal: [],
           diagnostics: [],
           diagnosticsDropped: 0,
+          ignoredLogs: 0,
           cursors: { processedHead: null, finalizedHead: null },
           health: { ...INITIAL_HEALTH },
         };
