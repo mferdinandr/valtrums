@@ -15,7 +15,7 @@ flowchart TB
     subgraph NEAR["NEAR testnet - planned"]
         A["Arena: lock, rounds and allocation"]
         R["NEP-141 representations and liability ledger"]
-        D["DAO principal escrow - mechanism OPEN"]
+        D["DAO principal escrow - winner vote (D22)"]
         S["Constrained signing policy"]
         A --> R
         A --> D
@@ -54,7 +54,7 @@ flowchart TB
 | Relayer | Fund gas and broadcast authorized transactions | Cannot choose a new recipient, token, amount or player spend |
 | Player agent | Execute a user's bounded strategy | Separate identity and budget from infrastructure workers |
 | MCP / terminal | Reads, previews and authorized requests | Model output is untrusted input, never a signing grant |
-| DAO escrow | Keep winning principal until valid disposition | Governance and decision validation OPEN |
+| DAO escrow | Keep winning principal until valid disposition | Only the contract tally of winner votes decides (D22, [DAO governance](dao-governance.md)); not implemented |
 
 ## Deposit and representation flow
 

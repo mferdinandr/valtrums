@@ -11,6 +11,10 @@ Target live acceptance SHALL use NEAR testnet and Robinhood Chain testnet with r
 - **WHEN** RPC chain identity differs from configured Robinhood testnet
 - **THEN** the system refuses signing and source receipt acceptance
 
+#### Scenario: Missing or malformed chain identity
+- **WHEN** the RPC chain id is missing, malformed or unreadable
+- **THEN** the system fails closed and names the failure without exposing the RPC URL
+
 ### Requirement: End-to-end evidence and observability
 The demo SHALL record two/three-community flows, protocol creator, all scoring modes, repeated ties, incomplete audit, conservation and payout retry, with distinct entitlement, transfer and DAO states.
 
@@ -40,6 +44,21 @@ A read-only indexer SHALL parse Valtrum NEP-297 logs with receipt provenance, pe
 #### Scenario: Honest provenance and identity
 - **WHEN** a log is from a non-allowlisted emitter or failed outcome, carries an unsafe numeric value, or reuses an event identity with a different payload
 - **THEN** it is quarantined with bounded provenance rather than applied, and recorded coverage is labeled a declared source assertion, not verified finality
+
+### Requirement: Protocol-controlled reference-token registry
+The arena SHALL keep one owner-controlled registry mapping each testnet mock token to one Robinhood mainnet (4663) reference token, with an entry hash per entry and a version bumped on every change. Audit and scoring SHALL read this registry only. Battle creation SHALL refuse a reference pair that is unregistered or differs from the entry. An entry attests nothing about the mock contract.
+
+#### Scenario: Registered mapping
+- **WHEN** a community commits the reference pair registered for its token
+- **THEN** creation succeeds and audit and scoring both resolve the reference token with the same entry hash
+
+#### Scenario: Unregistered, conflicting or duplicate mapping
+- **WHEN** a creator declares an unregistered or different pair, omits the pair of a registered token, or anyone but the owner adds an entry, or an entry duplicates a token or reference
+- **THEN** the contract refuses it and the agent holds the community Pending
+
+#### Scenario: Inconsistent registry read
+- **WHEN** a registry read is malformed, incomplete, changes between pages or reports an entry hash that differs from its fields
+- **THEN** the agent fails the pass closed and audits nothing against it
 
 ### Requirement: Four-track demonstration mapping
 The documentation and acceptance evidence SHALL identify Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms as the selected hackathon tracks without claiming completed integrations or award eligibility.
