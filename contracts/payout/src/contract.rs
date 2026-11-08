@@ -416,16 +416,22 @@ impl PayoutContract {
             )
     }
 
-    /// The beneficiary asks for a late deposit to be returned on the source
-    /// chain. The destination is not a free choice: backing reserves the refund
-    /// only for an EVM address that the depositor bound at deposit time (D17) and
-    /// rejects any other value, so the payout can never be redirected. After the
-    /// reservation the refund follows the same signing, confirmation and release
-    /// path as a payout. Repeating an identical request after a failure is safe.
+    /// Starts the return of a late deposit on the source chain. The caller is
+    /// either the beneficiary (who attaches the request storage deposit, and
+    /// `beneficiary` must equal the caller) or the configured operator (who
+    /// attaches exactly one yocto; the payout contract's own reserve pays the
+    /// record storage). The operator gains a trigger only: the destination is
+    /// never a free choice. Backing reserves the refund only for an EVM address
+    /// bound at deposit to that beneficiary's own deposits (D17) and rejects
+    /// any other value, and confirmation evidence must name the same recipient.
+    /// After the reservation the refund follows the signing, confirmation and
+    /// release path of an entitlement payout. Repeating an identical request
+    /// after a failure is safe.
     #[payable]
     pub fn request_late_refund(
         &mut self,
         backing: AccountId,
+        beneficiary: AccountId,
         request_id: Hash,
         amount: U128,
         refund_address: [u8; 20],
@@ -434,25 +440,66 @@ impl PayoutContract {
             self.backings.get(&backing).is_some(),
             "Backing not registered"
         );
-        require!(
-            env::attached_deposit() >= REQUEST_DEPOSIT,
-            "Insufficient storage deposit"
-        );
+        let caller = env::predecessor_account_id();
+        let sponsored = if caller == self.operator {
+            near_sdk::assert_one_yocto();
+            true
+        } else {
+            require!(caller == beneficiary, "Only beneficiary or operator");
+            require!(
+                env::attached_deposit() >= REQUEST_DEPOSIT,
+                "Insufficient storage deposit"
+            );
+            false
+        };
         require!(
             amount.0 > 0 && refund_address != [0; 20] && request_id != [0; 32],
             "Invalid refund request"
         );
-        let holder = env::predecessor_account_id();
         ext_backing::ext(backing.clone())
             .with_static_gas(BACKING_GAS)
             .with_attached_deposit(NearToken::from_yoctonear(1))
-            .reserve_late_refund(holder.clone(), request_id, amount, refund_address)
+            .reserve_late_refund(beneficiary.clone(), request_id, amount, refund_address)
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(CALLBACK_GAS)
-                    .with_attached_deposit(env::attached_deposit())
-                    .on_payout_reserved(holder, backing, request_id, refund_address),
+                    .with_attached_deposit(if sponsored {
+                        NearToken::from_yoctonear(0)
+                    } else {
+                        env::attached_deposit()
+                    })
+                    .on_late_refund_reserved(
+                        beneficiary,
+                        backing,
+                        request_id,
+                        refund_address,
+                        caller,
+                    ),
             )
+    }
+
+    /// Callback of `request_late_refund`. A deposit attached by the beneficiary
+    /// is refunded to the caller on failure; the operator path attaches none.
+    #[private]
+    #[payable]
+    pub fn on_late_refund_reserved(
+        &mut self,
+        holder: AccountId,
+        backing: AccountId,
+        request_id: Hash,
+        destination: [u8; 20],
+        payer: AccountId,
+        #[callback_result] reserved: Result<ReservedPayout, PromiseError>,
+    ) -> bool {
+        let sponsored = payer == self.operator;
+        self.finish_reservation(
+            holder,
+            backing,
+            request_id,
+            destination,
+            reserved,
+            sponsored,
+        )
     }
 
     /// True when a payout record exists for the request afterwards. Anything
@@ -466,6 +513,18 @@ impl PayoutContract {
         request_id: Hash,
         destination: [u8; 20],
         #[callback_result] reserved: Result<ReservedPayout, PromiseError>,
+    ) -> bool {
+        self.finish_reservation(holder, backing, request_id, destination, reserved, false)
+    }
+
+    fn finish_reservation(
+        &mut self,
+        holder: AccountId,
+        backing: AccountId,
+        request_id: Hash,
+        destination: [u8; 20],
+        reserved: Result<ReservedPayout, PromiseError>,
+        sponsored: bool,
     ) -> bool {
         let attached = env::attached_deposit();
         let refund = |amount: NearToken| {
@@ -536,6 +595,10 @@ impl PayoutContract {
             .checked_mul(u128::from(env::storage_usage().saturating_sub(before)))
             .and_then(|cost| cost.checked_add(ATTEMPT_RESERVE.as_yoctonear()))
             .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
+        if sponsored {
+            // The payout contract's own balance pays the record storage.
+            return true;
+        }
         require!(
             attached.as_yoctonear() >= cost,
             "Insufficient storage deposit"
