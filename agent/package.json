@@ -7,7 +7,11 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "indexer:import": "node dist/indexer/cli.js import",
+    "indexer:status": "node dist/indexer/cli.js status",
+    "indexer:replay": "node dist/indexer/cli.js replay",
+    "indexer:projection": "node dist/indexer/cli.js projection"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
