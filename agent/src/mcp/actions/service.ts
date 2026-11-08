@@ -11,6 +11,7 @@ import {
   previewHash,
   validateRequest,
 } from "./preview.js";
+import { type DelegateGrants, proposalToRequest } from "./proposal.js";
 import type { ReceiptVerifier } from "./receipt.js";
 import type { ActionReadSource } from "./source.js";
 import type { ActionRecord, ActionStatus, ActionStore } from "./store.js";
@@ -60,8 +61,27 @@ export interface ActionServiceDeps {
   /** NEP-413 recipient (the action service identity). */
   recipient: string;
   receipts: ReceiptVerifier;
+  /** Grants each player-agent delegate may act under (operator configuration, never model output). */
+  delegateGrants?: DelegateGrants;
   now?: () => number;
   maxNonceAgeMs?: number;
+}
+
+/**
+ * Who an action is for and how its grant stands now. A revoked or expired grant stops new
+ * actions; an action already prepared or broadcast stays attributable to its user and position.
+ */
+export interface ActionAttribution {
+  user: string;
+  signer: string;
+  authorization: "user_signature" | "grant";
+  battleId: number | null;
+  community: number | null;
+  /** The user's current arena position in that community (deposits only). */
+  position: { registered: boolean; amount: string } | null;
+  grant: { localId: string; revoked: boolean; expired: boolean; missing: boolean } | null;
+  /** On-chain reservation of a grant action, once the delegate's `reserve` landed. */
+  reservation: { state: string; amount: string } | null;
 }
 
 const TX_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
@@ -190,10 +210,71 @@ export class ActionService {
 
   async status(actionId: string, caller: string): Promise<ActionRecord> {
     const record = await this.owned(actionId, caller);
-    if ((record.status === "previewed" || record.status === "authorized") && this.now() >= record.preview.expiresAtMs) {
+    const pending = record.status === "previewed" || record.status === "authorized";
+    if (pending && this.now() >= record.preview.expiresAtMs) {
       return this.transition(actionId, "expired", "the preview expired");
     }
+    // A revoked or expired grant stops actions that have not been prepared yet.
+    if (pending && record.preview.authorization === "grant") {
+      const grant = await this.grantState(record);
+      if (grant && (grant.revoked || grant.expired || grant.missing)) {
+        return this.transition(actionId, "rejected", "the grant was revoked or expired before preparation");
+      }
+    }
     return record;
+  }
+
+  /**
+   * Accepts an untrusted player-agent proposal (#77) from `caller` (the delegate's session) and
+   * turns it into a grant preview through the same path as any action.
+   */
+  async propose(caller: string, output: unknown): Promise<ActionRecord> {
+    return this.preview(caller, proposalToRequest(output, caller, this.deps.delegateGrants ?? {}));
+  }
+
+  /** The user, signer, position, grant and reservation an action is bound to, read now. */
+  async attribution(actionId: string, caller: string): Promise<ActionAttribution> {
+    const record = await this.owned(actionId, caller);
+    const binding = record.preview.binding as { battleId?: number; community?: number };
+    const battleId = typeof binding.battleId === "number" ? binding.battleId : null;
+    const community = typeof binding.community === "number" ? binding.community : null;
+    const position =
+      record.preview.kind === "deposit" && battleId !== null && community !== null
+        ? await this.deps.source.position(battleId, community, record.preview.accountId)
+        : null;
+    const grant = await this.grantState(record);
+    let reservation: ActionAttribution["reservation"] = null;
+    const request = record.request;
+    if (record.preview.authorization === "grant" && "grant" in request && request.grant && request.requestId) {
+      const found = await this.deps.source.reservation(
+        request.grant.user,
+        Array.from(Buffer.from(request.grant.localId, "hex")),
+        Array.from(Buffer.from(request.requestId, "hex")),
+      );
+      reservation = found ? { state: found.state, amount: found.amount } : null;
+    }
+    return {
+      user: record.preview.accountId,
+      signer: record.preview.signerId,
+      authorization: record.preview.authorization,
+      battleId,
+      community,
+      position,
+      grant,
+      reservation,
+    };
+  }
+
+  private async grantState(record: ActionRecord): Promise<ActionAttribution["grant"]> {
+    const request = record.request;
+    if (record.preview.authorization !== "grant" || !("grant" in request) || !request.grant) return null;
+    const view = await this.deps.source.grant(request.grant.user, Array.from(Buffer.from(request.grant.localId, "hex")));
+    return {
+      localId: request.grant.localId,
+      missing: view === null,
+      revoked: view?.revoked === true,
+      expired: view !== null && BigInt(view.expiry_ns) <= BigInt(this.now()) * 1_000_000n,
+    };
   }
 
   private assignIds(request: ActionRequest): ActionRequest {
