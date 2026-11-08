@@ -31,8 +31,8 @@ Check tasks only after implementation and verification. Research can proceed ind
 - [ ] Detect reorgs, retract provisional projections and suspend affected confirmations until finality is restored.
   - [x] Read-model reorg handling in the engine: parent/hash continuity, common-ancestor rollback of provisional effects, canonical replay, finality promoted only along the source-declared finalized ancestor chain, and a visible healthy/pending/degraded/reconciliation-required status that is persisted (a restart never silently reports healthy), degrades on coverage/integrity gaps from an allowlisted emitter (unmodelled or unsupported events, with bounded quarantine), and never advances over a block the source marks incomplete. Retraction is read-only and never touches custody/payouts; a conflict at or below the finalized boundary stops and requires reconciliation instead of rewriting finalized state.
   - [ ] Suspend real custody/payout confirmations on reorg (belongs to backing/payout services, not the indexer; remains open).
-- [ ] Display entitlement, transfer and DAO principal states separately, with source and freshness.
-- [ ] Add recovery alerts for missing audit/market data, deficits, unresolved payouts and indexer reconciliation.
+- [x] Display entitlement, transfer and DAO principal states separately, with source and freshness. (`inspect_account_state` in `agent/src/mcp/account-state.ts`; portfolio `AccountStatePanel`; fixture-tested per state.)
+- [x] Add recovery alerts for missing audit/market data, deficits, unresolved payouts and indexer reconciliation. (`list_recovery_alerts` in `agent/src/mcp/alerts.ts`, recomputed per read so each alert clears when resolved; portfolio `RecoveryAlerts`; fire-and-clear tests per condition.)
 - [ ] Test replay and restart without duplicate allocation or payment.
   - [x] Deterministic replay/restart of the read model proven on disk: identical projection/digest for full replay vs incremental ingest, idempotent re-sync, the last health status restored on restart, and no write side effects (read-only dependencies). Actual contract allocation/payment end-to-end remains open.
 

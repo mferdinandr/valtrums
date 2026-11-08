@@ -24,6 +24,20 @@ Deliver testnet integrations and observability and its acceptance scenarios with
 - RPC chain guard (`agent/src/chain-guard.ts`). `assertRpcChain` fails closed on a different, missing, malformed or unreadable chain id and never echoes the RPC URL. The foreign executor re-checks before every signature request and before every broadcast (no cached trust after a first pass); the custody verifier checks before accepting a source receipt and returns Pending with the reason. The audit liquidity reader keeps its separate mainnet check; the payout reconciler already checks per pass.
 - Reference-token registry (`contracts/arena/src/reference_registry.rs`, `agent/src/reference-registry.ts`). Entries live in the arena contract, keyed by testnet chain and lowercase token; only the owner adds or removes them (exactly one yocto), and creators cannot. Entries must reference chain `4663`; a token has at most one entry and a reference token backs at most one token, so a change is an explicit remove then add. The entry hash is SHA-256 over the JSON array `[chain_id, token, reference_chain_id, reference]` (decimal strings, lowercase addresses), shared with the agent through a test vector; every change bumps the registry version and emits `reference_registry_updated` (not modelled by the indexer yet). `create_lifecycle_battle` refuses an unregistered or different declared pair and a registered token without its pair; existing battles keep their committed pair and the audit re-checks it every pass. The agent reads every page once per pass, recomputes each hash and refuses a malformed, incomplete or concurrently changed read; audit (`resolveAuditReference`) and scoring (`resolveScoringSubject`) resolve from that one snapshot. `AUDIT_REFERENCE_REGISTRY` is removed and startup fails if it is set. Deployments are fresh (no state migration). No entries are registered: the candidate tokens still need owner verification.
 
+- Account state and recovery alerts (#79, D27). Read-only; no write authority.
+  - **`inspect_account_state`** (account-scoped) returns three separate lists, each item with source and observation time:
+    - **entitlements:** per backing, from `entitlement_of`;
+    - **transfers:** payout records with their display stage, where only `confirmed` is paid;
+    - **DAO principal:** position, vote status from `get_lifecycle_disposition`, the account's return release, and the backing's `get_escrow_disposition` (returned, burn pending, burn confirmed).
+  - **`list_recovery_alerts`** recomputes alerts on every read, so there is no stored alert to go stale:
+    - a missing or expired audit on an open battle;
+    - missing market data (a locked round more than 5 minutes past its end without a winner);
+    - a backing deficit, suspension or unbalanced ledger;
+    - a payout that is reverted or needs reconciliation;
+    - an indexer that needs reconciliation, is degraded, or is stale (no committed sync for 10 minutes).
+  - **Indexer health** comes from the indexer's `state.json` (read-only, `INDEXER_STATE_DIR`), and its modification time is the last sync. A missing or unreadable state is reported as degraded, never as healthy.
+  - **Web:** the portfolio page shows both panels. The account panel takes a read-session token, because the wallet integration has no NEP-413 `signMessage` yet.
+
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.
