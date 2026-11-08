@@ -23,6 +23,6 @@ Check tasks only after implementation and verification. Coordinate lifecycle sna
 
 ## Entitlement boundary
 
-- [ ] Expose available, reserved, broadcast, confirmation-pending and confirmed states without treating a hash as payment.
+- [x] Expose available, reserved, broadcast, confirmation-pending and confirmed states without treating a hash as payment.
 - [x] Allow independently backed losing-token rewards to proceed while winning principal awaits DAO disposition.
-- [ ] Test independent token payout progress and lost-response retry without repeating allocation or fees.
+- [x] Test independent token payout progress and lost-response retry without repeating allocation or fees.
