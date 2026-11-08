@@ -12,6 +12,7 @@ import {
 import { type EvmAddressResolver, battlePath } from "./evm-address.js";
 import type { EvmQuoteSource } from "./evm-quote.js";
 import { receivedAmount } from "./evm-receipt.js";
+import { assertRpcChain } from "./chain-guard.js";
 import type { EvmReceipt, EvmRpc } from "./evm-rpc.js";
 import { type DecodedTx, decodeTx, txHash } from "./evm-tx.js";
 import type { StepExecutor } from "./executor.js";
@@ -335,6 +336,7 @@ export class ForeignChainStepExecutor implements StepExecutor {
     to: string,
   ): Promise<Request> {
     const { rpc, client } = this.deps;
+    await this.verifyRpcChain();
     const nonce = await rpc.getTransactionCount(wallet, "pending");
     const fees = await rpc.getFees();
     const data = callData(call);
@@ -386,6 +388,7 @@ export class ForeignChainStepExecutor implements StepExecutor {
           `nonce ${tx.nonce} of ${wallet} was used by another transaction; request ${request.id} cannot be sent`,
         );
       }
+      await this.verifyRpcChain();
       try {
         await rpc.sendRawTransaction(`0x${signed.signed_tx}`);
         this.log.info("transaction broadcast", { ...fields, txHash: hash });
@@ -470,21 +473,24 @@ export class ForeignChainStepExecutor implements StepExecutor {
   }
 
   private async verifyChain(foreign: ForeignConfigView): Promise<void> {
-    if (this.verifiedChain) return;
+    if (this.verifiedChain) return this.verifyRpcChain();
     if (BigInt(foreign.chain_id) !== this.cfg.chainId) {
       throw new ForeignExecutionError(
         "config",
         `arena chain id ${foreign.chain_id} differs from FOREIGN_CHAIN_ID ${this.cfg.chainId}`,
       );
     }
-    const rpcChain = await this.deps.rpc.chainId();
-    if (rpcChain !== this.cfg.chainId) {
-      throw new ForeignExecutionError(
-        "config",
-        `the EVM RPC serves chain ${rpcChain}, expected ${this.cfg.chainId}`,
-      );
-    }
     this.verifiedChain = true;
+    await this.verifyRpcChain();
+  }
+
+  /** Re-checked before every signature request and broadcast: an RPC can be swapped or fail over mid-run. */
+  private async verifyRpcChain(): Promise<void> {
+    try {
+      await assertRpcChain(this.deps.rpc, this.cfg.chainId, "foreign-chain RPC");
+    } catch (err) {
+      throw new ForeignExecutionError("config", errorMessage(err));
+    }
   }
 }
 
