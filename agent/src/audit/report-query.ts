@@ -25,7 +25,7 @@ export type ObservationView = {
   seq: number;
   archivedAt: string;
   provenance: ArchiveProvenance;
-  domain: { arena: string; network: string };
+  domain: { arena: string; custodyDomain: string };
   attribution: { battleId: number; community: number };
   /** Immutable stored result; never rewritten into another verdict. */
   historicalResult: AuditResult;
@@ -38,7 +38,7 @@ export type ObservationView = {
 
 export interface ReportQuery {
   arena?: string;
-  network?: string;
+  custodyDomain?: string;
   battleId?: number;
   community?: number;
   chainId?: string;
@@ -138,7 +138,7 @@ const encodeCursor = (seq: number): string => Buffer.from(String(seq), "utf8").t
 export function normalizeQuery(raw: ReportQuery): Required<Pick<ReportQuery, "pageSize">> & ReportQuery {
   const q: ReportQuery = {};
   if (raw.arena !== undefined) q.arena = String(raw.arena);
-  if (raw.network !== undefined) q.network = String(raw.network);
+  if (raw.custodyDomain !== undefined) q.custodyDomain = String(raw.custodyDomain);
   if (raw.policyVersion !== undefined) q.policyVersion = String(raw.policyVersion);
   if (raw.chainId !== undefined) {
     if (!/^[0-9]+$/.test(String(raw.chainId))) throw new QueryValidationError("chainId must be numeric");
@@ -182,7 +182,7 @@ export function normalizeQuery(raw: ReportQuery): Required<Pick<ReportQuery, "pa
 function matches(view: ObservationView, q: ReportQuery): boolean {
   const r = view.report;
   if (q.arena !== undefined && view.domain.arena !== q.arena) return false;
-  if (q.network !== undefined && view.domain.network !== q.network) return false;
+  if (q.custodyDomain !== undefined && view.domain.custodyDomain !== q.custodyDomain) return false;
   if (q.battleId !== undefined && view.attribution.battleId !== q.battleId) return false;
   if (q.community !== undefined && view.attribution.community !== q.community) return false;
   if (q.chainId !== undefined && r.asset.chainId !== q.chainId) return false;

@@ -43,7 +43,7 @@ function queryFromParams(params: URLSearchParams): ReportQuery {
     const v = params.get(k);
     if (v !== null) (q as Record<string, unknown>)[k] = v;
   };
-  for (const k of ["arena", "network", "chainId", "token", "referenceToken", "policyVersion", "policyHash", "cursor"] as const) {
+  for (const k of ["arena", "custodyDomain", "chainId", "token", "referenceToken", "policyVersion", "policyHash", "cursor"] as const) {
     str(k);
   }
   const result = params.get("result");

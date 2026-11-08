@@ -16,14 +16,18 @@ import type { AuditReport } from "./report.js";
  * verbatim in every stored report and never flattened here.
  *
  * Identity model (read `decision.ts`): `evidenceHash` identifies the evidence (GoPlus + LP + asset
- * + policy) but does NOT commit to `decidedAt`/`result`/`expiresAt`. The same evidence re-evaluated
- * later can legitimately produce a different result (e.g. a pass that later goes stale), so an
- * archive keyed only by `evidenceHash` would lose history. We therefore key by a content-derived
- * `observationId` over the immutable observation core, so:
- *   - an identical observation re-archived is idempotent (no duplicate),
- *   - differing legitimate evaluations of the same evidence are preserved as separate observations,
- *   - a value claiming an existing `observationId` but with different bytes is rejected, never
- *     overwritten, so committed history is immutable.
+ * + policy) but does NOT commit to `result`/`reasons`. The same evidence re-evaluated later can
+ * legitimately produce a different result (e.g. a pass that later goes stale), so an archive keyed
+ * only by `evidenceHash` would lose history. We therefore key by a content-derived `observationId`
+ * over the observation's DECISION content — provenance, domain, attribution and the report minus its
+ * wall-clock `times` (`queriedAt`/`decidedAt`/`expiresAt`, which advance every scheduler pass for an
+ * unchanged decision; the policy-derived `ttlSeconds` is kept). See {@link identityProjection}. So:
+ *   - re-archiving the same decision is idempotent whatever the pass clock — a pending or rejected
+ *     community re-evaluated every tick yields ONE observation, not one per tick (no unbounded growth),
+ *   - a genuinely different evaluation (different result, reasons, evidence or policy) is preserved as
+ *     a separate observation, keeping the first-seen timestamps,
+ *   - a value claiming an existing `observationId` but with different decision content is rejected,
+ *     never overwritten, so committed history is immutable.
  */
 
 export const ARCHIVE_SCHEMA = "audit-report-archive-v1";
@@ -47,11 +51,15 @@ export interface ArchiveObservationInput {
   provenance: ArchiveProvenance;
 }
 
-/** The immutable core hashed into `observationId`. `seq`/`archivedAt` are metadata, never hashed. */
+/**
+ * The observation core. Its decision projection ({@link identityProjection}) is hashed into
+ * `observationId`; `seq`, `archivedAt` and the report's wall-clock `times` are metadata, never part
+ * of the identity. `domain.custodyDomain` is the asset's custody domain (not a chain/network label).
+ */
 interface ObservationCore {
   reportSchemaVersion: string;
   provenance: ArchiveProvenance;
-  domain: { arena: string; network: string };
+  domain: { arena: string; custodyDomain: string };
   attribution: { battleId: number; community: number };
   report: AuditReport;
 }
@@ -181,13 +189,77 @@ function coreOf(input: ArchiveObservationInput): ObservationCore {
   return {
     reportSchemaVersion: REPORT_SCHEMA_VERSION,
     provenance: input.provenance,
-    domain: { arena: input.attribution.arena, network: input.report.asset.custodyDomain },
+    domain: { arena: input.attribution.arena, custodyDomain: input.report.asset.custodyDomain },
     attribution: { battleId: input.attribution.battleId, community: input.attribution.community },
     report: input.report,
   };
 }
 
+/**
+ * The decision content an `observationId` commits to: everything in the core except the report's
+ * wall-clock `times`. `queriedAt`/`decidedAt`/`expiresAt` advance on every scheduler pass for an
+ * unchanged decision, so hashing them would make a pending or rejected community grow the archive by
+ * one observation per tick. The policy-derived `ttlSeconds` is kept (it only moves with the policy,
+ * which is already covered by `policy.hash`). Fields are listed explicitly so a stored observation's
+ * envelope metadata (`observationId`/`seq`/`archivedAt`) can never leak into the identity.
+ */
+function identityProjection(core: ObservationCore): unknown {
+  return {
+    reportSchemaVersion: core.reportSchemaVersion,
+    provenance: core.provenance,
+    domain: core.domain,
+    attribution: core.attribution,
+    report: { ...core.report, times: { ttlSeconds: core.report.times.ttlSeconds } },
+  };
+}
+
+/** Content-derived identity: hash of the decision projection, independent of the pass wall-clock. */
+function observationIdOf(core: ObservationCore, hashFn: (text: string) => string): string {
+  return hashFn(canonicalJson(identityProjection(core)));
+}
+
+/** True when two cores carry the same decision content (ignoring wall-clock); the collision guard. */
+function sameDecision(a: ObservationCore, b: ObservationCore): boolean {
+  return canonicalJson(identityProjection(a)) === canonicalJson(identityProjection(b));
+}
+
 const sha256Hex = (text: string): string => bytesToHex(sha256(utf8ToBytes(text)));
+
+/**
+ * Whole-file structural integrity, checked on every load so a hand-edited archive cannot pass by
+ * repairing only per-observation hashes. Requires unique observation ids, strictly increasing `seq`
+ * (so duplicate, missing or reordered observations are caught), `nextSeq` past the largest `seq`, a
+ * well-formed `archivedAt`, and a report that still passes {@link validateObservationInput} — the
+ * shape is re-checked on read, not only its hash.
+ */
+function assertArchiveIntegrity(observations: ArchivedObservation[], nextSeq: number): void {
+  const ids = new Set<string>();
+  let prevSeq = 0;
+  let maxSeq = 0;
+  for (const o of observations) {
+    if (ids.has(o.observationId)) throw new ArchiveCorruptError("duplicate observation id");
+    ids.add(o.observationId);
+    if (!Number.isInteger(o.seq) || o.seq < 1) throw new ArchiveCorruptError("seq must be a positive integer");
+    if (o.seq <= prevSeq) throw new ArchiveCorruptError("seq is not strictly increasing");
+    prevSeq = o.seq;
+    if (o.seq > maxSeq) maxSeq = o.seq;
+    if (typeof o.archivedAt !== "string" || !isIso(o.archivedAt)) {
+      throw new ArchiveCorruptError("archivedAt is not a valid timestamp");
+    }
+    try {
+      validateObservationInput({
+        report: o.report,
+        attribution: { arena: o.domain.arena, battleId: o.attribution.battleId, community: o.attribution.community },
+        provenance: o.provenance,
+      });
+    } catch (err) {
+      throw new ArchiveCorruptError(`stored report fails validation: ${err instanceof Error ? err.message : "unknown"}`);
+    }
+  }
+  if (!Number.isInteger(nextSeq) || nextSeq <= maxSeq) {
+    throw new ArchiveCorruptError("nextSeq must be greater than the largest seq");
+  }
+}
 
 function assertSupportedObservation(o: unknown, hashFn: (s: string) => string): ArchivedObservation {
   if (!o || typeof o !== "object") throw new ArchiveCorruptError("observation is not an object");
@@ -201,12 +273,12 @@ function assertSupportedObservation(o: unknown, hashFn: (s: string) => string): 
   const core: ObservationCore = {
     reportSchemaVersion: rec.reportSchemaVersion,
     provenance: rec.provenance as ArchiveProvenance,
-    domain: rec.domain as { arena: string; network: string },
+    domain: rec.domain as { arena: string; custodyDomain: string },
     attribution: rec.attribution as { battleId: number; community: number },
     report: rec.report as AuditReport,
   };
   // Re-derive the id so a hand-edited or corrupted body cannot masquerade as a valid observation.
-  if (hashFn(canonicalJson(core)) !== rec.observationId) {
+  if (observationIdOf(core, hashFn) !== rec.observationId) {
     throw new ArchiveCorruptError("observation id does not match its contents");
   }
   return rec as ArchivedObservation;
@@ -281,6 +353,7 @@ export class JsonFileReportArchive implements ReportArchive {
       throw new ArchiveCorruptError("archive header is malformed");
     }
     const observations = file.observations.map((o) => assertSupportedObservation(o, this.hashFn));
+    assertArchiveIntegrity(observations, file.nextSeq as number);
     return { schema: ARCHIVE_SCHEMA, nextSeq: file.nextSeq as number, observations };
   }
 
@@ -292,17 +365,15 @@ export class JsonFileReportArchive implements ReportArchive {
   put(input: ArchiveObservationInput): Promise<PutResult> {
     validateObservationInput(input);
     const core = coreOf(input);
-    const observationId = this.hashFn(canonicalJson(core));
+    const observationId = observationIdOf(core, this.hashFn);
     const run = () =>
       this.withLock(async () => {
         const file = await this.load();
         const existing = file.observations.find((o) => o.observationId === observationId);
         if (existing) {
-          // Same id, same bytes: idempotent. Same id, different bytes: a hash collision or tampering
-          // — refuse rather than overwrite committed history.
-          if (canonicalJson(coreOf({ report: existing.report, attribution: { arena: existing.domain.arena, battleId: existing.attribution.battleId, community: existing.attribution.community }, provenance: existing.provenance })) === canonicalJson(core)) {
-            return { observation: existing, created: false };
-          }
+          // Same id and same decision content: idempotent (the first-written timestamps are kept). Same
+          // id, different content: a hash collision or tampering — refuse rather than overwrite history.
+          if (sameDecision(existing, core)) return { observation: existing, created: false };
           throw new ArchiveConflictError(observationId);
         }
         if (file.observations.length >= MAX_OBSERVATIONS) {
@@ -389,15 +460,10 @@ export class InMemoryReportArchive implements ReportArchive {
   async put(input: ArchiveObservationInput): Promise<PutResult> {
     validateObservationInput(input);
     const core = coreOf(input);
-    const observationId = this.hashFn(canonicalJson(core));
+    const observationId = observationIdOf(core, this.hashFn);
     const existing = this.byId.get(observationId);
     if (existing) {
-      const existingCore = coreOf({
-        report: existing.report,
-        attribution: { arena: existing.domain.arena, battleId: existing.attribution.battleId, community: existing.attribution.community },
-        provenance: existing.provenance,
-      });
-      if (canonicalJson(existingCore) === canonicalJson(core)) return { observation: existing, created: false };
+      if (sameDecision(existing, core)) return { observation: existing, created: false };
       throw new ArchiveConflictError(observationId);
     }
     if (this.byId.size >= MAX_OBSERVATIONS) throw new ArchiveValidationError("archive observation limit reached");

@@ -66,7 +66,7 @@ describe("lifecycle archive sink (fixture-only)", () => {
     expect(result).toEqual({ checked: 1, ready: 1, errors: 0 });
     const snap = await archive.snapshot();
     expect(snap).toHaveLength(1);
-    expect(snap[0]!.domain).toEqual({ arena: "arena.testnet", network: "vault-1" });
+    expect(snap[0]!.domain).toEqual({ arena: "arena.testnet", custodyDomain: "vault-1" });
     expect(snap[0]!.attribution).toEqual({ battleId: 1, community: 0 });
     expect(snap[0]!.report.auditKind).toBe("reference_token");
     expect(snap[0]!.provenance).toBe("recorded");
@@ -126,6 +126,23 @@ describe("lifecycle archive sink (fixture-only)", () => {
     expect(await inner.snapshot()).toHaveLength(1);
   });
 
+  it("re-archives a pending community once across many passes with an advancing clock", async () => {
+    const archive = new InMemoryReportArchive();
+    const calls: unknown[][] = [];
+    // 12:11Z: the fixture evidence (queried 11:59Z, TTL 600s) is stale, so the community is pending
+    // and the refresh re-evaluates it on every pass.
+    let clock = new Date(NOW.getTime() + 11 * 60_000);
+    const refresh = { ...baseRefresh([], calls), now: () => clock, records: new Map() };
+    const pass = createLifecycleAuditPass({ source: source({ 1: view() }), archive, arena: "arena.testnet", refresh });
+    for (let i = 0; i < 10; i++) {
+      clock = new Date(clock.getTime() + 30_000); // each scheduler tick advances the wall clock
+      await pass();
+    }
+    const snap = await archive.snapshot();
+    expect(snap).toHaveLength(1); // one pending observation, not one per tick
+    expect(snap[0]!.report.result).toBe("pending");
+  });
+
   it("does not let one community's report overwrite another's history", async () => {
     const archive = new InMemoryReportArchive();
     const calls: unknown[][] = [];
@@ -146,7 +163,7 @@ describe("lifecycle archive sink (fixture-only)", () => {
     const snap = await archive.snapshot();
     expect(snap).toHaveLength(2);
     expect(snap.map((o) => o.attribution.community).sort((a, b) => a - b)).toEqual([0, 1]);
-    expect(snap.map((o) => o.domain.network).sort()).toEqual(["vault-1", "vault-2"]);
+    expect(snap.map((o) => o.domain.custodyDomain).sort()).toEqual(["vault-1", "vault-2"]);
   });
 
   it("skips locked battles so no report is archived for them", async () => {

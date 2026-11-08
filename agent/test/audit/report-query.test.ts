@@ -80,7 +80,7 @@ function mkObs(report: AuditReport, attribution: { arena: string; battleId: numb
     archivedAt: NOW.toISOString(),
     reportSchemaVersion: "audit-report-v1",
     provenance: "fixture",
-    domain: { arena: attribution.arena, network: report.asset.custodyDomain },
+    domain: { arena: attribution.arena, custodyDomain: report.asset.custodyDomain },
     attribution: { battleId: attribution.battleId, community: attribution.community },
     report,
   };

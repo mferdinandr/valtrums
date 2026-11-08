@@ -46,7 +46,7 @@ describe("JsonFileReportArchive persistence", () => {
     expect(reopened).toHaveLength(1);
     expect(reopened[0]!.report).toEqual(r);
     expect(reopened[0]!.observationId).toBe(first.observation.observationId);
-    expect(reopened[0]!.domain).toEqual({ arena: "a.testnet", network: asset.custodyDomain });
+    expect(reopened[0]!.domain).toEqual({ arena: "a.testnet", custodyDomain: asset.custodyDomain });
     expect(reopened[0]!.attribution).toEqual({ battleId: 1, community: 0 });
   });
 
@@ -75,6 +75,25 @@ describe("JsonFileReportArchive persistence", () => {
     expect(snap).toHaveLength(2);
     expect(snap.map((o) => o.report.result).sort()).toEqual(["pass", "pending"]);
     expect(new Set(snap.map((o) => o.observationId)).size).toBe(2);
+  });
+
+  it("re-archives an unchanged pending decision idempotently as the pass clock advances", async () => {
+    const a = new JsonFileReportArchive(join(dir, "archive.json"));
+    const base = report({}, new Date(NOW.getTime() + 11 * 60_000)); // stale evidence -> pending
+    expect(base.result).toBe("pending");
+    // The scheduler re-evaluates a pending community every tick: identical evidence, result and
+    // reasons, only the wall-clock decidedAt advances. This must not grow the archive by one per tick.
+    let firstDecidedAt = "";
+    for (let i = 0; i < 10; i++) {
+      const decidedAt = new Date(NOW.getTime() + (12 + i) * 60_000).toISOString();
+      if (i === 0) firstDecidedAt = decidedAt;
+      const tick: AuditReport = { ...base, times: { ...base.times, decidedAt } };
+      const res = await a.put(input(tick));
+      expect(res.created).toBe(i === 0); // only the first tick writes; the rest are idempotent
+    }
+    const snap = await a.snapshot();
+    expect(snap).toHaveLength(1); // one observation, not ten
+    expect(snap[0]!.report.times.decidedAt).toBe(firstDecidedAt); // first-seen timestamp kept
   });
 
   it("rejects a conflicting observation id rather than overwriting history", async () => {
@@ -170,6 +189,58 @@ describe("JsonFileReportArchive refuses corrupt or unsupported state", () => {
 
   it("reports an empty archive for a missing file without creating it", async () => {
     expect(await new JsonFileReportArchive(join(dir, "nope", "archive.json")).snapshot()).toEqual([]);
+  });
+
+  it("rejects a duplicated observation on load", async () => {
+    const path = join(dir, "archive.json");
+    const a = new JsonFileReportArchive(path);
+    await a.put(input(report()));
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.observations.push({ ...parsed.observations[0] }); // same id and seq
+    parsed.nextSeq = 3;
+    await writeFile(path, JSON.stringify(parsed), "utf8");
+    await expect(new JsonFileReportArchive(path).snapshot()).rejects.toBeInstanceOf(ArchiveCorruptError);
+  });
+
+  it("rejects a file whose seq values are not strictly increasing", async () => {
+    const path = join(dir, "archive.json");
+    const a = new JsonFileReportArchive(path);
+    await a.put(input(report()));
+    await a.put(input(report({ buy_tax: "0.01" }))); // a second, distinct observation at seq 2
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.observations[1].seq = 1; // seq becomes [1, 1]
+    await writeFile(path, JSON.stringify(parsed), "utf8");
+    await expect(new JsonFileReportArchive(path).snapshot()).rejects.toBeInstanceOf(ArchiveCorruptError);
+  });
+
+  it("rejects a file whose nextSeq does not exceed the largest seq", async () => {
+    const path = join(dir, "archive.json");
+    const a = new JsonFileReportArchive(path);
+    await a.put(input(report()));
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.nextSeq = 1; // largest stored seq is 1, so nextSeq must be > 1
+    await writeFile(path, JSON.stringify(parsed), "utf8");
+    await expect(new JsonFileReportArchive(path).snapshot()).rejects.toBeInstanceOf(ArchiveCorruptError);
+  });
+
+  it("rejects a malformed archivedAt metadata timestamp on load", async () => {
+    const path = join(dir, "archive.json");
+    const a = new JsonFileReportArchive(path);
+    await a.put(input(report()));
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.observations[0].archivedAt = "not-a-date"; // metadata, not part of the hashed id
+    await writeFile(path, JSON.stringify(parsed), "utf8");
+    await expect(new JsonFileReportArchive(path).snapshot()).rejects.toBeInstanceOf(ArchiveCorruptError);
+  });
+
+  it("validates the stored report shape on read, not only its hash", async () => {
+    const path = join(dir, "archive.json");
+    const a = new JsonFileReportArchive(path);
+    await a.put(input(report()));
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.observations[0].report.times.decidedAt = "nope"; // excluded from the id, so the id still matches
+    await writeFile(path, JSON.stringify(parsed), "utf8");
+    await expect(new JsonFileReportArchive(path).snapshot()).rejects.toBeInstanceOf(ArchiveCorruptError);
   });
 });
 

@@ -71,7 +71,7 @@ function queryFromFlags(flags: Map<string, string>): ReportQuery {
     const v = flags.get(k);
     if (v !== undefined) (q as Record<string, unknown>)[k] = v;
   };
-  for (const k of ["arena", "network", "chainId", "token", "referenceToken", "result", "freshness", "policyVersion", "policyHash", "battleId", "community", "pageSize", "cursor"] as const) {
+  for (const k of ["arena", "custodyDomain", "chainId", "token", "referenceToken", "result", "freshness", "policyVersion", "policyHash", "battleId", "community", "pageSize", "cursor"] as const) {
     copy(k);
   }
   return q;

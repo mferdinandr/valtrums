@@ -85,8 +85,10 @@ export interface LifecycleAuditPassDeps {
  * arena/battle/community attribution (the community index comes from the current view, never from
  * splitting a record key), and a bounded structured summary is logged. A sink failure is surfaced
  * as an error and logged, isolates the other battles, and never changes policy evaluation, the
- * `ready` count or on-chain submission. Because a still-fresh approval is re-archived every pass
- * with an idempotent put, a failed archive can be retried on the next pass with no provider call.
+ * `ready` count or on-chain submission. The archive keys observations by decision content, not the
+ * pass clock, so re-archiving an unchanged decision — including a pending or rejected community that
+ * is re-evaluated every pass — is idempotent and does not grow the archive; a failed archive can be
+ * retried on the next pass with no provider call.
  */
 export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Promise<{ checked: number; ready: number; errors: number }> {
   const log = deps.log ?? silentLogger;
@@ -131,7 +133,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
               auditKind: built.auditKind,
               referenceToken: built.reference?.token ?? null,
               assetToken: built.asset.token,
-              network: built.asset.custodyDomain,
+              custodyDomain: built.asset.custodyDomain,
               expiresAt: built.times.expiresAt,
               reasonCodes: built.reasons.map((r) => r.code).slice(0, 32),
               observationId: put.observation.observationId,
