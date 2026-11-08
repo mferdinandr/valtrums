@@ -12,8 +12,8 @@ pub struct Ledger {
     pub payouts: u128,
     pub disposal: u128,
     pub unallocated: u128,
-    /// Winning principal held for DAO governance (D22). Nothing in this
-    /// contract moves units out of it yet: the vote and its execution are #75.
+    /// Winning principal held for DAO governance (D22). Units leave it only
+    /// through the arena's DAO releases (`dao`): to entitlements or disposal.
     pub escrow: u128,
 }
 

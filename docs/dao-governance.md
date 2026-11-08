@@ -57,8 +57,26 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 - **Open ballot.** Votes are visible, so late voters can react to the running tally.
 - **Burn is a sink, not a supply burn.** Total supply of the Robinhood token does not change; reports must say "sent to sink".
 
+## Implementation (issue #75)
+
+Owner decisions taken for the implementation (D24): the window is 1 minute to 30 days, set by the protocol account; the sink is set once per token by the backing owner; a burn whose transfer provably did not happen stays reserved and is retried, never released back.
+
+- **Arena** (`contracts/arena/src/dao_api.rs`):
+  - `set_lifecycle_dao_window(window_secs)` (protocol account, one yocto). A battle created while no window is set has no vote, and its principal stays escrowed.
+  - `vote_lifecycle_disposition(battle_id, burn)`. Votes and the plan use each winner's frozen position. The voter pays the storage.
+  - `execute_lifecycle_disposition(battle_id, max_releases)`: permissionless, batched, and needs `reserve_lifecycle_escrow` first.
+  - Views: `get_lifecycle_disposition`, `get_lifecycle_disposition_releases`.
+- **Backing** (`contracts/backing/src/dao.rs`):
+  - `set_dao_sink` (owner, once).
+  - `release_escrow_return`: escrow → the winner's entitlement.
+  - `release_escrow_burn`: escrow → a disposal reservation to the sink, held by the arena under the release id.
+  - `reserve_dao_burn`: payout authority only. It hands the reservation to the payout contract.
+  - `get_escrow_disposition`: returned, burn pending, burn confirmed, still escrowed.
+  - `confirm_payout` consumes a DAO burn only with a finalized debit to the sink.
+- **Payout** (`contracts/payout/src/contract.rs`): `request_dao_burn(backing, holder, request_id, destination)`. It's permissionless (the operator attaches one yocto, anyone else the request deposit), then follows the normal signing and confirmation path. A failed request refunds whoever paid.
+
 ## Open items left by this design
 
-- The concrete default `dao_vote_window` value and its allowed range: protocol-adjustable, chosen by the owner at deployment.
-- The sink address per token. `0x000000000000000000000000000000000000dEaD` is the expected default, but it must be checked per token, because some tokens block transfers to it.
+- The concrete default window value at deployment (within the decided 1 minute to 30 days).
+- The sink address per token. `0x000000000000000000000000000000000000dEaD` is the expected default, but the owner must check per token that it accepts transfers before setting it, because it cannot be changed.
 - Whether a participant's bound destination for returns is the same one used for reward payouts (expected yes; this belongs to the payout/identity work, OQ-IDENTITY).

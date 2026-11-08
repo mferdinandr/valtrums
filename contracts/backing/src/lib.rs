@@ -20,6 +20,7 @@ use near_sdk::{
     Promise, PromiseError, PromiseOrValue,
 };
 
+pub mod dao;
 pub mod ledger;
 pub mod normalization;
 pub mod receipt;
@@ -89,6 +90,8 @@ enum StorageKey {
     LateReceipts,
     LateByRefund,
     PrincipalEscrows,
+    EscrowReleases,
+    EscrowProgress,
 }
 
 /// Identity and precision are immutable for this contract instance.
@@ -110,7 +113,7 @@ pub struct LedgerView {
     pub payouts: U128,
     pub disposal: U128,
     pub unallocated: U128,
-    /// Winning principal held for DAO governance; no exit exists yet.
+    /// Winning principal held for DAO governance; leaves only through `dao` releases.
     pub escrow: U128,
     /// Arithmetic consistency only; does not verify current source custody.
     pub accounting_balanced: bool,
@@ -176,7 +179,7 @@ impl From<FinalizedDebitInput> for reservation::FinalizedDebit {
 }
 
 /// Winning principal of one battle held in escrow for DAO governance (D22).
-/// Immutable once recorded; there is no release or disposal method yet.
+/// Immutable once recorded; released only through the arena's DAO execution (`dao`).
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrincipalEscrow {
@@ -232,6 +235,11 @@ pub struct Backing {
     late_receipts: LookupMap<receipt::ReceiptId, LateDeposit>,
     /// Escrowed winning principal per arena escrow id; see `reserve_principal_escrow`.
     principal_escrows: LookupMap<[u8; 32], PrincipalEscrow>,
+    /// Frozen Robinhood address that receives DAO burns; set once by the owner.
+    dao_sink: Option<[u8; 20]>,
+    /// Releases of escrowed principal by release id (see `dao`).
+    escrow_releases: LookupMap<[u8; 32], dao::EscrowRelease>,
+    escrow_progress: LookupMap<[u8; 32], dao::EscrowProgress>,
 }
 
 #[near]
@@ -321,6 +329,9 @@ impl Backing {
             late_total: 0,
             late_receipts: LookupMap::new(StorageKey::LateReceipts),
             principal_escrows: LookupMap::new(StorageKey::PrincipalEscrows),
+            dao_sink: None,
+            escrow_releases: LookupMap::new(StorageKey::EscrowReleases),
+            escrow_progress: LookupMap::new(StorageKey::EscrowProgress),
         }
     }
 
@@ -675,7 +686,9 @@ impl Backing {
     }
 
     /// Consume a payout reservation after the payout authority has verified a
-    /// matching finalized debit. Exactly-once; a repeat returns false.
+    /// matching finalized debit. Exactly-once; a repeat returns false. A DAO
+    /// burn (see `dao`) is consumed the same way, from the disposal bucket, and
+    /// only then counts as a confirmed source burn.
     pub fn confirm_payout(
         &mut self,
         beneficiary: AccountId,
@@ -683,6 +696,22 @@ impl Backing {
         evidence: FinalizedDebitInput,
     ) -> bool {
         self.assert_payout_authority();
+        if self.is_dao_burn(&beneficiary, &request_id) {
+            let fresh = self
+                .confirm_debit_evidence(
+                    (beneficiary, request_id),
+                    evidence.into(),
+                    &[reservation::ReservationKind::Disposal],
+                    true,
+                )
+                .unwrap_or_else(|error| {
+                    env::panic_str(&format!("Confirmation rejected: {error:?}"))
+                });
+            if fresh {
+                self.record_burn_confirmed(&request_id);
+            }
+            return fresh;
+        }
         self.confirm_payout_reservation(beneficiary, request_id, evidence.into())
             .unwrap_or_else(|error| env::panic_str(&format!("Confirmation rejected: {error:?}")))
     }
@@ -2752,6 +2781,216 @@ mod tests {
         funded_arena(&mut contract, 100);
         context("arena.testnet", 10_u128.pow(23));
         contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(101));
+    }
+
+    // ---- DAO disposition of escrowed principal (#75) ---------------------------
+
+    const SINK: [u8; 20] = [0xde; 20];
+
+    fn escrowed(amount: u128) -> Backing {
+        let mut contract = contract();
+        funded_arena(&mut contract, amount);
+        context("arena.testnet", 10_u128.pow(23));
+        assert!(contract.reserve_principal_escrow([7; 32], U64(1), 0, U128(amount)));
+        context("owner.testnet", 1);
+        contract.set_dao_sink(SINK);
+        contract
+    }
+
+    fn sink_debit(amount: u128, tx: u8) -> FinalizedDebitInput {
+        FinalizedDebitInput {
+            chain_id: U64(46630),
+            token_address: asset().token_address,
+            custody_domain: "fixture".into(),
+            destination: SINK,
+            source_amount: U128(amount),
+            recipient_received: U128(amount),
+            transaction_hash: [tx; 32],
+            log_index: 0,
+            block_hash: [5; 32],
+        }
+    }
+
+    #[test]
+    fn dao_sink_is_owner_only_once_and_nonzero() {
+        let mut contract = contract();
+        context("arena.testnet", 1);
+        assert!(panics(|| contract.set_dao_sink(SINK)));
+        context("owner.testnet", 1);
+        assert!(panics(|| contract.set_dao_sink([0; 20])));
+        contract.set_dao_sink(SINK);
+        assert!(panics(|| contract.set_dao_sink([0xaa; 20])));
+        assert_eq!(
+            contract.get_dao_sink(),
+            Some(format!("0x{}", "de".repeat(20)))
+        );
+    }
+
+    #[test]
+    fn split_decision_returns_entitlements_and_reserves_the_burn_for_the_sink() {
+        let mut contract = escrowed(100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        assert!(contract.release_escrow_return([7; 32], [11; 32], bob.clone(), U128(25)));
+        assert!(contract.release_escrow_burn([7; 32], [12; 32], U128(75)));
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(25));
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (
+                ledger.escrow,
+                ledger.entitlements,
+                ledger.disposal,
+                ledger.custody
+            ),
+            (U128(0), U128(25), U128(75), U128(100))
+        );
+        assert!(ledger.accounting_balanced);
+        let view = contract.get_escrow_disposition([7; 32]).expect("view");
+        assert_eq!(
+            (
+                view.returned,
+                view.burn_pending,
+                view.burn_confirmed,
+                view.still_escrowed
+            ),
+            (U128(25), U128(75), U128(0), U128(0))
+        );
+        // The returned part pays out through the normal entitlement path.
+        context("payout.testnet", 1);
+        assert!(
+            contract
+                .reserve_payout(bob, [13; 32], U128(25), [9; 20])
+                .created
+        );
+    }
+
+    #[test]
+    fn releases_are_once_only_bounded_by_escrow_and_arena_only() {
+        let mut contract = escrowed(100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        assert!(contract.release_escrow_return([7; 32], [11; 32], bob.clone(), U128(60)));
+        // Replay of the same release changes nothing.
+        assert!(!contract.release_escrow_return([7; 32], [11; 32], bob.clone(), U128(60)));
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(60));
+        // The same id with other data, an over-release and a burn above the rest fail.
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_return([7; 32], [11; 32], bob.clone(), U128(61));
+        }));
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_return([7; 32], [14; 32], bob.clone(), U128(41));
+        }));
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_burn([7; 32], [15; 32], U128(41));
+        }));
+        // A return and a burn cannot share one release id.
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_burn([7; 32], [11; 32], U128(10));
+        }));
+        // Owner, payout authority, a winner and an unknown escrow are refused.
+        for caller in ["owner.testnet", "payout.testnet", "bob.testnet"] {
+            assert!(panics(|| {
+                context(caller, 10_u128.pow(23));
+                contract.release_escrow_burn([7; 32], [16; 32], U128(1));
+            }));
+        }
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_return([8; 32], [17; 32], bob.clone(), U128(1));
+        }));
+        assert_eq!(contract.get_ledger().escrow, U128(40));
+    }
+
+    #[test]
+    fn burn_needs_the_sink_and_is_confirmed_only_by_a_finalized_debit_to_it() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        assert!(contract.reserve_principal_escrow([7; 32], U64(1), 0, U128(100)));
+        // No sink yet: the burn cannot be reserved.
+        assert!(panics(|| {
+            context("arena.testnet", 10_u128.pow(23));
+            contract.release_escrow_burn([7; 32], [12; 32], U128(100));
+        }));
+        context("owner.testnet", 1);
+        contract.set_dao_sink(SINK);
+        context("arena.testnet", 10_u128.pow(23));
+        assert!(contract.release_escrow_burn([7; 32], [12; 32], U128(100)));
+        let arena = account("arena.testnet");
+        // Only the payout authority, with the sink as destination, can pick it up.
+        context("payout.testnet", 0);
+        assert!(panics(|| {
+            context("payout.testnet", 0);
+            contract.reserve_dao_burn(arena.clone(), [12; 32], [9; 20]);
+        }));
+        context("bob.testnet", 0);
+        assert!(panics(|| {
+            context("bob.testnet", 0);
+            contract.reserve_dao_burn(arena.clone(), [12; 32], SINK);
+        }));
+        context("payout.testnet", 0);
+        let picked = contract.reserve_dao_burn(arena.clone(), [12; 32], SINK);
+        assert_eq!((picked.created, picked.source_amount), (true, U128(100)));
+        // Representation burn already happened at escrow; that alone is not a source burn.
+        assert_eq!(
+            contract
+                .get_escrow_disposition([7; 32])
+                .expect("view")
+                .burn_confirmed,
+            U128(0)
+        );
+        // A failed attempt cannot release the burn back into circulation.
+        assert!(panics(|| {
+            context("payout.testnet", 0);
+            contract.release_payout(arena.clone(), [12; 32]);
+        }));
+        // Evidence to any other address does not confirm it.
+        let mut wrong = sink_debit(100, 3);
+        wrong.destination = [9; 20];
+        assert!(panics(|| {
+            context("payout.testnet", 0);
+            contract.confirm_payout(arena.clone(), [12; 32], wrong.clone());
+        }));
+        context("payout.testnet", 0);
+        assert!(contract.confirm_payout(arena.clone(), [12; 32], sink_debit(100, 3)));
+        // Replay of the same evidence is idempotent and counted once.
+        assert!(!contract.confirm_payout(arena.clone(), [12; 32], sink_debit(100, 3)));
+        let view = contract.get_escrow_disposition([7; 32]).expect("view");
+        assert_eq!(
+            (view.burn_pending, view.burn_confirmed),
+            (U128(0), U128(100))
+        );
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.custody, ledger.disposal, ledger.escrow),
+            (U128(0), U128(0), U128(0))
+        );
+        assert!(ledger.accounting_balanced);
+    }
+
+    #[test]
+    fn a_normal_payout_cannot_be_confirmed_as_a_dao_burn_or_vice_versa() {
+        let mut contract = escrowed(100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        assert!(contract.release_escrow_return([7; 32], [11; 32], bob.clone(), U128(40)));
+        assert!(contract.release_escrow_burn([7; 32], [12; 32], U128(60)));
+        context("payout.testnet", 0);
+        // A winner's entitlement reservation cannot be handed out as a DAO burn.
+        contract.reserve_payout(bob.clone(), [13; 32], U128(40), [9; 20]);
+        assert!(panics(|| {
+            context("payout.testnet", 0);
+            contract.reserve_dao_burn(bob.clone(), [13; 32], [9; 20]);
+        }));
+        // Only the arena-held burn id is a DAO burn.
+        assert!(panics(|| {
+            context("payout.testnet", 0);
+            contract.reserve_dao_burn(account("arena.testnet"), [11; 32], SINK);
+        }));
     }
 
     // ---- principal escrow ---------------------------------------------------

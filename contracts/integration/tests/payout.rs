@@ -23,6 +23,7 @@ struct World {
     alice: Account,
     relayer: Account,
     operator: Account,
+    owner: Account,
 }
 
 /// Synthetic setup: the registry claim, operator evidence and nonces below are
@@ -142,6 +143,7 @@ async fn world() -> anyhow::Result<World> {
         alice,
         relayer,
         operator,
+        owner,
     })
 }
 
@@ -935,6 +937,212 @@ async fn operator_can_start_a_late_refund_but_only_to_the_bound_address() -> any
     assert_eq!(
         (&ledger["payouts"], &ledger["late_refundable"]),
         (&json!("50"), &json!("0"))
+    );
+    assert_eq!(ledger["accounting_balanced"], true);
+    Ok(())
+}
+
+/// DAO burn (fixture evidence, not a live burn): the arena escrows a winning
+/// principal, releases a decided burn to the backing's frozen sink, and the
+/// payout contract executes it through the normal signing and confirmation
+/// path. Only a finalized debit to the sink confirms it.
+#[tokio::test]
+async fn a_dao_burn_is_paid_only_to_the_sink_and_confirmed_by_its_debit() -> anyhow::Result<()> {
+    let w = world().await?;
+    // A second finalized receipt held by the arena as a winning vault (battle 1 open).
+    let key = json!({"chain_id": "46630", "transaction_hash": vec![0x31u8; 32], "log_index": 0});
+    let claim = json!({"representation": w.backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": w.arena.id(), "refund_address": vec![0xbeu8; 20], "battle_id": "1", "actual_received": "50", "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
+    w.verifier
+        .call(w.registry.id(), "attest")
+        .args_json(json!({"key": key, "claim": claim}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let credited = w
+        .relayer
+        .call(w.backing.id(), "claim_receipt")
+        .args_json(json!({"transaction_hash": format!("0x{}", "31".repeat(32)), "log_index": 0}))
+        .deposit(NearToken::from_millinear(20))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(credited.into_result()?.json::<bool>()?);
+    let as_arena = |method: &'static str, args: Value, deposit: NearToken| {
+        w.arena
+            .call(w.backing.id(), method)
+            .args_json(args)
+            .deposit(deposit)
+            .max_gas()
+            .transact()
+    };
+    as_arena(
+        "claim_representation",
+        json!({"beneficiary": w.arena.id(), "amount": "50"}),
+        NearToken::from_yoctonear(1),
+    )
+    .await?
+    .into_result()?;
+    as_arena(
+        "reserve_principal_escrow",
+        json!({"escrow_id": vec![7u8; 32], "battle_id": "1", "community": 0, "amount": "50"}),
+        NearToken::from_millinear(10),
+    )
+    .await?
+    .into_result()?;
+    let sink = vec![0xdeu8; 20];
+    w.owner
+        .call(w.backing.id(), "set_dao_sink")
+        .args_json(json!({"sink": sink}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    as_arena(
+        "release_escrow_burn",
+        json!({"escrow_id": vec![7u8; 32], "release_id": vec![12u8; 32], "amount": "50"}),
+        NearToken::from_millinear(10),
+    )
+    .await?
+    .into_result()?;
+
+    let burn_id =
+        json!({"backing": w.backing.id(), "holder": w.arena.id(), "request_id": vec![12u8; 32]});
+    let burn_status = || async {
+        let value: Option<String> = w
+            .payout
+            .view("get_payout_status")
+            .args_json(burn_id.clone())
+            .await?
+            .json()?;
+        anyhow::Ok(value)
+    };
+    let request_burn = |caller: &Account, destination: Vec<u8>, deposit: NearToken| {
+        caller
+            .call(w.payout.id(), "request_dao_burn")
+            .args_json(json!({"backing": w.backing.id(), "holder": w.arena.id(),
+                              "request_id": vec![12u8; 32], "destination": destination}))
+            .deposit(deposit)
+            .max_gas()
+            .transact()
+    };
+    // Any destination other than the sink, or a holder other than the arena, is refused.
+    let wrong = request_burn(&w.alice, vec![3u8; 20], NearToken::from_millinear(30)).await?;
+    assert!(!wrong.into_result()?.json::<bool>().unwrap_or(false));
+    let not_arena = w
+        .alice
+        .call(w.payout.id(), "request_dao_burn")
+        .args_json(json!({"backing": w.backing.id(), "holder": w.alice.id(),
+                          "request_id": vec![12u8; 32], "destination": sink.clone()}))
+        .deposit(NearToken::from_millinear(30))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(!not_arena.into_result()?.json::<bool>().unwrap_or(false));
+    assert_eq!(burn_status().await?, None);
+    // Permissionless trigger: anyone attaching the deposit starts it.
+    let started = request_burn(&w.alice, sink.clone(), NearToken::from_millinear(30)).await?;
+    assert!(started.into_result()?.json::<bool>()?);
+    assert_eq!(burn_status().await?.as_deref(), Some("authorized"));
+
+    // Signing builds the transfer to the sink from the reservation.
+    assert!(
+        drive(
+            &w,
+            &w.relayer,
+            "request_signature",
+            with(burn_id.clone(), json!({"max_fee_per_gas": "10"}))
+        )
+        .await?
+    );
+    let signed: Value = w
+        .payout
+        .view("get_payout")
+        .args_json(burn_id.clone())
+        .await?
+        .json()?;
+    let tx_hash = attempt_hash(&signed, 0);
+    let raw: Option<String> = w
+        .payout
+        .view("get_signed_transaction")
+        .args_json(with(burn_id.clone(), json!({"tx_hash": tx_hash})))
+        .await?
+        .json()?;
+    let call = format!("a9059cbb{}{}{:064x}", "0".repeat(24), "de".repeat(20), 50);
+    assert!(raw.expect("signed").contains(&call), "transfer(sink, 50)");
+    assert!(
+        drive(
+            &w,
+            &w.relayer,
+            "record_broadcast",
+            with(burn_id.clone(), json!({"tx_hash": tx_hash}))
+        )
+        .await?
+    );
+    let escrow = || async {
+        let value: Value = w
+            .backing
+            .view("get_escrow_disposition")
+            .args_json(json!({"escrow_id": vec![7u8; 32]}))
+            .await?
+            .json()?;
+        anyhow::Ok(value)
+    };
+    // Broadcast is not a burn.
+    assert_eq!(escrow().await?["burn_confirmed"], "0");
+    assert_eq!(escrow().await?["burn_pending"], "50");
+
+    // Evidence naming another recipient is refused; the sink debit confirms once.
+    let mut to_other = evidence("50", &tx_hash);
+    to_other["recipient"] = json!(vec![3u8; 20]);
+    assert!(
+        !drive(
+            &w,
+            &w.operator,
+            "confirm_payout",
+            with(burn_id.clone(), json!({"evidence": to_other}))
+        )
+        .await?
+    );
+    let mut to_sink = evidence("50", &tx_hash);
+    to_sink["recipient"] = json!(sink.clone());
+    assert!(
+        drive(
+            &w,
+            &w.operator,
+            "confirm_payout",
+            with(burn_id.clone(), json!({"evidence": to_sink.clone()}))
+        )
+        .await?
+    );
+    assert_eq!(burn_status().await?.as_deref(), Some("confirmed"));
+    assert!(
+        drive(
+            &w,
+            &w.operator,
+            "confirm_payout",
+            with(burn_id.clone(), json!({"evidence": to_sink}))
+        )
+        .await?
+    );
+    let done = escrow().await?;
+    assert_eq!(
+        (
+            &done["burn_pending"],
+            &done["burn_confirmed"],
+            &done["still_escrowed"]
+        ),
+        (&json!("0"), &json!("50"), &json!("0"))
+    );
+    let ledger: Value = w
+        .backing
+        .view("get_ledger")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(
+        (&ledger["escrow"], &ledger["disposal"]),
+        (&json!("0"), &json!("0"))
     );
     assert_eq!(ledger["accounting_balanced"], true);
     Ok(())
