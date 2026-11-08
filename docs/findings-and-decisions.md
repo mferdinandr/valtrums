@@ -90,6 +90,18 @@ Third-party sources only; not checked against an official Uniswap or Robinhood p
 - The same repository warns that Robinhood Chain ships a modified UniversalRouter and that look-alike router addresses exist.
 - v4 pools share one PoolManager, so a pool's liquidity cannot be read with `balanceOf` on a pool address; it needs StateView reads and tick math. Feasibility is unconfirmed.
 
+## Research findings (2026-11-08): scoring market data
+
+Full record: [scoring-market-data.md](scoring-market-data.md) (issue [#68](https://github.com/mferdinandr/valtrum/issues/68)); request log in [evidence/2026-11-08-scoring-market-data.json](evidence/2026-11-08-scoring-market-data.json). Aggregator responses only, not on-chain verified.
+
+- `docs.robinhood.com`, `rpc.chain.robinhood.com`, `rpc.testnet.chain.robinhood.com` and `explorer.chain.robinhood.com` serve a TLS certificate that expired on 2026-08-19; nothing was read from them (TLS not bypassed). Chain stack, `finalized`/`safe` heads and reorg rules remain unverified.
+- Derived from aggregator trades: about 0.107 s per block (about 280 blocks per 30-second round) with 1-second timestamps.
+- No compliant circulating-supply source exists for any candidate: CoinGecko lists only CASHCAT and REBATE (circulating = total), and DexScreener `marketCap` equals `fdv` for 10 of 11. Market Cap % Growth and Volume-to-Market Cap Ratio cannot be resolved for them today.
+- DexScreener's shortest volume window is 5 minutes (rolling); GeckoTerminal trades lag about 10 minutes, return the latest 300 per pool and use whole-second timestamps; second-level candles are paid-only (401). Aggregators alone cannot meet the frozen 30-second policy.
+- Outside CASHCAT (43%), at most about 16% of 30-second windows contain a trade, so illiquid pairs tie at zero and repeat without a cap.
+- WIF and RICO had no pools on 2026-11-08 (they had pools on 2026-11-07). The two aggregators rank CASHCAT's top pool differently.
+- Options for provider, cadence, boundary and anti-manipulation limits are listed in the record; none is adopted (owner decision).
+
 ## Work branches
 
 All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #56. #53 needed a documentation conflict fixed in `arena-lifecycle/implementation-notes.md`, and its first CI run failed because #52 and #53 each added a field to a struct that the other's new tests construct (no textual conflict); fixed in `e1d1a36`. Lesson: re-run CI after merging `main` into a branch, even when git reports no conflicts. Commits carry no AI attribution.
@@ -182,6 +194,7 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 | Payout contract must call the MPC signer itself | Backing and signing owner | Recorded as a task; do not deploy or fund the payout path before it exists |
 | Behavior after a live token-policy change; minimum executable liquidity depth | Owner | Still OPEN |
 | DAO governance | Owner | Still OPEN |
+| Scoring provider, cadence, boundary tolerance, anti-manipulation limits and a circulating-supply rule | Owner | Options in [scoring-market-data.md](scoring-market-data.md); a working mainnet archive RPC is a prerequisite for the recommended on-chain option |
 
 ## Planned improvements (not scheduled)
 
