@@ -23,10 +23,15 @@ Check tasks only after implementation and verification. Research can proceed ind
 ## Observability and recovery
 
 - [ ] Persist finalized indexer cursors, block hashes and deduplication keys and reconcile chain state after restart.
+  - [x] Read-only indexing foundation (`agent/src/indexer/`): injectable `BlockSource`, validated NEP-297 parser that authenticates the receipt executor before parsing (foreign-emitter logs are dropped without storing their raw body) and handles u64 losslessly, pure deterministic projection, atomic single-snapshot store with single-writer lock, dedup keyed by network|contract|receipt|logIndex|itemIndex, restart recovery that verifies source identity/hash/ancestry and restores the last persisted health before advancing, and a runnable recorded-import/status/replay CLI whose import/status/replay exit non-zero when the indexer is degraded or needs reconciliation. Fail closed on corrupt state; never silently reset.
+  - [ ] Verify against a live NEAR archival/indexing provider and record source identity, finality and reorg evidence (live-adapter integration remains open).
 - [ ] Detect reorgs, retract provisional projections and suspend affected confirmations until finality is restored.
+  - [x] Read-model reorg handling in the engine: parent/hash continuity, common-ancestor rollback of provisional effects, canonical replay, finality promoted only along the source-declared finalized ancestor chain, and a visible healthy/pending/degraded/reconciliation-required status that is persisted (a restart never silently reports healthy), degrades on coverage/integrity gaps from an allowlisted emitter (unmodelled or unsupported events, with bounded quarantine), and never advances over a block the source marks incomplete. Retraction is read-only and never touches custody/payouts; a conflict at or below the finalized boundary stops and requires reconciliation instead of rewriting finalized state.
+  - [ ] Suspend real custody/payout confirmations on reorg (belongs to backing/payout services, not the indexer; remains open).
 - [ ] Display entitlement, transfer and DAO principal states separately, with source and freshness.
 - [ ] Add recovery alerts for missing audit/market data, deficits, unresolved payouts and indexer reconciliation.
 - [ ] Test replay and restart without duplicate allocation or payment.
+  - [x] Deterministic replay/restart of the read model proven on disk: identical projection/digest for full replay vs incremental ingest, idempotent re-sync, the last health status restored on restart, and no write side effects (read-only dependencies). Actual contract allocation/payment end-to-end remains open.
 
 ## End-to-end acceptance
 

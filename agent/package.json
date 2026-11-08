@@ -9,6 +9,10 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "indexer:import": "node dist/indexer/cli.js import",
+    "indexer:status": "node dist/indexer/cli.js status",
+    "indexer:replay": "node dist/indexer/cli.js replay",
+    "indexer:projection": "node dist/indexer/cli.js projection"
     "audit:report:serve": "node dist/audit/report-cli.js serve",
     "audit:report:list": "node dist/audit/report-cli.js list",
     "audit:report:get": "node dist/audit/report-cli.js get",
