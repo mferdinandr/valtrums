@@ -10,6 +10,8 @@ export const READ_TOOLS = [
   "inspect_entitlements",
   "inspect_payouts",
   "inspect_escrow",
+  "inspect_account_state",
+  "list_recovery_alerts",
 ] as const;
 export type ReadToolName = (typeof READ_TOOLS)[number];
 
