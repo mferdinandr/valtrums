@@ -1,7 +1,6 @@
 import { type Server, createServer } from "node:http";
 import { ArchiveCorruptError, type ReportArchive } from "./report-archive.js";
-import { QueryValidationError, type ReportQuery, queryObservations, toView } from "./report-query.js";
-import { formatAuditReport } from "./report.js";
+import { QueryValidationError, type ReportQuery, formatObservationText, queryObservations, toView } from "./report-query.js";
 
 /**
  * Passive, read-only HTTP surface over the audit report archive, following the health server's
@@ -132,8 +131,7 @@ export async function handleReportRequest(
       ? forEvidence.find((o) => o.observationId === wanted)
       : [...forEvidence].sort((a, b) => b.seq - a.seq)[0];
     if (!chosen) return errorBody(404, "observation not found");
-    // Reuse the single report formatter; no second formatting policy is introduced here.
-    return { status: 200, contentType: TEXT_TYPE, body: formatAuditReport(chosen.report) };
+    return { status: 200, contentType: TEXT_TYPE, body: formatObservationText(toView(chosen, now)) };
   }
 
   return errorBody(404, "not found");

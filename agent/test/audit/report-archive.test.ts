@@ -1,5 +1,5 @@
 // FIXTURE-ONLY: observations are built from synthetic evidence; no network or live provider.
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   ARCHIVE_SCHEMA,
   ArchiveConflictError,
   ArchiveCorruptError,
+  ArchiveLockedError,
   ArchiveValidationError,
   InMemoryReportArchive,
   JsonFileReportArchive,
@@ -77,7 +78,7 @@ describe("JsonFileReportArchive persistence", () => {
     expect(new Set(snap.map((o) => o.observationId)).size).toBe(2);
   });
 
-  it("re-archives an unchanged pending decision idempotently as the pass clock advances", async () => {
+  it("re-archives the same evidence and pending decision idempotently as only the decision clock advances", async () => {
     const a = new JsonFileReportArchive(join(dir, "archive.json"));
     const base = report({}, new Date(NOW.getTime() + 11 * 60_000)); // stale evidence -> pending
     expect(base.result).toBe("pending");
@@ -94,6 +95,26 @@ describe("JsonFileReportArchive persistence", () => {
     const snap = await a.snapshot();
     expect(snap).toHaveLength(1); // one observation, not ten
     expect(snap[0]!.report.times.decidedAt).toBe(firstDecidedAt); // first-seen timestamp kept
+  });
+
+  it("preserves fresh provider evidence even when its findings are unchanged", async () => {
+    const a = new JsonFileReportArchive(join(dir, "archive.json"));
+    for (let i = 0; i < 3; i++) {
+      const now = new Date(NOW.getTime() + i * 30_000);
+      const queried = { ...goplus({ sell_tax: "" }), queriedAt: now.toISOString() };
+      const r = buildAuditReport(evaluateCommunity({
+        asset,
+        goplus: queried,
+        lp: lp("10001"),
+        policy: FIXTURE_RESOLVED,
+        now,
+      }));
+      expect(r.result).toBe("pending");
+      expect((await a.put(input(r))).created).toBe(true);
+    }
+    const snap = await a.snapshot();
+    expect(snap).toHaveLength(3);
+    expect(new Set(snap.map((o) => o.report.evidenceHash)).size).toBe(3);
   });
 
   it("rejects a conflicting observation id rather than overwriting history", async () => {
@@ -140,6 +161,28 @@ describe("JsonFileReportArchive persistence", () => {
       w2.put(input(r, { arena: "a.testnet", battleId: 2, community: 1 })),
     ]);
     expect(await new JsonFileReportArchive(path).snapshot()).toHaveLength(4);
+  });
+
+  it("never steals an old writer lock or changes committed history on lock timeout", async () => {
+    const path = join(dir, "archive.json");
+    const writer = new JsonFileReportArchive(path);
+    await writer.put(input(report()));
+    const committed = await readFile(path, "utf8");
+    // A lock's age cannot distinguish a crashed process from a live, paused writer.
+    const lockPath = `${path}.lock`;
+    await writeFile(lockPath, "held by a paused writer", "utf8");
+    const old = new Date("2000-01-01T00:00:00.000Z");
+    await utimes(lockPath, old, old);
+
+    const contender = new JsonFileReportArchive(path, { lockTimeoutMs: 5, lockRetryMs: 1 });
+    await expect(contender.put(input(report({ buy_tax: "0.01" })))).rejects.toBeInstanceOf(ArchiveLockedError);
+    expect(await readFile(lockPath, "utf8")).toBe("held by a paused writer");
+    expect(await readFile(path, "utf8")).toBe(committed);
+
+    // Explicit operator recovery is safe only after all archive writers have been stopped.
+    await unlink(lockPath);
+    expect((await contender.put(input(report({ buy_tax: "0.01" })))).created).toBe(true);
+    expect(await writer.snapshot()).toHaveLength(2);
   });
 
   it("preserves committed state when a write fails", async () => {

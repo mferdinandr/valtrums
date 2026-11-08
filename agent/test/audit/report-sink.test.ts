@@ -126,7 +126,7 @@ describe("lifecycle archive sink (fixture-only)", () => {
     expect(await inner.snapshot()).toHaveLength(1);
   });
 
-  it("re-archives a pending community once across many passes with an advancing clock", async () => {
+  it("re-archives the same pending evidence once when only its decision clock advances", async () => {
     const archive = new InMemoryReportArchive();
     const calls: unknown[][] = [];
     // 12:11Z: the fixture evidence (queried 11:59Z, TTL 600s) is stale, so the community is pending
@@ -141,6 +141,32 @@ describe("lifecycle archive sink (fixture-only)", () => {
     const snap = await archive.snapshot();
     expect(snap).toHaveLength(1); // one pending observation, not one per tick
     expect(snap[0]!.report.result).toBe("pending");
+  });
+
+  it("archives each new provider query without changing pending refresh cadence", async () => {
+    const archive = new InMemoryReportArchive();
+    const calls: unknown[][] = [];
+    let clock = NOW;
+    let queries = 0;
+    const refresh = {
+      ...baseRefresh([], calls),
+      now: () => clock,
+      fetchGoPlus: async () => {
+        queries++;
+        // Model the real client, which timestamps every request, even for identical response text.
+        return { ...refGoplus({ sell_tax: "" }), queriedAt: clock.toISOString() };
+      },
+    };
+    const pass = createLifecycleAuditPass({ source: source({ 1: view() }), archive, arena: "arena.testnet", refresh });
+    for (let i = 0; i < 3; i++) {
+      clock = new Date(NOW.getTime() + i * 30_000);
+      expect(await pass()).toEqual({ checked: 1, ready: 0, errors: 0 });
+    }
+    expect(queries).toBe(3);
+    expect(calls).toHaveLength(3);
+    const snap = await archive.snapshot();
+    expect(snap).toHaveLength(3);
+    expect(new Set(snap.map((o) => o.report.evidenceHash)).size).toBe(3);
   });
 
   it("does not let one community's report overwrite another's history", async () => {

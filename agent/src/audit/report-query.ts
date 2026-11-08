@@ -1,6 +1,6 @@
 import type { AuditResult } from "./decision.js";
 import type { ArchivedObservation, ArchiveProvenance } from "./report-archive.js";
-import type { AuditReport } from "./report.js";
+import { formatAuditReport, type AuditReport } from "./report.js";
 
 /**
  * Backend read model over archived observations. It is passive: it reads the archive, computes
@@ -113,6 +113,23 @@ export function toView(o: ArchivedObservation, now: Date): ObservationView {
     limitations: limitationsOf(o.report),
     report: o.report,
   };
+}
+
+/** The same archive context and limitations as JSON, wrapped around the existing report formatter. */
+export function formatObservationText(view: ObservationView): string {
+  return [
+    `Observation: ${view.observationId}`,
+    `Provenance: ${view.provenance}`,
+    `Arena: ${view.domain.arena}; custody domain: ${view.domain.custodyDomain}`,
+    `Battle: ${view.attribution.battleId}; community: ${view.attribution.community}`,
+    `Archived: ${view.archivedAt}; sequence: ${view.seq}`,
+    `Historical result: ${view.historicalResult.toUpperCase()}`,
+    `Freshness: ${view.freshness}`,
+    `Current approval: ${view.currentApproval}`,
+    ...view.limitations,
+    "",
+    formatAuditReport(view.report),
+  ].join("\n");
 }
 
 function normalizeAddress(value: string, field: string): string {

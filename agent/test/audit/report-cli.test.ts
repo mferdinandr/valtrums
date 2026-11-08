@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuditSubmitter } from "../../src/audit/approval.js";
 import { createLifecycleAuditPass, type LifecycleBattleView } from "../../src/audit/lifecycle-pass.js";
 import { JsonFileReportArchive } from "../../src/audit/report-archive.js";
@@ -58,6 +58,32 @@ describe("report CLI", () => {
     const asText = capture();
     await runCli(["get", hash, "--dir", dir, "--text"], {}, asText.io);
     expect(asText.out.join("\n")).toContain(`Audit report ${hash}`);
+    expect(asText.out.join("\n")).toContain("Provenance: fixture");
+    expect(asText.out.join("\n")).toContain("Arena: demo.arena.testnet");
+    expect(asText.out.join("\n")).toContain("Battle: 1; community: 0");
+    expect(asText.out.join("\n")).toContain("Observation: ");
+    expect(asText.out.join("\n")).toContain("Current approval: notEstablished");
+    expect(asText.out.join("\n")).toContain("Historical observation only: not current lock approval");
+  });
+
+  it("labels expired fixture history and preserves reference-token limitations in CLI text", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-09T00:00:00.000Z"));
+    try {
+      await runCli(["seed-demo", "--dir", dir], {}, capture().io);
+      const reference = buildDemoObservations().find((o) => o.report.auditKind === "reference_token")!;
+      const c = capture();
+      expect(await runCli(["get", reference.report.evidenceHash, "--dir", dir, "--text"], {}, c.io)).toBe(0);
+      const text = c.out.join("\n");
+      expect(text).toContain("Historical result: PASS");
+      expect(text).toContain("Freshness: expired");
+      expect(text).toContain("Provenance: fixture");
+      expect(text).toContain("Current approval: notEstablished");
+      expect(text).toContain("was not itself audited");
+      expect(text).toContain("mainnet reference chain 4663");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("filters the list by result", async () => {

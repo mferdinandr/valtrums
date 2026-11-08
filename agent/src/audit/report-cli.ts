@@ -9,9 +9,9 @@ import {
   type ArchiveObservationInput,
   type ReportArchive,
 } from "./report-archive.js";
-import { queryObservations, type ReportQuery } from "./report-query.js";
+import { formatObservationText, queryObservations, toView, type ReportQuery } from "./report-query.js";
 import { parseReportPort, startReportServer } from "./report-server.js";
-import { buildAuditReport, formatAuditReport } from "./report.js";
+import { buildAuditReport } from "./report.js";
 
 /**
  * Explicit, runnable read-only entry point for the audit report archive, plus a clearly labelled
@@ -250,7 +250,7 @@ export async function runCli(
       }
       if (parsed.bools.has("text")) {
         const latest = [...observations].sort((a, b) => b.seq - a.seq)[0]!;
-        io.out(formatAuditReport(latest.report));
+        io.out(formatObservationText(toView(latest, now())));
       } else {
         const page = queryObservations(observations, queryFromFlags(parsed.flags), now());
         io.out(JSON.stringify({ evidenceHash, observations: page.items, nextCursor: page.nextCursor }, null, 2));

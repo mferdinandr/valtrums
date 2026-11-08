@@ -138,8 +138,20 @@ Audit reports SHALL be persistable as immutable historical observations with val
 - **THEN** the observation and its association are retrieved identically
 
 #### Scenario: Same evidence, different evaluation
-- **WHEN** the same evidence is evaluated again with a different decision time or result
-- **THEN** both observations are preserved and neither overwrites the other, while an identical retry is idempotent
+- **WHEN** the same evidence is evaluated again with a changed result or other decision content
+- **THEN** both observations are preserved and neither overwrites the other
+
+#### Scenario: Same evidence, decision clock only
+- **WHEN** the same evidence and decision content are re-archived with only a changed decision clock
+- **THEN** the retry is idempotent and retains the first-written timestamps
+
+#### Scenario: Fresh query with unchanged findings
+- **WHEN** a new provider query or LP observation changes the evidence hash while findings stay unchanged
+- **THEN** the archive preserves separate history within its documented capacity and does not alter provider refresh or on-chain submission behavior
+
+#### Scenario: Old writer lock
+- **WHEN** another writer encounters a lock whose age exceeds its retry timeout
+- **THEN** the write fails closed without deleting the lock or committed observations, and abandoned-lock recovery requires all writers to be stopped first
 
 #### Scenario: Conflicting or corrupt state
 - **WHEN** a value claims an existing immutable observation id with different contents, or stored state is corrupt or of an unsupported schema
@@ -148,6 +160,10 @@ Audit reports SHALL be persistable as immutable historical observations with val
 #### Scenario: Historical result is not current approval
 - **WHEN** a stored pass is read after its recorded expiry
 - **THEN** the historical result stays a pass, freshness reports expired, and the response states that current approval is not established
+
+#### Scenario: Text retrieval preserves observation context
+- **WHEN** a fixture or expired historical report is retrieved as HTTP or CLI text
+- **THEN** the text includes provenance, observation identity, attribution, historical result, freshness and the current-approval limitation, while retaining the existing reference-token report wording
 
 #### Scenario: Passive retrieval and safe errors
 - **WHEN** the API receives an invalid query, an unknown evidence hash, a path-traversal attempt or an unsupported mutation

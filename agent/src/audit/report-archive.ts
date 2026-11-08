@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AuditReport } from "./report.js";
 
@@ -20,10 +20,11 @@ import type { AuditReport } from "./report.js";
  * legitimately produce a different result (e.g. a pass that later goes stale), so an archive keyed
  * only by `evidenceHash` would lose history. We therefore key by a content-derived `observationId`
  * over the observation's DECISION content — provenance, domain, attribution and the report minus its
- * wall-clock `times` (`queriedAt`/`decidedAt`/`expiresAt`, which advance every scheduler pass for an
- * unchanged decision; the policy-derived `ttlSeconds` is kept). See {@link identityProjection}. So:
- *   - re-archiving the same decision is idempotent whatever the pass clock — a pending or rejected
- *     community re-evaluated every tick yields ONE observation, not one per tick (no unbounded growth),
+ * wall-clock `times` (the policy-derived `ttlSeconds` is kept). See {@link identityProjection}. So:
+ *   - re-evaluating the SAME evidence with unchanged decision content is idempotent when only the
+ *     decision clock advances; the first-written timestamps are kept,
+ *   - a fresh provider query or LP observation changes `evidenceHash` and therefore creates new
+ *     history even if the findings are unchanged; the documented archive limit still applies,
  *   - a genuinely different evaluation (different result, reasons, evidence or policy) is preserved as
  *     a separate observation, keeping the first-seen timestamps,
  *   - a value claiming an existing `observationId` but with different decision content is rejected,
@@ -197,10 +198,10 @@ function coreOf(input: ArchiveObservationInput): ObservationCore {
 
 /**
  * The decision content an `observationId` commits to: everything in the core except the report's
- * wall-clock `times`. `queriedAt`/`decidedAt`/`expiresAt` advance on every scheduler pass for an
- * unchanged decision, so hashing them would make a pending or rejected community grow the archive by
- * one observation per tick. The policy-derived `ttlSeconds` is kept (it only moves with the policy,
- * which is already covered by `policy.hash`). Fields are listed explicitly so a stored observation's
+ * wall-clock `times`. A time-only re-evaluation of the same evidence is an idempotent retry, but
+ * fresh query timestamps and LP observations are already committed by `evidenceHash` and are not
+ * suppressed. The policy-derived `ttlSeconds` is kept (it only moves with the policy, which is
+ * already covered by `policy.hash`). Fields are listed explicitly so a stored observation's
  * envelope metadata (`observationId`/`seq`/`archivedAt`) can never leak into the identity.
  */
 function identityProjection(core: ObservationCore): unknown {
@@ -295,8 +296,6 @@ export interface JsonFileReportArchiveOptions {
   hashFn?: (text: string) => string;
   lockTimeoutMs?: number;
   lockRetryMs?: number;
-  /** A lock older than this is treated as abandoned by a crashed writer and broken. */
-  lockStaleMs?: number;
 }
 
 const DEFAULT_ARCHIVE_PATH = "./.agent-state/audit-reports/archive.json";
@@ -314,7 +313,6 @@ export class JsonFileReportArchive implements ReportArchive {
   private readonly lockPath: string;
   private readonly lockTimeoutMs: number;
   private readonly lockRetryMs: number;
-  private readonly lockStaleMs: number;
 
   constructor(
     private readonly path: string = DEFAULT_ARCHIVE_PATH,
@@ -324,7 +322,6 @@ export class JsonFileReportArchive implements ReportArchive {
     this.lockPath = `${path}.lock`;
     this.lockTimeoutMs = opts.lockTimeoutMs ?? 5_000;
     this.lockRetryMs = opts.lockRetryMs ?? 25;
-    this.lockStaleMs = opts.lockStaleMs ?? 30_000;
   }
 
   private async load(): Promise<ArchiveFile> {
@@ -420,7 +417,8 @@ export class JsonFileReportArchive implements ReportArchive {
         acquired = true;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-        await this.breakStaleLock();
+        // Age cannot prove that a writer has stopped. Never steal a slow or paused writer's lock:
+        // a crashed writer requires explicit recovery after every writer has been stopped.
         if (Date.now() > deadline) throw new ArchiveLockedError();
         await delay(this.lockRetryMs);
         continue;
@@ -435,14 +433,6 @@ export class JsonFileReportArchive implements ReportArchive {
     }
   }
 
-  private async breakStaleLock(): Promise<void> {
-    try {
-      const st = await stat(this.lockPath);
-      if (Date.now() - st.mtimeMs > this.lockStaleMs) await unlink(this.lockPath).catch(() => undefined);
-    } catch {
-      // lock vanished between the failed open and the stat: fine, the next attempt will acquire it.
-    }
-  }
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

@@ -85,10 +85,11 @@ export interface LifecycleAuditPassDeps {
  * arena/battle/community attribution (the community index comes from the current view, never from
  * splitting a record key), and a bounded structured summary is logged. A sink failure is surfaced
  * as an error and logged, isolates the other battles, and never changes policy evaluation, the
- * `ready` count or on-chain submission. The archive keys observations by decision content, not the
- * pass clock, so re-archiving an unchanged decision — including a pending or rejected community that
- * is re-evaluated every pass — is idempotent and does not grow the archive; a failed archive can be
- * retried on the next pass with no provider call.
+ * `ready` count or on-chain submission. Re-archiving unchanged decision content for the same evidence
+ * is idempotent when only the decision clock advances. Fresh provider queries/LP observations change
+ * the evidence hash and create new history, even for unchanged findings; the archive capacity is
+ * finite. A failed archive can be retried on the next pass without a provider call when evidence is
+ * still fresh. Archiving does not change provider cadence or submission behavior.
  */
 export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Promise<{ checked: number; ready: number; errors: number }> {
   const log = deps.log ?? silentLogger;

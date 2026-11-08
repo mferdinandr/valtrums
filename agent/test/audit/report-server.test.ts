@@ -76,6 +76,28 @@ describe("report server pure handler", () => {
     expect(res.contentType).toContain("text/plain");
     expect(res.body).toContain(`Audit report ${pass.evidenceHash}`);
     expect(res.body).toContain("Result: PASS");
+    const observation = (await deps.archive.snapshot()).find((o) => o.report.evidenceHash === pass.evidenceHash)!;
+    expect(res.body).toContain(`Observation: ${observation.observationId}`);
+    expect(res.body).toContain("Provenance: fixture");
+    expect(res.body).toContain("Arena: a.testnet");
+    expect(res.body).toContain("Battle: 1; community: 0");
+    expect(res.body).toContain("Historical result: PASS");
+    expect(res.body).toContain("Freshness: fresh");
+    expect(res.body).toContain("Current approval: notEstablished");
+    expect(res.body).toContain("Historical observation only: not current lock approval");
+  });
+
+  it("labels an expired historical pass in text without changing its report result", async () => {
+    const { deps, pass } = await seeded();
+    const expired = { ...deps, now: () => new Date(pass.times.expiresAt!) };
+    const res = await handleReportRequest("GET", `/audit-reports/${pass.evidenceHash}/text`, expired);
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("Historical result: PASS");
+    expect(res.body).toContain("Result: PASS");
+    expect(res.body).toContain("Freshness: expired");
+    expect(res.body).toContain("Provenance: fixture");
+    expect(res.body).toContain("Current approval: notEstablished");
+    expect((await deps.archive.snapshot())[0]!.report.result).toBe("pass");
   });
 
   it("answers HEAD like GET at the handler level", async () => {
