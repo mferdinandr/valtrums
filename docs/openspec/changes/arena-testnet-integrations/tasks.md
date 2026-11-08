@@ -11,6 +11,7 @@ Check tasks only after implementation and verification. Research can proceed ind
 - [ ] Verify GoPlus (chain `4663`) and independent liquidity coverage for the mainnet reference token of each testnet mock; explicitly record unsupported or missing fields.
 - [ ] Maintain a protocol-controlled registry mapping each testnet mock token to its Robinhood mainnet reference token, shared by audit and scoring; reject unregistered mappings.
 - [ ] Verify price, circulating supply, eligible volume, drawdown sampling and finality sources for the mainnet reference tokens against the frozen 30-second policy.
+  - [x] Research recorded 2026-11-08 in `docs/scoring-market-data.md` (aggregator responses only; no compliant supply source, no observable finality, Robinhood RPC unreachable over valid TLS). On-chain verification and the owner's provider/cadence/tolerance decision remain open.
 - [ ] Label fixtures and distinguish adapter demonstrations from verified public-service integrations.
 
 ## Intents and Bitte
