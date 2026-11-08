@@ -16,7 +16,17 @@ Deliver mcp and terminal and its acceptance scenarios without claiming unrelated
 - Read layer (`agent/src/mcp/`). Tools receive only an `ArenaReadSource` (NEAR `view` calls; no private key in the read service), the audit report archive and the session verifier, so no handler can sign, send or reserve. Every answer uses one envelope: network, source kind (`live`/`recorded`/`fixture`), observedAt, freshness and limitations. Unknown tools and arguments are refused before any read.
 - Read sessions. `open_read_session` / `POST /session` verify a NEP-413 signature over a fixed message and recipient, require a full-access key of the account (near-kit lookup), reject nonces older than 5 minutes or reused, and return an HMAC token (1 h) bound to the account. Account-scoped tools resolve the caller only from that token and refuse a different `accountId`. Over HTTP the token is accepted only in the Authorization header.
 - Search. `list_battles` validates `q`, `mode`, `status`, `community`, `cursor`, `limit` (max 50) and scans at most 200 battles per request, returning `nextCursor`/`truncated`. The web controller debounces text, sends filter changes at once, aborts the previous request and drops superseded responses.
-- Known limits: entitlements have no deployed view (`available: false`, not zero); `list_open_payouts` omits terminal payouts; escrow disposition is reported `undecided` until the D22 vote (decided, not implemented) exists. Preview, submit, action status and revocation are separate tasks.
+- Known limits: entitlements have no deployed view (`available: false`, not zero); `list_open_payouts` omits terminal payouts; escrow disposition is reported `undecided` until the D22 vote (decided, not implemented) exists.
+- Action boundary (`agent/src/mcp/actions/`, #76, owner decision D25). One `ActionService` serves the MCP action tools and the `/actions` HTTP routes used by the terminal. It never signs or sends.
+  - **Steps:** `preview` builds a canonical preview for create_battle, deposit or payout, `authorize` binds an authorization, `prepare` revalidates and hands out the transaction, `broadcast` records the hash, and `status` checks the receipt.
+  - **Preview:** binds kind, network, the funds' account, the signer, assets, amounts, recipient, costs, policy `action-preview-v1`, a 5-minute expiry and the exact unsigned transaction. `previewHash` is SHA-256 over canonical JSON; `bindingHash` excludes timestamps.
+  - **Authorization** is either:
+    - a NEP-413 signature by a full-access key of the funds' account over `Authorize Valtrum action <previewHash>…` (single-use nonce, 5 minutes old at most); or
+    - for a grant, the caller must be the grant's delegate, and the prepared transaction is only that delegate's `player-policy.reserve`, which re-checks the full scope on-chain.
+  - **Revalidation:** `prepare` rebuilds from fresh reads (lock state, audit and backing evidence, registered position, balance or entitlement, grant revocation, expiry and caps) and refuses any binding change.
+  - **Status:** a broadcast stays pending until a final receipt of the same signer, receiver, method, arguments and deposit succeeds in every receipt. Only `direct` deposits are supported; other routes are refused before anything is stored.
+  - **Storage:** one versioned JSON file with atomic writes that fails closed on corruption.
+  - **Limits:** grant-based payouts are refused (the grant needs the backing's asset identity), and executing a reserved grant action is #77.
 
 ## Risks / Migration
 
