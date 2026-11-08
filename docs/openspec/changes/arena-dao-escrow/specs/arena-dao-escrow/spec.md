@@ -11,6 +11,14 @@ The system SHALL escrow final winning principal separately from losing-token rew
 - **WHEN** principal is locked
 - **THEN** losing-token entitlements remain independent
 
+#### Scenario: Exclusive escrow reservation
+- **WHEN** the winning principal is escrowed in its backing
+- **THEN** the same backing cannot be redeemed, disposed of, allocated or paid out, and only the arena can record the escrow, once per battle
+
+#### Scenario: No disposition path
+- **WHEN** the owner, a worker, the oracle or a participant tries to release or dispose of escrowed principal
+- **THEN** no such method exists and the escrow is unchanged
+
 ### Requirement: Decision-bound underlying disposition
 The system SHALL execute an approved return or underlying burn/sink at most once and SHALL NOT treat representation destruction alone as proof of source-token disposal. Only a decision from the contract's own vote tally SHALL be accepted.
 
