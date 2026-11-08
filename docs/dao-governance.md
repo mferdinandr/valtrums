@@ -1,6 +1,6 @@
 # DAO governance of winning principal
 
-Design for issue [#74](https://github.com/mferdinandr/valtrum/issues/74), decided by the owner on 2026-11-08 (decision D22 in the [decision log](findings-and-decisions.md)). It resolves OQ-DAO in the [product specification](product-spec.md). It is a design for review: nothing here is implemented yet, and the execution issue ([#75](https://github.com/mferdinandr/valtrum/issues/75)) implements it after this design is approved.
+Design for issue [#74](https://github.com/mferdinandr/valtrum/issues/74), decided by the owner on 2026-11-08 (decision D22 in the [decision log](findings-and-decisions.md)). It resolves OQ-DAO in the [product specification](product-spec.md). The owner approved this design on 2026-11-08 (PR [#99](https://github.com/mferdinandr/valtrum/pull/99)). Nothing here is implemented yet; the execution issue ([#75](https://github.com/mferdinandr/valtrum/issues/75)) implements it.
 
 ## What is being decided
 

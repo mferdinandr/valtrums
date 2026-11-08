@@ -13,7 +13,7 @@ Check tasks only after implementation and verification. Governance is decided (D
 
 - [x] Obtain explicit decisions on DAO membership, voting weight, quorum, deadlines, delegation and fallback. (Owner, 2026-11-08, D22.)
 - [x] Specify authorized decision verification, eligible burn/return proportions and execution authority for review. (`docs/dao-governance.md`.)
-- [ ] Obtain approval of the governance and disposition design before implementing an authoritative decision path. (Approval is the owner's review of the design PR.)
+- [x] Obtain approval of the governance and disposition design before implementing an authoritative decision path. (Approved by the owner on 2026-11-08 by merging PR #99.)
 
 ## Decision-bound execution
 
