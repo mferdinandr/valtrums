@@ -11,6 +11,10 @@ Target live acceptance SHALL use NEAR testnet and Robinhood Chain testnet with r
 - **WHEN** RPC chain identity differs from configured Robinhood testnet
 - **THEN** the system refuses signing and source receipt acceptance
 
+#### Scenario: Missing or malformed chain identity
+- **WHEN** the RPC chain id is missing, malformed or unreadable
+- **THEN** the system fails closed and names the failure without exposing the RPC URL
+
 ### Requirement: End-to-end evidence and observability
 The demo SHALL record two/three-community flows, protocol creator, all scoring modes, repeated ties, incomplete audit, conservation and payout retry, with distinct entitlement, transfer and DAO states.
 

@@ -58,6 +58,11 @@ describe("finalized custody deposit verifier", () => {
     expect((await run(chain({ receiptBlock: hashOf(77) }))).status).toBe("pending");
     expect((await run(chain({ forkAt: 5 }))).status).toBe("pending");
     expect((await run(chain({ chain: 1n }))).status).toBe("pending");
+    const wrong = await run(chain({ chain: 1n }));
+    expect(wrong).toMatchObject({ status: "pending", reason: expect.stringContaining("serves chain 1, expected 46630") });
+    const malformed = chain();
+    (malformed as { chainId: () => Promise<bigint> }).chainId = async () => undefined as unknown as bigint;
+    expect(await run(malformed)).toMatchObject({ status: "pending", reason: expect.stringContaining("malformed chain id") });
     expect((await run(chain(), { maxAncestryDepth: 1n })).status).toBe("pending");
   });
 
