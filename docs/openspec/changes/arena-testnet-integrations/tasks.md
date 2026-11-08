@@ -6,7 +6,7 @@ Check tasks only after implementation and verification. Research can proceed ind
 
 - [ ] Verify NEAR testnet and Robinhood testnet chain ID `46630`, configured RPC identity and testnet account mappings.
 - [ ] Verify signer account, custody path, derived address, gas funding and deployed code hashes for the isolated testnet setup.
-- [ ] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration.
+- [x] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration. Verified by fake-RPC tests (`agent/test/chain-guard.test.ts`, `foreign-executor.test.ts`, `custody-verifier.test.ts`); no live network claim.
 - [ ] Record actual source receipt, attribution, finality and reorg-verification evidence.
 - [ ] Verify GoPlus (chain `4663`) and independent liquidity coverage for the mainnet reference token of each testnet mock; explicitly record unsupported or missing fields.
 - [ ] Maintain a protocol-controlled registry mapping each testnet mock token to its Robinhood mainnet reference token, shared by audit and scoring; reject unregistered mappings.
