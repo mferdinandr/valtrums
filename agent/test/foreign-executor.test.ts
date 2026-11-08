@@ -278,6 +278,33 @@ describe("ForeignChainStepExecutor", () => {
     await expect(make().execute(step, battle)).rejects.toThrow("no foreign-chain configuration");
   });
 
+  it("refuses to sign when the RPC serves a different chain, and keeps checking after the first pass", async () => {
+    const { client, rpc, make } = setup();
+    const plan = await client.getSettlementPlan(1);
+    const battle = (await client.getBattle(1))!;
+    const ex = make();
+    rpc.chain = 1n;
+    await expect(ex.execute(plan[0]!, battle)).rejects.toThrow("the RPC serves chain 1, expected 1337");
+    expect(rpc.broadcasts).toHaveLength(0);
+    expect((client as unknown as { signRequests: Map<number, unknown> }).signRequests.size).toBe(0);
+
+    // A first successful pass must not cache trust: a swapped RPC is caught on the next step.
+    rpc.chain = 1337n;
+    await ex.execute(plan[0]!, battle);
+    rpc.chain = 5n;
+    const before = rpc.broadcasts.length;
+    await expect(ex.execute(plan[1]!, battle)).rejects.toThrow("expected 1337");
+    expect(rpc.broadcasts).toHaveLength(before);
+  });
+
+  it("fails closed when the RPC chain id is malformed", async () => {
+    const { client, rpc, make } = setup();
+    (rpc as { chainId: () => Promise<bigint> }).chainId = async () => undefined as unknown as bigint;
+    const plan = await client.getSettlementPlan(1);
+    await expect(make().execute(plan[0]!, (await client.getBattle(1))!)).rejects.toThrow("malformed chain id");
+    expect(rpc.broadcasts).toHaveLength(0);
+  });
+
   it("books a zero-amount step without sending anything", async () => {
     const { client, rpc, make } = setup();
     const battle = (await client.getBattle(1))!;
