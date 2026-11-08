@@ -695,7 +695,94 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
     let done = w.view(id).await?;
     assert_eq!(done["principal_community"], 1);
     assert_eq!(done["principal_amount"], "650");
+
+    // DAO escrow: anyone moves the winning principal into the winning backing's
+    // exclusive escrow bucket. No governance decision exists, so it stays there.
+    let winner_rep = w.reps[1].clone();
+    let ledger_before: Value = winner_rep.view("get_ledger").await?.json()?;
+    let arena_before: Value = winner_rep
+        .view("ft_balance_of")
+        .args_json(json!({"account_id": w.arena.id()}))
+        .await?
+        .json()?;
+    let escrow = |caller: &Account| {
+        caller
+            .call(w.arena.id(), "reserve_lifecycle_escrow")
+            .args_json(json!({"battle_id": id.to_string()}))
+            .deposit(NearToken::from_millinear(10))
+            .max_gas()
+            .transact()
+    };
+    assert!(escrow(&player).await?.into_result()?.json::<bool>()?);
+    let ledger_after: Value = winner_rep.view("get_ledger").await?.json()?;
+    let units = |v: &Value, key: &str| v[key].as_str().unwrap_or("x").parse::<u128>();
+    assert_eq!(ledger_after["escrow"], "650");
+    assert_eq!(
+        units(&ledger_before, "minted")? - units(&ledger_after, "minted")?,
+        650
+    );
+    assert_eq!(ledger_after["custody"], ledger_before["custody"]);
+    assert_eq!(ledger_after["accounting_balanced"], true);
+    let arena_after: Value = winner_rep
+        .view("ft_balance_of")
+        .args_json(json!({"account_id": w.arena.id()}))
+        .await?
+        .json()?;
+    assert_eq!(
+        arena_before.as_str().unwrap_or("x").parse::<u128>()?
+            - arena_after.as_str().unwrap_or("x").parse::<u128>()?,
+        650
+    );
+    let view: Value = w
+        .arena
+        .view("get_lifecycle_escrow")
+        .args_json(json!({"battle_id": id.to_string()}))
+        .await?
+        .json()?;
+    assert_eq!(view["reserved"], true);
+    assert_eq!(view["amount"], "650");
+    assert_eq!(view["representation"], json!(winner_rep.id()));
+    let recorded: Value = winner_rep
+        .view("get_principal_escrow")
+        .args_json(json!({"escrow_id": hex_bytes(view["escrow_id"].as_str().unwrap_or(""))}))
+        .await?
+        .json()?;
+    assert_eq!(
+        recorded,
+        json!({"battle_id": id.to_string(), "community": 1, "amount": "650"})
+    );
+    // A repeat changes nothing, and no one but the arena can escrow directly.
+    assert!(escrow(&w.creator).await?.into_result()?.json::<bool>()?);
+    let repeat: Value = winner_rep.view("get_ledger").await?.json()?;
+    assert_eq!(repeat["escrow"], "650");
+    assert_eq!(repeat["minted"], ledger_after["minted"]);
+    for caller in [&w.owner, &w.agent, &w.oracle, &player] {
+        assert!(
+            !ok(async {
+                Ok(caller
+                    .call(winner_rep.id(), "reserve_principal_escrow")
+                    .args_json(
+                        json!({"escrow_id": vec![1u8; 32], "battle_id": id.to_string(),
+                                      "community": 1, "amount": "1"}),
+                    )
+                    .deposit(NearToken::from_millinear(10))
+                    .transact()
+                    .await?)
+            })
+            .await
+        );
+    }
+    assert_eq!(
+        winner_rep.view("get_ledger").await?.json::<Value>()?["escrow"],
+        "650"
+    );
     Ok(())
+}
+
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len() / 2)
+        .filter_map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok())
+        .collect()
 }
 
 #[tokio::test]
