@@ -34,14 +34,14 @@ The target requires authenticated source receipts, versioned audit/observation p
 | Threat | Required target control | Outstanding verification |
 | --- | --- | --- |
 | Fake/replayed deposit, donation contamination, decimal inflation | Actual received units, unique chain/tx/log identity, attribution, exact normalization | Adversarial tokens, reorgs, verifier trust |
-| Underbacking or duplicate spend | Per-asset B = M + E + P + D + U and exclusive reservations | Conservation/property/recovery tests |
+| Underbacking or duplicate spend | Per-asset B = M + E + P + D + U + X (X = principal escrow) and exclusive reservations | Conservation/property/recovery tests |
 | 30-second oracle manipulation | Frozen sources, endpoint/cadence policy, provenance, exact scores, complete coverage | Supply trust, wash-volume and manipulation limits OPEN |
 | Late/duplicate scheduling | Immutable interval, expected round/state checks, once-only transitions | Outage/restart/repeated-overtime tests |
 | Audit fail-open | Critical GoPlus risk rejects; unknown mandatory data stays Pending; independent LP > USD 10,000 | Use the [selected field map](goplus-audit.md); audit policy v1 fixes tax/admin admissibility and evidence lifetime; coverage and live-change behavior remain OPEN |
 | Creator/protocol spoofing | Actual mandatory creator stake and frozen authenticated fee identity | Protocol verification policy OPEN |
 | Arbitrary MPC transaction | Exact chain/token/recipient/amount/path/nonce from reservation | Tampering, signer, nonce/replacement/gas tests |
 | Lost response / duplicate payout | Durable identity and reserve; reconcile before new spend; finalized matching receipt | Restart reconciliation worker (read and report only, never holds the operator key; startup refuses operator variables) covers crash, timeout, same-transaction rebroadcast, replacement, revert and mismatched evidence with fixtures only; a pending `needs_operator` report depends on a human or separate operator process acting; live node, finality tag support and concurrent workers are unverified |
-| Principal seizure or silent release | Independent escrow, no automatic timeout, decision-bound single execution | Upgrade authority OPEN. DAO (D22): only the contract tally of authenticated winner votes decides; no quorum, so a single voter can decide; with no votes, principal stays escrowed |
+| Principal seizure or silent release | Independent escrow, no automatic timeout, decision-bound single execution | Escrow (#73): backing `escrow` bucket recorded only by the arena, once per battle, with no exit method yet; sandbox-tested. Upgrade authority OPEN. DAO (D22): only the contract tally of authenticated winner votes decides; no quorum, so a single voter can decide; with no votes, principal stays escrowed |
 | Player-agent theft | Enforceable token cap, method/asset/destination scope, expiry/revocation | Leaked key, malicious strategy, concurrent spend |
 | Infrastructure gains player authority | Separate credentials and role checks | Negative authorization tests across APIs/MCP |
 | Prompt injection | Typed bounded actions, canonical preview hash and revalidation | Metadata/provider injection and mismatch tests |
@@ -51,6 +51,10 @@ The target requires authenticated source receipts, versioned audit/observation p
 | Operator/signer compromise | Least privilege, disclosed powers, constrained signing, monitoring | Rotation/revocation and incident response |
 
 Rewards remain independent of DAO decisions while still requiring valid backing and payout authorization. Available rights must never imply confirmed Robinhood receipt.
+
+### Escrow reservation self-review (#73)
+
+Development self-review with the NEAR contract checklist, not an external audit. No high or medium finding. `on_reserve_escrow` is `#[private]`; `reserve_principal_escrow` accepts only the arena; arena state changes only in the callback, and concurrent calls are safe because the backing is idempotent per escrow id; new storage keys are appended. Low: the backing's unused storage refund, and the deposit of a failed backing call, return to the arena rather than the caller (same as settlement); the arena pays the storage of its escrow flag.
 
 ## TEE provenance
 
