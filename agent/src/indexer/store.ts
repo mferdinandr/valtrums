@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AcceptedEvent, BlockRef, DiagnosticRecord, IndexerConfig } from "./types.js";
+import type { AcceptedEvent, BlockRef, DiagnosticRecord, IndexerConfig, IndexerHealthStatus } from "./types.js";
 
 /**
  * Durable indexer state as one versioned atomic snapshot, with stronger recovery guarantees than
@@ -31,8 +31,15 @@ export interface StoreState {
   /** Accepted events; order is not relied upon (the reducer sorts canonically). */
   journal: AcceptedEvent[];
   diagnostics: DiagnosticRecord[];
+  /** Quarantine records discarded once the cap was reached; a positive count degrades health. */
+  diagnosticsDropped: number;
   cursors: { processedHead: BlockRef | null; finalizedHead: BlockRef | null };
+  /** Last computed health, persisted so a restart never silently reports healthy. */
+  health: { status: IndexerHealthStatus; reason: string };
 }
+
+/** Health persisted into a freshly created store before any sync has run. */
+const INITIAL_HEALTH = { status: "pending" as IndexerHealthStatus, reason: "no sync has run yet" };
 
 export class StoreCorruptError extends Error {
   constructor(reason: string, public readonly path: string) {
@@ -104,6 +111,12 @@ export class JsonFileIndexerStore {
     if (!s.config || !Array.isArray(s.blocks) || !Array.isArray(s.journal) || !Array.isArray(s.diagnostics) || !s.cursors) {
       throw new StoreCorruptError("structurally malformed", this.statePath);
     }
+    // Default fields added after the first schema cut, so a snapshot that predates them loads with a
+    // safe (non-healthy) health rather than being treated as corrupt.
+    if (typeof s.diagnosticsDropped !== "number") s.diagnosticsDropped = 0;
+    if (!s.health || typeof s.health.status !== "string" || typeof s.health.reason !== "string") {
+      s.health = { status: "pending", reason: "restored state predates health persistence" };
+    }
     return s as StoreState;
   }
 
@@ -113,7 +126,16 @@ export class JsonFileIndexerStore {
     try {
       const existing = await this.read();
       if (!existing) {
-        return { schema: STORE_SCHEMA, config, blocks: [], journal: [], diagnostics: [], cursors: { processedHead: null, finalizedHead: null } };
+        return {
+          schema: STORE_SCHEMA,
+          config,
+          blocks: [],
+          journal: [],
+          diagnostics: [],
+          diagnosticsDropped: 0,
+          cursors: { processedHead: null, finalizedHead: null },
+          health: { ...INITIAL_HEALTH },
+        };
       }
       assertCompatibleConfig(existing.config, config);
       return existing;
@@ -128,7 +150,13 @@ export class JsonFileIndexerStore {
     if (!this.locked) throw new Error("indexer store commit without the writer lock");
     if (state.blocks.length > MAX_BLOCKS) throw new StoreLimitError("block");
     if (state.journal.length > MAX_JOURNAL) throw new StoreLimitError("journal");
-    if (state.diagnostics.length > MAX_DIAGNOSTICS) throw new StoreLimitError("diagnostics");
+    // Diagnostics are disposable quarantine records, not committed history: clamp rather than throw,
+    // so an unbounded quarantine (e.g. a flood of foreign-emitter logs) can never wedge commit.
+    if (state.diagnostics.length > MAX_DIAGNOSTICS) {
+      const dropped = state.diagnostics.length - MAX_DIAGNOSTICS;
+      state.diagnostics = state.diagnostics.slice(dropped);
+      state.diagnosticsDropped += dropped;
+    }
     await mkdir(this.dir, { recursive: true });
     const tmp = `${this.statePath}.tmp`;
     await writeFile(tmp, JSON.stringify({ ...state, schema: STORE_SCHEMA }, null, 2), "utf8");

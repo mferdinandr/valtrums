@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runIndexerCli, type CliIo } from "../../src/indexer/cli.js";
-import { auditUpdated, chainFile, created, deposit, linked, outcome } from "./fixtures.js";
+import { auditUpdated, chainFile, created, deposit, emitLog, linked, outcome } from "./fixtures.js";
 
 let dir: string;
 let statePath: string;
@@ -93,6 +93,25 @@ describe("indexer CLI", () => {
     await runIndexerCli(["projection", "--dir", statePath], {}, proj.io);
     const battle = parseOut(proj.out).battles[`${forked.identity.network}|arena.testnet|1`];
     expect(battle.creditedByCommunity["0"]).toBe("999");
+  });
+
+  it("exits non-zero when the imported chain leaves the indexer degraded", async () => {
+    const degrading = chainFile(
+      linked([
+        { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+        // An allowlisted emitter emits an event this indexer version does not model: a coverage gap.
+        { height: "2", outcomes: [outcome("r2", [emitLog("backing_updated", { battle_id: 1 })])] },
+      ]),
+      { finalizedHeight: "2" },
+    );
+    await writeChain(degrading);
+    const imp = capture();
+    expect(await runIndexerCli(["import", "--chain", chainPath, "--dir", statePath], {}, imp.io)).toBe(3);
+    expect(parseOut(imp.out).status).toBe("degraded");
+
+    const stat = capture();
+    expect(await runIndexerCli(["status", "--dir", statePath], {}, stat.io)).toBe(3);
+    expect(parseOut(stat.out).status).toBe("degraded");
   });
 
   it("errors clearly on a missing chain or state", async () => {

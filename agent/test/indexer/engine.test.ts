@@ -7,7 +7,7 @@ import { IndexerEngine } from "../../src/indexer/engine.js";
 import { RecordedBlockSource } from "../../src/indexer/recorded-source.js";
 import { JsonFileIndexerStore, StoreLockedError } from "../../src/indexer/store.js";
 import type { BlockSource } from "../../src/indexer/types.js";
-import { auditUpdated, chainFile, config, created, deposit, linked, outcome } from "./fixtures.js";
+import { auditUpdated, block, chainFile, config, created, deposit, emitLog, linked, outcome } from "./fixtures.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -204,6 +204,79 @@ describe("engine coverage gaps and conflicts", () => {
     expect(health.status).toBe("degraded");
     expect(health.quarantined).toBe(1);
     await engine.close();
+  });
+});
+
+describe("engine health persistence and coverage (review #59)", () => {
+  it("reports pending, not healthy, before the first sync", async () => {
+    const { engine } = await engineOn(new RecordedBlockSource(chainFile(baseChain(), { finalizedHeight: "2" })));
+    expect(engine.health().status).toBe("pending");
+    await engine.close();
+  });
+
+  it("persists a non-healthy status across a restart instead of reporting healthy", async () => {
+    // A broken parent link requires reconciliation — a transient flag, not a stored diagnostic — so a
+    // restart that re-derived status from diagnostics alone would wrongly report healthy.
+    const broken = [
+      block({ height: "1", hash: "blk1", parentHash: null, outcomes: [outcome("r1", [created(1, "alice.testnet")])] }),
+      block({ height: "2", hash: "blk2", parentHash: "not-blk1", outcomes: [outcome("r2", [auditUpdated(1, 0, "pass")])] }),
+    ];
+    const source = new RecordedBlockSource(chainFile(broken, { finalizedHeight: "1" }));
+    const first = await engineOn(source);
+    expect((await first.engine.sync()).status).toBe("reconciliation_required");
+    await first.engine.close();
+
+    const second = await engineOn(source); // reopen the same state directory
+    expect(second.engine.health().status).toBe("reconciliation_required");
+    await second.engine.close();
+  });
+
+  it("does not advance over a block the source marks incomplete", async () => {
+    const chain = linked([
+      { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+      { height: "2", outcomes: [outcome("r2", [auditUpdated(1, 0, "pass")])] },
+      { height: "3", outcomes: [outcome("r3", [deposit(1, 0, "bob.testnet", "100")])] },
+    ]);
+    chain[1] = { ...chain[1]!, complete: false }; // block 2 is present but its data is not fully available
+    const source = new RecordedBlockSource(chainFile(chain, { finalizedHeight: "1", latest: { height: "3", hash: "blk3" } }));
+    const { engine } = await engineOn(source);
+    const health = await engine.sync();
+    expect(health.status).toBe("pending");
+    expect(health.processedHead?.height).toBe("1"); // stopped before the incomplete block, never applied it
+    const key = `${config().network}|${config().contracts[0]}|1`;
+    expect(engine.projection().battles[key]!.audits).toHaveLength(0); // block 2's audit was not projected
+    await engine.close();
+  });
+
+  it("degrades when an allowlisted emitter emits an event the indexer does not model", async () => {
+    const chain = linked([
+      { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
+      // backing_updated is a real event added in a later PR that this indexer version does not handle.
+      { height: "2", outcomes: [outcome("r2", [emitLog("backing_updated", { battle_id: 1, community: 0, amount: "5" })])] },
+    ]);
+    const { engine } = await engineOn(new RecordedBlockSource(chainFile(chain, { finalizedHeight: "2" })));
+    const health = await engine.sync();
+    expect(health.status).toBe("degraded"); // a coverage gap is visible, not silently healthy
+    expect(health.quarantined).toBe(1);
+    await engine.close();
+  });
+
+  it("caps quarantine growth and stays degraded instead of wedging commit", async () => {
+    // Five foreign-emitter logs in one block; with a tiny cap the engine keeps only the most recent
+    // and counts the rest, so commit never fails and health reflects the overflow.
+    const foreign = Array.from({ length: 5 }, (_, i) => created(1, `acct${i}.testnet`));
+    const chain = linked([{ height: "1", outcomes: [outcome("r1", foreign, { executorId: "evil.testnet" })] }]);
+    const source = new RecordedBlockSource(chainFile(chain, { finalizedHeight: "1" }));
+    const engine = new IndexerEngine(source, store(), config(), { now: () => 1, maxDiagnostics: 2 });
+    await engine.open();
+    const health = await engine.sync();
+    expect(health.quarantined).toBe(2); // capped, not five
+    expect(health.status).toBe("degraded"); // dropped records degrade health
+    await engine.close();
+
+    const second = await engineOn(source); // the capped state committed without a StoreLimitError wedge
+    expect(second.engine.health().status).toBe("degraded");
+    await second.engine.close();
   });
 });
 

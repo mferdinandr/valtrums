@@ -25,7 +25,9 @@ const freshState = (cfg = config()): StoreState => ({
   blocks: [{ height: "1", hash: "h1", parentHash: null, timestampMs: "1700000000000", finalized: true }],
   journal: [],
   diagnostics: [],
+  diagnosticsDropped: 0,
   cursors: { processedHead: { height: "1", hash: "h1" }, finalizedHead: { height: "1", hash: "h1" } },
+  health: { status: "healthy", reason: "test fixture" },
 });
 
 describe("JsonFileIndexerStore recovery", () => {

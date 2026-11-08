@@ -1,15 +1,37 @@
 import { silentLogger, type Logger } from "../logger.js";
 import { parseBlock } from "./parser.js";
 import { buildProjection, type Projection } from "./projection.js";
-import { JsonFileIndexerStore, type StoreState } from "./store.js";
+import { JsonFileIndexerStore, MAX_DIAGNOSTICS, type StoreState } from "./store.js";
 import type {
   BlockRef,
   BlockSource,
+  DiagnosticReason,
   IndexerConfig,
   IndexerHealth,
   IndexerHealthStatus,
   RecordedBlock,
 } from "./types.js";
+
+/**
+ * Quarantine reasons that mean the indexer may be missing or mis-reading state an allowlisted emitter
+ * produced (a coverage/integrity gap), so the projection is no longer trustworthy as current truth.
+ * Foreign-emitter and failed-outcome logs are not our state and never degrade. After parsing checks
+ * the emitter allowlist first, these only arise from allowlisted contracts.
+ */
+const DEGRADING_REASONS: ReadonlySet<DiagnosticReason> = new Set<DiagnosticReason>([
+  "malformed_payload",
+  "unsafe_numeric",
+  "malformed_envelope",
+  "unsupported_version",
+  "unknown_event",
+]);
+
+const REASON_BY_STATUS: Record<IndexerHealthStatus, string> = {
+  healthy: "caught up to the source head with consistent finality",
+  pending: "awaiting finality or further source coverage",
+  degraded: "integrity/coverage quarantine or finality regression requires attention",
+  reconciliation_required: "fork or conflict beyond safe automatic recovery; manual reconciliation required",
+};
 
 /**
  * Read-only indexing engine: ingest canonical blocks from an injected source, deduplicate and
@@ -24,6 +46,8 @@ export interface EngineOptions {
   now?: () => number;
   /** Max blocks ingested per sync call, bounding work per pass. */
   maxBlocksPerSync?: number;
+  /** Max quarantine records retained; older ones are dropped and counted. Defaults to the store cap. */
+  maxDiagnostics?: number;
   log?: Logger;
 }
 
@@ -32,6 +56,7 @@ export class IndexerEngine {
   private dedup = new Map<string, string>();
   private readonly now: () => number;
   private readonly maxPerSync: number;
+  private readonly maxDiag: number;
   private readonly log: Logger;
   private lastSyncMs: number | null = null;
 
@@ -43,6 +68,7 @@ export class IndexerEngine {
   ) {
     this.now = opts.now ?? Date.now;
     this.maxPerSync = opts.maxBlocksPerSync ?? 10_000;
+    this.maxDiag = opts.maxDiagnostics ?? MAX_DIAGNOSTICS;
     this.log = opts.log ?? silentLogger;
   }
 
@@ -77,8 +103,14 @@ export class IndexerEngine {
     });
   }
 
+  /**
+   * The last persisted health. It is read from committed state, so a restart reports the real last
+   * status (pending/degraded/reconciliation_required) instead of defaulting to healthy; the next
+   * {@link sync} recomputes it.
+   */
   health(): IndexerHealth {
-    return this.buildHealth(this.deriveStatus());
+    const h = this.state?.health ?? { status: "pending" as IndexerHealthStatus, reason: "no sync has run yet" };
+    return this.buildHealth(h.status, h.reason);
   }
 
   /** One ingest + reconcile pass. Commits the resulting state. Returns the new health. */
@@ -100,16 +132,21 @@ export class IndexerEngine {
       if (!flags.reason) flags.reason = finalized === null ? "source declares no finalized head" : "not yet caught up to the source head";
     }
 
+    this.capDiagnostics();
+    const status = this.deriveStatus(flags);
+    const reason = flags.reason || REASON_BY_STATUS[status];
+    this.state.health = { status, reason };
     this.lastSyncMs = this.now();
     await this.store.commit(this.state);
 
-    const status = this.deriveStatus(flags);
-    const health = this.buildHealth(status);
+    const health = this.buildHealth(status, reason);
     this.log.info("indexer sync", {
       status,
+      reason,
       processedHead: head?.height ?? null,
       finalizedHead: this.state.cursors.finalizedHead?.height ?? null,
       quarantined: this.state.diagnostics.length,
+      diagnosticsDropped: this.state.diagnosticsDropped,
     });
     return health;
   }
@@ -167,6 +204,13 @@ export class IndexerEngine {
         return;
       }
       const blk = at.block;
+      if (!blk.complete) {
+        // The block exists but the source declares its receipts/logs are not fully available. Treat it
+        // exactly like an `incomplete` coverage gap: stop here, report pending, never advance over it.
+        flags.pending = true;
+        flags.reason = `source block at height ${height.toString()} is incomplete`;
+        return;
+      }
       if (blk.network !== this.config.network) {
         flags.reconciliation = true;
         flags.reason = `block at height ${height.toString()} belongs to another network`;
@@ -242,30 +286,32 @@ export class IndexerEngine {
   private deriveStatus(flags?: SyncFlags): IndexerHealthStatus {
     const diag = this.state?.diagnostics ?? [];
     const hasConflict = diag.some((d) => d.reason === "conflict_payload");
-    const hasIntegrity = diag.some((d) => d.reason === "malformed_payload" || d.reason === "unsafe_numeric");
+    const hasDegrading = diag.some((d) => DEGRADING_REASONS.has(d.reason)) || (this.state?.diagnosticsDropped ?? 0) > 0;
     if (flags?.reconciliation || hasConflict) return "reconciliation_required";
-    if (flags?.degraded || hasIntegrity) return "degraded";
+    if (flags?.degraded || hasDegrading) return "degraded";
     if (flags?.pending) return "pending";
     return "healthy";
   }
 
-  private buildHealth(status: IndexerHealthStatus): IndexerHealth {
-    const diag = this.state?.diagnostics ?? [];
-    const reasonByStatus: Record<IndexerHealthStatus, string> = {
-      healthy: "caught up to the source head with consistent finality",
-      pending: "awaiting finality or further source coverage",
-      degraded: "integrity quarantine or finality regression requires attention",
-      reconciliation_required: "fork or conflict beyond safe automatic recovery; manual reconciliation required",
-    };
+  private buildHealth(status: IndexerHealthStatus, reason: string): IndexerHealth {
     return {
       status,
-      reason: reasonByStatus[status],
+      reason,
       source: this.source.identity(),
       processedHead: this.state?.cursors.processedHead ?? null,
       finalizedHead: this.state?.cursors.finalizedHead ?? null,
-      quarantined: diag.length,
+      quarantined: this.state?.diagnostics.length ?? 0,
       lastSyncMs: this.lastSyncMs,
     };
+  }
+
+  /** Bound quarantine growth: keep the most recent records and count the rest so health still degrades. */
+  private capDiagnostics(): void {
+    const over = this.state.diagnostics.length - this.maxDiag;
+    if (over > 0) {
+      this.state.diagnostics = this.state.diagnostics.slice(over);
+      this.state.diagnosticsDropped += over;
+    }
   }
 }
 

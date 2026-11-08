@@ -5,7 +5,7 @@ import { IndexerEngine } from "./engine.js";
 import { buildProjection } from "./projection.js";
 import { RecordedBlockSource, validateRecordedChain } from "./recorded-source.js";
 import { JsonFileIndexerStore } from "./store.js";
-import type { IndexerConfig } from "./types.js";
+import type { IndexerConfig, IndexerHealthStatus } from "./types.js";
 
 /**
  * Read-only indexer CLI: import recorded block envelopes into a state directory, report status, and
@@ -14,6 +14,17 @@ import type { IndexerConfig } from "./types.js";
  */
 
 export const DEFAULT_STATE_DIR = "./.agent-state/indexer";
+
+/**
+ * Process exit code for a health status. A degraded or reconciliation-required indexer cannot vouch
+ * for its projection as current truth, so it exits non-zero; pending (still catching up) is not an
+ * error. Distinct codes let a caller tell the two failure modes apart.
+ */
+function exitForHealth(status: IndexerHealthStatus): number {
+  if (status === "reconciliation_required") return 2;
+  if (status === "degraded") return 3;
+  return 0;
+}
 
 export interface CliIo {
   out: (line: string) => void;
@@ -102,7 +113,7 @@ export async function runIndexerCli(
         }
         const proj = engine.projection();
         io.out(JSON.stringify({ command: "import", status: health.status, reason: health.reason, processedHead: health.processedHead, finalizedHead: health.finalizedHead, quarantined: health.quarantined, digest: proj.digest, battles: Object.keys(proj.battles).length }));
-        return health.status === "reconciliation_required" ? 2 : 0;
+        return exitForHealth(health.status);
       } finally {
         await engine.close();
       }
@@ -116,16 +127,19 @@ export async function runIndexerCli(
       io.out(
         JSON.stringify({
           command: "status",
+          status: state.health.status,
+          reason: state.health.reason,
           network: state.config.network,
           contracts: state.config.contracts,
           processedHead: state.cursors.processedHead,
           finalizedHead: state.cursors.finalizedHead,
           journal: state.journal.length,
           quarantined: state.diagnostics.length,
+          diagnosticsDropped: state.diagnosticsDropped,
           blocks: state.blocks.length,
         }),
       );
-      return 0;
+      return exitForHealth(state.health.status);
     }
     case "replay":
     case "projection": {
@@ -139,9 +153,9 @@ export async function runIndexerCli(
       if (parsed.command === "projection") {
         io.out(JSON.stringify(proj));
       } else {
-        io.out(JSON.stringify({ command: "replay", digest: proj.digest, battles: Object.keys(proj.battles).length, finalizedHeight: proj.finalizedHeight }));
+        io.out(JSON.stringify({ command: "replay", status: state.health.status, digest: proj.digest, battles: Object.keys(proj.battles).length, finalizedHeight: proj.finalizedHeight }));
       }
-      return 0;
+      return exitForHealth(state.health.status);
     }
     default:
       io.err("usage: indexer <import|status|replay|projection> [--dir <state>] [--chain <file.json>]");
