@@ -1,4 +1,5 @@
 // FIXTURE-ONLY: fake transport and synthetic records; no network is contacted.
+import { staticReferenceRegistry } from "../../src/reference-registry.js";
 import { describe, expect, it } from "vitest";
 import type { AuditRecord } from "../../src/audit/decision.js";
 import { AuditSubmitter } from "../../src/audit/approval.js";
@@ -132,7 +133,7 @@ describe("lifecycle lock step (fixture-only)", () => {
       source: { count: async () => 1, get: async () => ({ ...view, locked: onChain }) },
       refresh: {
         policy: FIXTURE_RESOLVED,
-        registry,
+        registry: staticReferenceRegistry(registry),
         now: () => clock,
         fetchGoPlus: async () => refGoplus(),
         fetchLp: async () => refLp("10001"),
@@ -177,7 +178,7 @@ describe("lifecycle lock step (fixture-only)", () => {
       },
       refresh: {
         policy: FIXTURE_RESOLVED,
-        registry,
+        registry: staticReferenceRegistry(registry),
         now: () => NOW,
         fetchGoPlus: async () => refGoplus(),
         fetchLp: async () => refLp("9999"),
