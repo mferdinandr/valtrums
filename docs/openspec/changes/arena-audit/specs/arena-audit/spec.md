@@ -130,6 +130,45 @@ The cron auditor SHALL refresh affected community evidence before lock under a v
 - **WHEN** audit evidence expires or a community/token mapping changes before lock
 - **THEN** lock is refused until the affected community satisfies the refreshed audit and separate liquidity gate
 
+### Requirement: Durable audit report history and passive read API
+Audit reports SHALL be persistable as immutable historical observations with validated identity and trusted arena/battle/community association, and exposed through a passive read-only API. The API SHALL keep the immutable historical result distinct from read-time freshness and SHALL NOT assert a current approval. Persistence and retrieval SHALL NOT refresh evidence, call a provider, sign or mutate any report, and SHALL expose no write endpoint.
+
+#### Scenario: Durable history across restart
+- **WHEN** a report observation is archived and the archive object is destroyed and recreated from the same storage
+- **THEN** the observation and its association are retrieved identically
+
+#### Scenario: Same evidence, different evaluation
+- **WHEN** the same evidence is evaluated again with a changed result or other decision content
+- **THEN** both observations are preserved and neither overwrites the other
+
+#### Scenario: Same evidence, decision clock only
+- **WHEN** the same evidence and decision content are re-archived with only a changed decision clock
+- **THEN** the retry is idempotent and retains the first-written timestamps
+
+#### Scenario: Fresh query with unchanged findings
+- **WHEN** a new provider query or LP observation changes the evidence hash while findings stay unchanged
+- **THEN** the archive preserves separate history within its documented capacity and does not alter provider refresh or on-chain submission behavior
+
+#### Scenario: Old writer lock
+- **WHEN** another writer encounters a lock whose age exceeds its retry timeout
+- **THEN** the write fails closed without deleting the lock or committed observations, and abandoned-lock recovery requires all writers to be stopped first
+
+#### Scenario: Conflicting or corrupt state
+- **WHEN** a value claims an existing immutable observation id with different contents, or stored state is corrupt or of an unsupported schema
+- **THEN** the write or read fails explicitly and committed history is never silently lost or reset to empty
+
+#### Scenario: Historical result is not current approval
+- **WHEN** a stored pass is read after its recorded expiry
+- **THEN** the historical result stays a pass, freshness reports expired, and the response states that current approval is not established
+
+#### Scenario: Text retrieval preserves observation context
+- **WHEN** a fixture or expired historical report is retrieved as HTTP or CLI text
+- **THEN** the text includes provenance, observation identity, attribution, historical result, freshness and the current-approval limitation, while retaining the existing reference-token report wording
+
+#### Scenario: Passive retrieval and safe errors
+- **WHEN** the API receives an invalid query, an unknown evidence hash, a path-traversal attempt or an unsupported mutation
+- **THEN** it answers with a safe 400, 404 or 405 and performs no provider call, RPC read, signing, mutation or filesystem escape
+
 ### Requirement: Lock refuses expired or changed approvals
 The arena SHALL store, with each audit pass, an expiry taken only from the whitelisted `submit_lifecycle_audit` call, and `lock_lifecycle_battle` SHALL refuse unless every community's approval exists, is before its expiry, binds the committed asset and matches the pinned policy hash when one is set. The agent SHALL send the lock only when every community is approved and fresh.
 

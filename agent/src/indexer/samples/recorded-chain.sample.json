@@ -1,0 +1,55 @@
+{
+  "schema": "arena-indexer-recorded-v1",
+  "identity": { "network": "near-testnet", "sourceType": "recorded", "genesis": "sample-fixture" },
+  "latest": { "height": "4", "hash": "blk-4" },
+  "finalized": { "height": "2", "hash": "blk-2" },
+  "skippedHeights": ["3"],
+  "incompleteHeights": [],
+  "blocks": [
+    {
+      "network": "near-testnet",
+      "contract": "arena.testnet",
+      "complete": true,
+      "finalizedDeclared": true,
+      "header": { "height": "1", "hash": "blk-1", "parentHash": null, "timestampMs": "1700000001000" },
+      "outcomes": [
+        {
+          "receiptId": "receipt-1",
+          "executorId": "arena.testnet",
+          "success": true,
+          "logs": ["EVENT_JSON:{\"standard\":\"valtrum\",\"version\":\"1.0.0\",\"event\":\"lifecycle_battle_created\",\"data\":[{\"battle_id\":1,\"creator\":\"alice.testnet\"}]}"]
+        }
+      ]
+    },
+    {
+      "network": "near-testnet",
+      "contract": "arena.testnet",
+      "complete": true,
+      "finalizedDeclared": true,
+      "header": { "height": "2", "hash": "blk-2", "parentHash": "blk-1", "timestampMs": "1700000002000" },
+      "outcomes": [
+        {
+          "receiptId": "receipt-2",
+          "executorId": "arena.testnet",
+          "success": true,
+          "logs": ["EVENT_JSON:{\"standard\":\"valtrum\",\"version\":\"1.0.0\",\"event\":\"audit_updated\",\"data\":[{\"battle_id\":1,\"community\":0,\"result\":\"pass\",\"evidence_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"expires_at_ms\":\"1799999999000\"}]}"]
+        }
+      ]
+    },
+    {
+      "network": "near-testnet",
+      "contract": "arena.testnet",
+      "complete": true,
+      "finalizedDeclared": false,
+      "header": { "height": "4", "hash": "blk-4", "parentHash": "blk-2", "timestampMs": "1700000004000" },
+      "outcomes": [
+        {
+          "receiptId": "receipt-4",
+          "executorId": "arena.testnet",
+          "success": true,
+          "logs": ["EVENT_JSON:{\"standard\":\"valtrum\",\"version\":\"1.0.0\",\"event\":\"lifecycle_deposit\",\"data\":[{\"battle_id\":1,\"community\":0,\"account_id\":\"bob.testnet\",\"amount\":\"1000\"}]}"]
+        }
+      ]
+    }
+  ]
+}
