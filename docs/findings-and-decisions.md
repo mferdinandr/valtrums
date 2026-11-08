@@ -36,6 +36,10 @@ Related: [product specification](product-spec.md), [GoPlus audit policy](goplus-
 
 Work in progress (not yet pushed): `feat/backing-reconciliation` (asset-representation tasks: reconciliation, suspend and resume policy, late-deposit refund) and `feat/payout-mpc-signing` (chain-signatures tasks: MPC signer call from the payout contract, restart reconciliation, explicit payout states). `arena-settlement` follows once the payout status interface exists.
 
+## Player-policy PR review corrections (2026-11-08)
+
+PR [#93](https://github.com/mferdinandr/valtrum/pull/93), issue [#58](https://github.com/mferdinandr/valtrum/issues/58): source review identified cross-version asset changes sharing one budget, cap reductions below existing obligations, stale queued reservations admitted through a replacement grant, and non-array event data. The correction keeps the asset immutable, rejects invalid cap replacement before state changes, checks the queued reservation's current version at first dispatch, and preserves reconciliation for already-dispatched obligations. Events now use NEP-297 data arrays; canonical JSON inputs reject unknown fields. Regression tests cover these boundaries, including sandbox rollback; validation results belong to the PR. No live execution, deployment or new economic policy is introduced.
+
 ## Research findings (2026-11-07)
 
 ### GoPlus coverage on Robinhood mainnet 4663

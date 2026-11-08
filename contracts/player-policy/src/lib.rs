@@ -337,7 +337,7 @@ impl Budget {
         }
     }
 
-    /// Remaining budget. Saturating so a lowered limit below current use reads as zero, never panics.
+    /// Remaining budget. Saturating defensively; valid transitions keep use within the limit.
     pub fn available(&self) -> u128 {
         self.authorized_limit
             .saturating_sub(self.consumed.saturating_add(self.reserved))
@@ -384,10 +384,14 @@ impl Budget {
         Ok(())
     }
 
-    /// Re-point the limit to a new grant version's cumulative cap. Counters are preserved, so the
-    /// new limit may be at or below current use (available then reads zero) but can never reset it.
-    pub fn relimit(&mut self, new_limit: u128) {
+    /// Change a grant version's limit without resetting obligations or breaking the invariant.
+    /// Invalid replacements leave the entire budget unchanged.
+    pub fn relimit(&mut self, new_limit: u128) -> Result<(), PolicyError> {
+        if self.used()? > new_limit {
+            return Err(PolicyError::CumulativeCapExceeded);
+        }
         self.authorized_limit = new_limit;
+        Ok(())
     }
 }
 

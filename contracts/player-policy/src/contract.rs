@@ -58,6 +58,7 @@ pub struct PlayerPolicy {
 
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct AssetInput {
     pub chain_id: U64,
     pub token: String,
@@ -80,6 +81,7 @@ impl From<AssetInput> for AssetKey {
 
 #[near(serializers = [json])]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct BattleInput {
     pub battle_id: U64,
     pub community: Option<u32>,
@@ -95,6 +97,7 @@ impl From<BattleInput> for BattleScope {
 }
 
 #[near(serializers = [json])]
+#[serde(deny_unknown_fields)]
 pub struct GrantInput {
     pub delegate: AccountId,
     pub local_id: Hash,
@@ -111,6 +114,7 @@ pub struct GrantInput {
 }
 
 #[near(serializers = [json])]
+#[serde(deny_unknown_fields)]
 pub struct ActionInput {
     /// Lookup key for the grant; authorization is by caller, not by this field.
     pub user: AccountId,
@@ -157,7 +161,7 @@ pub struct ReservationView {
 fn emit(event: &str, data: Value) {
     env::log_str(&format!(
         "EVENT_JSON:{}",
-        json!({"standard": "valtrum_player_policy", "version": "1.0.0", "event": event, "data": data})
+        json!({"standard": "valtrum_player_policy", "version": "1.0.0", "event": event, "data": [data]})
     ));
 }
 
@@ -223,18 +227,25 @@ impl PlayerPolicy {
                 grant.version > existing.grant.version,
                 "Grant version must increase"
             );
+            require!(
+                grant.asset == existing.grant.asset,
+                "Grant asset cannot change"
+            );
+            // Validate the new limit before changing any persisted grant/history entry.
+            let mut budget = *self
+                .budgets
+                .get(&id)
+                .unwrap_or_else(|| env::panic_str("Missing budget"));
+            budget
+                .relimit(grant.cumulative_cap)
+                .unwrap_or_else(|_| env::panic_str("Grant cap below existing obligations"));
             let old_key = VersionKey {
                 grant: id,
                 version: existing.grant.version,
             };
             let old = existing.grant.clone();
             self.grant_versions.insert(old_key, old);
-            // Re-point the shared budget's limit to the new cap; counters are preserved.
-            if let Some(budget) = self.budgets.get(&id) {
-                let mut budget = *budget;
-                budget.relimit(grant.cumulative_cap);
-                self.budgets.insert(id, budget);
-            }
+            self.budgets.insert(id, budget);
         } else {
             self.budgets.insert(id, Budget::new(grant.cumulative_cap));
         }
@@ -484,19 +495,24 @@ impl PlayerPolicy {
     pub fn fixture_dispatch(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
         near_sdk::assert_one_yocto();
         self.require_executor();
-        // Re-check the grant at execution admission: a revoked/expired grant admits no new dispatch.
-        let id = GrantId::derive(&user, &local_id).0;
-        let stored = self
-            .grants
-            .get(&id)
-            .cloned()
-            .unwrap_or_else(|| env::panic_str("Unknown grant"));
-        require!(!stored.revoked, "Grant revoked");
-        require!(
-            env::block_timestamp() < stored.grant.expiry_ns,
-            "Grant expired"
-        );
         let (key, mut reservation, _) = self.load(&user, &local_id, &request_id);
+        // Re-check current authority only at first admission. A replacement grant cannot revive
+        // an old queued authorization; an already-dispatched obligation remains reconcilable.
+        if reservation.state == ReservationState::Reserved {
+            let stored = self
+                .grants
+                .get(&reservation.grant)
+                .unwrap_or_else(|| env::panic_str("Unknown grant"));
+            require!(
+                reservation.version == stored.grant.version,
+                "Grant version changed"
+            );
+            require!(!stored.revoked, "Grant revoked");
+            require!(
+                env::block_timestamp() < stored.grant.expiry_ns,
+                "Grant expired"
+            );
+        }
         reservation
             .dispatch()
             .unwrap_or_else(|_| env::panic_str("Wrong state"));

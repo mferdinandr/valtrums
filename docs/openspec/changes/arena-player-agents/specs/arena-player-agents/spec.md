@@ -44,3 +44,15 @@ A persistent policy contract SHALL authenticate grant creation and revocation fr
 #### Scenario: Version change cannot evade obligations
 - **WHEN** a grant is revised to a new version
 - **THEN** old records and the shared budget counters are preserved, so unresolved obligations are not reset and the cumulative cap is not evaded
+
+#### Scenario: Immutable asset and valid replacement cap
+- **WHEN** a new version changes the grant's asset identity or lowers its cumulative cap below consumed plus reserved units
+- **THEN** replacement is rejected without changing the existing version, history or budget; another asset requires a new grant ID
+
+#### Scenario: Queued authorization after replacement
+- **WHEN** a queued reservation's grant is replaced, including after expiry or revocation
+- **THEN** the old version is denied first execution admission, while already-dispatched obligations remain attributable and reconcilable
+
+#### Scenario: Canonical input and event envelope
+- **WHEN** a grant or action contains unknown fields, including nested asset or battle fields
+- **THEN** input is rejected; accepted policy changes emit versioned NEP-297 events with an array of data records

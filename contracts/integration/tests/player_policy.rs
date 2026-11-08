@@ -291,3 +291,232 @@ async fn insufficient_storage_deposit_is_rejected() -> anyhow::Result<()> {
     assert!(g.is_none());
     Ok(())
 }
+
+#[tokio::test]
+async fn replacement_rejections_preserve_asset_budget_and_grant_version() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    w.agent
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&w.user, "80", 1))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let before_budget = budget(&w).await?;
+    let mut replacement = grant_input(&w.agent, "100", FUTURE_NS);
+    replacement["input"]["version"] = json!("2");
+    let mut too_small = replacement.clone();
+    too_small["input"]["per_action_cap"] = json!("50");
+    too_small["input"]["cumulative_cap"] = json!("50");
+    let mut invalid_replacements = vec![too_small];
+    for (field, value) in [
+        ("chain_id", json!("1")),
+        ("token", json!("0x00000000000000000000000000000000000000bb")),
+        ("representation", json!("other-token.testnet")),
+        ("custody_domain", json!("vault-2")),
+        ("mapping_version", json!("3")),
+    ] {
+        let mut changed_asset = replacement.clone();
+        changed_asset["input"]["asset"][field] = value;
+        invalid_replacements.push(changed_asset);
+    }
+    for invalid in invalid_replacements {
+        let outcome = w
+            .user
+            .call(w.policy.id(), "create_grant")
+            .args_json(invalid)
+            .deposit(NearToken::from_near(1))
+            .transact()
+            .await?;
+        assert!(outcome.is_failure());
+        assert_eq!(budget(&w).await?, before_budget);
+        let grant: Value = w
+            .policy
+            .view("get_grant")
+            .args_json(json!({"user": w.user.id(), "local_id": b32(7)}))
+            .await?
+            .json()?;
+        assert_eq!(grant["version"], "1");
+    }
+    // An exact-use cap and differently cased spelling of the same token remain valid.
+    replacement["input"]["per_action_cap"] = json!("80");
+    replacement["input"]["cumulative_cap"] = json!("80");
+    replacement["input"]["asset"]["token"] = json!("0x00000000000000000000000000000000000000AA");
+    w.user
+        .call(w.policy.id(), "create_grant")
+        .args_json(replacement)
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let after = budget(&w).await?;
+    assert_eq!(after["authorized_limit"], "80");
+    assert_eq!(after["reserved"], "80");
+    assert_eq!(after["available"], "0");
+    Ok(())
+}
+
+#[tokio::test]
+async fn unknown_action_fields_fail_without_reserving_budget() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    let mut uncommitted_payload = action(&w.user, "10", 1);
+    uncommitted_payload["action"]["calldata"] = json!("ignored executable payload");
+    let result = w
+        .agent
+        .call(w.policy.id(), "reserve")
+        .args_json(uncommitted_payload)
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?;
+    assert!(result.is_failure());
+    assert_eq!(budget(&w).await?["reserved"], "0");
+    Ok(())
+}
+
+/// A separate target directory keeps fixture authority out of the normal artifact tested above.
+fn fixture_player_policy_wasm() -> anyhow::Result<Vec<u8>> {
+    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace")
+        .to_path_buf();
+    let target = workspace.join("target/player-policy-fixtures");
+    let status = std::process::Command::new("cargo")
+        .current_dir(&workspace)
+        .args([
+            "build",
+            "--release",
+            "--target",
+            "wasm32-unknown-unknown",
+            "-p",
+            "valtrum-player-policy",
+            "--features",
+            "sandbox-fixtures",
+            "--target-dir",
+        ])
+        .arg(&target)
+        .status()?;
+    anyhow::ensure!(status.success(), "player-policy fixture wasm build failed");
+    Ok(std::fs::read(target.join(
+        "wasm32-unknown-unknown/release/valtrum_player_policy.wasm",
+    ))?)
+}
+
+/// Runs in the existing sandbox CI job without enabling fixture methods in the normal build.
+/// Synthetic execution outcomes are not evidence of real player spending or foreign finality.
+#[tokio::test]
+async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconciliation(
+) -> anyhow::Result<()> {
+    let worker = near_workspaces::sandbox().await?;
+    let policy = worker.dev_deploy(&fixture_player_policy_wasm()?).await?;
+    let owner = worker.dev_create_account().await?;
+    let executor = worker.dev_create_account().await?;
+    let user = worker.dev_create_account().await?;
+    let agent = worker.dev_create_account().await?;
+    policy
+        .call("new")
+        .args_json(json!({"owner": owner.id()}))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(policy.id(), "set_executor")
+        .args_json(json!({"executor": executor.id()}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    user.call(policy.id(), "create_grant")
+        .args_json(grant_input(&agent, "100", FUTURE_NS))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    for (amount, request) in [("40", 1), ("60", 2)] {
+        agent
+            .call(policy.id(), "reserve")
+            .args_json(action(&user, amount, request))
+            .deposit(NearToken::from_near(1))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    let queued = json!({"user": user.id(), "local_id": b32(7), "request_id": b32(1)});
+    let dispatched = json!({"user": user.id(), "local_id": b32(7), "request_id": b32(2)});
+    executor
+        .call(policy.id(), "fixture_dispatch")
+        .args_json(dispatched.clone())
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    user.call(policy.id(), "revoke_grant")
+        .args_json(json!({"local_id": b32(7)}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let mut replacement = grant_input(&agent, "100", FUTURE_NS);
+    replacement["input"]["version"] = json!("2");
+    replacement["input"]["destinations"] = json!(["0x0000000000000000000000000000000000000099"]);
+    user.call(policy.id(), "create_grant")
+        .args_json(replacement)
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let stale_dispatch = executor
+        .call(policy.id(), "fixture_dispatch")
+        .args_json(queued.clone())
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?;
+    let error = stale_dispatch
+        .into_result()
+        .expect_err("replacement must not revive the queued v1 action");
+    assert!(error.to_string().contains("Grant version changed"));
+    let queued_state: Value = policy
+        .view("get_reservation")
+        .args_json(queued)
+        .await?
+        .json()?;
+    assert_eq!(queued_state["state"], "reserved");
+    assert_eq!(queued_state["version"], "1");
+    // Revoking the replacement still cannot block reconciliation of an old dispatched action.
+    user.call(policy.id(), "revoke_grant")
+        .args_json(json!({"local_id": b32(7)}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    for method in ["fixture_dispatch", "fixture_mark_reconciliation"] {
+        executor
+            .call(policy.id(), method)
+            .args_json(dispatched.clone())
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    let mut proof = dispatched;
+    proof["executed"] = json!(true);
+    for _ in 0..2 {
+        executor
+            .call(policy.id(), "fixture_reconcile")
+            .args_json(proof.clone())
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    let budget: Value = policy
+        .view("get_budget")
+        .args_json(json!({"user": user.id(), "local_id": b32(7)}))
+        .await?
+        .json()?;
+    assert_eq!(budget["consumed"], "60");
+    assert_eq!(budget["reserved"], "40");
+    assert_eq!(budget["authorized_limit"], "100");
+    Ok(())
+}
