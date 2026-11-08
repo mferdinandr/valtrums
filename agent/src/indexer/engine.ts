@@ -1,0 +1,284 @@
+import { silentLogger, type Logger } from "../logger.js";
+import { parseBlock } from "./parser.js";
+import { buildProjection, type Projection } from "./projection.js";
+import { JsonFileIndexerStore, type StoreState } from "./store.js";
+import type {
+  BlockRef,
+  BlockSource,
+  IndexerConfig,
+  IndexerHealth,
+  IndexerHealthStatus,
+  RecordedBlock,
+} from "./types.js";
+
+/**
+ * Read-only indexing engine: ingest canonical blocks from an injected source, deduplicate and
+ * accept events, reconcile provisional forks against the source, promote finality only along the
+ * source-declared finalized ancestor chain, and persist a replayable journal. It has no write
+ * authority: the source and store are read/local-only, and a retraction is a read-model operation
+ * that never refunds, restores backing, or sends a payout. Finality and provisional status are kept
+ * distinct; a source label is a declared assertion, never verified finality.
+ */
+
+export interface EngineOptions {
+  now?: () => number;
+  /** Max blocks ingested per sync call, bounding work per pass. */
+  maxBlocksPerSync?: number;
+  log?: Logger;
+}
+
+export class IndexerEngine {
+  private state!: StoreState;
+  private dedup = new Map<string, string>();
+  private readonly now: () => number;
+  private readonly maxPerSync: number;
+  private readonly log: Logger;
+  private lastSyncMs: number | null = null;
+
+  constructor(
+    private readonly source: BlockSource,
+    private readonly store: JsonFileIndexerStore,
+    private readonly config: IndexerConfig,
+    opts: EngineOptions = {},
+  ) {
+    this.now = opts.now ?? Date.now;
+    this.maxPerSync = opts.maxBlocksPerSync ?? 10_000;
+    this.log = opts.log ?? silentLogger;
+  }
+
+  async open(): Promise<void> {
+    const id = this.source.identity();
+    if (id.network !== this.config.network) {
+      throw new Error("source network does not match the configured network");
+    }
+    this.state = await this.store.open(this.config);
+    this.rebuildDedup();
+  }
+
+  async close(): Promise<void> {
+    await this.store.close();
+  }
+
+  private rebuildDedup(): void {
+    this.dedup.clear();
+    for (const e of this.state.journal) this.dedup.set(e.dedupKey, e.payloadDigest);
+  }
+
+  private committedFinalizedHeight(): bigint {
+    const f = this.state.cursors.finalizedHead;
+    return f ? BigInt(f.height) : -1n;
+  }
+
+  /** The deterministic projection over the committed journal at the committed finalized height. */
+  projection(): Projection {
+    return buildProjection(this.state.journal, {
+      finalizedHeight: this.committedFinalizedHeight(),
+      reducerVersion: this.config.reducerVersion,
+    });
+  }
+
+  health(): IndexerHealth {
+    return this.buildHealth(this.deriveStatus());
+  }
+
+  /** One ingest + reconcile pass. Commits the resulting state. Returns the new health. */
+  async sync(): Promise<IndexerHealth> {
+    const flags: SyncFlags = { reconciliation: false, degraded: false, pending: false, reason: "" };
+    const committedFinalBefore = this.committedFinalizedHeight();
+
+    const { latest, finalized } = await this.source.head();
+
+    await this.reconcileProvisional(flags);
+    if (!flags.reconciliation) await this.extend(flags);
+    if (!flags.reconciliation) this.promoteFinality(finalized, committedFinalBefore, flags);
+
+    // Caught up only when the processed head equals the source latest head by hash.
+    const head = this.state.cursors.processedHead;
+    const caughtUp = latest !== null && head !== null && head.height === latest.height && head.hash === latest.hash;
+    if (!flags.reconciliation && (!caughtUp || finalized === null)) {
+      flags.pending = true;
+      if (!flags.reason) flags.reason = finalized === null ? "source declares no finalized head" : "not yet caught up to the source head";
+    }
+
+    this.lastSyncMs = this.now();
+    await this.store.commit(this.state);
+
+    const status = this.deriveStatus(flags);
+    const health = this.buildHealth(status);
+    this.log.info("indexer sync", {
+      status,
+      processedHead: head?.height ?? null,
+      finalizedHead: this.state.cursors.finalizedHead?.height ?? null,
+      quarantined: this.state.diagnostics.length,
+    });
+    return health;
+  }
+
+  private async reconcileProvisional(flags: SyncFlags): Promise<void> {
+    const provisional = this.state.blocks.filter((b) => !b.finalized).sort((a, b) => cmpHeight(a.height, b.height));
+    for (const sb of provisional) {
+      const at = await this.source.blockAt(sb.height);
+      if (at.kind === "block") {
+        if (at.block.header.hash === sb.hash) continue; // still canonical
+        return this.rollbackFrom(BigInt(sb.height), flags); // replaced provisional history
+      }
+      if (at.kind === "incomplete") {
+        // Cannot verify this height right now; stop here and report pending rather than guess.
+        flags.pending = true;
+        flags.reason = `source coverage incomplete at height ${sb.height}`;
+        return;
+      }
+      // skipped or beyond_head: our block no longer exists on the source -> orphaned.
+      return this.rollbackFrom(BigInt(sb.height), flags);
+    }
+  }
+
+  private rollbackFrom(height: bigint, flags: SyncFlags): void {
+    const orphan = new Set(this.state.blocks.filter((b) => cmpHeight(b.height, height.toString()) >= 0).map((b) => b.hash));
+    // A conflict at or below the finalized boundary must not rewrite finalized state.
+    if (this.state.blocks.some((b) => orphan.has(b.hash) && b.finalized)) {
+      flags.reconciliation = true;
+      flags.reason = `fork conflicts with finalized state at or below height ${height.toString()}; preserving evidence`;
+      return;
+    }
+    this.state.blocks = this.state.blocks.filter((b) => !orphan.has(b.hash));
+    this.state.journal = this.state.journal.filter((e) => !orphan.has(e.provenance.blockHash));
+    this.state.diagnostics = this.state.diagnostics.filter((d) => !orphan.has(d.provenance.blockHash));
+    this.rebuildDedup();
+    const tip = [...this.state.blocks].sort((a, b) => cmpHeight(a.height, b.height)).at(-1) ?? null;
+    this.state.cursors.processedHead = tip ? { height: tip.height, hash: tip.hash } : null;
+  }
+
+  private async extend(flags: SyncFlags): Promise<void> {
+    let headHash = this.state.cursors.processedHead?.hash ?? this.config.anchorHash;
+    let height = this.state.cursors.processedHead
+      ? BigInt(this.state.cursors.processedHead.height) + 1n
+      : BigInt(this.config.anchorHeight);
+    for (let count = 0; count < this.maxPerSync; count++) {
+      const at = await this.source.blockAt(height.toString());
+      if (at.kind === "beyond_head") return;
+      if (at.kind === "skipped") {
+        height += 1n;
+        continue;
+      }
+      if (at.kind === "incomplete") {
+        flags.pending = true;
+        flags.reason = `source coverage incomplete at height ${height.toString()}`;
+        return;
+      }
+      const blk = at.block;
+      if (blk.network !== this.config.network) {
+        flags.reconciliation = true;
+        flags.reason = `block at height ${height.toString()} belongs to another network`;
+        return;
+      }
+      if (blk.header.parentHash !== headHash) {
+        // Reconcile already rolled back a divergent tip, so a parent mismatch here is a source
+        // inconsistency: stop and require reconciliation rather than linking a broken chain.
+        flags.reconciliation = true;
+        flags.reason = `parent linkage broken at height ${height.toString()}`;
+        return;
+      }
+      this.applyBlock(blk, flags);
+      headHash = blk.header.hash;
+      this.state.cursors.processedHead = { height: blk.header.height, hash: blk.header.hash };
+      height = BigInt(blk.header.height) + 1n;
+    }
+  }
+
+  private applyBlock(blk: RecordedBlock, flags: SyncFlags): void {
+    const { accepted, diagnostics } = parseBlock(blk, this.config);
+    for (const e of accepted) {
+      const prev = this.dedup.get(e.dedupKey);
+      if (prev === undefined) {
+        this.state.journal.push(e);
+        this.dedup.set(e.dedupKey, e.payloadDigest);
+      } else if (prev !== e.payloadDigest) {
+        // Same identity, different payload: a conflict requiring reconciliation, never last-write-wins.
+        this.state.diagnostics.push({
+          dedupKey: e.dedupKey,
+          reason: "conflict_payload",
+          provenance: e.provenance,
+          rawLog: "",
+          standard: this.config.standard,
+        });
+        flags.reconciliation = true;
+        flags.reason = `event ${e.dedupKey} reappeared with a different payload`;
+      }
+    }
+    for (const d of diagnostics) this.state.diagnostics.push(d);
+    this.state.blocks.push({
+      height: blk.header.height,
+      hash: blk.header.hash,
+      parentHash: blk.header.parentHash,
+      timestampMs: blk.header.timestampMs,
+      finalized: false,
+    });
+  }
+
+  private promoteFinality(finalized: BlockRef | null, committedBefore: bigint, flags: SyncFlags): void {
+    if (finalized === null) return;
+    const fh = BigInt(finalized.height);
+    if (fh < committedBefore) {
+      flags.degraded = true;
+      flags.reason = "source finalized head regressed below the committed finalized height";
+      return; // keep the committed finalized state; never un-finalize
+    }
+    const fb = this.state.blocks.find((b) => b.height === finalized.height);
+    if (!fb) {
+      flags.pending = true;
+      if (!flags.reason) flags.reason = `source finalized head ${finalized.height} not yet processed`;
+      return;
+    }
+    if (fb.hash !== finalized.hash) {
+      flags.reconciliation = true;
+      flags.reason = `source finalizes a different block at height ${finalized.height} than the processed chain`;
+      return;
+    }
+    for (const b of this.state.blocks) if (cmpHeight(b.height, finalized.height) <= 0) b.finalized = true;
+    this.state.cursors.finalizedHead = { height: finalized.height, hash: finalized.hash };
+  }
+
+  private deriveStatus(flags?: SyncFlags): IndexerHealthStatus {
+    const diag = this.state?.diagnostics ?? [];
+    const hasConflict = diag.some((d) => d.reason === "conflict_payload");
+    const hasIntegrity = diag.some((d) => d.reason === "malformed_payload" || d.reason === "unsafe_numeric");
+    if (flags?.reconciliation || hasConflict) return "reconciliation_required";
+    if (flags?.degraded || hasIntegrity) return "degraded";
+    if (flags?.pending) return "pending";
+    return "healthy";
+  }
+
+  private buildHealth(status: IndexerHealthStatus): IndexerHealth {
+    const diag = this.state?.diagnostics ?? [];
+    const reasonByStatus: Record<IndexerHealthStatus, string> = {
+      healthy: "caught up to the source head with consistent finality",
+      pending: "awaiting finality or further source coverage",
+      degraded: "integrity quarantine or finality regression requires attention",
+      reconciliation_required: "fork or conflict beyond safe automatic recovery; manual reconciliation required",
+    };
+    return {
+      status,
+      reason: reasonByStatus[status],
+      source: this.source.identity(),
+      processedHead: this.state?.cursors.processedHead ?? null,
+      finalizedHead: this.state?.cursors.finalizedHead ?? null,
+      quarantined: diag.length,
+      lastSyncMs: this.lastSyncMs,
+    };
+  }
+}
+
+interface SyncFlags {
+  reconciliation: boolean;
+  degraded: boolean;
+  pending: boolean;
+  reason: string;
+}
+
+/** Compare decimal height strings without precision loss. */
+function cmpHeight(a: string, b: string): number {
+  const x = BigInt(a);
+  const y = BigInt(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
