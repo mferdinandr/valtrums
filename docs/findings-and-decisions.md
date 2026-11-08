@@ -130,6 +130,14 @@ Issue [#72](https://github.com/mferdinandr/valtrum/issues/72); record in [testne
 - **Robinhood's own RPCs:** the testnet RPC fails TLS, and the mainnet hosts serve an expired certificate.
 - **Deployment:** the only testnet deployment (`8875bb`) is the legacy arena (`get_lifecycle_battle_count` returns MethodNotFound). The target contracts, the MPC signer, the derived custody address and gas are not deployed, so signer and receipt evidence cannot be recorded yet.
 
+## Research findings (2026-11-08): Intents and Bitte
+
+Issue [#78](https://github.com/mferdinandr/valtrum/issues/78); record in [intents-evidence.md](intents-evidence.md).
+
+- **Robinhood mainnet:** 1Click lists it as blockchain `hood` with USDG, WETH, ETH, CASHCAT, USDe and PONS. USDG and WETH are the audit's verified addresses, and CASHCAT is a candidate reference token. Dry quotes from NEAR USDC to CASHCAT, USDG and ETH succeed (about 20 seconds estimated).
+- **Testnet:** 1Click lists no testnet asset, so an Intents route for testnet funding is an integration gap. `0x…dEaD` is refused as a recipient.
+- **Bitte:** no account or agent exists; orchestration and the binding of action, route and custody receipt are not verified.
+
 ## Work branches
 
 All merged on 2026-11-07 with merge commits, in the order #52, #53, #54, #55, #56. #53 needed a documentation conflict fixed in `arena-lifecycle/implementation-notes.md`, and its first CI run failed because #52 and #53 each added a field to a struct that the other's new tests construct (no textual conflict); fixed in `e1d1a36`. Lesson: re-run CI after merging `main` into a branch, even when git reports no conflicts. Commits carry no AI attribution.

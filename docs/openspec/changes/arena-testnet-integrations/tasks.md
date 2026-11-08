@@ -22,9 +22,12 @@ Check tasks only after implementation and verification. Research can proceed ind
 ## Intents and Bitte
 
 - [ ] Verify Intents testnet asset discovery, quote, route and funding/refund status for the selected assets.
+  - [x] Recorded 2026-11-08 (`docs/intents-evidence.md`): 1Click lists Robinhood mainnet (`hood`: USDG, WETH, ETH, CASHCAT, USDe, PONS) and dry-quotes NEAR USDC to CASHCAT, USDG and ETH; it lists no testnet asset, so no testnet route, funding or refund status can be verified.
 - [ ] Verify Bitte orchestration of a canonical arena preview and user-authorized action.
+  - Not verified: no Bitte account or agent exists; the #76 action boundary and #77 proposals are the integration points.
 - [ ] Bind the user action, preview, authorization, Intents route status and final custody receipt in recorded evidence.
-- [ ] Record unsupported routes as integration gaps; direct deposit alone does not complete Intents or Bitte acceptance.
+  - Not verified: needs the target testnet deployment, a supported route and a funded action.
+- [x] Record unsupported routes as integration gaps; direct deposit alone does not complete Intents or Bitte acceptance. (`docs/intents-evidence.md` section 4: Intents on testnet and Bitte are gaps; the arena boundary refuses non-direct routes with `unsupported_route`.)
 
 ## Observability and recovery
 
