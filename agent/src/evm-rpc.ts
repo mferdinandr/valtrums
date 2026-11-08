@@ -3,6 +3,8 @@ export interface EvmLog {
   address: string;
   topics: string[];
   data: string;
+  /** Index of the log within its block; absent in older fixtures. */
+  logIndex?: number;
 }
 
 export interface EvmReceipt {
@@ -10,6 +12,8 @@ export interface EvmReceipt {
   /** True when the transaction succeeded, false when it reverted. */
   status: boolean;
   blockNumber: bigint;
+  /** Hash of the block that includes the transaction; absent in older fixtures. */
+  blockHash?: string;
   logs: EvmLog[];
 }
 
@@ -90,8 +94,26 @@ export class FetchEvmRpc implements EvmRpc {
     return big(block?.timestamp, "block timestamp");
   }
 
-  async getTransactionCount(address: string, tag: "pending" | "latest"): Promise<bigint> {
+  async getTransactionCount(address: string, tag: "pending" | "latest" | "finalized"): Promise<bigint> {
     return big(await this.rpc("eth_getTransactionCount", [address, tag]), "nonce");
+  }
+
+  /** Number and hash of the newest finalized block (`eth_getBlockByNumber("finalized")`). */
+  async getFinalizedBlock(): Promise<{ number: bigint; hash: string }> {
+    const block = (await this.rpc("eth_getBlockByNumber", ["finalized", false])) as {
+      number?: unknown;
+      hash?: unknown;
+    } | null;
+    if (!block || typeof block.hash !== "string") throw new Error("no finalized block in RPC response");
+    return { number: big(block.number, "finalized block number"), hash: block.hash };
+  }
+
+  /** Hash of the block at `number`, or null when the node has no such block. */
+  async getBlockHash(number: bigint): Promise<string | null> {
+    const block = (await this.rpc("eth_getBlockByNumber", [`0x${number.toString(16)}`, false])) as {
+      hash?: unknown;
+    } | null;
+    return block && typeof block.hash === "string" ? block.hash : null;
   }
 
   async getBalance(address: string): Promise<bigint> {
@@ -141,14 +163,21 @@ export class FetchEvmRpc implements EvmRpc {
       transactionHash: string;
       status: string;
       blockNumber: string;
-      logs: Array<{ address: string; topics: string[]; data: string }>;
+      blockHash?: string;
+      logs: Array<{ address: string; topics: string[]; data: string; logIndex?: string }>;
     } | null;
     if (!r) return null;
     return {
       transactionHash: r.transactionHash,
       status: big(r.status, "receipt status") === 1n,
       blockNumber: big(r.blockNumber, "receipt block"),
-      logs: (r.logs ?? []).map((l) => ({ address: l.address, topics: l.topics, data: l.data })),
+      ...(typeof r.blockHash === "string" ? { blockHash: r.blockHash } : {}),
+      logs: (r.logs ?? []).map((l) => ({
+        address: l.address,
+        topics: l.topics,
+        data: l.data,
+        ...(typeof l.logIndex === "string" ? { logIndex: Number(big(l.logIndex, "log index")) } : {}),
+      })),
     };
   }
 

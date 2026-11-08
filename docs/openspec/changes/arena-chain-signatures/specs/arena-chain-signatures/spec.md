@@ -45,6 +45,14 @@ The system SHALL verify successful matching finalized execution before consuming
 - **WHEN** a worker restarts with a pending transaction
 - **THEN** it reconciles the durable payout and replacement history without paying twice
 
+#### Scenario: Unsent or lost-response attempt
+- **WHEN** a signed attempt is unknown to the node and the nonce is unused
+- **THEN** only the identical stored transaction is sent again and no new signature is requested
+
+#### Scenario: Used nonce without our receipt
+- **WHEN** the nonce is used but no recorded attempt has a receipt
+- **THEN** the payout is held as reconciliation required and nothing is rebroadcast
+
 #### Scenario: Per-asset payout ID collision
 - **WHEN** two backing contracts issue the same local payout ID
 - **THEN** their payout identities, payloads, statuses and confirmations cannot overwrite each other
