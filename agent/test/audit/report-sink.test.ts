@@ -1,4 +1,5 @@
 // FIXTURE-ONLY: fake arena views and providers; the archive sink is in-memory. No network.
+import { staticReferenceRegistry } from "../../src/reference-registry.js";
 import { describe, expect, it } from "vitest";
 import { AuditSubmitter } from "../../src/audit/approval.js";
 import {
@@ -29,7 +30,7 @@ function source(views: Record<number, LifecycleBattleView>): LifecycleAuditSourc
 function baseRefresh(queries: { chainId: string; token: string }[], calls: unknown[][]) {
   return {
     policy: FIXTURE_RESOLVED,
-    registry,
+    registry: staticReferenceRegistry(registry),
     now: () => NOW,
     refreshAheadMs: 60_000,
     fetchGoPlus: async (q: { chainId: string; token: string }) => {

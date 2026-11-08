@@ -6,11 +6,14 @@ Check tasks only after implementation and verification. Research can proceed ind
 
 - [ ] Verify NEAR testnet and Robinhood testnet chain ID `46630`, configured RPC identity and testnet account mappings.
 - [ ] Verify signer account, custody path, derived address, gas funding and deployed code hashes for the isolated testnet setup.
-- [ ] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration.
+- [x] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration. Verified by fake-RPC tests (`agent/test/chain-guard.test.ts`, `foreign-executor.test.ts`, `custody-verifier.test.ts`); no live network claim.
 - [ ] Record actual source receipt, attribution, finality and reorg-verification evidence.
-- [ ] Verify GoPlus (chain `4663`) and independent liquidity coverage for the mainnet reference token of each testnet mock; explicitly record unsupported or missing fields.
-- [ ] Maintain a protocol-controlled registry mapping each testnet mock token to its Robinhood mainnet reference token, shared by audit and scoring; reject unregistered mappings.
+- [x] Verify GoPlus (chain `4663`) and independent liquidity coverage for the mainnet reference token of each testnet mock; explicitly record unsupported or missing fields.
+  - Recorded 2026-11-08 for the 13 candidate reference tokens (no mock is registered yet), with each missing GoPlus field and each unsupported pool (Uniswap v4 and other DEX types) listed in `docs/evidence/2026-11-08-arena-audit-verification.json`. Repeat for each mock once the registry has entries.
+- [x] Maintain a protocol-controlled registry mapping each testnet mock token to its Robinhood mainnet reference token, shared by audit and scoring; reject unregistered mappings.
+  - Mechanism only: owner-controlled entries in the arena contract, enforced at battle creation and read by audit and scoring through `agent/src/reference-registry.ts`. No entries are registered; the candidate mainnet tokens still need owner verification (see the GoPlus coverage task).
 - [ ] Verify price, circulating supply, eligible volume, drawdown sampling and finality sources for the mainnet reference tokens against the frozen 30-second policy.
+  - [x] Research recorded 2026-11-08 in `docs/scoring-market-data.md` (aggregator responses only; no compliant supply source, no observable finality, Robinhood RPC unreachable over valid TLS). On-chain verification and the owner's provider/cadence/tolerance decision remain open.
 - [ ] Label fixtures and distinguish adapter demonstrations from verified public-service integrations.
 
 ## Intents and Bitte

@@ -1,0 +1,1659 @@
+{
+ "label": "RECORDED LIVE READ-ONLY EVIDENCE, 2026-11-08 (UTC). Robinhood mainnet 4663 via two independent keyless public RPC providers (PublicNode, dRPC; endpoints from the chainlist registry, not committed). Reads are at recent blocks, NOT finalized blocks (the free tiers refuse older state). GoPlus Token Security v1 without credentials.",
+ "addresses": {
+  "block": 109328309,
+  "blockHash": "0xa55f234dece6c2240fd7bdf16af9910ab9513ed3db55075b0535bbdc7bab8ee2",
+  "providersAgree": true,
+  "values": {
+   "WETH": {
+    "code_len": 2202,
+    "symbol": "WETH",
+    "name": "WETH",
+    "decimals": 18,
+    "totalSupply": 36657347407177448551538
+   },
+   "USDG": {
+    "code_len": 170,
+    "symbol": "USDG",
+    "name": "Global Dollar",
+    "decimals": 6,
+    "totalSupply": 637956098059037
+   },
+   "POOL": {
+    "code_len": 22142,
+    "token0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "fee": 100,
+    "factory": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+    "liquidity": 1412951821504983305,
+    "sqrtPriceX96": 3747731112445041595222807,
+    "usdg_balance": 2286389624495,
+    "weth_balance": 3656083984696917472420
+   }
+  },
+  "wethUsdFromPool": 2237.58
+ },
+ "factoryAndProxy": {
+  "block": 109328634,
+  "hash": "0xc0d7822b53b6f1c730bb5df045bc2cb573cbf12ec16488322db18561d0b98984",
+  "at": "2026-11-08T15:28:08Z",
+  "publicnode": {
+   "hash": "0xc0d7822b53b6f1c730bb5df045bc2cb573cbf12ec16488322db18561d0b98984",
+   "getPool": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+   "usdg_impl": "0x68184c449e1a8f34fa18d289737129fd27b66f8f",
+   "usdg_admin": "0x0000000000000000000000000000000000000000",
+   "factory_code_len": 24535
+  },
+  "drpc": {
+   "hash": "0xc0d7822b53b6f1c730bb5df045bc2cb573cbf12ec16488322db18561d0b98984",
+   "getPool": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+   "usdg_impl": "0x68184c449e1a8f34fa18d289737129fd27b66f8f",
+   "usdg_admin": "0x0000000000000000000000000000000000000000",
+   "factory_code_len": 24535
+  }
+ },
+ "audit": {
+  "drpc": {
+   "startedAt": "2026-11-08T15:29:20.416Z",
+   "finishedAt": "2026-11-08T15:30:10.939Z",
+   "tokens": {
+    "CASHCAT": {
+     "token": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+     "result": "pass",
+     "reasons": [],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:20.417Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0xa70fc67c9f69da90b63a0e4c05d229954574e313",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "736801.170858",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xd42a491087a15e5afd51feb3606066cc152d2b09",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "205616.112913",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x4e8649be40ae67ebbcff99c291b92ee03015917b",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "31407.482394",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xf896fd1e9076355f2f2d0a1f2dc1cd7b2acd18f6",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "357.28758",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x4b0c312ffbb068f6a0bea128759e35d94b94d0e1",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "15596.711274",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x3986840e83e64c113b4ebeeed6b3223528e06ed9",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "897.108749",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xcd3b02f383e8e311fc26bc8845a6d52b38cb8dfd",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "10130.19993",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x43781f7ae77d99df3a52095c0b7d162828467a6e",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "677.931951",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xad75bcd63abf014e45cb4ce437c95746760925b2",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "15.907099",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x1b619a121d6c5bfd10d149e7246da3c838a66b48",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "1385.072281",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xbc2f6fed647e917fd60c8990f2c6b91f0c426f12",
+       "kind": "constant_product",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "3369.501445",
+       "block": "109329350",
+       "observedAt": "2026-11-08T15:29:20.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 1006254.49,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88820.98
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88936.89
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88843.79
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 422158.68
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 219900.99
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88534.51
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 69340.22
+      },
+      {
+       "label": "aero",
+       "quote": "WETH",
+       "dsLiquidityUsd": 28848.19
+      },
+      {
+       "label": "0x9a8442cb89fE713ce7C2f22852e61fBFFeE97EcF",
+       "quote": "WETH",
+       "dsLiquidityUsd": 21677.84
+      },
+      {
+       "label": "aero",
+       "quote": "USDG",
+       "dsLiquidityUsd": 17173.07
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 7152.88
+      },
+      {
+       "label": "0xDeDB80903df19f9dB9b393eb66E07511CB9ABdA2",
+       "quote": "WETH",
+       "dsLiquidityUsd": 14339.19
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 6703.27
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 4076.87
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 5132.26
+      },
+      {
+       "label": "v4",
+       "quote": "STONKBROKER",
+       "dsLiquidityUsd": 1526.4
+      },
+      {
+       "label": "0x2f171c6997FC98970efc0Ff3E3AEB6ef4025E939",
+       "quote": "WETH",
+       "dsLiquidityUsd": 3775.35
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 3037.06
+      },
+      {
+       "label": "0x5481864ddd46a2D798Df0925C23B7846e776E5E3",
+       "quote": "USDG",
+       "dsLiquidityUsd": 1275.62
+      }
+     ],
+     "evidenceHash": "ec56ce7d801906fde2d219f07fed84ce0cda95c90a1c46b50ac787b81012e565",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "BTCETHUSDT": {
+     "token": "0xae2df3c1749daee721c1bfcbbfdde5d61ae7cb99",
+     "result": "pass",
+     "reasons": [],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:25.854Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x708aef3736c15fcc1c0b3606c5b9a33fe8656784",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "17911.54092",
+       "block": "109329404",
+       "observedAt": "2026-11-08T15:29:25.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 17911.54,
+     "unsupportedPools": [],
+     "evidenceHash": "d18600c3e5c154e58653adfafca2ecba8942de72bbd2a4ce7b68372e9efa8fca",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "REBATE": {
+     "token": "0xb7ff57631b97000d950236ef63bd463da5beba7e",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:29.764Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 48034.44
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 6201.16
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 4719.69
+      },
+      {
+       "label": "v4",
+       "quote": "NET",
+       "dsLiquidityUsd": 7.11
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 38.13
+      }
+     ],
+     "evidenceHash": "5db1f1b3cce206b3cec0539ab7b9df0fc61803da9d17fefb551e589624030bc7",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "OAK": {
+     "token": "0x6511c233790ec10f7d673c64dc82c3f941d57828",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:32.988Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x58102bbd2ad639ce4e5b28d1e88b729a8c0ffe11",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "4474.903103",
+       "block": "109329472",
+       "observedAt": "2026-11-08T15:29:32.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x655630f7cf485726e5b9784f024ad32f51a06913",
+       "kind": "constant_product",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "368.169675",
+       "block": "109329472",
+       "observedAt": "2026-11-08T15:29:32.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 4843.07,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88948.72
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 4352.41
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1810.94
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 2098.4
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1648.36
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 11959.42
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 1832.11
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 299.86
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 249.99
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": null
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 7.77
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 5.41
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 13.56
+      }
+     ],
+     "evidenceHash": "16660bd534ef064e63eb50da1c35963cdf67bc5e3a0512082d31a42cc3f998e8",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "STRATEGY": {
+     "token": "0x168661c52e5922288dfb2b3f323b6cf90eb21e18",
+     "result": "reject",
+     "reasons": [
+      {
+       "code": "admin_privilege_not_renounced",
+       "field": "transfer_pausable"
+      },
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:36.609Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x7b475b961b6b8612c2f340fc1520c5255b75a174",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "853.82754",
+       "block": "109329507",
+       "observedAt": "2026-11-08T15:29:36.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 853.83,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "MSTR",
+       "dsLiquidityUsd": 415253.24
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 95.78
+      }
+     ],
+     "evidenceHash": "3567a171b19504bc2e2f41977d10940b2f120309749dbb1b5bb4519234fd5f04",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "PENNY": {
+     "token": "0x4124277673e3ecaaf4aadc5c6169cf1d7812d647",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "is_honeypot"
+      },
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "slippage_modifiable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "personal_slippage_modifiable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_pausable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "owner_change_balance"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_blacklisted"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_whitelisted"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_mintable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_proxy"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:40.266Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "DJT",
+       "dsLiquidityUsd": 132282.8
+      },
+      {
+       "label": "v4",
+       "quote": "RCAT",
+       "dsLiquidityUsd": 47831.1
+      },
+      {
+       "label": "v4",
+       "quote": "BULL",
+       "dsLiquidityUsd": 617.56
+      },
+      {
+       "label": "v4",
+       "quote": "QUBT",
+       "dsLiquidityUsd": null
+      }
+     ],
+     "evidenceHash": "313f00e65795b0fdb461b220dd003c4ef31a3d2830f9f65176173193cd0acbdb",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "WIF": {
+     "token": "0x96c5d997a462bce2577bee9527a1a08101927519",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "buy_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "sell_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_tax"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:43.547Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [],
+     "evidenceHash": "fb261a713079f15a5c9eeafaffdf93d82f5ac4fb8fe9ec3b0d77e79bdbec7260",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "Rabbit": {
+     "token": "0xcd1cca2b3d0a11b295c42fe765ea8f895c2d0901",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:46.792Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "WYFI",
+       "dsLiquidityUsd": 5860.43
+      }
+     ],
+     "evidenceHash": "57e6b031f94eba60269d41309524eca70f798b198195631a0e2cc362f9b4ed96",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "ROBIN": {
+     "token": "0x4c92177dc03430058929f1e115e0d51a3d1d62ba",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:50.055Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0xc3698e57baedff8fcf8d0464a3ea9fdf4fbe08bf",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "1087.694905",
+       "block": "109329638",
+       "observedAt": "2026-11-08T15:29:49.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 1087.69,
+     "unsupportedPools": [],
+     "evidenceHash": "2dea392e7ef37f408709346e16d9bc9ede36ac9cfc9908b58d93106700c05215",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "RICO": {
+     "token": "0x36f205a6f54468fc65257eac0d8fed8dbb486435",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:29:53.693Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [],
+     "evidenceHash": "78f029295b0dffec6356836cc02b0bc045ecf80d1d19adb3fff55c34d9d457e6",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "VLADIUS": {
+     "token": "0x2e6ab6302e1903af8601fe03b7a7982545883a02",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:30:00.139Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x93f51cc6c3a2f302064579f1007cd83158a889f3",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "322.242168",
+       "block": "109329742",
+       "observedAt": "2026-11-08T15:30:00.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 322.24,
+     "unsupportedPools": [],
+     "evidenceHash": "1038426a9a7a59734d2bd3d96af390599b30a5a49961dd31f81f2c5ea9501fa0",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "HODL": {
+     "token": "0xc943274a0fe0a19e8678bc2f4a61a9a6d107c026",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "buy_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "sell_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_tax"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:30:04.165Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "WETH",
+       "dsLiquidityUsd": 3412.9
+      }
+     ],
+     "evidenceHash": "3be28bdda194b7f4f0ffa519e9f092a33598ade16f369edea4c6643e0c07297c",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "CHAD": {
+     "token": "0x025be9469fb7d8c22ce5404f77302611fee74e67",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "buy_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "sell_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_tax"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:30:07.666Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "BOOMER",
+       "dsLiquidityUsd": 961.14
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1.06
+      }
+     ],
+     "evidenceHash": "56b89fda171cbc6193dbdead9ca5c7d4ce75efb819c980ce3549d889b93db428",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    }
+   }
+  },
+  "publicnode": {
+   "startedAt": "2026-11-08T15:30:50.674Z",
+   "finishedAt": "2026-11-08T15:32:06.005Z",
+   "tokens": {
+    "CASHCAT": {
+     "token": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+     "result": "pass",
+     "reasons": [],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:30:50.675Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0xa70fc67c9f69da90b63a0e4c05d229954574e313",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "736825.351422",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xd42a491087a15e5afd51feb3606066cc152d2b09",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "205622.860885",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x4e8649be40ae67ebbcff99c291b92ee03015917b",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "31408.513134",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xf896fd1e9076355f2f2d0a1f2dc1cd7b2acd18f6",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "357.28758",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x4b0c312ffbb068f6a0bea128759e35d94b94d0e1",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "15596.711274",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x3986840e83e64c113b4ebeeed6b3223528e06ed9",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "897.108749",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xcd3b02f383e8e311fc26bc8845a6d52b38cb8dfd",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "10130.532386",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x43781f7ae77d99df3a52095c0b7d162828467a6e",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "677.931951",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xad75bcd63abf014e45cb4ce437c95746760925b2",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "15.907621",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x1b619a121d6c5bfd10d149e7246da3c838a66b48",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "1385.117736",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      },
+      {
+       "pool": "0xbc2f6fed647e917fd60c8990f2c6b91f0c426f12",
+       "kind": "constant_product",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "3369.501445",
+       "block": "109330248",
+       "observedAt": "2026-11-08T15:30:51.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 1006286.82,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88820.98
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88936.89
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88843.79
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 422158.68
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 219900.99
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88534.51
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 69340.22
+      },
+      {
+       "label": "aero",
+       "quote": "WETH",
+       "dsLiquidityUsd": 28848.19
+      },
+      {
+       "label": "0x9a8442cb89fE713ce7C2f22852e61fBFFeE97EcF",
+       "quote": "WETH",
+       "dsLiquidityUsd": 21677.84
+      },
+      {
+       "label": "aero",
+       "quote": "USDG",
+       "dsLiquidityUsd": 17173.07
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 7152.88
+      },
+      {
+       "label": "0xDeDB80903df19f9dB9b393eb66E07511CB9ABdA2",
+       "quote": "WETH",
+       "dsLiquidityUsd": 14339.19
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 6703.27
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 4076.87
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 5132.26
+      },
+      {
+       "label": "v4",
+       "quote": "STONKBROKER",
+       "dsLiquidityUsd": 1526.4
+      },
+      {
+       "label": "0x2f171c6997FC98970efc0Ff3E3AEB6ef4025E939",
+       "quote": "WETH",
+       "dsLiquidityUsd": 3775.35
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 3037.06
+      },
+      {
+       "label": "0x5481864ddd46a2D798Df0925C23B7846e776E5E3",
+       "quote": "USDG",
+       "dsLiquidityUsd": 1275.62
+      }
+     ],
+     "evidenceHash": "9213b066ba3334fa298d901aa1c9c106decfb43e2025ac4356fb8ded5f15d5bb",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "BTCETHUSDT": {
+     "token": "0xae2df3c1749daee721c1bfcbbfdde5d61ae7cb99",
+     "result": "pass",
+     "reasons": [],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:02.864Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x708aef3736c15fcc1c0b3606c5b9a33fe8656784",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "17913.219674",
+       "block": "109330368",
+       "observedAt": "2026-11-08T15:31:03.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 17913.22,
+     "unsupportedPools": [],
+     "evidenceHash": "2fda8e9e42af68d1eeda7fa4f7f52276403525880775d5c367aa29caf93cc523",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "REBATE": {
+     "token": "0xb7ff57631b97000d950236ef63bd463da5beba7e",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:08.824Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 48034.44
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 6201.16
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 4719.69
+      },
+      {
+       "label": "v4",
+       "quote": "NET",
+       "dsLiquidityUsd": 7.11
+      },
+      {
+       "label": "metric",
+       "quote": "USDG",
+       "dsLiquidityUsd": 38.13
+      }
+     ],
+     "evidenceHash": "11658e7544504551ea642e192e86a62ba5bbcd98809d883163910cbc9edb3b4f",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "OAK": {
+     "token": "0x6511c233790ec10f7d673c64dc82c3f941d57828",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:12.639Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x58102bbd2ad639ce4e5b28d1e88b729a8c0ffe11",
+       "kind": "concentrated",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "4474.903103",
+       "block": "109330464",
+       "observedAt": "2026-11-08T15:31:12.000Z",
+       "note": null
+      },
+      {
+       "pool": "0x655630f7cf485726e5b9784f024ad32f51a06913",
+       "kind": "constant_product",
+       "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "headlineUsd": "368.169675",
+       "block": "109330464",
+       "observedAt": "2026-11-08T15:31:12.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 4843.07,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 88948.72
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 4352.41
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1810.94
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 2098.4
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1648.36
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 11959.42
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 1832.11
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 299.86
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 249.99
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": null
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 7.77
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 5.41
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 13.56
+      }
+     ],
+     "evidenceHash": "6ccf302a110515f5ecd0ee124c6dbbf53a173dfd09114989c95f7e94fc2a3a8a",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "STRATEGY": {
+     "token": "0x168661c52e5922288dfb2b3f323b6cf90eb21e18",
+     "result": "reject",
+     "reasons": [
+      {
+       "code": "admin_privilege_not_renounced",
+       "field": "transfer_pausable"
+      },
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:18.666Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x7b475b961b6b8612c2f340fc1520c5255b75a174",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "854.178314",
+       "block": "109330526",
+       "observedAt": "2026-11-08T15:31:19.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 854.18,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "MSTR",
+       "dsLiquidityUsd": 415253.24
+      },
+      {
+       "label": "v4",
+       "quote": "USDG",
+       "dsLiquidityUsd": 95.78
+      }
+     ],
+     "evidenceHash": "6f7e86b2a5563284a0e26d346781601e0eeb25d85ee7d8bda723b79ef15d14a2",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "PENNY": {
+     "token": "0x4124277673e3ecaaf4aadc5c6169cf1d7812d647",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "is_honeypot"
+      },
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "slippage_modifiable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "personal_slippage_modifiable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_pausable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "owner_change_balance"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_blacklisted"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_whitelisted"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_mintable"
+      },
+      {
+       "code": "unknown_field",
+       "field": "is_proxy"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:24.478Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "DJT",
+       "dsLiquidityUsd": 132282.8
+      },
+      {
+       "label": "v4",
+       "quote": "RCAT",
+       "dsLiquidityUsd": 47831.1
+      },
+      {
+       "label": "v4",
+       "quote": "BULL",
+       "dsLiquidityUsd": 617.56
+      },
+      {
+       "label": "v4",
+       "quote": "QUBT",
+       "dsLiquidityUsd": null
+      }
+     ],
+     "evidenceHash": "8b4274d21ed522b5b69ec5c6ba2f4a9519d4a6b17db2bf3b0aaf9e0dc98614a4",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "WIF": {
+     "token": "0x96c5d997a462bce2577bee9527a1a08101927519",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "buy_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "sell_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_tax"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:28.494Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [],
+     "evidenceHash": "e628d955d4203018f97b754a54b5e693d57bd5b1fd964ebeb4684f8c456bbcf7",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "Rabbit": {
+     "token": "0xcd1cca2b3d0a11b295c42fe765ea8f895c2d0901",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:32.336Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "WYFI",
+       "dsLiquidityUsd": 5860.43
+      }
+     ],
+     "evidenceHash": "0c3ea5a53f3727d31e9cab6d61cad3a14ed55333efbee7d9b4def1a712ae2c41",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "ROBIN": {
+     "token": "0x4c92177dc03430058929f1e115e0d51a3d1d62ba",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:36.056Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0xc3698e57baedff8fcf8d0464a3ea9fdf4fbe08bf",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "1088.097316",
+       "block": "109330690",
+       "observedAt": "2026-11-08T15:31:36.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 1088.1,
+     "unsupportedPools": [],
+     "evidenceHash": "f97d1c213a15493f3f734e1560ebe34c61d69100e384c026400a8d2d08e87ae8",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "RICO": {
+     "token": "0x36f205a6f54468fc65257eac0d8fed8dbb486435",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:41.488Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [],
+     "evidenceHash": "6fc9b9fbd971c1a7913c017db51d309531da9a49e888fb26baffcd6e9bd491b8",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "VLADIUS": {
+     "token": "0x2e6ab6302e1903af8601fe03b7a7982545883a02",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "lp_at_or_below_threshold",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:31:45.300Z",
+      "hasResult": true
+     },
+     "lpPools": [
+      {
+       "pool": "0x93f51cc6c3a2f302064579f1007cd83158a889f3",
+       "kind": "concentrated",
+       "quote": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "headlineUsd": "322.358217",
+       "block": "109330779",
+       "observedAt": "2026-11-08T15:31:45.000Z",
+       "note": null
+      }
+     ],
+     "lpHeadlineTotalUsd": 322.36,
+     "unsupportedPools": [],
+     "evidenceHash": "7f5248a359ba3647b444165598e77e072bf47ddee9832aa4b02273a6768611d4",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "HODL": {
+     "token": "0xc943274a0fe0a19e8678bc2f4a61a9a6d107c026",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "source_rate_limited",
+       "field": null
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 4029,
+      "queriedAt": "2026-11-08T15:31:54.204Z",
+      "hasResult": false
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "WETH",
+       "dsLiquidityUsd": 3412.9
+      }
+     ],
+     "evidenceHash": "559a51e39f3cf0cc0c760961e6852153c78db60d9f319ef130c08d39970b6580",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    },
+    "CHAD": {
+     "token": "0x025be9469fb7d8c22ce5404f77302611fee74e67",
+     "result": "pending",
+     "reasons": [
+      {
+       "code": "unknown_field",
+       "field": "cannot_sell_all"
+      },
+      {
+       "code": "unknown_field",
+       "field": "buy_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "sell_tax"
+      },
+      {
+       "code": "unknown_field",
+       "field": "transfer_tax"
+      },
+      {
+       "code": "lp_no_evidence",
+       "field": null
+      },
+      {
+       "code": "evidence_time_missing",
+       "field": null
+      }
+     ],
+     "goplus": {
+      "http": 200,
+      "code": 1,
+      "queriedAt": "2026-11-08T15:32:01.905Z",
+      "hasResult": true
+     },
+     "lpPools": [],
+     "lpHeadlineTotalUsd": 0,
+     "unsupportedPools": [
+      {
+       "label": "v4",
+       "quote": "BOOMER",
+       "dsLiquidityUsd": 961.14
+      },
+      {
+       "label": "v4",
+       "quote": "ETH",
+       "dsLiquidityUsd": 1.06
+      }
+     ],
+     "evidenceHash": "fb1fe2007e027d54aa05ec0a8fd607a06af1f3d63f874b9450e4a44ac1f9000c",
+     "policyHash": "981d824cb4068aff90c1c49bbb784cee2fe33d0bba491266ef156014ca907363"
+    }
+   }
+  }
+ }
+}
