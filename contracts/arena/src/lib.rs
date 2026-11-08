@@ -9,6 +9,7 @@ use near_sdk::{
 pub mod credit;
 pub mod events;
 pub mod lifecycle;
+pub mod lifecycle_backing;
 #[cfg(test)]
 mod lifecycle_guards;
 pub mod math;
@@ -69,6 +70,7 @@ enum StorageKey {
     LifecycleParticipants,
     LifecycleParticipantCounts,
     LifecycleSettlement,
+    LifecycleTrustedRepresentations,
 }
 
 #[ext_contract(ext_ft)]
@@ -188,6 +190,9 @@ pub struct Arena {
     /// Fee settings snapshotted into each new lifecycle battle.
     lifecycle_fee_bps: u16,
     lifecycle_creator_share_bps: u16,
+    /// Representation contracts the owner accepts as backing sources; only these
+    /// can produce a backing approval (see `lifecycle_backing`).
+    lifecycle_trusted_representations: LookupMap<AccountId, bool>,
 }
 
 /// Total fee on a losing vault can never be set above 10%.
@@ -241,6 +246,9 @@ impl Arena {
             lifecycle_settlement: LookupMap::new(StorageKey::LifecycleSettlement),
             lifecycle_fee_bps: 10,
             lifecycle_creator_share_bps: 5_000,
+            lifecycle_trusted_representations: LookupMap::new(
+                StorageKey::LifecycleTrustedRepresentations,
+            ),
         }
     }
 

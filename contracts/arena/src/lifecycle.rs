@@ -579,6 +579,21 @@ impl Battle {
         self.hold_principal(winner)
     }
 
+    /// The committed asset of a community, if it exists.
+    pub fn community_asset(&self, community: usize) -> Option<&AssetIdentity> {
+        self.communities.get(community).map(|entry| &entry.asset)
+    }
+
+    pub fn backing_of(&self, community: usize) -> Option<&BackingApproval> {
+        self.communities
+            .get(community)
+            .and_then(|entry| entry.backing.as_ref())
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.snapshot.is_some()
+    }
+
     pub fn community_count(&self) -> usize {
         self.communities.len()
     }
