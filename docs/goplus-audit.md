@@ -1,6 +1,6 @@
 # GoPlus token audit policy
 
-Status: **adapter implemented (`agent/src/audit/`), fixture-verified only; no live GoPlus or mainnet liquidity coverage has been verified.** This is the selected field mapping for the Robinhood testnet arena. The [product specification](product-spec.md) governs battle behavior. Owner decisions below (policy `audit-policy-v1`) resolve the tax limit, admin-privilege admissibility and the default evidence TTL. Still OPEN: recovery after a live token-policy change, the minimum executable-depth policy for concentrated liquidity, and the DAO rules.
+Status: **adapter implemented (`agent/src/audit/`), fixture-verified only; no live GoPlus or mainnet liquidity coverage has been verified.** This is the selected field mapping for the Robinhood testnet arena. The [product specification](product-spec.md) governs battle behavior. Owner decisions below (policy `audit-policy-v1`) resolve the tax limit, admin-privilege admissibility and the default evidence TTL. Still OPEN: recovery after a live token-policy change and the minimum executable-depth policy for concentrated liquidity. DAO rules are decided separately (D22).
 
 ## Owner decisions (policy `audit-policy-v1`)
 
@@ -114,4 +114,4 @@ Not built and not tasks; no fallback code exists.
 - **Buy/sell simulation** to measure honeypot behaviour and taxes, for example by `eth_call` with state overrides against the DEX router, is deferred. It needs an RPC that supports state overrides (not yet verified) and a decision on how simulated results map into the tax and honeypot fields.
 - Until a source of tax and honeypot data exists, tokens without GoPlus data remain Pending under the existing rule that unknown mandatory fields hold Pending.
 
-The corresponding [OpenSpec audit requirements](openspec/changes/arena-audit/specs/arena-audit/spec.md) are the acceptance criteria. DAO rules remain independent and OPEN.
+The corresponding [OpenSpec audit requirements](openspec/changes/arena-audit/specs/arena-audit/spec.md) are the acceptance criteria. DAO rules are independent of the audit (see [DAO governance](dao-governance.md)).

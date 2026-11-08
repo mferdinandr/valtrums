@@ -14,7 +14,7 @@ Implementation tracker: [publish-ready parent issue](implementation-tracker.md).
 | 4 | GoPlus and independent LP audit | 1; gates approval in 3 | Critical risk rejects, unknown holds Pending, LP strictly > USD 10,000; audit policy v1 (decided 2026-11-07) applied before live approval |
 | 5 | Four scores and overtime | 3, 4, observation policy | Exact signed/rational math, 30-second rounds, no TWAP; repeated ties reset leaders only, all vaults locked |
 | 6 | Per-token settlement, revenue and Robinhood payout | 2, 5 | Configurable snapshotted fee and creator share; deterministic rounding; final native receipts and idempotent retries |
-| 7 | Principal escrow and DAO design | 2, 6 for allocation; governance decision OPEN | Principal isolated; losing-token payouts independent; no invented quorum/weight/deadline/fallback |
+| 7 | Principal escrow and DAO design | 2, 6 for allocation; governance decided (D22) | Principal isolated; losing-token payouts independent; winner vote per [DAO governance](dao-governance.md), no fallback beyond it |
 | 8 | NEAR AI player agents and MCP | 3–6, enforceable authorization | Bounded budget, destinations, expiry/revocation; preview integrity; infrastructure cannot spend user funds |
 | 9 | UI, observability and full demo | 1–8 | Separate entitlement/transfer/DAO status, event replay, alerts; recorded two/three-community and failure demos |
 
