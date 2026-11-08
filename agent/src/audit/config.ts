@@ -2,11 +2,9 @@ import { isAddress, normalizeAddress } from "../evm-abi.js";
 import { DEFAULT_EVIDENCE_TTL_SECONDS } from "./policy.js";
 import { parseDecimal } from "./decimal.js";
 import { validateStablecoins, type PoolConfig, type WethConfig } from "./lp-fetcher.js";
-import { validateRegistry, type ReferenceEntry } from "./reference.js";
 
 export interface AuditConfig {
   ttlSeconds: number;
-  registry: ReferenceEntry[];
   stablecoins: Map<string, number>;
   pools: PoolConfig[];
   /** Optional WETH quote pricing; unset means WETH-quoted pools stay unpriced (Pending). */
@@ -59,16 +57,12 @@ export function loadAuditConfig(
     throw new Error("REFERENCE_RPC_URL must use https (http is only accepted for localhost)");
   }
 
-  const regRaw = json(env, "AUDIT_REFERENCE_REGISTRY", "[]");
-  if (!Array.isArray(regRaw)) throw new Error("AUDIT_REFERENCE_REGISTRY must be a JSON array");
-  const registry = validateRegistry(
-    regRaw.map((e: Record<string, unknown>) => ({
-      chainId: String(e.chain_id),
-      token: String(e.token),
-      referenceChainId: String(e.reference_chain_id),
-      referenceToken: String(e.reference_address),
-    })),
-  );
+  // Reference mappings come only from the arena's on-chain registry (`get_reference_registry`).
+  if (env.AUDIT_REFERENCE_REGISTRY !== undefined) {
+    throw new Error(
+      "AUDIT_REFERENCE_REGISTRY is no longer supported; reference mappings come from the arena's on-chain registry",
+    );
+  }
 
   const stableRaw = json(env, "AUDIT_STABLECOINS", "{}");
   if (typeof stableRaw !== "object" || stableRaw === null || Array.isArray(stableRaw)) {
@@ -111,7 +105,6 @@ export function loadAuditConfig(
 
   return {
     ttlSeconds,
-    registry,
     stablecoins,
     pools,
     ...(weth ? { weth } : {}),

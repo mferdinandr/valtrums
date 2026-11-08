@@ -17,7 +17,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 ## Reference-token audit
 
-- [x] Accept a reference mapping (`reference_chain_id` 4663, `reference_address`) only from a protocol-controlled registry in configuration; a self-declared, conflicting or unregistered mapping stays Pending.
+- [x] Accept a reference mapping (`reference_chain_id` 4663, `reference_address`) only from the protocol-controlled registry (originally agent configuration, now the arena's on-chain registry); a self-declared, conflicting or unregistered mapping stays Pending.
 - [x] Query GoPlus and read liquidity for the mainnet reference pair; bind both the testnet asset and the reference pair, and label the record, `policyHash` and `evidenceHash` as a reference-token audit that did not audit the testnet mock itself.
 - [x] Keep the direct rule for unmapped tokens: evidence for another chain or token cannot approve.
 - [x] Test registry validation, held mappings, mapping change invalidation, wrong-subject GoPlus and liquidity evidence, and evidence-hash commitment to the subject.
