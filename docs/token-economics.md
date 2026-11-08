@@ -136,9 +136,9 @@ Transfer-tax/rebase behavior can break equality between custody debit and recipi
 
 The winner's principal and its backing remain reserved for DAO disposition. Losing-token rewards and revenue are independent liabilities and can be paid immediately after allocation.
 
-DAO membership, vote weighting, quorum, deadlines, allowed burn/return proportions, fallback, delegation and execution policy are **OPEN**. No timeout may silently return or burn principal. A demo fixture must disclose that it is a fixture, not governance.
+Governance is decided (D22, see [DAO governance](dao-governance.md)): the winning community's participants vote burn or return, weighted by their principal; the burn share of votes cast applies to the whole escrow (per holder `burn_i = floor(p_i * B / (B + R))`, `return_i = p_i - burn_i`, so conservation is exact and rounding favours return). There is no quorum and no delegation. If nobody votes in the window, the principal stays escrowed, and no timeout may silently return or burn it. A demo fixture must disclose that it is a fixture, not governance.
 
-Destroying only NEAR representations does not prove Robinhood tokens were burned. A disposal must bind the decision, escrow amount, destination/action and verified underlying result. Whether the underlying token supports a supply burn or requires an irrecoverable sink is OPEN; report these outcomes accurately. The same units cannot subsequently be redeemed or returned.
+Destroying only NEAR representations does not prove Robinhood tokens were burned. A disposal must bind the decision, escrow amount, destination/action and verified underlying result. A burn is a verified transfer to a frozen irrecoverable sink address on Robinhood, not a supply burn; report it as "sent to sink". The same units cannot subsequently be redeemed or returned.
 
 ## Required accounting checks
 

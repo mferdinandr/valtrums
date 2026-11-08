@@ -1,5 +1,6 @@
 import type { NearTransport } from "../near-client.js";
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
+import type { ReferenceRegistrySource } from "../reference-registry.js";
 import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
 import type { LifecycleLocker } from "./lifecycle-lock.js";
 import type { ArchiveProvenance, ReportArchive } from "./report-archive.js";
@@ -63,7 +64,11 @@ export type ReportArchiveSink = Pick<ReportArchive, "put">;
 
 export interface LifecycleAuditPassDeps {
   source: LifecycleAuditSource;
-  refresh: Omit<RefreshDeps, "isLocked">;
+  /**
+   * `registry` is the on-chain reference registry, loaded once per pass; a failed or inconsistent
+   * read fails the whole pass closed, so nothing is audited against a partial registry.
+   */
+  refresh: Omit<RefreshDeps, "isLocked" | "registry"> & { registry: ReferenceRegistrySource };
   reports?: AuditReportStore;
   /** Optional durable archive sink for report history; `arena` is required when it is set. */
   archive?: ReportArchiveSink;
@@ -101,6 +106,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     let checked = 0;
     let ready = 0;
     let errors = 0;
+    const registry = (await deps.refresh.registry.load()).entries;
     const total = await deps.source.count();
     for (let id = 1; id <= total; id++) {
       try {
@@ -108,6 +114,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         if (!view || view.locked) continue;
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
+          registry,
           isLocked: async () => false,
         });
         // Attribution is bounded to the current view's communities and their trusted indices.

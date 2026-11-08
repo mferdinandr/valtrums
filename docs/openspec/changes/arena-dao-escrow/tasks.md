@@ -1,6 +1,6 @@
 # Tasks
 
-Check tasks only after implementation and verification. Governance remains OPEN; do not invent an owner decision, timeout or fallback.
+Check tasks only after implementation and verification. Governance is decided (D22, [dao-governance.md](../../../dao-governance.md)); do not add a timeout or fallback beyond it.
 
 ## Principal isolation
 
@@ -11,9 +11,9 @@ Check tasks only after implementation and verification. Governance remains OPEN;
 
 ## Governance design gate
 
-- [ ] Obtain explicit decisions on DAO membership, voting weight, quorum, deadlines, delegation and fallback.
-- [ ] Specify authorized decision verification, eligible burn/return proportions and execution authority for review.
-- [ ] Obtain approval of the governance and disposition design before implementing an authoritative decision path.
+- [x] Obtain explicit decisions on DAO membership, voting weight, quorum, deadlines, delegation and fallback. (Owner, 2026-11-08, D22.)
+- [x] Specify authorized decision verification, eligible burn/return proportions and execution authority for review. (`docs/dao-governance.md`.)
+- [x] Obtain approval of the governance and disposition design before implementing an authoritative decision path. (Approved by the owner on 2026-11-08 by merging PR #99.)
 
 ## Decision-bound execution
 
