@@ -62,10 +62,10 @@ pnpm typecheck
 pnpm build
 pnpm -F @valtrum/agent test
 pnpm -F @valtrum/web test
-pnpm -F @valtrum/web dev
+pnpm dev
 ```
 
-Without an arena ID the web uses deterministic demo data. Contract checks from contracts/:
+`pnpm dev` starts the web and builds and starts the infrastructure agent together. The agent requires `ARENA_CONTRACT_ID`, `AGENT_ACCOUNT_ID`, and exactly one of `AGENT_PRIVATE_KEY` or `AGENT_PRIVATE_KEY_FILE` in the process environment; see [agent setup](agent/README.md). Restart the command after changing agent source code. To run only the web in demo mode, use `pnpm -F @valtrum/web dev`; without an arena ID it uses deterministic demo data. Contract checks from contracts/:
 
 ```bash
 cargo fmt --check

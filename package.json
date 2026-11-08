@@ -4,6 +4,7 @@
   "packageManager": "pnpm@11.25.0",
   "engines": { "node": ">=22" },
   "scripts": {
+    "dev": "pnpm -r --parallel --if-present dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck"
   }
