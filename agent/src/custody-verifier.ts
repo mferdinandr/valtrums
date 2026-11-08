@@ -1,4 +1,5 @@
 import { TRANSFER_TOPIC, keccak, normalizeAddress, toHex } from "./evm-abi.js";
+import { assertRpcChain } from "./chain-guard.js";
 import { decodeCustodyDeposit, type CustodyLog } from "./custody-event.js";
 
 /** Source-chain view the testnet operator needs. All reads must come from one authenticated endpoint. */
@@ -77,7 +78,11 @@ export async function verifyDeposit(
   const custody = normalizeAddress(mapping.custody);
   const key = receiptKey(mapping.chainId, request.transactionHash, request.logIndex);
   try {
-    if ((await source.chainId()) !== mapping.chainId) return pending("source endpoint chain mismatch");
+    try {
+      await assertRpcChain(source, mapping.chainId, "source endpoint");
+    } catch (err) {
+      return pending(err instanceof Error ? err.message : "source endpoint chain mismatch");
+    }
     if (options.isConsumed && (await options.isConsumed(key))) return rejected("receipt already consumed");
 
     const finalized = await source.finalizedBlock();
