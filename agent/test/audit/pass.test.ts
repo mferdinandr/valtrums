@@ -1,4 +1,5 @@
 // FIXTURE-ONLY: fake arena views, providers and transport; no network is contacted.
+import { staticReferenceRegistry } from "../../src/reference-registry.js";
 import { describe, expect, it } from "vitest";
 import { AuditSubmitter } from "../../src/audit/approval.js";
 import { loadAuditConfig } from "../../src/audit/config.js";
@@ -52,7 +53,7 @@ function setup(views: Record<number, LifecycleBattleView>) {
     reports,
     refresh: {
       policy: FIXTURE_RESOLVED,
-      registry,
+      registry: staticReferenceRegistry(registry),
       now: () => clock,
       refreshAheadMs: 60_000,
       fetchGoPlus: async (q) => {
@@ -106,7 +107,7 @@ describe("lifecycle audit pass (fixture-only)", () => {
       source: source({ 1: view(false, { reference_chain_id: "4663", reference_address: "0x00000000000000000000000000000000000000ee" }) }),
       refresh: {
         policy: FIXTURE_RESOLVED,
-        registry: [],
+        registry: staticReferenceRegistry([]),
         now: () => NOW,
         fetchGoPlus: async () => refGoplus(),
         fetchLp: async () => refLp("10001"),
@@ -150,7 +151,7 @@ describe("lifecycle audit pass (fixture-only)", () => {
       source: bad,
       refresh: {
         policy: FIXTURE_RESOLVED,
-        registry,
+        registry: staticReferenceRegistry(registry),
         now: () => NOW,
         fetchGoPlus: async () => refGoplus(),
         fetchLp: async () => refLp("10001"),
@@ -222,20 +223,17 @@ describe("runOnce lifecycle audit hook and config (fixture-only)", () => {
     expect(() => loadAuditConfig({ ...full, AUDIT_WETH_PRICE_POOL: "nope" }, 30)).toThrow(/20-byte/);
   });
 
-  it("config is off by default, defaults the TTL to 600 s, and validates the reference RPC and registry", () => {
+  it("config is off by default, defaults the TTL to 600 s, and validates the reference RPC, and refuses the removed env registry", () => {
     expect(loadAuditConfig({}, 30)).toBeNull();
     const env = {
       AUDIT_ENABLED: "true",
       REFERENCE_RPC_URL: "https://rpc.example/mainnet",
-      AUDIT_REFERENCE_REGISTRY: JSON.stringify([
-        { chain_id: "46630", token: TOKEN, reference_chain_id: "4663", reference_address: REF_TOKEN },
-      ]),
       AUDIT_STABLECOINS: JSON.stringify({ "0x00000000000000000000000000000000000000c1": 6 }),
       AUDIT_LP_POOLS: JSON.stringify([{ pool: "0x00000000000000000000000000000000000000f1", kind: "v2" }]),
     };
     const cfg = loadAuditConfig(env, 30)!;
     expect(cfg.ttlSeconds).toBe(600);
-    expect(cfg.registry).toHaveLength(1);
+    expect(cfg).not.toHaveProperty("registry");
     expect(cfg.stablecoins.get("0x00000000000000000000000000000000000000c1")).toBe(6);
     expect(loadAuditConfig({ ...env, AUDIT_EVIDENCE_TTL_SECS: "120" }, 30)!.ttlSeconds).toBe(120);
     expect(() => loadAuditConfig({ ...env, AUDIT_EVIDENCE_TTL_SECS: "60" }, 30)).toThrow(/twice/);
@@ -243,17 +241,8 @@ describe("runOnce lifecycle audit hook and config (fixture-only)", () => {
     expect(() => loadAuditConfig({ ...env, REFERENCE_RPC_URL: undefined }, 30)).toThrow(/REFERENCE_RPC_URL/);
     expect(() => loadAuditConfig({ ...env, REFERENCE_RPC_URL: "http://rpc.example" }, 30)).toThrow(/https/);
     expect(loadAuditConfig({ ...env, REFERENCE_RPC_URL: "http://localhost:8545" }, 30)).not.toBeNull();
-    expect(() => loadAuditConfig({ ...env, AUDIT_REFERENCE_REGISTRY: "{" }, 30)).toThrow(/valid JSON/);
-    expect(() =>
-      loadAuditConfig(
-        {
-          ...env,
-          AUDIT_REFERENCE_REGISTRY: JSON.stringify([
-            { chain_id: "46630", token: TOKEN, reference_chain_id: "1", reference_address: REF_TOKEN },
-          ]),
-        },
-        30,
-      ),
-    ).toThrow();
+    // The registry now lives on-chain; setting the old variable fails startup instead of being ignored.
+    expect(() => loadAuditConfig({ ...env, AUDIT_REFERENCE_REGISTRY: "[]" }, 30)).toThrow(/on-chain registry/);
+    expect(() => loadAuditConfig({ ...env, AUDIT_REFERENCE_REGISTRY: "" }, 30)).toThrow(/on-chain registry/);
   });
 });

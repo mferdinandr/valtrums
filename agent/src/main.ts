@@ -27,6 +27,7 @@ import { LifecycleLocker } from "./audit/lifecycle-lock.js";
 import { createLpFetcher } from "./audit/lp-fetcher.js";
 import { buildAuditPolicy } from "./audit/policy.js";
 import { AuditReportStore } from "./audit/report.js";
+import { NearReferenceRegistrySource } from "./reference-registry.js";
 import { withEvmReadRetries } from "./rpc-resilience.js";
 import { createPayoutReconciler, loadPayoutReconcileConfig } from "./payout-wiring.js";
 
@@ -124,7 +125,8 @@ async function main(): Promise<void> {
           : {}),
         refresh: {
           policy: buildAuditPolicy({ ttlSeconds: auditCfg.ttlSeconds }),
-          registry: auditCfg.registry,
+          // The single protocol-controlled source of reference mappings, shared with scoring.
+          registry: new NearReferenceRegistrySource(cfg.arenaContractId, transport),
           now: () => new Date(),
           refreshAheadMs: rt.intervalSecs * 2000,
           fetchGoPlus: (q) =>

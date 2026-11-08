@@ -8,6 +8,7 @@ import { createLifecycleAuditPass, type LifecycleBattleView } from "../../src/au
 import { JsonFileReportArchive } from "../../src/audit/report-archive.js";
 import { buildDemoObservations, runCli, type CliIo } from "../../src/audit/report-cli.js";
 import { startReportServer } from "../../src/audit/report-server.js";
+import { staticReferenceRegistry } from "../../src/reference-registry.js";
 import { FIXTURE_RESOLVED, NOW, REF_CHAIN, REF_TOKEN, TOKEN, refGoplus, refLp, registry } from "./fixtures.js";
 
 let dir: string;
@@ -139,7 +140,7 @@ describe("end-to-end: audit pass -> persist -> restart -> serve -> freshness cha
       arena: "arena.testnet",
       refresh: {
         policy: FIXTURE_RESOLVED,
-        registry,
+        registry: staticReferenceRegistry(registry),
         now: () => NOW,
         fetchGoPlus: async () => refGoplus(),
         fetchLp: async () => refLp("10001"),
