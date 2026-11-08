@@ -1,5 +1,6 @@
 // Cross-chain funding: bring USDC from another chain to the NEAR wallet before the deposit.
 // `FundingRouter` is the seam; the mock is the default and used in tests, the 1Click client is behind an env flag.
+// FIXTURE: the mock router moves no funds and proves no Intents route; see docs/testnet-evidence.md for verified routes.
 
 export interface FundingRequest {
   chain: string;

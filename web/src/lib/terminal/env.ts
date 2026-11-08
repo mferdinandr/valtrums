@@ -1,4 +1,5 @@
 // Wiring of the terminal's external dependencies for demo (mock) and live (NEAR) mode.
+// FIXTURE: demo mode wires only mocks; nothing it shows is observed on a network.
 
 import { Near, fromHotConnect } from "near-kit";
 import type { ArenaApi } from "../arena/types";

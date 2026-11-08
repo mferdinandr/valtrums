@@ -6,6 +6,7 @@ import type { MockDexMarket } from "./mockdex-market.js";
  * (token to USDC has a non-zero rate), bought (USDC to token has a non-zero
  * rate) and the DEX holds some of it. Data-source errors propagate, so an
  * unverifiable token is retried instead of voided.
+ * FIXTURE: the mock DEX is an owner-controlled demonstration market, not evidence of real liquidity or safety.
  */
 export class MockDexHoneypotSimulator implements HoneypotSimulator {
   constructor(private readonly market: MockDexMarket) {}

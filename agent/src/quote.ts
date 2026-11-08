@@ -26,7 +26,10 @@ interface RateView {
   den: string;
 }
 
-/** Reads the mock DEX's fixed rate (`get_rate`, out = in * num / den, floored). */
+/**
+ * Reads the mock DEX's fixed rate (`get_rate`, out = in * num / den, floored).
+ * FIXTURE: a demonstration quote, not a public-service price.
+ */
 export class MockDexQuoteSource implements QuoteSource {
   constructor(private readonly transport: Pick<NearTransport, "view">) {}
 

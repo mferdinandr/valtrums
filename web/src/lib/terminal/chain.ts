@@ -1,5 +1,6 @@
 // Chain-facing port of the terminal: reads needed to validate an intent and the sender that submits transactions.
 // A deterministic mock backs demo mode and tests; the NEAR implementation talks to the arena, router and DEX.
+// FIXTURE: the mock chain is demo data (the navbar shows "demo data"), not evidence of any on-chain state.
 
 import { Near } from "near-kit";
 import { pow10, toBigInt, USDC_DECIMALS } from "../amounts";
