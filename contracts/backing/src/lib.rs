@@ -3107,7 +3107,10 @@ mod tests {
             contract.reserve_late(bob.clone(), [1; 32], 98, [0xca; 20]),
             Err(ReservationError::InsufficientBalance)
         );
-        assert_eq!(contract.reserve_late(bob, [2; 32], 50, [0xca; 20]), Ok(true));
+        assert_eq!(
+            contract.reserve_late(bob, [2; 32], 50, [0xca; 20]),
+            Ok(true)
+        );
     }
 
     #[test]
@@ -3115,7 +3118,11 @@ mod tests {
         let mut contract = contract();
         let mut claim = registry_claim(98);
         claim.refund_address = [0; 20];
-        assert!(!claim_callback_in(&mut contract, Ok(Some(claim)), Some(true)));
+        assert!(!claim_callback_in(
+            &mut contract,
+            Ok(Some(claim)),
+            Some(true)
+        ));
         assert_eq!(contract.get_ledger().custody, U128(0));
     }
 

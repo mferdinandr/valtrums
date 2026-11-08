@@ -90,7 +90,7 @@ async fn world() -> anyhow::Result<World> {
         .into_result()?;
     // The arena receives the attested custody and holds it as the locked vault.
     let key = json!({"chain_id": "46630", "transaction_hash": vec![1u8; 32], "log_index": 1});
-    let claim = json!({"representation": backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": arena.id(), "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
+    let claim = json!({"representation": backing.id(), "token_address": TOKEN, "custody_domain": "fixture", "mapping_version": "1", "beneficiary": arena.id(), "refund_address": vec![0xbeu8; 20], "battle_id": "1", "actual_received": "98", "block_number": "3", "block_hash": vec![2u8; 32], "finalized_head_number": "4", "finalized_head_hash": vec![3u8; 32], "evidence_hash": vec![4u8; 32]});
     verifier
         .call(registry.id(), "attest")
         .args_json(json!({"key": key, "claim": claim}))
