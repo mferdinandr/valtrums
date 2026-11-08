@@ -2177,6 +2177,7 @@ impl Arena {
             Some(lifecycle::BackingApproval {
                 asset,
                 evidence_hash: "b".repeat(256),
+                expires_at_ms: u64::MAX,
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture backing rejected"));
