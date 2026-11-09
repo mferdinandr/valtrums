@@ -19,7 +19,9 @@ import { checkExecutionMode, runOnce } from "./runtime.js";
 import { loadRuntimeConfig } from "./runtime-config.js";
 import { TwapFetcher } from "./twap.js";
 import { AuditSubmitter } from "./audit/approval.js";
-import { loadAuditConfig } from "./audit/config.js";
+import { loadAuditConfig, loadReportArchiveConfig } from "./audit/config.js";
+import { JsonFileReportArchive } from "./audit/report-archive.js";
+import { createIndexerRuntime, loadIndexerRuntimeConfig } from "./indexer/wiring.js";
 import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
 import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
 import type { AuditRecord } from "./audit/decision.js";
@@ -105,6 +107,8 @@ async function main(): Promise<void> {
 
   // Lifecycle audit (GoPlus + independent LP): only when AUDIT_ENABLED=true.
   const auditCfg = loadAuditConfig(process.env, rt.intervalSecs);
+  // Durable report archive: only when AUDIT_REPORT_ARCHIVE_ENABLED=true (requires AUDIT_ENABLED=true).
+  const archiveCfg = loadReportArchiveConfig(process.env, auditCfg !== null);
   const auditSource = new NearLifecycleAuditSource(cfg.arenaContractId, transport);
   const auditRecords = new Map<string, AuditRecord>();
   const lifecycleAudit = auditCfg
@@ -144,6 +148,7 @@ async function main(): Promise<void> {
           records: auditRecords,
         },
         reports: new AuditReportStore(),
+        ...(archiveCfg ? { archive: new JsonFileReportArchive(archiveCfg.path), arena: cfg.arenaContractId } : {}),
         log,
       })
     : undefined;
@@ -152,6 +157,12 @@ async function main(): Promise<void> {
   // first pass and on every pass; it never requests a signature or creates a spend.
   const payoutCfg = loadPayoutReconcileConfig(process.env);
   const payoutReconciler = payoutCfg ? createPayoutReconciler(payoutCfg, cfg, log) : undefined;
+
+  // Read-only event indexer: only when INDEXER_ENABLED=true, and only over a recorded chain file (fixture
+  // data) because no live block source exists yet. It never signs or submits, and its failure never
+  // blocks settlement or payout passes.
+  const indexerCfg = loadIndexerRuntimeConfig(process.env, cfg.arenaContractId);
+  const indexer = indexerCfg ? await createIndexerRuntime(indexerCfg, log) : undefined;
 
   const health = new HealthState(rt.intervalSecs * 1000);
   const healthServer = await startHealthServer(
@@ -207,6 +218,10 @@ async function main(): Promise<void> {
         const payouts = await payoutReconciler.reconcile();
         log.info("payout reconciliation complete", { unresolved: payouts.unresolved, errors: payouts.errors });
       }
+      if (indexer) {
+        const indexed = await indexer.sync();
+        if (indexed) log.info("indexer sync complete", { status: indexed.status, reason: indexed.reason });
+      }
       const report = await runOnce({ ...deps, watchdog, ...(lifecycleAudit ? { lifecycleAudit } : {}) });
       if (report.errors === 0) health.markPassSucceeded();
       log.info("pass complete", { ...report, watchdog });
@@ -216,6 +231,7 @@ async function main(): Promise<void> {
     signal: stop.signal,
     log,
   });
+  await indexer?.close();
 }
 
 main().catch((err) => {

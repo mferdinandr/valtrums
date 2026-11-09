@@ -56,6 +56,30 @@ describe("indexer CLI", () => {
     expect(parseOut(rep.out).digest).toBe(importResult.digest); // replay matches the ingested projection
   });
 
+  it("prunes by a configured retention depth and labels the checkpoint as a summary", async () => {
+    const many = chainFile(
+      linked(Array.from({ length: 8 }, (_, i) => ({ height: String(i + 1), outcomes: [outcome(`r${i + 1}`, [i === 0 ? created(1) : deposit(1, 0, "bob.testnet", "5")])] }))),
+      { finalizedHeight: "8" },
+    );
+    await writeChain(many);
+    const imp = capture();
+    expect(await runIndexerCli(["import", "--chain", chainPath, "--dir", statePath, "--retention-depth", "2"], {}, imp.io)).toBe(0);
+    const stat = capture();
+    await runIndexerCli(["status", "--dir", statePath], {}, stat.io);
+    const status = parseOut(stat.out);
+    expect(status.blocks).toBe(2);
+    expect(status.journal).toBe(8);
+    expect(status.checkpoint).toMatchObject({ kind: "summary", height: "6", prunedBlocks: 6 });
+    const rep = capture();
+    await runIndexerCli(["replay", "--dir", statePath], {}, rep.io);
+    expect(parseOut(rep.out).digest).toBe(parseOut(imp.out).digest);
+
+    const bad = capture();
+    expect(await runIndexerCli(["import", "--chain", chainPath, "--dir", join(dir, "bad"), "--retention-depth", "0"], {}, bad.io)).toBe(1);
+    const viaEnv = capture();
+    expect(await runIndexerCli(["import", "--chain", chainPath, "--dir", join(dir, "env")], { INDEXER_RETENTION_DEPTH: "3" }, viaEnv.io)).toBe(0);
+  });
+
   it("is idempotent across a restart (second import does not change the projection)", async () => {
     await writeChain(baseChain());
     const first = capture();
@@ -80,7 +104,7 @@ describe("indexer CLI", () => {
         { height: "2", outcomes: [outcome("r2", [auditUpdated(1, 0, "pass")])] },
         { height: "3", hash: "blk3b", outcomes: [outcome("r3b", [deposit(1, 0, "bob.testnet", "999")])] },
       ]),
-      { finalizedHeight: "2" },
+      { finalizedHeight: "3" },
     );
     await writeChain(forked);
     const second = capture();

@@ -1,14 +1,17 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { eventPayloadDigest } from "./parser.js";
+import { eventsDigestUpTo, type RetentionCheckpoint } from "./retention.js";
 import type { AcceptedEvent, BlockRef, DiagnosticRecord, IndexerConfig, IndexerHealthStatus } from "./types.js";
 
 /**
  * Durable indexer state as one versioned atomic snapshot, with stronger recovery guarantees than
  * the legacy baseline store: corrupt or unsupported state is preserved and fails closed with a
  * recovery message, never silently reset to an empty cursor. A single-writer lock prevents two runs
- * from overwriting the same state directory. Operating limits are bounded and documented; there is
- * no retention/prune, so the snapshot grows with processed blocks and accepted events.
+ * from overwriting the same state directory. Operating limits are bounded and documented. Finalized
+ * blocks older than a configurable depth are summarized into a hashed checkpoint and pruned (see
+ * retention.ts); the journal and its dedup keys are never pruned, so the snapshot still grows with
+ * accepted events (MAX_JOURNAL) but no longer with processed blocks.
  */
 
 export const STORE_SCHEMA = "arena-indexer-store-v1";
@@ -22,6 +25,20 @@ export interface StoredBlock {
   parentHash: string | null;
   timestampMs: string;
   finalized: boolean;
+}
+
+/**
+ * Set when a provisional fork was retracted: confirmations that depend on the replaced range stay
+ * suspended until the source finalizes a block at or above `untilFinalizedHeight` on the canonical chain.
+ */
+export interface ReorgSuspension {
+  /** Lowest height whose provisional blocks were retracted (decimal string). */
+  sinceHeight: string;
+  /** Highest retracted height; finality must reach it on the canonical chain to lift the suspension. */
+  untilFinalizedHeight: string;
+  retractedBlocks: number;
+  retractedEvents: number;
+  reason: string;
 }
 
 export interface StoreState {
@@ -48,6 +65,10 @@ export interface StoreState {
   cursors: { processedHead: BlockRef | null; finalizedHead: BlockRef | null };
   /** Last computed health, persisted so a restart never silently reports healthy. */
   health: { status: IndexerHealthStatus; reason: string };
+  /** Active reorg suspension of dependent confirmations; null when none. Persisted across restarts. */
+  reorgSuspension: ReorgSuspension | null;
+  /** Hashed summary of pruned finalized history; null until the first prune. Restart verifies from it. */
+  checkpoint: RetentionCheckpoint | null;
 }
 
 /** Health persisted into a freshly created store before any sync has run. */
@@ -140,6 +161,8 @@ export class JsonFileIndexerStore {
         s.health = { status: "reconciliation_required", reason: "restored unresolved event conflicts from legacy diagnostics" };
       }
     }
+    if (s.reorgSuspension === undefined) s.reorgSuspension = null;
+    if (s.checkpoint === undefined) s.checkpoint = null;
     if (s.diagnosticOverflowBlocks === undefined) {
       s.diagnosticOverflowBlocks = s.diagnosticsDropped > 0 ? s.blocks.map((b) => b?.hash) : [];
     }
@@ -169,6 +192,8 @@ export class JsonFileIndexerStore {
           diagnosticOverflowBlocks: [],
           cursors: { processedHead: null, finalizedHead: null },
           health: { ...INITIAL_HEALTH },
+          reorgSuspension: null,
+          checkpoint: null,
         };
       }
       assertCompatibleConfig(existing.config, config);
@@ -281,6 +306,26 @@ function validateState(state: StoreState): void {
   check(counter(state.diagnosticsDropped) && counter(state.ignoredLogs), "invalid diagnostic counters");
   const health = record(state.health, "health");
   check(typeof health.status === "string" && HEALTH.has(health.status) && typeof health.reason === "string", "invalid health status");
+  const suspension = state.reorgSuspension;
+  if (suspension !== null) {
+    const r = record(suspension, "reorg suspension");
+    check(decimal(r.sinceHeight) && decimal(r.untilFinalizedHeight) && BigInt(r.sinceHeight) <= BigInt(r.untilFinalizedHeight), "invalid reorg suspension heights");
+    check(counter(r.retractedBlocks) && counter(r.retractedEvents) && typeof r.reason === "string" && r.reason.length <= 512, "invalid reorg suspension counters");
+    check(state.health.status !== "healthy", "healthy status hides an active reorg suspension");
+  }
+  const checkpoint = state.checkpoint;
+  if (checkpoint !== null) {
+    const c = record(checkpoint, "checkpoint");
+    check(c.kind === "summary" && typeof c.note === "string", "checkpoint is not labelled as a summary");
+    check(decimal(c.height) && text(c.hash) && (c.parentHash === null || text(c.parentHash)), "invalid checkpoint block");
+    check(counter(c.prunedBlocks) && c.prunedBlocks > 0 && counter(c.prunedEvents), "invalid checkpoint counters");
+    check(typeof c.eventsDigest === "string" && /^[0-9a-f]{64}$/.test(c.eventsDigest) && typeof c.digest === "string" && /^[0-9a-f]{64}$/.test(c.digest), "invalid checkpoint digest");
+    check(BigInt(c.height) >= BigInt(state.config.anchorHeight), "checkpoint precedes the start anchor");
+    check(state.blocks.length > 0, "a checkpoint requires the finalized head block to be retained");
+    // The journal keeps every dedup record, so the checkpoint's event commitment is re-derivable.
+    const ev = eventsDigestUpTo(state.journal, BigInt(c.height));
+    check(ev.count === c.prunedEvents && ev.digest === c.eventsDigest, "checkpoint event commitment differs from the journal");
+  }
   const blocks = new Map<string, StoredBlock>();
   let previous: StoredBlock | undefined;
   let finalized: StoredBlock | undefined;
@@ -292,6 +337,7 @@ function validateState(state: StoreState): void {
     check(typeof b.finalized === "boolean", "invalid block finality");
     check(!blocks.has(b.hash), "duplicate block hash");
     check(previous ? BigInt(b.height) > BigInt(previous.height) && b.parentHash === previous.hash
+      : checkpoint ? BigInt(b.height) > BigInt(checkpoint.height) && b.parentHash === checkpoint.hash
       : BigInt(b.height) >= BigInt(state.config.anchorHeight) && b.parentHash === state.config.anchorHash, "broken block ordering or parent linkage");
     if (b.finalized) {
       check(!provisionalSeen, "finalized blocks must be a prefix");
@@ -312,7 +358,10 @@ function validateState(state: StoreState): void {
   const provenance = (value: unknown) => {
     const p = record(value, "event provenance");
     const block = typeof p.blockHash === "string" ? blocks.get(p.blockHash) : undefined;
-    check(block && p.blockHeight === block.height && p.blockTimestampMs === block.timestampMs, "event references an absent or inconsistent block");
+    // An event whose block was pruned into the checkpoint keeps only its dedup record; its block is
+    // covered by the checkpoint commitment instead of being retained.
+    const pruned = !block && checkpoint !== null && decimal(p.blockHeight) && BigInt(p.blockHeight) <= BigInt(checkpoint.height);
+    check(pruned || (block && p.blockHeight === block.height && p.blockTimestampMs === block.timestampMs), "event references an absent or inconsistent block");
     check(p.network === state.config.network && typeof p.contract === "string" && state.config.contracts.includes(p.contract), "event source differs from the configured domain");
     check(text(p.receiptId) && counter(p.outcomeIndex) && counter(p.logIndex) && counter(p.itemIndex), "invalid event identity/index");
     check(p.outcomeSuccess === true, "accepted/quarantined event must have a successful outcome");
@@ -324,10 +373,27 @@ function validateState(state: StoreState): void {
     const key = provenance(e.provenance);
     check(e.dedupKey === key && !eventKeys.has(key), "duplicate or inconsistent event key");
     eventKeys.add(key);
-    check(decimal(e.battleId), "invalid event battle id");
-    if (e.name === "lifecycle_battle_created") check(text(e.creator) && e.creator.length <= 64, "invalid creator");
-    else if (e.name === "lifecycle_deposit") check(decimal(e.community) && text(e.accountId) && e.accountId.length <= 64 && decimal(e.amount), "invalid deposit");
-    else if (e.name === "audit_updated") check(decimal(e.community) && ["pass", "reject", "pending"].includes(String(e.result)) && text(e.evidenceHash) && (e.expiresAtMs === null || decimal(e.expiresAtMs)), "invalid audit");
+    const name = String(e.name);
+    const acct = (v: unknown): boolean => text(v) && (v as string).length <= 64;
+    const optAcct = (v: unknown): boolean => v === null || acct(v);
+    const optDec = (v: unknown): boolean => v === null || decimal(v);
+    const hex64 = (v: unknown): boolean => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+    if (name === "lifecycle_battle_created") check(decimal(e.battleId) && acct(e.creator), "invalid creator");
+    else if (name === "lifecycle_deposit") check(decimal(e.battleId) && decimal(e.community) && acct(e.accountId) && decimal(e.amount), "invalid deposit");
+    else if (name === "audit_updated") check(decimal(e.battleId) && decimal(e.community) && ["pass", "reject", "pending"].includes(String(e.result)) && text(e.evidenceHash) && optDec(e.expiresAtMs), "invalid audit");
+    else if (name === "backing_updated") check(decimal(e.battleId) && decimal(e.community) && typeof e.approved === "boolean" && (e.evidenceHash === null || text(e.evidenceHash)) && optDec(e.expiresAtMs), "invalid backing update");
+    else if (name === "lifecycle_representation_trust_changed") check(acct(e.representation) && typeof e.trusted === "boolean", "invalid trust change");
+    else if (name === "late_deposit_recorded") check(decimal(e.battleId) && acct(e.beneficiary) && text(e.refundAddress) && decimal(e.units), "invalid late deposit");
+    else if (name === "asset_suspended") check(text(e.reason), "invalid suspension");
+    else if (name === "asset_resumed") check(acct(e.by) && typeof e.reorg === "boolean" && typeof e.deficit === "boolean" && typeof e.stillSuspended === "boolean", "invalid resume");
+    else if (name === "custody_attested") check(decimal(e.sequence) && decimal(e.sourceBlockNumber) && decimal(e.balance) && optDec(e.required) && typeof e.covered === "boolean", "invalid attestation");
+    else if (name === "reconciliation_unresolved") check(acct(e.holder) && hex64(e.requestId), "invalid unresolved reconciliation");
+    else if (name === "operator_changed") check(optAcct(e.previous) && optAcct(e.next) && acct(e.by), "invalid operator change");
+    else if (name === "resume_policy_changed") check(text(e.previous) && text(e.next) && acct(e.by), "invalid resume policy change");
+    else if (name === "payout_signature_requested") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && hex64(e.payloadHash) && decimal(e.maxFeePerGas) && decimal(e.nonce), "invalid payout signature request");
+    else if (name === "payout_signature_received") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && hex64(e.txHash) && decimal(e.maxFeePerGas), "invalid payout signature");
+    else if (name === "payout_signature_failed") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && decimal(e.maxFeePerGas), "invalid payout signature failure");
+    else if (name === "payout_state_changed") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && (e.from === null || text(e.from)) && text(e.to) && (e.reason === null || text(e.reason)), "invalid payout state");
     else check(false, "unsupported journal event");
     check(typeof e.payloadDigest === "string" && /^[0-9a-f]{64}$/.test(e.payloadDigest) && eventPayloadDigest(raw) === e.payloadDigest, "journal payload digest mismatch");
   }

@@ -112,10 +112,13 @@ describe("engine reorg and finality conflicts", () => {
     ]);
     source.replace(chainFile(forked, { finalizedHeight: "2" }));
     const health = await engine.sync();
-    expect(health.status).toBe("healthy");
+    // The retracted range is not final again yet, so the indexer stays non-healthy (pending).
+    expect(health.status).toBe("pending");
     const battle = engine.projection().battles[`${config().network}|${config().contracts[0]}|1`]!;
     expect(battle.creditedByCommunity["0"]).toBe("6"); // old 600 fully retracted, new branch applied once
     expect(battle.deposits).toHaveLength(3);
+    source.replace(chainFile(forked, { finalizedHeight: "5" }));
+    expect((await engine.sync()).status).toBe("healthy");
     await engine.close();
   });
 
@@ -434,7 +437,7 @@ describe("durable conflict severity independent of quarantine retention", () => 
     source.replace(chainFile(linked([
       { height: "1", outcomes: [outcome("r1", [created(1, "alice.testnet")])] },
       { height: "2", hash: "replacement2", outcomes: [outcome("r2", [deposit(1, 0, "bob.testnet", "2")])] },
-    ]), { finalizedHeight: "1" }));
+    ]), { finalizedHeight: "2" }));
     expect((await engine.sync()).status).toBe("healthy");
     await engine.close();
     const state = await store().read();

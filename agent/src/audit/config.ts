@@ -26,6 +26,28 @@ function json(env: Record<string, string | undefined>, name: string, fallback: s
   }
 }
 
+export interface ReportArchiveConfig {
+  /** File the append-only audit report archive is written to. */
+  path: string;
+}
+
+/** Default archive file, the same one `JsonFileReportArchive` and the report CLI use. */
+export const DEFAULT_REPORT_ARCHIVE_PATH = "./.agent-state/audit-reports/archive.json";
+
+/**
+ * Settings for the durable audit report archive sink. Returns null unless AUDIT_REPORT_ARCHIVE_ENABLED=true.
+ * The sink is only reachable through the lifecycle audit pass, so enabling it without AUDIT_ENABLED=true
+ * fails closed instead of silently archiving nothing.
+ */
+export function loadReportArchiveConfig(
+  env: Record<string, string | undefined>,
+  auditEnabled: boolean,
+): ReportArchiveConfig | null {
+  if (env.AUDIT_REPORT_ARCHIVE_ENABLED?.trim() !== "true") return null;
+  if (!auditEnabled) throw new Error("AUDIT_REPORT_ARCHIVE_ENABLED=true requires AUDIT_ENABLED=true");
+  return { path: env.AUDIT_REPORT_ARCHIVE_PATH?.trim() || DEFAULT_REPORT_ARCHIVE_PATH };
+}
+
 /**
  * Settings for the lifecycle audit pass. Returns null unless AUDIT_ENABLED=true.
  * The evidence TTL defaults to 600 seconds (AUDIT_EVIDENCE_TTL_SECS) and must exceed twice the
