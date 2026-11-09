@@ -14,6 +14,8 @@ export type BattleStatus =
 export interface BattleView {
   id: number;
   creator: string;
+  /** Demo-only multi-community fixture; legacy contract battles use token_a/token_b. */
+  demo_communities?: { token: string; vault: string }[];
   token_a: string;
   token_b: string;
   bond: string;
