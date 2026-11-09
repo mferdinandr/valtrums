@@ -266,6 +266,54 @@ fn reconciliation_resolves_an_ambiguous_dispatch_exactly_once() {
 }
 
 #[test]
+fn delegate_must_differ_from_the_user() {
+    ctx();
+    let mut g = grant();
+    g.delegate = g.user.clone();
+    assert_eq!(g.validate().err(), Some(PolicyError::DelegateIsUser));
+}
+
+#[test]
+fn expiry_releases_only_an_undispatched_reservation_once_due() {
+    let mut b = Budget::new(100);
+    b.reserve(60).unwrap();
+    let mut r = reservation(60); // expires at 1_000
+    assert_eq!(r.expire(&mut b, 999), Err(PolicyError::NotExpired));
+    assert_eq!(b.reserved, 60);
+    assert_eq!(r.expire(&mut b, 1_000), Ok(true));
+    assert_eq!((b.reserved, b.consumed), (0, 0));
+    assert_eq!(r.expire(&mut b, 2_000), Ok(false)); // idempotent, no double release
+    assert_eq!(b.reserved, 0);
+}
+
+#[test]
+fn expiry_never_releases_a_dispatched_or_ambiguous_obligation() {
+    let mut b = Budget::new(100);
+    b.reserve(60).unwrap();
+    let mut r = reservation(60);
+    r.dispatch(0).unwrap();
+    assert_eq!(r.expire(&mut b, u64::MAX), Err(PolicyError::WrongState));
+    r.mark_reconciliation().unwrap();
+    assert_eq!(r.expire(&mut b, u64::MAX), Err(PolicyError::WrongState));
+    assert_eq!(r.release(&mut b), Err(PolicyError::WrongState));
+    assert_eq!(b.reserved, 60); // still held until explicit evidence
+    r.reconcile(&mut b, Resolution::Executed).unwrap();
+    assert_eq!(
+        r.expire(&mut b, u64::MAX),
+        Err(PolicyError::ConflictingOutcome)
+    );
+}
+
+#[test]
+fn an_expired_reservation_cannot_be_admitted_for_execution() {
+    let mut r = reservation(60);
+    assert_eq!(r.dispatch(1_000), Err(PolicyError::ReservationExpired));
+    assert_eq!(r.state, ReservationState::Reserved);
+    assert_eq!(r.dispatch(999), Ok(true));
+    assert_eq!(r.dispatch(5_000), Ok(false)); // a repeat is not a fresh admission
+}
+
+#[test]
 fn request_key_ignores_version_but_action_hash_binds_it() {
     ctx();
     let a1 = action(10, 1);
@@ -574,6 +622,220 @@ mod wrapper {
         assert_event("grant_revoked");
     }
 
+    fn expect_panic<F: FnOnce()>(f: F) -> String {
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+            .err()
+            .expect("expected a panic");
+        err.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default()
+    }
+
+    const REQ: [u8; 32] = [1u8; 32];
+
+    fn reserved_state(c: &PlayerPolicy) -> ReservationState {
+        c.get_reservation(user(), LOCAL, REQ).unwrap().state
+    }
+
+    #[test]
+    #[should_panic(expected = "Delegate must differ from user")]
+    fn user_cannot_name_themselves_as_delegate() {
+        ctx("owner.testnet", NearToken::from_near(1), 0);
+        let mut c = PlayerPolicy::new(account("owner.testnet"));
+        ctx("user.testnet", NearToken::from_near(1), 0);
+        c.create_grant(grant_input("user.testnet", 100, 1_000_000));
+    }
+
+    #[test]
+    fn revoked_grant_stays_revoked_and_a_new_local_id_continues() {
+        let mut c = with_grant(100, 1_000_000);
+        ctx("user.testnet", NearToken::from_yoctonear(1), 10);
+        c.revoke_grant(LOCAL);
+        ctx("user.testnet", NearToken::from_near(1), 11);
+        let mut bumped = grant_input("agent.testnet", 100, 1_000_000);
+        bumped.version = U64(2);
+        let msg = expect_panic(|| c.create_grant(bumped));
+        assert!(msg.contains("Grant revoked"), "{msg}");
+        let view = c.get_grant(user(), LOCAL).unwrap();
+        assert!(view.revoked);
+        assert_eq!(view.version, U64(1));
+        // A reservation is still refused on the old id.
+        ctx("agent.testnet", NearToken::from_near(1), 12);
+        let msg = expect_panic(|| c.reserve(action_input("user.testnet", 10, 1)));
+        assert!(msg.contains("Grant revoked"), "{msg}");
+        // A new local id is a separate grant with its own budget.
+        ctx("user.testnet", NearToken::from_near(1), 13);
+        let mut fresh = grant_input("agent.testnet", 100, 1_000_000);
+        fresh.local_id = [8u8; 32];
+        c.create_grant(fresh);
+        assert!(!c.get_grant(user(), [8u8; 32]).unwrap().revoked);
+        ctx("agent.testnet", NearToken::from_near(1), 14);
+        let mut a = action_input("user.testnet", 10, 1);
+        a.local_id = [8u8; 32];
+        c.reserve(a);
+        assert_eq!(c.get_budget(user(), [8u8; 32]).unwrap().reserved, U128(10));
+    }
+
+    #[test]
+    fn asset_identity_is_immutable_per_grant_for_every_field() {
+        let mut c = with_grant(100, 1_000_000);
+        for field in 0..5 {
+            ctx("user.testnet", NearToken::from_near(1), 10);
+            let mut changed = grant_input("agent.testnet", 100, 1_000_000);
+            changed.version = U64(2);
+            match field {
+                0 => changed.asset.chain_id = U64(1),
+                1 => changed.asset.token = "0x00000000000000000000000000000000000000bb".into(),
+                2 => changed.asset.representation = account("other.token.testnet"),
+                3 => changed.asset.custody_domain = "vault-2".into(),
+                _ => changed.asset.mapping_version = U64(3),
+            }
+            let msg = expect_panic(|| c.create_grant(changed));
+            assert!(
+                msg.contains("Grant asset cannot change"),
+                "field {field}: {msg}"
+            );
+            assert_eq!(c.get_grant(user(), LOCAL).unwrap().version, U64(1));
+        }
+    }
+
+    #[test]
+    fn delegate_cancels_an_undispatched_reservation_and_budget_returns() {
+        let mut c = with_grant(100, 1_000_000);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        ctx("agent.testnet", NearToken::from_yoctonear(1), 11);
+        c.cancel_reservation(user(), LOCAL, REQ);
+        assert_eq!(reserved_state(&c), ReservationState::Released);
+        let b = c.get_budget(user(), LOCAL).unwrap();
+        assert_eq!((b.reserved, b.available), (U128(0), U128(100)));
+        c.cancel_reservation(user(), LOCAL, REQ); // idempotent, no double release
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().available, U128(100));
+    }
+
+    #[test]
+    fn user_cancels_even_after_revocation_but_revocation_alone_releases_nothing() {
+        let mut c = with_grant(100, 1_000_000);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        ctx("user.testnet", NearToken::from_yoctonear(1), 11);
+        c.revoke_grant(LOCAL);
+        assert_eq!(reserved_state(&c), ReservationState::Reserved);
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(60));
+        c.cancel_reservation(user(), LOCAL, REQ);
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(0));
+    }
+
+    #[test]
+    fn infrastructure_and_owner_cannot_cancel_and_one_yocto_is_required() {
+        let mut c = with_grant(100, 1_000_000);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        for caller in ["auditor.testnet", "owner.testnet", "mallory.testnet"] {
+            ctx(caller, NearToken::from_yoctonear(1), 11);
+            let msg = expect_panic(|| c.cancel_reservation(user(), LOCAL, REQ));
+            assert!(msg.contains("Not authorized"), "{caller}: {msg}");
+        }
+        for deposit in [NearToken::from_yoctonear(0), NearToken::from_yoctonear(2)] {
+            ctx("agent.testnet", deposit, 11);
+            expect_panic(|| c.cancel_reservation(user(), LOCAL, REQ));
+        }
+        assert_eq!(reserved_state(&c), ReservationState::Reserved);
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(60));
+    }
+
+    #[test]
+    fn a_released_request_id_cannot_be_reserved_again() {
+        let mut c = with_grant(100, 1_000_000);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        ctx("agent.testnet", NearToken::from_yoctonear(1), 11);
+        c.cancel_reservation(user(), LOCAL, REQ);
+        ctx("agent.testnet", NearToken::from_near(1), 12);
+        let msg = expect_panic(|| c.reserve(action_input("user.testnet", 60, 1)));
+        assert!(msg.contains("Reservation released"), "{msg}");
+        c.reserve(action_input("user.testnet", 60, 2)); // a new request id works
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(60));
+    }
+
+    #[test]
+    fn reservations_expire_with_the_documented_default_and_release_permissionlessly() {
+        use crate::contract::DEFAULT_RESERVATION_TTL_NS;
+        let mut c = with_grant(100, u64::MAX / 2);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        let expires = 10 + DEFAULT_RESERVATION_TTL_NS;
+        assert_eq!(
+            c.get_reservation(user(), LOCAL, REQ).unwrap().expires_ns,
+            U64(expires)
+        );
+        ctx("auditor.testnet", NearToken::from_yoctonear(1), expires - 1);
+        let early = expect_panic(|| c.release_expired(user(), LOCAL, REQ));
+        assert!(early.contains("cannot be released"), "{early}");
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(60));
+        ctx("auditor.testnet", NearToken::from_yoctonear(1), expires);
+        c.release_expired(user(), LOCAL, REQ);
+        assert_eq!(reserved_state(&c), ReservationState::Released);
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().available, U128(100));
+        c.release_expired(user(), LOCAL, REQ); // idempotent
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().available, U128(100));
+    }
+
+    #[test]
+    fn release_expired_requires_exactly_one_yocto() {
+        let mut c = with_grant(100, u64::MAX / 2);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        ctx(
+            "auditor.testnet",
+            NearToken::from_yoctonear(0),
+            u64::MAX / 4,
+        );
+        expect_panic(|| c.release_expired(user(), LOCAL, REQ));
+        assert_eq!(c.get_budget(user(), LOCAL).unwrap().reserved, U128(60));
+    }
+
+    #[test]
+    fn repeating_an_expired_unreleased_reservation_fails_closed() {
+        let mut c = with_grant(100, u64::MAX / 2);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 60, 1));
+        ctx("agent.testnet", NearToken::from_near(1), u64::MAX / 4);
+        let msg = expect_panic(|| c.reserve(action_input("user.testnet", 60, 1)));
+        assert!(msg.contains("Reservation expired"), "{msg}");
+    }
+
+    #[test]
+    fn owner_configures_the_ttl_within_bounds_for_new_reservations_only() {
+        use crate::contract::{MAX_RESERVATION_TTL_NS, MIN_RESERVATION_TTL_NS};
+        let mut c = with_grant(100, u64::MAX / 2);
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action_input("user.testnet", 10, 1));
+        let first = c.get_reservation(user(), LOCAL, REQ).unwrap().expires_ns;
+        for caller in ["user.testnet", "agent.testnet", "auditor.testnet"] {
+            ctx(caller, NearToken::from_yoctonear(1), 10);
+            let msg = expect_panic(|| c.set_reservation_ttl(U64(MIN_RESERVATION_TTL_NS)));
+            assert!(msg.contains("Only owner"), "{caller}");
+        }
+        ctx("owner.testnet", NearToken::from_yoctonear(1), 10);
+        for bad in [MIN_RESERVATION_TTL_NS - 1, MAX_RESERVATION_TTL_NS + 1, 0] {
+            assert!(expect_panic(|| c.set_reservation_ttl(U64(bad))).contains("out of bounds"));
+        }
+        c.set_reservation_ttl(U64(MIN_RESERVATION_TTL_NS));
+        ctx("agent.testnet", NearToken::from_near(1), 20);
+        c.reserve(action_input("user.testnet", 10, 2));
+        let second = c
+            .get_reservation(user(), LOCAL, [2u8; 32])
+            .unwrap()
+            .expires_ns;
+        assert_eq!(second, U64(20 + MIN_RESERVATION_TTL_NS));
+        assert_eq!(
+            c.get_reservation(user(), LOCAL, REQ).unwrap().expires_ns,
+            first
+        );
+    }
+
     #[test]
     fn two_users_are_isolated() {
         let mut c = with_grant(100, 1_000_000);
@@ -626,6 +888,10 @@ mod fixture_lifecycle {
     }
 
     fn setup() -> PlayerPolicy {
+        setup_with_expiry(1_000_000)
+    }
+
+    fn setup_with_expiry(expiry_ns: u64) -> PlayerPolicy {
         ctx("owner.testnet", NearToken::from_near(1), 0);
         let mut c = PlayerPolicy::new(account("owner.testnet"));
         ctx("owner.testnet", NearToken::from_yoctonear(1), 0);
@@ -643,7 +909,7 @@ mod fixture_lifecycle {
             per_action_cap: U128(100),
             cumulative_cap: U128(100),
             gas_cap: U64(300),
-            expiry_ns: U64(1_000_000),
+            expiry_ns: U64(expiry_ns),
         });
         ctx("agent.testnet", NearToken::from_near(1), 10);
         c.reserve(ActionInput {
@@ -739,15 +1005,58 @@ mod fixture_lifecycle {
     }
 
     #[test]
-    #[should_panic(expected = "Grant version changed")]
-    fn replacement_cannot_revive_a_queued_revoked_authorization() {
+    #[should_panic(expected = "Grant revoked")]
+    fn replacement_cannot_revive_a_revoked_grant() {
         let mut c = setup();
         ctx("user.testnet", NearToken::from_yoctonear(1), 15);
         c.revoke_grant(LOCAL);
         ctx("user.testnet", NearToken::from_near(1), 16);
-        replace_grant(&mut c);
+        replace_grant(&mut c); // permanent revocation: a version bump is refused
+    }
+
+    #[test]
+    #[should_panic(expected = "reservation expired")]
+    fn an_expired_reservation_is_not_admitted_for_dispatch() {
+        let mut c = setup_with_expiry(u64::MAX / 2); // the grant itself is still valid
+        ctx(
+            "executor.testnet",
+            NearToken::from_yoctonear(1),
+            10 + 3_600_000_000_000,
+        );
+        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
+    }
+
+    #[test]
+    fn dispatched_obligation_is_never_released_by_cancel_expiry_or_revocation() {
+        let mut c = setup();
         ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
         c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
+        ctx("user.testnet", NearToken::from_yoctonear(1), 21);
+        c.revoke_grant(LOCAL);
+        let late = 10 + 10 * 3_600_000_000_000;
+        for caller in ["user.testnet", "agent.testnet"] {
+            ctx(caller, NearToken::from_yoctonear(1), late);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                c.cancel_reservation(account("user.testnet"), LOCAL, REQ)
+            }));
+            assert!(
+                r.is_err(),
+                "{caller} must not cancel a dispatched obligation"
+            );
+        }
+        ctx("auditor.testnet", NearToken::from_yoctonear(1), late);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            c.release_expired(account("user.testnet"), LOCAL, REQ)
+        }));
+        assert!(r.is_err());
+        let b = c.get_budget(account("user.testnet"), LOCAL).unwrap();
+        assert_eq!((b.reserved, b.available), (U128(60), U128(40)));
+        assert_eq!(
+            c.get_reservation(account("user.testnet"), LOCAL, REQ)
+                .unwrap()
+                .state,
+            ReservationState::Dispatched
+        );
     }
 
     #[test]
