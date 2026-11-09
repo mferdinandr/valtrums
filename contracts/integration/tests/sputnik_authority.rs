@@ -377,6 +377,37 @@ async fn council_majority_changes_protocol_parameters_and_nobody_else_can() -> a
     assert_eq!(w.status(id).await?, "Rejected");
     assert_eq!(dao_window().await?, json!("86400"));
 
+    // Reference-token registry (Q1, D33): protocol-only, so the DAO changes it and
+    // the deploy-key owner, a lone member and an outsider cannot.
+    let entry = json!({
+        "chain_id": "46630",
+        "token_address": format!("0x{:040x}", 1),
+        "reference_chain_id": "4663",
+        "reference_address": format!("0x{:040x}", 0xbb),
+    });
+    for caller in [&w.deploy_owner, &w.council[0], &w.outsider] {
+        assert!(
+            !w.direct(caller, &w.arena, "add_reference_entry", entry.clone())
+                .await?
+        );
+    }
+    let id = w
+        .propose(
+            &w.council[0].clone(),
+            &arena,
+            "add_reference_entry",
+            entry,
+            "1",
+        )
+        .await?;
+    assert_eq!(w.pass(id).await?, "Approved");
+    let page: Value = arena
+        .view("get_reference_registry")
+        .args_json(json!({}))
+        .await?
+        .json()?;
+    assert_eq!(page["total"], 1);
+
     // Backing: the DAO is the owner, so the burn sink is set through a proposal,
     // once. The deploy-key owner and council members acting alone cannot set it.
     let sink = vec![0xdeu8; 20];
