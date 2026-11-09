@@ -43,7 +43,7 @@ This needs the target testnet deployment (see [testnet-evidence.md](testnet-evid
 ## 4. Integration gaps
 
 - **Intents on testnet:** 1Click lists no testnet assets, so no Intents route exists for Robinhood testnet `46630` or NEAR testnet. Testnet funding through Intents is an **integration gap**.
-- **Arena boundary:** it refuses every route except `direct` (`unsupported_route`, #76) before anything is built or stored, and the terminal's mock funding router is labelled a fixture.
+- **Arena boundary:** it refuses every route except `direct` and, in a testnet configuration only, the labelled `intents-fixture` (`unsupported_route` for the rest, #76) before anything is built or stored, and the terminal's mock funding router is labelled a fixture.
 - **Mainnet routes:** they exist for Robinhood assets (above), but the project targets testnet only, so they are research evidence, not an accepted route.
 - **Direct deposits:** a direct Robinhood testnet deposit exercises custody but does **not** complete Intents or Bitte acceptance.
 - **Bitte:** a gap until an account and agent exist.

@@ -75,7 +75,7 @@ Liquidity depth is **measured on the mainnet reference token** (chain `4663`, th
 - An unpriced pool is not counted; since that can only understate liquidity, a counted total above USD 10,000 still passes, while one at or below it holds Pending (not Fail).
 - Deduplicate pools by chain and address. Observation time is the block's own timestamp. The evidence TTL uses the older of the GoPlus query time and the oldest liquidity observation.
 - The LP valuation must be **strictly greater than USD 10,000**. Exactly USD 10,000 or less fails the gate; missing or unreliable evidence (RPC for another chain, missing valuation source or time, conflicting duplicates) stays Pending. Do not count a token's market cap as liquidity or infer depth from a price alone.
-- v2 and v3 pools are valued the same way. Tick-based executable depth is **not computed**; the minimum executable-depth policy stays OPEN and no value is invented.
+- v2 and v3 pools are valued the same way. Tick-based executable depth is **not computed**; the minimum executable-depth policy was decided on 2026-11-09 (D32): the headline policy is kept for the hackathon, no depth value is invented, and the limit is documented.
 
 A fixture can exercise the gate but must not be represented as market liquidity worth real dollars. All liquidity tests are fixture-only; no live mainnet coverage is claimed.
 

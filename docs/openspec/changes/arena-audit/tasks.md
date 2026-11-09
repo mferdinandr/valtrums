@@ -34,10 +34,10 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 - [x] Read pools on-chain for the reference token through a separate read-only mainnet RPC with shared retries, all reads pinned to one block; value v2 and v3 pools by quote-side balance only (`headline_quote_balance`), never the token side; observation time is the block timestamp. Fixture-only.
 - [x] Value quotes only in an explicitly configured stablecoin (decimals re-read on-chain) or the configured WETH priced from one configured v3 WETH/stablecoin pool via `slot0` with a configured stable-side floor; unset or mismatched config leaves the pool unpriced and Pending (`quote_asset_unpriced`, `price_pool_floor_unset`, `price_pool_floor_not_met`, `price_pool_invalid`). No code defaults.
 - [x] Label the valuation source `headline_quote_balance` in evidence, `evidenceHash`, `policyHash` and the user report as an approximation, not executable depth.
-- [x] Deduplicate eligible pools; tick-based executable depth is not computed and its policy stays OPEN (not invented).
+- [x] Deduplicate eligible pools; tick-based executable depth is not computed and its policy was decided 2026-11-09 (D32): keep the headline policy for the hackathon.
 - [x] Evaluate independent exact USD valuation strictly above 10000; hold missing or unreliable evidence Pending.
 - [x] Test 9999, 10000 and 10001 USD, absent LP evidence, duplicate pools and mismatched asset identity.
-- [ ] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity (OPEN).
+- [x] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity. Decided 2026-11-09 (D32, issue #112): keep the headline quote-balance policy, no pool aggregation, no Uniswap v4 reading for the hackathon; the executable-depth limit is documented, not fixed.
 - [x] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain. Verified 2026-11-08 with two independent RPC providers at the same block (not a finalized block): WETH (18 decimals), USDG "Global Dollar" (6 decimals, an upgradeable EIP-1967 proxy), the v3 pool (token0 WETH, token1 USDG, fee 100, returned by its factory's `getPool`) with about USD 2.29M on the USDG side, above the USD 1,000,000 floor. See `docs/evidence/2026-11-08-arena-audit-verification.json`.
 
 ## User-facing report
