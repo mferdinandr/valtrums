@@ -570,6 +570,63 @@ async fn reservations_expire_and_anyone_can_release_them_after_the_configured_tt
 }
 
 #[tokio::test]
+async fn two_users_with_the_same_local_ids_stay_separately_attributed() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    let user2 = w.worker.dev_create_account().await?;
+    let agent2 = w.worker.dev_create_account().await?;
+    user2
+        .call(w.policy.id(), "create_grant")
+        .args_json(grant_input(&agent2, "100", FUTURE_NS))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    reserve_ok(&w, "70", 1).await?;
+    agent2
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&user2, "90", 1)) // same local grant id and request id
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    // Each delegate can act only for its own user.
+    assert!(agent2
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&w.user, "5", 9))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()
+        .is_err());
+    let b2: Value = w
+        .policy
+        .view("get_budget")
+        .args_json(json!({"user": user2.id(), "local_id": b32(7)}))
+        .await?
+        .json()?;
+    assert_eq!(budget(&w).await?["reserved"], "70");
+    assert_eq!(b2["reserved"], "90");
+    // Cancelling one user's reservation leaves the other untouched.
+    w.agent
+        .call(w.policy.id(), "cancel_reservation")
+        .args_json(reservation_args(&w, 1))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let b2: Value = w
+        .policy
+        .view("get_budget")
+        .args_json(json!({"user": user2.id(), "local_id": b32(7)}))
+        .await?
+        .json()?;
+    assert_eq!(budget(&w).await?["reserved"], "0");
+    assert_eq!(b2["reserved"], "90");
+    Ok(())
+}
+
+#[tokio::test]
 async fn unknown_action_fields_fail_without_reserving_budget() -> anyhow::Result<()> {
     let w = deploy().await?;
     create_grant(&w, "100", FUTURE_NS).await?;
