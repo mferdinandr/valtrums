@@ -80,7 +80,7 @@ describe("indexer CLI", () => {
         { height: "2", outcomes: [outcome("r2", [auditUpdated(1, 0, "pass")])] },
         { height: "3", hash: "blk3b", outcomes: [outcome("r3b", [deposit(1, 0, "bob.testnet", "999")])] },
       ]),
-      { finalizedHeight: "2" },
+      { finalizedHeight: "3" },
     );
     await writeChain(forked);
     const second = capture();

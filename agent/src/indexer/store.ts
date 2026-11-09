@@ -24,6 +24,20 @@ export interface StoredBlock {
   finalized: boolean;
 }
 
+/**
+ * Set when a provisional fork was retracted: confirmations that depend on the replaced range stay
+ * suspended until the source finalizes a block at or above `untilFinalizedHeight` on the canonical chain.
+ */
+export interface ReorgSuspension {
+  /** Lowest height whose provisional blocks were retracted (decimal string). */
+  sinceHeight: string;
+  /** Highest retracted height; finality must reach it on the canonical chain to lift the suspension. */
+  untilFinalizedHeight: string;
+  retractedBlocks: number;
+  retractedEvents: number;
+  reason: string;
+}
+
 export interface StoreState {
   schema: string;
   config: IndexerConfig;
@@ -48,6 +62,8 @@ export interface StoreState {
   cursors: { processedHead: BlockRef | null; finalizedHead: BlockRef | null };
   /** Last computed health, persisted so a restart never silently reports healthy. */
   health: { status: IndexerHealthStatus; reason: string };
+  /** Active reorg suspension of dependent confirmations; null when none. Persisted across restarts. */
+  reorgSuspension: ReorgSuspension | null;
 }
 
 /** Health persisted into a freshly created store before any sync has run. */
@@ -140,6 +156,7 @@ export class JsonFileIndexerStore {
         s.health = { status: "reconciliation_required", reason: "restored unresolved event conflicts from legacy diagnostics" };
       }
     }
+    if (s.reorgSuspension === undefined) s.reorgSuspension = null;
     if (s.diagnosticOverflowBlocks === undefined) {
       s.diagnosticOverflowBlocks = s.diagnosticsDropped > 0 ? s.blocks.map((b) => b?.hash) : [];
     }
@@ -169,6 +186,7 @@ export class JsonFileIndexerStore {
           diagnosticOverflowBlocks: [],
           cursors: { processedHead: null, finalizedHead: null },
           health: { ...INITIAL_HEALTH },
+          reorgSuspension: null,
         };
       }
       assertCompatibleConfig(existing.config, config);
@@ -281,6 +299,13 @@ function validateState(state: StoreState): void {
   check(counter(state.diagnosticsDropped) && counter(state.ignoredLogs), "invalid diagnostic counters");
   const health = record(state.health, "health");
   check(typeof health.status === "string" && HEALTH.has(health.status) && typeof health.reason === "string", "invalid health status");
+  const suspension = state.reorgSuspension;
+  if (suspension !== null) {
+    const r = record(suspension, "reorg suspension");
+    check(decimal(r.sinceHeight) && decimal(r.untilFinalizedHeight) && BigInt(r.sinceHeight) <= BigInt(r.untilFinalizedHeight), "invalid reorg suspension heights");
+    check(counter(r.retractedBlocks) && counter(r.retractedEvents) && typeof r.reason === "string" && r.reason.length <= 512, "invalid reorg suspension counters");
+    check(state.health.status !== "healthy", "healthy status hides an active reorg suspension");
+  }
   const blocks = new Map<string, StoredBlock>();
   let previous: StoredBlock | undefined;
   let finalized: StoredBlock | undefined;

@@ -32,6 +32,7 @@ const freshState = (cfg = config()): StoreState => ({
   diagnosticOverflowBlocks: [],
   cursors: { processedHead: { height: "1", hash: "h1" }, finalizedHead: { height: "1", hash: "h1" } },
   health: { status: "healthy", reason: "test fixture" },
+  reorgSuspension: null,
 });
 
 describe("JsonFileIndexerStore recovery", () => {

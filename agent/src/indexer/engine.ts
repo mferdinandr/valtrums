@@ -1,7 +1,7 @@
 import { silentLogger, type Logger } from "../logger.js";
 import { parseBlock } from "./parser.js";
 import { buildProjection, type Projection } from "./projection.js";
-import { JsonFileIndexerStore, MAX_DIAGNOSTICS, type StoreState } from "./store.js";
+import { JsonFileIndexerStore, MAX_DIAGNOSTICS, type ReorgSuspension, type StoreState } from "./store.js";
 import type {
   BlockRef,
   BlockSource,
@@ -135,6 +135,31 @@ export class IndexerEngine {
   }
 
   /**
+   * Finalized-only view for confirmations (for example crediting a deposit or acting on a payout).
+   * It is suspended while a reorg retraction awaits finality or while the indexer needs
+   * reconciliation or is degraded, and then reports no credits rather than a stale or provisional
+   * number. It is a read model: it never refunds, restores backing or sends a payout.
+   */
+  confirmations(): ConfirmationView {
+    const status = this.state?.health.status ?? "pending";
+    const suspension = this.state?.reorgSuspension ?? null;
+    const finalizedHeight = this.committedFinalizedHeight();
+    let reason: string | null = null;
+    if (suspension) reason = suspension.reason;
+    else if (status === "reconciliation_required" || status === "degraded") reason = `indexer status is ${status}: ${this.state.health.reason}`;
+    const credits: Record<string, Record<string, string>> = {};
+    if (reason === null) {
+      const proj = this.projection();
+      for (const [key, battle] of Object.entries(proj.battles)) {
+        const byCommunity: Record<string, bigint> = {};
+        for (const d of battle.deposits) if (d.ref.finalized) byCommunity[d.community] = (byCommunity[d.community] ?? 0n) + BigInt(d.amount);
+        if (Object.keys(byCommunity).length > 0) credits[key] = Object.fromEntries(Object.entries(byCommunity).map(([c, v]) => [c, v.toString()]));
+      }
+    }
+    return { confirmable: reason === null, reason, suspension, finalizedHeight: finalizedHeight < 0n ? null : finalizedHeight.toString(), finalizedCredits: credits };
+  }
+
+  /**
    * The last persisted health. It is read from committed state, so a restart reports the real last
    * status (pending/degraded/reconciliation_required) instead of defaulting to healthy; the next
    * {@link sync} recomputes it.
@@ -165,6 +190,12 @@ export class IndexerEngine {
     }
     if (!flags.reconciliation) await this.extend(flags);
     if (!flags.reconciliation) this.promoteFinality(finalized, committedFinalBefore, flags);
+
+    const suspension = this.state.reorgSuspension;
+    if (suspension && !flags.reconciliation) {
+      flags.pending = true;
+      flags.reason ||= suspension.reason;
+    }
 
     // Caught up only when the processed head equals the source latest head by hash.
     const head = this.state.cursors.processedHead;
@@ -220,6 +251,21 @@ export class IndexerEngine {
       flags.reconciliation = true;
       flags.reason = `fork conflicts with finalized state at or below height ${height.toString()}; preserving evidence`;
       return;
+    }
+    const retractedEvents = this.state.journal.filter((e) => orphan.has(e.provenance.blockHash)).length;
+    const retractedHeights = this.state.blocks.filter((b) => orphan.has(b.hash)).map((b) => BigInt(b.height));
+    if (retractedHeights.length > 0) {
+      const highest = retractedHeights.reduce((m, h) => (h > m ? h : m));
+      const prior = this.state.reorgSuspension;
+      const until = prior && BigInt(prior.untilFinalizedHeight) > highest ? BigInt(prior.untilFinalizedHeight) : highest;
+      const since = prior && BigInt(prior.sinceHeight) < height ? BigInt(prior.sinceHeight) : height;
+      this.state.reorgSuspension = {
+        sinceHeight: since.toString(),
+        untilFinalizedHeight: until.toString(),
+        retractedBlocks: (prior?.retractedBlocks ?? 0) + retractedHeights.length,
+        retractedEvents: (prior?.retractedEvents ?? 0) + retractedEvents,
+        reason: `provisional blocks from height ${since.toString()} were retracted by a reorg; confirmations stay suspended until finality reaches height ${until.toString()}`,
+      };
     }
     this.state.blocks = this.state.blocks.filter((b) => !orphan.has(b.hash));
     this.state.journal = this.state.journal.filter((e) => !orphan.has(e.provenance.blockHash));
@@ -334,6 +380,8 @@ export class IndexerEngine {
     }
     for (const b of this.state.blocks) if (cmpHeight(b.height, finalized.height) <= 0) b.finalized = true;
     this.state.cursors.finalizedHead = { height: finalized.height, hash: finalized.hash };
+    const sus = this.state.reorgSuspension;
+    if (sus && fh >= BigInt(sus.untilFinalizedHeight)) this.state.reorgSuspension = null; // finality restored on the canonical chain
   }
 
   private deriveStatus(flags?: SyncFlags): IndexerHealthStatus {
@@ -373,6 +421,15 @@ export class IndexerEngine {
       this.state.diagnosticsDropped += over;
     }
   }
+}
+
+export interface ConfirmationView {
+  confirmable: boolean;
+  reason: string | null;
+  suspension: ReorgSuspension | null;
+  finalizedHeight: string | null;
+  /** Credited deposit totals from finalized blocks only, per battle namespace key and community. */
+  finalizedCredits: Record<string, Record<string, string>>;
 }
 
 interface SyncFlags {
