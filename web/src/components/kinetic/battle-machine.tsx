@@ -116,78 +116,23 @@ function Pod({
             controls.onSelect(side);
         }}
       >
-        <mesh position={[0, -0.05, 0]}>
-          <cylinderGeometry args={[1.03, 1.15, 0.32, 8]} />
-          <meshStandardMaterial
-            color={selected ? "#5d6b48" : "#30382c"}
-            metalness={0.7}
-            roughness={0.3}
-          />
+        <mesh position={[0, -0.04, 0]}>
+          <cylinderGeometry args={[0.83, 1.02, 0.3, 8]} />
+          <meshStandardMaterial color={selected ? "#526046" : "#303a30"} metalness={0.7} roughness={0.35} />
         </mesh>
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.13, 0]}>
-          <torusGeometry args={[0.89, 0.045, 8, 64]} />
-          <meshStandardMaterial
-            ref={rim}
-            color={color}
-            emissive={color}
-            emissiveIntensity={0.12}
-          />
+        <mesh position={[0, 0.13, 0]}>
+          <cylinderGeometry args={[0.79, 0.79, 0.035, 48]} />
+          <meshStandardMaterial ref={rim} color={color} emissive={color} emissiveIntensity={0.12} />
         </mesh>
-        <RoundedBox
-          args={[1.12, 0.7, 0.85]}
-          radius={0.06}
-          position={[0, 0.5, 0]}
-        >
-          <meshStandardMaterial
-            color="#202a25"
-            metalness={0.7}
-            roughness={0.35}
-          />
-        </RoundedBox>
-        {[-0.42, 0.42].map((x) => (
-          <mesh
-            key={x}
-            position={[x, 0.5, 0.44]}
-            rotation={[Math.PI / 2, 0, 0]}
-          >
-            <cylinderGeometry args={[0.04, 0.04, 0.025, 6]} />
-            <meshStandardMaterial
-              color="#a6b3b7"
-              metalness={0.8}
-              roughness={0.3}
-            />
+        <group ref={lid} position={[0, 0.15, -0.45]}>
+          <mesh position={[0, 0, 0.45]}>
+            <cylinderGeometry args={[0.59, 0.59, 0.035, 48]} />
+            <meshStandardMaterial color={color} metalness={0.35} roughness={0.45} />
           </mesh>
-        ))}
-        {[-0.2, -0.1, 0, 0.1, 0.2].map((x) => (
-          <mesh key={x} position={[x, 0.35, 0.44]}>
-            <boxGeometry args={[0.035, 0.09, 0.025]} />
-            <meshStandardMaterial color="#0e151b" />
-          </mesh>
-        ))}
-        <mesh position={[0, 0.55, 0.44]}>
-          <boxGeometry args={[0.72, 0.04, 0.02]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={color}
-            emissiveIntensity={selected ? 1 : 0.1}
-          />
-        </mesh>
-        <group ref={lid} position={[0, 0.85, -0.43]}>
-          <RoundedBox
-            args={[1.18, 0.1, 0.91]}
-            radius={0.04}
-            position={[0, 0, 0.43]}
-          >
-            <meshStandardMaterial
-              color={color}
-              metalness={0.65}
-              roughness={0.4}
-            />
-          </RoundedBox>
         </group>
         <group ref={emblem} position={[0, 1.45, 0]}>
           <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.53, 0.53, 0.13, 6]} />
+            <cylinderGeometry args={[0.62, 0.62, 0.16, 8]} />
             <meshStandardMaterial
               color={color}
               metalness={0.55}
@@ -195,7 +140,7 @@ function Pod({
             />
           </mesh>
           <mesh position={[0, 0, 0.08]}>
-            <torusGeometry args={[0.39, 0.025, 8, 48]} />
+            <torusGeometry args={[0.46, 0.025, 8, 48]} />
             <meshStandardMaterial color="#29331f" />
           </mesh>
           <TokenLabel symbol={controls.symbols[side === "A" ? 0 : 1]} />
@@ -325,14 +270,14 @@ function Engine({
     <>
       <mesh position={[0, -0.7, 0]}>
         <cylinderGeometry args={[3.3, 3.5, 0.35, 12]} />
-        <meshStandardMaterial color="#1c2524" metalness={0.7} roughness={0.4} />
+        <meshStandardMaterial color="#273127" metalness={0.7} roughness={0.4} />
       </mesh>
       <mesh position={[0, -0.49, 0]}>
         <cylinderGeometry args={[3.15, 3.15, 0.08, 64]} />
-        <meshStandardMaterial color="#293430" metalness={0.6} roughness={0.5} />
+        <meshStandardMaterial color="#303b30" metalness={0.6} roughness={0.5} />
       </mesh>
       <group ref={rotor}>
-        {[3.25, 3.5].map((r) => (
+        {[2.9, 3.25, 3.5].map((r) => (
           <mesh key={r} rotation={[Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
             <torusGeometry args={[r, 0.025, 8, 96]} />
             <meshStandardMaterial
@@ -363,8 +308,9 @@ function Engine({
       {controls.status === "Live" && (
         <TimerRing progress={controls.progress} reduced={reduced} />
       )}
-      {([-1, 1] as const).map((s) => (
-        <group key={s} position={[s * 2.9, 0.15, -0.9]}>
+      {Array.from({ length: 8 }, (_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        return <group key={i} position={[Math.cos(angle) * 2.7, 0.1, Math.sin(angle) * 2.7]}>
           <RoundedBox args={[0.3, 1.1, 0.4]} radius={0.04}>
             <meshStandardMaterial
               color="#61705d"
@@ -380,8 +326,8 @@ function Engine({
               emissiveIntensity={1}
             />
           </mesh>
-        </group>
-      ))}
+        </group>;
+      })}
       <Pod side="A" controls={controls} reduced={reduced} />
       <Pod side="B" controls={controls} reduced={reduced} />
       <Capsules controls={controls} reduced={reduced} />

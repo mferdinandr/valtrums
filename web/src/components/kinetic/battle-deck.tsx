@@ -23,7 +23,7 @@ const PHASES: Record<DepositPhase, string> = {
 const STATUS_COPY = {
   Proposed: "Waiting for audit. Vault gates are sealed.",
   Approved: "Gathering deposits. Choose your community.",
-  Live: "Vaults locked. The timer ring follows the recorded battle interval.",
+  Live: "Vaults locked. Follow the recorded battle interval.",
   Settling: "Settlement in progress. Inspect the execution steps below.",
   Settled: "Battle resolved. Manage your outcome in Portfolio.",
   EmergencyHalted: "Arena halted. Inspect your refund in Portfolio.",
@@ -91,10 +91,10 @@ export function BattleDeck({
         <div className="relative min-w-0 bg-[radial-gradient(ellipse_at_center,#344a3433,transparent_70%)]">
           <div className="pointer-events-none absolute left-5 top-4 z-10 rounded border border-edge bg-void/70 px-3 py-2 text-[10px] uppercase tracking-wider text-mute">
             {battle.status === "Live"
-              ? "Gates locked / timer active"
+              ? "Battle live / deposits closed"
               : battle.status === "Settled"
                 ? `Winner: ${battle.winner ?? "unavailable"}`
-                : "Community selection deck"}
+                : "Arena / community podiums"}
           </div>
           <KineticScene
             mode="battle"
