@@ -176,8 +176,7 @@ export function Landing() {
                 {step === "choose" && (
                   <>
                     <p className="mb-3 text-xs leading-6 text-mute">
-                      Click a 3D podium or choose a tribe above. Load
-                      illustrative capsules to see how the vault responds.
+                      Click a 3D podium or choose a tribe above to start the practice round.
                     </p>
                     <Button
                       onClick={() => {

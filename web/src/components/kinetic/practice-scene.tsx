@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { Text } from "@react-three/drei";
+import { RoundedBox, Text } from "@react-three/drei";
 
 export const PRACTICE_TOKENS = ["CASHCAT", "BTCETHUSDT", "REBATE", "OAK", "WIF"] as const;
 const COLORS = ["#d0f570", "#c8a6f7", "#7ad9dd", "#f0c778", "#f29aa6"];
@@ -9,10 +9,15 @@ const COLORS = ["#d0f570", "#c8a6f7", "#7ad9dd", "#f0c778", "#f29aa6"];
 export default function PracticeScene({ selected, onSelect, selectable }: { selected: number; onSelect: (index: number) => void; selectable: boolean }) {
   return (
     <div className="scene-floor relative h-[340px] sm:h-[420px]" role="group" aria-label="Five illustrative token podiums. Use the buttons below to select a tribe.">
-      <Canvas camera={{ position: [0, 7, 11], fov: 43 }} dpr={[1, 1.5]} gl={{ alpha: true, antialias: true, powerPreference: "low-power" }}>
-        <ambientLight intensity={1.5} />
-        <directionalLight position={[3, 8, 5]} intensity={3} />
-        <mesh position={[0, -0.35, 0]}><cylinderGeometry args={[4, 4.2, 0.4, 48]} /><meshStandardMaterial color="#25312d" metalness={0.6} roughness={0.45} /></mesh>
+      <Canvas camera={{ position: [8.8, 6.5, 11], fov: 36 }} dpr={[1, 1.5]} gl={{ alpha: true, antialias: true, powerPreference: "low-power" }}>
+        <ambientLight intensity={1.4} />
+        <directionalLight position={[3, 6, 5]} intensity={3} color="#f6ffe2" />
+        <directionalLight position={[-4, 2, -2]} intensity={2} color="#c5b3eb" />
+        <mesh position={[0, -0.45, 0]}><cylinderGeometry args={[4, 3.75, 0.4, 12]} /><meshStandardMaterial color="#252e22" metalness={0.7} roughness={0.45} /></mesh>
+        <mesh position={[0, -0.23, 0]}><cylinderGeometry args={[3.7, 3.7, 0.08, 64]} /><meshStandardMaterial color="#343e2d" metalness={0.5} roughness={0.6} /></mesh>
+        {[3.5, 4.15, 4.35].map((radius) => <mesh key={radius} rotation={[Math.PI / 2, 0, 0]} position={[0, -0.12, 0]}><torusGeometry args={[radius, 0.035, 8, 96]} /><meshStandardMaterial color="#829854" emissive="#829854" emissiveIntensity={0.4} metalness={0.6} /></mesh>)}
+        {Array.from({ length: 24 }, (_, index) => { const angle = index * Math.PI / 12; return <mesh key={index} position={[Math.cos(angle) * 3.93, -0.1, Math.sin(angle) * 3.93]} rotation={[0, -angle, 0]}><boxGeometry args={[0.17, 0.06, 0.06]} /><meshStandardMaterial color={index % 3 === 0 ? "#d0f570" : "#687650"} /></mesh>; })}
+        {Array.from({ length: 8 }, (_, index) => { const angle = (index + 0.5) * Math.PI / 4; return <group key={index} position={[Math.cos(angle) * 3.25, 0.08, Math.sin(angle) * 3.25]} rotation={[0, -angle, 0]}><RoundedBox args={[0.25, 0.43, 0.32]} radius={0.03}><meshStandardMaterial color="#5b694c" metalness={0.65} roughness={0.4} /></RoundedBox><mesh position={[0, 0.23, 0]}><boxGeometry args={[0.15, 0.03, 0.2]} /><meshStandardMaterial color="#d0f570" emissive="#d0f570" emissiveIntensity={0.5} /></mesh></group>; })}
         {PRACTICE_TOKENS.map((token, index) => {
           const angle = (index / PRACTICE_TOKENS.length) * Math.PI * 2 - Math.PI / 2;
           const x = Math.cos(angle) * 2.45;
@@ -21,8 +26,9 @@ export default function PracticeScene({ selected, onSelect, selectable }: { sele
           return <group key={token} position={[x, active ? 0.2 : 0, z]} onClick={(event) => { event.stopPropagation(); if (selectable) onSelect(index); }}>
             <mesh><cylinderGeometry args={[0.77, 0.85, 0.3, 8]} /><meshStandardMaterial color={active ? "#5d6b48" : "#303b35"} metalness={0.65} /></mesh>
             <mesh position={[0, 0.17, 0]}><cylinderGeometry args={[0.68, 0.68, 0.04, 32]} /><meshStandardMaterial color={COLORS[index]} emissive={COLORS[index]} emissiveIntensity={active ? 0.7 : 0.2} /></mesh>
-            <mesh position={[0, 0.95, 0]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.59, 0.59, 0.14, 32]} /><meshStandardMaterial color={COLORS[index]} metalness={0.5} roughness={0.3} /></mesh>
-            <Text position={[0, 0.95, 0.09]} fontSize={token.length > 7 ? 0.13 : 0.19} maxWidth={1.05} color="#14201d" anchorX="center" anchorY="middle">{token}</Text>
+            <mesh position={[0, 0.95, 0]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.59, 0.59, 0.15, 8]} /><meshStandardMaterial color={COLORS[index]} metalness={0.45} roughness={0.3} /></mesh>
+            <mesh position={[0, 0.95, 0.09]}><torusGeometry args={[0.45, 0.018, 8, 48]} /><meshStandardMaterial color="#1b2515" /></mesh>
+            <Text position={[0, 0.95, 0.1]} fontSize={token.length > 7 ? 0.13 : 0.19} maxWidth={1.05} color="#14201d" anchorX="center" anchorY="middle">{token}</Text>
           </group>;
         })}
       </Canvas>
