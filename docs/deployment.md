@@ -75,7 +75,8 @@ Live testnet deployment from the owner's accounts; details, code hashes and tran
 | Arena (lifecycle activated, protocol = DAO) | `arena.valtrum-owner-b694.testnet` |
 | Receipt registry | `registry.valtrum-owner-b694.testnet` |
 | Payout (signer `v1.signer-prod.testnet`) | `payout.valtrum-owner-b694.testnet` |
-| Player policy | `policy.valtrum-owner-b694.testnet` |
+| Player policy (current, redeployed 2026-11-09 after #129) | `policy-v2.valtrum-owner-b694.testnet` |
+| Player policy (old layout, superseded, unused) | `policy.valtrum-owner-b694.testnet` |
 | Backing (fixture asset, DAO-owned) | `backing1.valtrum-owner-b694.testnet` |
 | Backings for the six mock tokens (DAO-owned, wired 2026-11-09) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
 | Registry verifier | `valtrum-verifier-b694.testnet` |
