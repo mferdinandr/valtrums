@@ -97,3 +97,17 @@ Identity re-verified at 2026-11-09 03:56 UTC: both providers report `chain_id` `
 The registry also authorised `backing1` (`set_representation`). Deployment transactions and proposals are in the evidence file and in [sputnik-authority.md](sputnik-authority.md). The measured storage cost is 1e19 yoctoNEAR per byte; each contract was funded with its code plus 0.4 NEAR. Owner balance: 10 NEAR before, 7.66 NEAR after (after moving 23 NEAR in from the user1, user2 and agent accounts). The router, legacy contracts and mock tokens were not deployed.
 
 What this does not prove: no funded battle, deposit, payout or Robinhood custody exists; the backing and arena `usdc` are fixtures; wasm was built on the host (not reproducible).
+
+## 6. Testnet wiring run (2026-11-09, live; issues #72 and #113)
+
+Raw data: [`evidence/2026-11-09-near-testnet-wiring.json`](evidence/2026-11-09-near-testnet-wiring.json). All token assets are FIXTURES (mock tokens, no value); the NEAR transactions are live testnet evidence from the owner's accounts.
+
+- **Custody gas funding.** The deployer sent 0.002 ETH to the derived custody address `0x0b740E3E90491f57699fCCD8276400E65BC70c41` on Robinhood testnet (tx `0x89e922d9366a99967fdbe8b6b39543c8b8209e76ba10ef127b5bea3cbdd469e7`, block 150727320). Re-read through dRPC during the run: balance 0.002 ETH, nonce 0. The official RPC reset the connection at that time, so this read is dRPC only.
+- **Arena code redeploy.** New minimum DAO window of 30 seconds. Hash `6zKvCSoY...AJR5` to `BzeN3FKT...fCN9` (equals the wasm sha256 `a35938b8...3e06`), tx `2CpHDKG4...vRqP`. State unchanged.
+- **Verifier.** `valtrum-verifier-b694.testnet` created through the testnet helper; `registry.set_verifier` succeeded. The registry has no view for the verifier, so only the successful owner call proves it.
+- **Six backings** deployed, DAO-owned, `custody_domain` the lowercase custody contract `0xb994dcab6ad9a042e7bbec3ba104ec5e6b797798`, then wired (all transactions in the JSON). Payout binding: sender the derived custody address, path `valtrum-custody-1`, first nonce 0, gas limit 200,000 and max fee cap 1 gwei. **The last two values were chosen by the agent, not the owner**; the binding is immutable per backing.
+- **Trusted flag question.** Answered: the arena trusted list is separate from the registry list and was never set for `backing1`; after the call it is true for the six new backings.
+- **DAO.** Proposals 3 to 16 passed and were read back; see [sputnik-authority.md](sputnik-authority.md).
+- **Funding moves.** The owner received 7 NEAR from the operator, 7 from the relayer and 4.5 from the agent to pay for the six accounts (about 25.7 NEAR).
+
+**Limitations.** No funded battle, deposit-to-mint, payout signature or live reorg. The official Robinhood RPC was unreachable during this run (connection reset), so nonce and balance came from dRPC. The wasm is a host build and is not reproducible; the backing hash differs from `backing1` because it is a fresh build.
