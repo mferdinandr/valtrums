@@ -72,7 +72,7 @@ export function Landing() {
             <span className="text-neon-green">OWN THE ARENA.</span>
           </h1>
           <p className="mt-7 max-w-sm text-sm leading-7 text-mute">
-            Multiple communities enter. One side comes out on top. Back your tribe, follow the battle, and see where the rivalry takes you.
+            Pick your tribe and enter the arena. Browse battles, inspect the vaults and status, then back a community while deposits are open.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
