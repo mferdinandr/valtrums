@@ -55,4 +55,4 @@ Use isolated new testnet deployments after implementation. Existing deployment b
 
 ## Open Questions
 
-DAO mechanism including membership, weight, quorum, deadlines and fallback; behavior after a live token-policy change and minimum executable liquidity depth (audit policy v1 and critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.
+DAO mechanism including membership, weight, quorum, deadlines and fallback; behavior after a live token-policy change (minimum executable liquidity depth decided in D32, 2026-11-09) (audit policy v1 and critical fields are mapped); source providers/cadence/boundaries; custody proof/finality/reorg recovery; gathering/cancellation/emergency rules; protocol identity; token limits and gas. The [question register](../product-spec.md#open-question-register) is authoritative. No DAO parameters are selected here.

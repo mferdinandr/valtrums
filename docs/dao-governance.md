@@ -23,7 +23,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 | Delegation | None in v1. Only the participant's own account votes, and a player agent cannot vote unless a later grant design explicitly allows it. |
 | Execution | The arena contract tallies the votes itself. After the window closes, **anyone** can trigger finalization and execution. No owner, worker, multisig or external DAO can create, change or veto a decision. |
 | Burn method | A verified transfer of the burn portion on Robinhood to a frozen irrecoverable sink address, confirmed by a finalized receipt. It is reported as "sent to sink", not as a supply reduction. |
-| SputnikDAO, Trezu | Not used. Both remain unintegrated candidates (see [ecosystem](ecosystem.md)). |
+| SputnikDAO, Trezu | Not used for the winners' vote, which the arena contract tallies (D22). Since D28 (2026-11-09) a SputnikDAO on testnet is planned to own protocol-level authority and receive the protocol fee ([#113](https://github.com/mferdinandr/valtrum/issues/113)); it cannot change or veto a battle's tally. Trezu is only an optional interface to that DAO, and its testnet support is unverified (see [ecosystem](ecosystem.md)). |
 
 ## Rules for implementation
 
