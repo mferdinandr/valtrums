@@ -1,27 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
-  RotateCcw,
   ShieldCheck,
-  Swords,
-  Check,
   Plus,
 } from "lucide-react";
-import dynamic from "next/dynamic";
 import { KineticScene } from "./scene";
 import { TargetFlow } from "@/components/target-flow";
 import { MemeMechanics } from "@/components/meme-mechanics";
 
-const PracticeScene = dynamic(() => import("./practice-scene"), { ssr: false, loading: () => <div className="scene-floor h-[340px] sm:h-[420px]" /> });
-const PRACTICE_TOKENS = ["CASHCAT", "BTCETHUSDT", "REBATE", "OAK", "WIF"] as const;
 import { Button } from "@/components/ui/button";
 
 
-type Step = "choose" | "loaded" | "live" | "result";
-const LENGTH = 30000;
 const STEPS = [
   { number: "01", title: "Choose a community.", text: "Discover a battle with two or more communities. Check the scoring mode and audit status before joining." },
   { number: "02", title: "Play the round.", text: "Deposits lock before a 30-second round. Tied leaders advance to another round while all vaults remain locked." },
@@ -29,39 +20,6 @@ const STEPS = [
 ];
 
 export function Landing() {
-  const [side, setSide] = useState(0);
-  const [step, setStep] = useState<Step>("choose");
-  const [remaining, setRemaining] = useState(LENGTH);
-  const stepPanel = useRef<HTMLDivElement>(null);
-  const moveFocus = useRef(false);
-  useEffect(() => {
-    if (!moveFocus.current) return;
-    moveFocus.current = false;
-    const next =
-      stepPanel.current?.querySelector<HTMLElement>("button, a") ??
-      stepPanel.current;
-    next?.focus({ preventScroll: true });
-  }, [step]);
-  useEffect(() => {
-    if (step !== "live") return;
-    const end = Date.now() + LENGTH;
-    const timer = window.setInterval(() => {
-      const left = Math.max(0, end - Date.now());
-      setRemaining(left);
-      if (left === 0) {
-        window.clearInterval(timer);
-        moveFocus.current = !!stepPanel.current?.contains(
-          document.activeElement,
-        );
-        setStep("result");
-      }
-    }, 100);
-    return () => window.clearInterval(timer);
-  }, [step]);
-  const reset = () => {
-    setStep("choose");
-    setRemaining(LENGTH);
-  };
   return (
     <div className="landing-page">
       <div className="mb-5 flex items-center justify-between">
@@ -77,153 +35,6 @@ export function Landing() {
           <div className="mt-8 flex flex-wrap gap-5 border-t border-edge/70 py-5 text-[10px] text-mute"><span>COMMUNITY VS COMMUNITY</span><span>TOKEN-BACKED VAULTS</span></div>
         </div>
         <div className="relative min-w-0"><div className="absolute right-6 top-6 z-10 hidden font-mono text-[9px] uppercase leading-5 tracking-widest text-mute/70 lg:block">Kinetic arena<br />Community rivalry</div><KineticScene className="h-[310px] sm:h-[400px] lg:h-full lg:min-h-[480px]" /></div>
-      </section>
-      <section className="mt-12 grid items-start gap-8 lg:grid-cols-[.7fr_1.3fr]">
-        <div className="max-w-md"><p className="eyebrow text-neon-green">PRACTICE / NO WALLET NEEDED</p><h2 className="mt-4 text-3xl md:text-4xl">Pick a tribe. Try a round.</h2><p className="mt-4 text-sm leading-7 text-mute">Explore a scripted five-tribe round and see how the planned arena works. No funds or transactions are involved.</p><p className="mt-4 text-xs leading-6 text-neon-amber">Current battles support two communities; multi-community rounds are planned.</p></div>
-        <div
-          id="practice"
-          className="practice-card relative min-w-0 scroll-mt-32 overflow-hidden rounded-2xl border border-edge bg-[#161f26]"
-        >
-          <div className="flex items-center justify-between gap-3 border-b border-edge px-5 py-4">
-            <span className="eyebrow text-neon-amber">✦ &nbsp; Practice chamber</span>
-            <span className="font-mono text-[10px] text-mute">
-              SIMULATION / NO FUNDS
-            </span>
-          </div>
-          <PracticeScene selected={side} onSelect={setSide} selectable={step === "choose"} />
-          <div className="relative border-t border-edge bg-void/60 p-5">
-            <div className="mb-4 flex gap-1.5" aria-hidden="true">
-              {["choose", "loaded", "live", "result"].map((item, index) => (
-                <span
-                  key={item}
-                  className={`h-1 flex-1 rounded-full transition-colors duration-300 ${index <= ["choose", "loaded", "live", "result"].indexOf(step) ? "bg-neon-green/80" : "bg-edge"}`}
-                />
-              ))}
-            </div>
-            <div className="mb-4 flex items-center justify-between">
-              <span className="eyebrow">
-                {step === "choose"
-                  ? "01 / Choose your practice tribe"
-                  : step === "loaded"
-                    ? "02 / Preview the vault"
-                    : step === "live"
-                      ? "03 / Practice round running"
-                      : "04 / Scripted result"}
-              </span>
-              <button
-                onClick={reset}
-                aria-label="Reset practice round"
-                className="grid h-10 w-10 place-items-center rounded-full border border-edge text-mute hover:text-neon-green"
-              >
-                <RotateCcw size={14} />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {PRACTICE_TOKENS.map((token, s) => (
-                <button
-                  key={token}
-                  disabled={step !== "choose"}
-                  onClick={() => setSide(s)}
-                  aria-pressed={side === s}
-                  className={`relative rounded-lg border px-4 py-3 text-left transition-colors duration-200 disabled:cursor-default ${side === s ? "border-neon-green/60 bg-neon-green/10" : "border-edge enabled:hover:bg-white/5"}`}
-                >
-                  {side === s && (
-                    <Check
-                      size={14}
-                      aria-hidden="true"
-                      className="absolute right-3 top-3 text-neon-green"
-                    />
-                  )}
-                  <span className="block font-pixel text-sm">
-                    {token}
-                  </span>
-                  <span className="text-[10px] text-mute">
-                    {side === s ? "Your practice tribe" : "Tribe " + (s + 1)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div
-              className="mt-4 min-h-[152px] sm:min-h-[132px]"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              <div
-                ref={stepPanel}
-                key={step}
-                className="practice-step rounded-lg"
-                tabIndex={-1}
-                aria-label="Practice round controls"
-              >
-                {step === "choose" && (
-                  <>
-                    <p className="mb-3 text-xs leading-6 text-mute">
-                      Click a 3D podium or choose a tribe above to start the practice round.
-                    </p>
-                    <Button
-                      onClick={() => {
-                        moveFocus.current = true;
-                        setStep("loaded");
-                      }}
-                    >
-                      Load practice vault <ArrowUpRight size={14} />
-                    </Button>
-                  </>
-                )}
-                {step === "loaded" && (
-                  <>
-                    <p className="mb-3 text-xs leading-6 text-mute">
-                      Your practice tribe is ready. No assets move. Ready to see a 30-second practice round?
-                    </p>
-                    <Button
-                      onClick={() => {
-                        moveFocus.current = true;
-                        setRemaining(LENGTH);
-                        setStep("live");
-                      }}
-                    >
-                      Start practice battle <Swords size={14} />
-                    </Button>
-                  </>
-                )}
-                {step === "live" && (
-                  <div className="flex items-center justify-between py-3">
-                    <p className="max-w-[220px] text-xs leading-6 text-mute">
-                      The practice tribes are locked in. This is a scripted practice interval.
-                    </p>
-                    <span
-                      aria-hidden="true"
-                      className="min-w-[3ch] text-right font-mono text-4xl tabular-nums text-neon-amber"
-                    >
-                      {Math.ceil(remaining / 1000)}s
-                    </span>
-                  </div>
-                )}
-                {step === "result" && (
-                  <>
-                    <p className="font-pixel text-lg text-neon-green">
-                      CASHCAT wins this practice round.
-                    </p>
-                    <p className="mt-2 text-xs leading-6 text-mute">
-                      {side === 0
-                        ? "You chose the winning side. In an actual battle, inspect your claim in Portfolio."
-                        : `You chose ${PRACTICE_TOKENS[side]}. In an actual battle, the losing side loses its deposited coins.`}
-                    </p>
-                    <Link
-                      href="/arena"
-                      className="mt-3 inline-flex items-center gap-2 text-xs text-neon-green"
-                    >
-                      Explore actual battles <ArrowUpRight size={14} />
-                    </Link>
-                  </>
-                )}
-              </div>
-            </div>
-            <p className="mt-4 border-t border-edge pt-3 text-[10px] leading-5 text-mute">
-              30-second scripted walkthrough with five illustrative tribes. CASHCAT always wins this demo. Names reference researched tokens, not verified or approved assets. No wallet, transactions or live market data. Actual battles currently support two tribes.
-            </p>
-          </div>
-        </div>
       </section>
       <div className="my-8"><TargetFlow page="arena" /></div>
       <section id="product-flow" className="flow-section scroll-mt-32">
