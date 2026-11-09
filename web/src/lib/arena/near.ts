@@ -82,8 +82,8 @@ export function createNearArenaApi(opts: NearArenaOptions): ArenaApi {
     getTokenMeta(tokenId) {
       let cached = metaCache.get(tokenId);
       if (!cached) {
-        cached = viewAt<{ symbol: string; decimals: number }>(tokenId, "ft_metadata")
-          .then((m) => ({ id: tokenId, symbol: m.symbol, decimals: m.decimals }));
+        cached = viewAt<{ symbol: string; decimals: number; icon?: string | null }>(tokenId, "ft_metadata")
+          .then((m) => ({ id: tokenId, symbol: m.symbol, decimals: m.decimals, icon: m.icon }));
         metaCache.set(tokenId, cached);
         cached.catch(() => metaCache.delete(tokenId));
       }

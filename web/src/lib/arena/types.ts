@@ -68,6 +68,7 @@ export interface TokenMeta {
   id: string;
   symbol: string;
   decimals: number;
+  icon?: string | null;
 }
 
 /** Current prices, USD per whole coin scaled by 1e18. */
