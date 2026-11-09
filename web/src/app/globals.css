@@ -283,3 +283,19 @@ dd {
 .arena-search:focus-within { border-color: #d0f570; }
 .arena-search input { width: 100%; border: 0; outline: 0; color: #edf3e5; background: transparent; font-size: .8rem; }
 .arena-dao-empty { padding: 2rem; border: 1px solid #435249; border-radius: .9rem; background: #182321; }
+
+.battle-list-card { padding: 1.25rem; border: 1px solid #46574a; border-radius: 1rem; background: linear-gradient(145deg, #26342f, #17221f); transition: border-color .2s, transform .2s; }
+.battle-list-card:hover { border-color: #d0f570; transform: translateY(-3px); }
+.battle-type, .battle-tribe-count { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .55rem; border-radius: .45rem; background: #3b4c36; color: #d0f570; font: 700 9px/1 monospace; letter-spacing: .08em; }
+.battle-tribe-count { background: #34413e; color: #c9d4c9; }
+.battle-list-bottom { display: flex; align-items: end; justify-content: space-between; gap: .75rem; margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid #3c4b43; }
+.battle-token-stack { display: flex; padding-left: .1rem; }
+.battle-token-avatar { display: grid; place-items: center; width: 2.3rem; height: 2.3rem; margin-left: -.1rem; overflow: hidden; border: 2px solid #17221f; border-radius: 50%; background: #3a5134; color: #d0f570; font: 700 10px monospace; }
+.battle-token-avatar + .battle-token-avatar { margin-left: -.5rem; }
+.battle-token-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.battle-token-avatar.arena-avatar-1 { background: #4c3e5f; color: #dec1ff; }
+.battle-token-avatar.arena-avatar-2 { background: #315458; color: #a1eff0; }
+.battle-token-avatar.arena-avatar-3 { background: #5b4a30; color: #ffdf9b; }
+.battle-list-action { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; min-height: 40px; min-width: 76px; padding: .5rem .8rem; border: 1px solid #647465; border-radius: 999px; color: #e5eee0; font-size: .75rem; font-weight: 700; }
+.battle-list-action-join { border-color: #d0f570; background: #d0f570; color: #15201b; }
+@media (prefers-reduced-motion: reduce) { .battle-list-card:hover { transform: none; } }
