@@ -104,3 +104,7 @@ export const chainFile = (
     incompleteHeights: opts.incomplete,
   };
 };
+
+/** A companion-standard line (`valtrum_backing`, `valtrum_payout`): these contracts emit `data` as ONE object, not an array. */
+export const emitObject = (standard: string, event: string, data: unknown, version = "1.0.0"): string =>
+  `EVENT_JSON:${JSON.stringify({ standard, version, event, data })}`;
