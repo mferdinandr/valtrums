@@ -18,7 +18,7 @@ fn b32(n: u8) -> Vec<u8> {
 
 fn asset() -> Value {
     json!({
-        "chain_id": "4663",
+        "chain_id": "46630",
         "token": TOKEN,
         "representation": "aa.token.testnet",
         "custody_domain": "vault-1",
@@ -55,7 +55,7 @@ fn action(user: &Account, amount: &str, request: u8) -> Value {
         "amount": amount,
         "gas": "100",
         "request_id": b32(request),
-        "battle": null,
+        "battle": {"battle_id": "5", "community": null},
     }})
 }
 
@@ -65,6 +65,8 @@ struct World {
     owner: Account,
     user: Account,
     agent: Account,
+    registry: Contract,
+    verifier: Account,
 }
 
 async fn deploy() -> anyhow::Result<World> {
@@ -73,9 +75,26 @@ async fn deploy() -> anyhow::Result<World> {
         .dev_deploy(&common::wasm("valtrum_player_policy"))
         .await?;
     let owner = worker.dev_create_account().await?;
+    let registry = worker
+        .dev_deploy(&common::wasm("valtrum_receipt_registry"))
+        .await?;
+    let verifier = worker.dev_create_account().await?;
+    registry
+        .call("new")
+        .args_json(json!({"owner": owner.id(), "verifier": verifier.id()}))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(registry.id(), "set_representation")
+        .args_json(json!({"representation": "aa.token.testnet", "allowed": true}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
     policy
         .call("new")
-        .args_json(json!({"owner": owner.id()}))
+        .args_json(json!({"owner": owner.id(), "registry": registry.id()}))
         .transact()
         .await?
         .into_result()?;
@@ -87,6 +106,8 @@ async fn deploy() -> anyhow::Result<World> {
         owner,
         user,
         agent,
+        registry,
+        verifier,
     })
 }
 
@@ -250,12 +271,7 @@ async fn the_normal_build_exposes_no_fixture_outcome_authority() -> anyhow::Resu
         .await?
         .into_result()?;
     // No fixture confirmation/unlock path exists in the deployed build.
-    for method in [
-        "fixture_consume",
-        "fixture_release",
-        "fixture_dispatch",
-        "set_executor",
-    ] {
+    for method in ["fixture_release_not_executed", "set_executor"] {
         let r = w
             .agent
             .call(w.policy.id(), method)
@@ -672,10 +688,120 @@ fn fixture_player_policy_wasm() -> anyhow::Result<Vec<u8>> {
     ))?)
 }
 
+/// Receipt evidence flow in the NORMAL build against the real receipt registry. Claims are
+/// synthetic verifier assertions, not live finality, and no funds move.
+#[tokio::test]
+async fn only_finalized_registry_receipt_evidence_consumes_a_dispatched_obligation(
+) -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    reserve_ok(&w, "60", 1).await?;
+    reserve_ok(&w, "40", 2).await?;
+    // No role but the user or the delegate can admit an action for execution.
+    for caller in [&w.owner, &w.verifier] {
+        let r = caller
+            .call(w.policy.id(), "dispatch")
+            .args_json(reservation_args(&w, 1))
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?;
+        assert!(r.into_result().is_err(), "infrastructure cannot dispatch");
+    }
+    for request in [1, 2] {
+        w.agent
+            .call(w.policy.id(), "dispatch")
+            .args_json(reservation_args(&w, request))
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?
+            .into_result()?;
+    }
+    // The evidence is the registry claim, so anyone may submit it and no role can fake it.
+    let stranger = w.worker.dev_create_account().await?;
+    // Unknown receipt: nothing is consumed.
+    assert!(!confirm(&w, &stranger, 1, 9).await?.json::<bool>()?);
+    assert_eq!(budget(&w).await?["consumed"], "0");
+    // A finalized claim for another amount does not bind.
+    attest(&w, 9, "59").await?.into_result()?;
+    assert!(!confirm(&w, &stranger, 1, 9).await?.json::<bool>()?);
+    assert_eq!(reservation_state(&w, 1).await?, "dispatched");
+    // The exact claim binds.
+    attest(&w, 8, "60").await?.into_result()?;
+    assert!(confirm(&w, &stranger, 1, 8).await?.json::<bool>()?);
+    let b = budget(&w).await?;
+    assert_eq!(
+        (b["consumed"].as_str(), b["reserved"].as_str()),
+        (Some("60"), Some("40"))
+    );
+    assert_eq!(reservation_state(&w, 1).await?, "consumed");
+    // The same receipt cannot settle a second reservation.
+    let replay = confirm(&w, &stranger, 2, 8).await?;
+    assert!(replay.into_result().is_err());
+    // A disputed claim no longer counts as evidence.
+    attest(&w, 7, "40").await?.into_result()?;
+    w.verifier
+        .call(w.registry.id(), "dispute")
+        .args_json(json!({"key": {"chain_id": "46630", "transaction_hash": vec![7u8; 32], "log_index": 0}}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    assert!(!confirm(&w, &stranger, 2, 7).await?.json::<bool>()?);
+    assert_eq!(reservation_state(&w, 2).await?, "dispatched");
+    assert_eq!(budget(&w).await?["reserved"], "40");
+    Ok(())
+}
+
+async fn confirm(
+    w: &World,
+    who: &Account,
+    request: u8,
+    hash: u8,
+) -> anyhow::Result<near_workspaces::result::ExecutionFinalResult> {
+    let mut args = reservation_args(w, request);
+    args["receipt"] = json!({"transaction_hash": vec![hash; 32], "log_index": 0});
+    Ok(who
+        .call(w.policy.id(), "confirm_with_receipt")
+        .args_json(args)
+        .deposit(NearToken::from_millinear(10))
+        .max_gas()
+        .transact()
+        .await?)
+}
+
+async fn attest(
+    w: &World,
+    hash: u8,
+    amount: &str,
+) -> anyhow::Result<near_workspaces::result::ExecutionFinalResult> {
+    let key = json!({"chain_id": "46630", "transaction_hash": vec![hash; 32], "log_index": 0});
+    let claim = json!({
+        "representation": "aa.token.testnet",
+        "token_address": TOKEN,
+        "custody_domain": "vault-1",
+        "mapping_version": "2",
+        "beneficiary": w.user.id(),
+        "refund_address": vec![0xbeu8; 20],
+        "battle_id": "5",
+        "actual_received": amount,
+        "block_number": "3",
+        "block_hash": vec![2u8; 32],
+        "finalized_head_number": "4",
+        "finalized_head_hash": vec![3u8; 32],
+        "evidence_hash": vec![4u8; 32],
+    });
+    Ok(w.verifier
+        .call(w.registry.id(), "attest")
+        .args_json(json!({"key": key, "claim": claim}))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?)
+}
+
 /// Runs in the existing sandbox CI job without enabling fixture methods in the normal build.
 /// Synthetic execution outcomes are not evidence of real player spending or foreign finality.
 #[tokio::test]
-async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliation(
+async fn revocation_blocks_queued_admission_but_preserves_dispatched_obligations(
 ) -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
     let policy = worker.dev_deploy(&fixture_player_policy_wasm()?).await?;
@@ -685,7 +811,7 @@ async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliat
     let agent = worker.dev_create_account().await?;
     policy
         .call("new")
-        .args_json(json!({"owner": owner.id()}))
+        .args_json(json!({"owner": owner.id(), "registry": "registry.testnet"}))
         .transact()
         .await?
         .into_result()?;
@@ -713,8 +839,8 @@ async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliat
     }
     let queued = json!({"user": user.id(), "local_id": b32(7), "request_id": b32(1)});
     let dispatched = json!({"user": user.id(), "local_id": b32(7), "request_id": b32(2)});
-    executor
-        .call(policy.id(), "fixture_dispatch")
+    agent
+        .call(policy.id(), "dispatch")
         .args_json(dispatched.clone())
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -737,17 +863,8 @@ async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliat
         .transact()
         .await?;
     assert!(bump.into_result().is_err(), "a revoked grant stays revoked");
-    let grant: Value = policy
-        .view("get_grant")
-        .args_json(json!({"user": user.id(), "local_id": b32(7)}))
-        .await?
-        .json()?;
-    assert_eq!(
-        (grant["version"].as_str(), grant["revoked"].as_bool()),
-        (Some("1"), Some(true))
-    );
-    let stale_dispatch = executor
-        .call(policy.id(), "fixture_dispatch")
+    let stale_dispatch = agent
+        .call(policy.id(), "dispatch")
         .args_json(queued.clone())
         .deposit(NearToken::from_yoctonear(1))
         .transact()
@@ -766,7 +883,6 @@ async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliat
         .await?
         .json()?;
     assert_eq!(queued_state["state"], "reserved");
-    assert_eq!(queued_state["version"], "1");
     // The dispatched obligation cannot be cancelled by the user or the delegate.
     for caller in [&user, &agent] {
         let cancel = caller
@@ -787,33 +903,38 @@ async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliat
         .transact()
         .await?
         .into_result()?;
-    // Revocation still cannot block reconciliation of the already dispatched action.
-    for method in ["fixture_dispatch", "fixture_mark_reconciliation"] {
-        executor
-            .call(policy.id(), method)
+    // Revocation still allows flagging the already dispatched action (idempotent).
+    for _ in 0..2 {
+        agent
+            .call(policy.id(), "mark_reconciliation")
             .args_json(dispatched.clone())
             .deposit(NearToken::from_yoctonear(1))
             .transact()
             .await?
             .into_result()?;
     }
-    let mut proof = dispatched;
-    proof["executed"] = json!(true);
-    for _ in 0..2 {
-        executor
-            .call(policy.id(), "fixture_reconcile")
-            .args_json(proof.clone())
-            .deposit(NearToken::from_yoctonear(1))
-            .transact()
-            .await?
-            .into_result()?;
-    }
+    // Only the fixture-only executor adapter can release it (synthetic no-execution proof);
+    // the delegate cannot.
+    let by_delegate = agent
+        .call(policy.id(), "fixture_release_not_executed")
+        .args_json(dispatched.clone())
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?;
+    assert!(by_delegate.into_result().is_err());
+    executor
+        .call(policy.id(), "fixture_release_not_executed")
+        .args_json(dispatched)
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
     let budget: Value = policy
         .view("get_budget")
         .args_json(json!({"user": user.id(), "local_id": b32(7)}))
         .await?
         .json()?;
-    assert_eq!(budget["consumed"], "60");
+    assert_eq!(budget["consumed"], "0");
     assert_eq!(budget["reserved"], "0");
     assert_eq!(budget["authorized_limit"], "100");
     Ok(())

@@ -11,6 +11,7 @@
 //! Infrastructure trust (auditor, scheduler, relayer, operator, owner) never
 //! grants player-spending authority here; only a user can create or revoke their
 //! own grant, and only its delegate (or the user) can reserve against it.
+use near_sdk::json_types::{U128, U64};
 use near_sdk::{env, near, AccountId};
 
 pub mod contract;
@@ -70,6 +71,10 @@ pub enum PolicyError {
     WrongState,
     /// A terminal outcome conflicts with the one already recorded.
     ConflictingOutcome,
+    /// Receipt evidence does not match the bound obligation, asset or finality rules.
+    ReceiptMismatch,
+    /// The obligation carries no battle id, so no registry receipt can be bound to it.
+    NotBoundToBattle,
 }
 
 /// Source-asset identity. An asset is never identified by ticker alone: it binds
@@ -443,6 +448,8 @@ pub struct Reservation {
     pub version: u64,
     pub amount: u128,
     pub state: ReservationState,
+    /// Battle the action was bound to; the registry claim's `battle_id` must equal it.
+    pub battle_id: Option<u64>,
     /// Nanoseconds since the epoch; an undispatched reservation can be released from this time.
     pub expires_ns: u64,
 }
@@ -465,6 +472,10 @@ impl Reservation {
             ReservationState::Reserved => {
                 if now_ns >= self.expires_ns {
                     return Err(PolicyError::ReservationExpired);
+                }
+                // An obligation no receipt can be bound to would be stuck forever.
+                if self.battle_id.is_none() {
+                    return Err(PolicyError::NotBoundToBattle);
                 }
                 self.state = ReservationState::Dispatched;
                 Ok(true)
@@ -561,6 +572,75 @@ impl Reservation {
             }
             _ => Err(PolicyError::WrongState),
         }
+    }
+}
+
+/// Global source-receipt identity in the shared receipt registry. The chain id comes from the
+/// grant's asset, never from the caller.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ReceiptRef {
+    pub transaction_hash: Hash,
+    pub log_index: u32,
+}
+
+/// JSON shape of the registry's receipt key.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegistryKey {
+    pub chain_id: U64,
+    pub transaction_hash: Hash,
+    pub log_index: u32,
+}
+
+/// JSON shape of the shared registry's immutable claim (`get_active_claim`).
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiptClaim {
+    pub representation: AccountId,
+    pub token_address: String,
+    pub custody_domain: String,
+    pub mapping_version: U64,
+    pub beneficiary: AccountId,
+    pub refund_address: [u8; 20],
+    pub battle_id: U64,
+    pub actual_received: U128,
+    pub block_number: U64,
+    pub block_hash: Hash,
+    pub finalized_head_number: U64,
+    pub finalized_head_hash: Hash,
+    pub evidence_hash: Hash,
+}
+
+/// Whether a registry claim is finalized evidence of exactly this obligation: same asset identity
+/// as the grant, the grant's user as beneficiary, the reserved battle and the exact reserved
+/// amount. The claim carries no request id, so this binds by asset, user, battle and amount and
+/// one receipt can settle at most one reservation (enforced by the wrapper). Fails closed.
+pub fn receipt_binds(
+    grant: &Grant,
+    reservation: &Reservation,
+    claim: &ReceiptClaim,
+) -> Result<(), PolicyError> {
+    let battle = reservation.battle_id.ok_or(PolicyError::NotBoundToBattle)?;
+    let finalized = claim.refund_address != [0; 20]
+        && claim.block_hash != [0; 32]
+        && claim.finalized_head_hash != [0; 32]
+        && claim.evidence_hash != [0; 32]
+        && claim.block_number.0 <= claim.finalized_head_number.0
+        && (claim.block_number.0 != claim.finalized_head_number.0
+            || claim.block_hash == claim.finalized_head_hash);
+    let bound = claim.representation == grant.asset.representation
+        && claim.token_address.eq_ignore_ascii_case(&grant.asset.token)
+        && claim.custody_domain == grant.asset.custody_domain
+        && claim.mapping_version.0 == grant.asset.mapping_version
+        && claim.beneficiary == grant.user
+        && claim.battle_id.0 == battle
+        && claim.actual_received.0 == reservation.amount
+        && reservation.amount > 0;
+    if finalized && bound {
+        Ok(())
+    } else {
+        Err(PolicyError::ReceiptMismatch)
     }
 }
 

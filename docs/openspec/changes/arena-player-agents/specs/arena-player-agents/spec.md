@@ -72,6 +72,21 @@ A user or delegate SHALL cancel an undispatched reservation, and an undispatched
 - **WHEN** a dispatched obligation sees cancel, expiry or revocation
 - **THEN** it stays reserved until explicit evidence reconciles it
 
+### Requirement: Receipt-evidenced obligation reconciliation
+The user or delegate SHALL dispatch a battle-bound reservation. A dispatched obligation SHALL be consumed only by an undisputed finalized registry claim binding the grant asset, user, battle and exact reserved amount; one receipt settles at most one reservation. No executor or infrastructure role SHALL confirm or release it.
+
+#### Scenario: Matching receipt consumes once
+- **WHEN** anyone submits a receipt whose active registry claim binds exactly to a dispatched obligation
+- **THEN** its budget is consumed once, the receipt is marked used, and a repeat or second reservation using it changes nothing
+
+#### Scenario: Evidence that does not bind
+- **WHEN** the claim is missing, disputed, finality-incomplete or differs in asset, beneficiary, battle or amount, or the registry call fails
+- **THEN** nothing is consumed or released, the obligation stays reserved and the deposit is refunded
+
+#### Scenario: No trusted executor
+- **WHEN** an auditor, scheduler, relayer, operator, verifier or the owner tries to dispatch, flag, confirm or release an obligation
+- **THEN** it is denied; only the user or delegate dispatches and only registry evidence consumes
+
 #### Scenario: Permanent revocation and delegate rule
 - **WHEN** a revoked grant is replaced by a higher version, or a user names themselves delegate
 - **THEN** the call is rejected; a new local grant id is required, and asset identity remains immutable

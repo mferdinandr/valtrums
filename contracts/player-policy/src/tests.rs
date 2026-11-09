@@ -219,6 +219,7 @@ fn reservation(amount: u128) -> Reservation {
         version: 1,
         amount,
         state: ReservationState::Reserved,
+        battle_id: Some(5),
         expires_ns: 1_000,
     }
 }
@@ -450,7 +451,7 @@ mod wrapper {
 
     fn with_grant(cumulative_cap: u128, expiry_ns: u64) -> PlayerPolicy {
         ctx("owner.testnet", NearToken::from_near(1), 0);
-        let mut c = PlayerPolicy::new(account("owner.testnet"));
+        let mut c = PlayerPolicy::new(account("owner.testnet"), account("registry.testnet"));
         ctx("user.testnet", NearToken::from_near(1), 0);
         c.create_grant(grant_input("agent.testnet", cumulative_cap, expiry_ns));
         c
@@ -641,7 +642,7 @@ mod wrapper {
     #[should_panic(expected = "Delegate must differ from user")]
     fn user_cannot_name_themselves_as_delegate() {
         ctx("owner.testnet", NearToken::from_near(1), 0);
-        let mut c = PlayerPolicy::new(account("owner.testnet"));
+        let mut c = PlayerPolicy::new(account("owner.testnet"), account("registry.testnet"));
         ctx("user.testnet", NearToken::from_near(1), 0);
         c.create_grant(grant_input("user.testnet", 100, 1_000_000));
     }
@@ -855,11 +856,449 @@ mod wrapper {
     }
 }
 
-/// Fixture-only outcome lifecycle, exercised through the gated execution adapter.
-#[cfg(feature = "sandbox-fixtures")]
-mod fixture_lifecycle {
+/// Production obligation lifecycle: dispatch, reconciliation flag and consumption by finalized
+/// receipt evidence. The registry answer is delivered by calling the callback directly, exactly as
+/// the receipt of the registry call would; amounts are synthetic and nothing here moves funds.
+mod lifecycle {
     use super::account;
-    use crate::contract::{ActionInput, AssetInput, GrantInput, PlayerPolicy};
+    use crate::contract::{
+        ActionInput, AssetInput, BattleInput, GrantInput, PlayerPolicy, CONFIRM_STORAGE_DEPOSIT,
+    };
+    use crate::{ReceiptClaim, ReceiptRef, ReservationState};
+    use near_sdk::json_types::{U128, U64};
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::{testing_env, AccountId, NearToken, PromiseError};
+
+    const LOCAL: [u8; 32] = [7u8; 32];
+    const REQ: [u8; 32] = [1u8; 32];
+    const BATTLE: u64 = 5;
+
+    fn ctx(caller: &str, deposit: NearToken, ts: u64) {
+        testing_env!(VMContextBuilder::new()
+            .predecessor_account_id(account(caller))
+            .attached_deposit(deposit)
+            .block_timestamp(ts)
+            .build());
+    }
+
+    fn one() -> NearToken {
+        NearToken::from_yoctonear(1)
+    }
+
+    fn user() -> AccountId {
+        account("user.testnet")
+    }
+
+    fn asset_input() -> AssetInput {
+        AssetInput {
+            chain_id: U64(4663),
+            token: "0x00000000000000000000000000000000000000aa".into(),
+            representation: account("aa.token.testnet"),
+            custody_domain: "vault-1".into(),
+            mapping_version: U64(2),
+        }
+    }
+
+    fn grant_input(version: u64, delegate: &str, expiry_ns: u64) -> GrantInput {
+        GrantInput {
+            delegate: account(delegate),
+            local_id: LOCAL,
+            version: U64(version),
+            asset: asset_input(),
+            contracts: vec![account("router.testnet")],
+            methods: vec!["swap".into()],
+            destinations: vec!["0x00000000000000000000000000000000000000dd".into()],
+            battle: None,
+            per_action_cap: U128(100),
+            cumulative_cap: U128(100),
+            gas_cap: U64(300),
+            expiry_ns: U64(expiry_ns),
+        }
+    }
+
+    fn action(amount: u128, req: u8, battle: Option<u64>) -> ActionInput {
+        ActionInput {
+            user: user(),
+            local_id: LOCAL,
+            version: U64(1),
+            asset: asset_input(),
+            target: account("router.testnet"),
+            method: "swap".into(),
+            destination: "0x00000000000000000000000000000000000000dd".into(),
+            amount: U128(amount),
+            gas: U64(100),
+            request_id: [req; 32],
+            battle: battle.map(|battle_id| BattleInput {
+                battle_id: U64(battle_id),
+                community: None,
+            }),
+        }
+    }
+
+    fn setup_with_expiry(expiry_ns: u64) -> PlayerPolicy {
+        ctx("owner.testnet", NearToken::from_near(1), 0);
+        let mut c = PlayerPolicy::new(account("owner.testnet"), account("registry.testnet"));
+        ctx("user.testnet", NearToken::from_near(1), 0);
+        c.create_grant(grant_input(1, "agent.testnet", expiry_ns));
+        ctx("agent.testnet", NearToken::from_near(1), 10);
+        c.reserve(action(60, 1, Some(BATTLE)));
+        c
+    }
+
+    fn setup() -> PlayerPolicy {
+        setup_with_expiry(1_000_000)
+    }
+
+    fn dispatch(c: &mut PlayerPolicy) {
+        ctx("agent.testnet", one(), 20);
+        c.dispatch(user(), LOCAL, REQ);
+    }
+
+    fn receipt(n: u8) -> ReceiptRef {
+        ReceiptRef {
+            transaction_hash: [n; 32],
+            log_index: 0,
+        }
+    }
+
+    fn claim(amount: u128) -> ReceiptClaim {
+        ReceiptClaim {
+            representation: account("aa.token.testnet"),
+            token_address: "0x00000000000000000000000000000000000000AA".into(),
+            custody_domain: "vault-1".into(),
+            mapping_version: U64(2),
+            beneficiary: user(),
+            refund_address: [0xbe; 20],
+            battle_id: U64(BATTLE),
+            actual_received: U128(amount),
+            block_number: U64(3),
+            block_hash: [1; 32],
+            finalized_head_number: U64(4),
+            finalized_head_hash: [2; 32],
+            evidence_hash: [3; 32],
+        }
+    }
+
+    /// Deliver the registry's answer to the callback, as the contract itself.
+    fn answer(
+        c: &mut PlayerPolicy,
+        req: u8,
+        r: ReceiptRef,
+        claim: Result<Option<ReceiptClaim>, PromiseError>,
+    ) -> bool {
+        testing_env!(VMContextBuilder::new()
+            .current_account_id(account("policy.testnet"))
+            .predecessor_account_id(account("policy.testnet"))
+            .attached_deposit(CONFIRM_STORAGE_DEPOSIT)
+            .block_timestamp(30)
+            .build());
+        c.on_receipt_evidence(
+            account("stranger.testnet"),
+            user(),
+            LOCAL,
+            [req; 32],
+            r,
+            claim,
+        )
+    }
+
+    type Mutation = (&'static str, Box<dyn Fn(&mut ReceiptClaim)>);
+
+    fn state(c: &PlayerPolicy, req: u8) -> ReservationState {
+        c.get_reservation(user(), LOCAL, [req; 32]).unwrap().state
+    }
+
+    fn budget(c: &PlayerPolicy) -> (U128, U128, U128) {
+        let b = c.get_budget(user(), LOCAL).unwrap();
+        (b.consumed, b.reserved, b.available)
+    }
+
+    #[test]
+    fn dispatch_then_matching_receipt_consumes_exactly_once() {
+        let mut c = setup();
+        dispatch(&mut c);
+        assert_eq!(state(&c, 1), ReservationState::Dispatched);
+        // Anyone may submit the evidence; the registry claim is the only authority.
+        ctx("stranger.testnet", CONFIRM_STORAGE_DEPOSIT, 25);
+        let _ = c.confirm_with_receipt(user(), LOCAL, REQ, receipt(9));
+        assert!(answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        assert_eq!(budget(&c), (U128(60), U128(0), U128(40)));
+        assert_eq!(state(&c, 1), ReservationState::Consumed);
+        assert!(c.is_receipt_used(receipt(9)));
+        // Repeats and a second receipt neither double charge nor change the outcome.
+        assert!(!answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        assert!(!answer(&mut c, 1, receipt(8), Ok(Some(claim(60)))));
+        assert_eq!(budget(&c), (U128(60), U128(0), U128(40)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Not an in-flight obligation")]
+    fn evidence_cannot_consume_an_undispatched_reservation() {
+        let mut c = setup();
+        ctx("stranger.testnet", CONFIRM_STORAGE_DEPOSIT, 25);
+        let _ = c.confirm_with_receipt(user(), LOCAL, REQ, receipt(9));
+    }
+
+    #[test]
+    fn the_callback_ignores_an_undispatched_reservation_too() {
+        let mut c = setup();
+        assert!(!answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        assert_eq!(budget(&c), (U128(0), U128(60), U128(40)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient storage deposit")]
+    fn confirmation_requires_the_storage_deposit() {
+        let mut c = setup();
+        dispatch(&mut c);
+        ctx("stranger.testnet", one(), 25);
+        let _ = c.confirm_with_receipt(user(), LOCAL, REQ, receipt(9));
+    }
+
+    #[test]
+    #[should_panic(expected = "Receipt already used")]
+    fn a_used_receipt_is_rejected_before_calling_the_registry() {
+        let mut c = setup();
+        ctx("agent.testnet", NearToken::from_near(1), 11);
+        c.reserve(action(40, 2, Some(BATTLE)));
+        dispatch(&mut c);
+        assert!(answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        ctx("agent.testnet", one(), 21);
+        c.dispatch(user(), LOCAL, [2; 32]);
+        ctx("stranger.testnet", CONFIRM_STORAGE_DEPOSIT, 25);
+        let _ = c.confirm_with_receipt(user(), LOCAL, [2; 32], receipt(9));
+    }
+
+    #[test]
+    fn evidence_that_does_not_bind_exactly_never_consumes() {
+        let mutations: Vec<Mutation> = vec![
+            (
+                "representation",
+                Box::new(|c| c.representation = account("x.testnet")),
+            ),
+            (
+                "token",
+                Box::new(|c| c.token_address = "0x00000000000000000000000000000000000000ab".into()),
+            ),
+            ("custody", Box::new(|c| c.custody_domain = "vault-2".into())),
+            ("mapping", Box::new(|c| c.mapping_version = U64(3))),
+            (
+                "beneficiary",
+                Box::new(|c| c.beneficiary = account("other.testnet")),
+            ),
+            ("battle", Box::new(|c| c.battle_id = U64(6))),
+            ("less", Box::new(|c| c.actual_received = U128(59))),
+            ("more", Box::new(|c| c.actual_received = U128(61))),
+            ("refund", Box::new(|c| c.refund_address = [0; 20])),
+            ("block hash", Box::new(|c| c.block_hash = [0; 32])),
+            ("head hash", Box::new(|c| c.finalized_head_hash = [0; 32])),
+            ("evidence", Box::new(|c| c.evidence_hash = [0; 32])),
+            ("ahead of head", Box::new(|c| c.block_number = U64(5))),
+            (
+                "inconsistent head",
+                Box::new(|c| {
+                    c.block_number = U64(4);
+                    c.block_hash = [9; 32];
+                }),
+            ),
+        ];
+        let mut c = setup();
+        dispatch(&mut c);
+        for (name, mutate) in mutations {
+            let mut wrong = claim(60);
+            mutate(&mut wrong);
+            assert!(!answer(&mut c, 1, receipt(9), Ok(Some(wrong))), "{name}");
+            assert_eq!(budget(&c), (U128(0), U128(60), U128(40)), "{name}");
+            assert_eq!(state(&c, 1), ReservationState::Dispatched, "{name}");
+            assert!(!c.is_receipt_used(receipt(9)), "{name}");
+        }
+    }
+
+    #[test]
+    fn missing_disputed_or_unavailable_evidence_fails_closed() {
+        let mut c = setup();
+        dispatch(&mut c);
+        // `get_active_claim` returns null for an unknown or disputed receipt.
+        assert!(!answer(&mut c, 1, receipt(9), Ok(None)));
+        assert!(!answer(&mut c, 1, receipt(9), Err(PromiseError::Failed)));
+        assert_eq!(budget(&c), (U128(0), U128(60), U128(40)));
+        assert_eq!(state(&c, 1), ReservationState::Dispatched);
+    }
+
+    #[test]
+    fn one_receipt_settles_at_most_one_reservation() {
+        let mut c = setup();
+        // Two equal 30-unit obligations: the same receipt must not settle both.
+        ctx("agent.testnet", NearToken::from_near(1), 11);
+        c.reserve(action(30, 2, Some(BATTLE)));
+        ctx("user.testnet", one(), 12);
+        c.cancel_reservation(user(), LOCAL, REQ);
+        ctx("agent.testnet", NearToken::from_near(1), 13);
+        c.reserve(action(30, 3, Some(BATTLE)));
+        for req in [2u8, 3] {
+            ctx("agent.testnet", one(), 20);
+            c.dispatch(user(), LOCAL, [req; 32]);
+        }
+        assert!(answer(&mut c, 2, receipt(9), Ok(Some(claim(30)))));
+        assert!(!answer(&mut c, 3, receipt(9), Ok(Some(claim(30)))));
+        assert_eq!(state(&c, 3), ReservationState::Dispatched);
+        assert_eq!(budget(&c), (U128(30), U128(30), U128(40)));
+        // A distinct receipt settles the other one.
+        assert!(answer(&mut c, 3, receipt(8), Ok(Some(claim(30)))));
+        assert_eq!(budget(&c), (U128(60), U128(0), U128(40)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot dispatch reservation")]
+    fn an_obligation_without_a_battle_cannot_be_dispatched() {
+        let mut c = setup();
+        ctx("agent.testnet", NearToken::from_near(1), 11);
+        c.reserve(action(10, 2, None));
+        ctx("agent.testnet", one(), 20);
+        c.dispatch(user(), LOCAL, [2; 32]);
+    }
+
+    #[test]
+    fn only_the_user_or_delegate_can_dispatch_or_flag() {
+        let callers = [
+            "auditor.testnet",
+            "owner.testnet",
+            "executor.testnet",
+            "registry.testnet",
+        ];
+        let mut c = setup();
+        for caller in callers {
+            ctx(caller, one(), 20);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                c.dispatch(user(), LOCAL, REQ)
+            }));
+            assert!(r.is_err(), "{caller} must not dispatch");
+        }
+        assert_eq!(state(&c, 1), ReservationState::Reserved);
+        dispatch(&mut c);
+        for caller in callers {
+            ctx(caller, one(), 21);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                c.mark_reconciliation(user(), LOCAL, REQ)
+            }));
+            assert!(r.is_err(), "{caller} must not flag reconciliation");
+        }
+        assert_eq!(state(&c, 1), ReservationState::Dispatched);
+    }
+
+    #[test]
+    fn flagged_obligation_stays_held_and_is_consumed_by_evidence() {
+        let mut c = setup();
+        dispatch(&mut c);
+        ctx("user.testnet", one(), 21);
+        c.mark_reconciliation(user(), LOCAL, REQ);
+        c.mark_reconciliation(user(), LOCAL, REQ); // idempotent
+        assert_eq!(state(&c, 1), ReservationState::ReconciliationRequired);
+        assert_eq!(budget(&c), (U128(0), U128(60), U128(40)));
+        assert!(answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        assert_eq!(budget(&c), (U128(60), U128(0), U128(40)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Not a dispatched obligation")]
+    fn an_undispatched_reservation_cannot_be_flagged() {
+        let mut c = setup();
+        ctx("user.testnet", one(), 21);
+        c.mark_reconciliation(user(), LOCAL, REQ);
+    }
+
+    #[test]
+    #[should_panic(expected = "Grant revoked")]
+    fn revocation_blocks_new_dispatch_admission() {
+        let mut c = setup();
+        ctx("user.testnet", one(), 15);
+        c.revoke_grant(LOCAL);
+        ctx("agent.testnet", one(), 20);
+        c.dispatch(user(), LOCAL, REQ);
+    }
+
+    #[test]
+    #[should_panic(expected = "Grant version changed")]
+    fn replacement_cannot_revive_a_queued_expired_authorization() {
+        let mut c = setup();
+        ctx("user.testnet", NearToken::from_near(1), 1_000_000);
+        c.create_grant(grant_input(2, "replacement-agent.testnet", 2_000_000));
+        ctx("replacement-agent.testnet", one(), 1_000_001);
+        c.dispatch(user(), LOCAL, REQ);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot dispatch reservation")]
+    fn an_expired_reservation_is_not_admitted_for_dispatch() {
+        let mut c = setup_with_expiry(u64::MAX / 2);
+        ctx("agent.testnet", one(), 10 + 3_600_000_000_000);
+        c.dispatch(user(), LOCAL, REQ);
+    }
+
+    #[test]
+    fn dispatched_obligation_is_never_released_by_cancel_expiry_or_revocation() {
+        let mut c = setup();
+        dispatch(&mut c);
+        ctx("user.testnet", one(), 21);
+        c.revoke_grant(LOCAL);
+        let late = 10 + 10 * 3_600_000_000_000;
+        for caller in ["user.testnet", "agent.testnet"] {
+            ctx(caller, one(), late);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                c.cancel_reservation(user(), LOCAL, REQ)
+            }));
+            assert!(
+                r.is_err(),
+                "{caller} must not cancel a dispatched obligation"
+            );
+        }
+        ctx("auditor.testnet", one(), late);
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            c.release_expired(user(), LOCAL, REQ)
+        }));
+        assert!(r.is_err());
+        assert_eq!(budget(&c), (U128(0), U128(60), U128(40)));
+        assert_eq!(state(&c, 1), ReservationState::Dispatched);
+    }
+
+    #[test]
+    fn replaced_and_revoked_grant_keeps_dispatched_obligation_reconcilable() {
+        let mut c = setup();
+        dispatch(&mut c);
+        ctx("user.testnet", NearToken::from_near(1), 30);
+        c.create_grant(grant_input(2, "replacement-agent.testnet", 2_000_000));
+        ctx("user.testnet", one(), 31);
+        c.revoke_grant(LOCAL);
+        // A repeat dispatch is not a fresh admission and is not blocked by the new state.
+        ctx("user.testnet", one(), 2_000_001);
+        c.dispatch(user(), LOCAL, REQ);
+        c.mark_reconciliation(user(), LOCAL, REQ);
+        assert!(answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        assert_eq!(budget(&c), (U128(60), U128(0), U128(40)));
+        assert_eq!(
+            c.get_reservation(user(), LOCAL, REQ).unwrap().version,
+            U64(1)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Grant asset cannot change")]
+    fn consumed_budget_cannot_be_relabelled_by_asset_replacement() {
+        let mut c = setup();
+        dispatch(&mut c);
+        assert!(answer(&mut c, 1, receipt(9), Ok(Some(claim(60)))));
+        ctx("user.testnet", NearToken::from_near(1), 40);
+        let mut replacement = grant_input(2, "agent.testnet", 2_000_000);
+        replacement.asset.chain_id = U64(1);
+        c.create_grant(replacement);
+    }
+}
+
+/// Fixture-only no-execution release, to exercise the transition production deliberately lacks.
+#[cfg(feature = "sandbox-fixtures")]
+mod fixture_release {
+    use super::account;
+    use crate::contract::{ActionInput, AssetInput, BattleInput, GrantInput, PlayerPolicy};
     use crate::ReservationState;
     use near_sdk::json_types::{U128, U64};
     use near_sdk::test_utils::VMContextBuilder;
@@ -887,12 +1326,8 @@ mod fixture_lifecycle {
     }
 
     fn setup() -> PlayerPolicy {
-        setup_with_expiry(1_000_000)
-    }
-
-    fn setup_with_expiry(expiry_ns: u64) -> PlayerPolicy {
         ctx("owner.testnet", NearToken::from_near(1), 0);
-        let mut c = PlayerPolicy::new(account("owner.testnet"));
+        let mut c = PlayerPolicy::new(account("owner.testnet"), account("registry.testnet"));
         ctx("owner.testnet", NearToken::from_yoctonear(1), 0);
         c.set_executor(account("executor.testnet"));
         ctx("user.testnet", NearToken::from_near(1), 0);
@@ -908,7 +1343,7 @@ mod fixture_lifecycle {
             per_action_cap: U128(100),
             cumulative_cap: U128(100),
             gas_cap: U64(300),
-            expiry_ns: U64(expiry_ns),
+            expiry_ns: U64(1_000_000),
         });
         ctx("agent.testnet", NearToken::from_near(1), 10);
         c.reserve(ActionInput {
@@ -922,191 +1357,47 @@ mod fixture_lifecycle {
             amount: U128(60),
             gas: U64(100),
             request_id: REQ,
-            battle: None,
+            battle: Some(BattleInput {
+                battle_id: U64(5),
+                community: None,
+            }),
         });
+        ctx("agent.testnet", NearToken::from_yoctonear(1), 20);
+        c.dispatch(account("user.testnet"), LOCAL, REQ);
         c
     }
 
-    fn replace_grant(c: &mut PlayerPolicy) {
-        c.create_grant(GrantInput {
-            delegate: account("replacement-agent.testnet"),
-            local_id: LOCAL,
-            version: U64(2),
-            asset: asset_input(),
-            contracts: vec![account("router.testnet")],
-            methods: vec!["swap".into()],
-            destinations: vec!["0x0000000000000000000000000000000000000099".into()],
-            battle: None,
-            per_action_cap: U128(100),
-            cumulative_cap: U128(100),
-            gas_cap: U64(300),
-            expiry_ns: U64(2_000_000),
-        });
-    }
-
     #[test]
-    fn dispatch_then_consume_charges_exactly_once() {
+    fn executor_releases_a_flagged_obligation_as_not_executed() {
         let mut c = setup();
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        c.fixture_consume(account("user.testnet"), LOCAL, REQ);
+        ctx("agent.testnet", NearToken::from_yoctonear(1), 21);
+        c.mark_reconciliation(account("user.testnet"), LOCAL, REQ);
+        ctx("executor.testnet", NearToken::from_yoctonear(1), 22);
+        c.fixture_release_not_executed(account("user.testnet"), LOCAL, REQ);
         let b = c.get_budget(account("user.testnet"), LOCAL).unwrap();
-        assert_eq!((b.consumed, b.reserved), (U128(60), U128(0)));
+        assert_eq!((b.reserved, b.available), (U128(0), U128(100)));
         assert_eq!(
             c.get_reservation(account("user.testnet"), LOCAL, REQ)
                 .unwrap()
                 .state,
-            ReservationState::Consumed
+            ReservationState::Released
         );
     }
 
     #[test]
     #[should_panic(expected = "Only executor")]
-    fn non_executor_cannot_drive_outcomes() {
+    fn the_delegate_cannot_use_the_fixture_release() {
         let mut c = setup();
-        ctx("agent.testnet", NearToken::from_yoctonear(1), 20); // the delegate is not the executor
-        c.fixture_consume(account("user.testnet"), LOCAL, REQ);
+        ctx("agent.testnet", NearToken::from_yoctonear(1), 21);
+        c.mark_reconciliation(account("user.testnet"), LOCAL, REQ);
+        c.fixture_release_not_executed(account("user.testnet"), LOCAL, REQ);
     }
 
     #[test]
-    fn ambiguous_dispatch_is_reconciled_as_not_executed() {
+    #[should_panic(expected = "Wrong state")]
+    fn an_unflagged_dispatched_obligation_cannot_be_released() {
         let mut c = setup();
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        c.fixture_mark_reconciliation(account("user.testnet"), LOCAL, REQ);
-        c.fixture_reconcile(account("user.testnet"), LOCAL, REQ, false);
-        let b = c.get_budget(account("user.testnet"), LOCAL).unwrap();
-        assert_eq!(
-            (b.consumed, b.reserved, b.available),
-            (U128(0), U128(0), U128(100))
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Grant revoked")]
-    fn revocation_blocks_new_dispatch_admission() {
-        let mut c = setup();
-        ctx("user.testnet", NearToken::from_yoctonear(1), 15);
-        c.revoke_grant(LOCAL);
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ); // admission rechecks revocation
-    }
-
-    #[test]
-    #[should_panic(expected = "Grant version changed")]
-    fn replacement_cannot_revive_a_queued_expired_authorization() {
-        let mut c = setup();
-        // v1 expired, but a new v2 has a later expiry and different scope/delegate.
-        ctx("user.testnet", NearToken::from_near(1), 1_000_000);
-        replace_grant(&mut c);
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 1_000_001);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-    }
-
-    #[test]
-    #[should_panic(expected = "Grant revoked")]
-    fn replacement_cannot_revive_a_revoked_grant() {
-        let mut c = setup();
-        ctx("user.testnet", NearToken::from_yoctonear(1), 15);
-        c.revoke_grant(LOCAL);
-        ctx("user.testnet", NearToken::from_near(1), 16);
-        replace_grant(&mut c); // permanent revocation: a version bump is refused
-    }
-
-    #[test]
-    #[should_panic(expected = "reservation expired")]
-    fn an_expired_reservation_is_not_admitted_for_dispatch() {
-        let mut c = setup_with_expiry(u64::MAX / 2); // the grant itself is still valid
-        ctx(
-            "executor.testnet",
-            NearToken::from_yoctonear(1),
-            10 + 3_600_000_000_000,
-        );
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-    }
-
-    #[test]
-    fn dispatched_obligation_is_never_released_by_cancel_expiry_or_revocation() {
-        let mut c = setup();
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        ctx("user.testnet", NearToken::from_yoctonear(1), 21);
-        c.revoke_grant(LOCAL);
-        let late = 10 + 10 * 3_600_000_000_000;
-        for caller in ["user.testnet", "agent.testnet"] {
-            ctx(caller, NearToken::from_yoctonear(1), late);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                c.cancel_reservation(account("user.testnet"), LOCAL, REQ)
-            }));
-            assert!(
-                r.is_err(),
-                "{caller} must not cancel a dispatched obligation"
-            );
-        }
-        ctx("auditor.testnet", NearToken::from_yoctonear(1), late);
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            c.release_expired(account("user.testnet"), LOCAL, REQ)
-        }));
-        assert!(r.is_err());
-        let b = c.get_budget(account("user.testnet"), LOCAL).unwrap();
-        assert_eq!((b.reserved, b.available), (U128(60), U128(40)));
-        assert_eq!(
-            c.get_reservation(account("user.testnet"), LOCAL, REQ)
-                .unwrap()
-                .state,
-            ReservationState::Dispatched
-        );
-    }
-
-    #[test]
-    fn replaced_and_revoked_grant_keeps_dispatched_obligation_reconcilable() {
-        let mut c = setup();
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        ctx("user.testnet", NearToken::from_near(1), 30);
-        replace_grant(&mut c);
-        ctx("user.testnet", NearToken::from_yoctonear(1), 31);
-        c.revoke_grant(LOCAL);
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 2_000_001);
-        // A repeat is not a fresh admission. The expired/revoked replacement must not block
-        // evidence resolution for the transaction that was dispatched under v1.
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        c.fixture_mark_reconciliation(account("user.testnet"), LOCAL, REQ);
-        c.fixture_reconcile(account("user.testnet"), LOCAL, REQ, true);
-        let b = c.get_budget(account("user.testnet"), LOCAL).unwrap();
-        assert_eq!((b.consumed, b.reserved), (U128(60), U128(0)));
-        assert_eq!(
-            c.get_reservation(account("user.testnet"), LOCAL, REQ)
-                .unwrap()
-                .version,
-            U64(1)
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Grant asset cannot change")]
-    fn consumed_budget_cannot_be_relabelled_by_asset_replacement() {
-        let mut c = setup();
-        ctx("executor.testnet", NearToken::from_yoctonear(1), 20);
-        c.fixture_dispatch(account("user.testnet"), LOCAL, REQ);
-        c.fixture_consume(account("user.testnet"), LOCAL, REQ);
-        ctx("user.testnet", NearToken::from_near(1), 30);
-        c.create_grant(GrantInput {
-            delegate: account("agent.testnet"),
-            local_id: LOCAL,
-            version: U64(2),
-            asset: AssetInput {
-                chain_id: U64(1),
-                ..asset_input()
-            },
-            contracts: vec![account("router.testnet")],
-            methods: vec!["swap".into()],
-            destinations: vec!["0x00000000000000000000000000000000000000dd".into()],
-            battle: None,
-            per_action_cap: U128(100),
-            cumulative_cap: U128(100),
-            gas_cap: U64(300),
-            expiry_ns: U64(2_000_000),
-        });
+        ctx("executor.testnet", NearToken::from_yoctonear(1), 22);
+        c.fixture_release_not_executed(account("user.testnet"), LOCAL, REQ);
     }
 }
