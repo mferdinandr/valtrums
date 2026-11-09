@@ -93,13 +93,55 @@ export interface IndexerConfig {
   retainedDepth: number;
 }
 
-export type SupportedEventName = "lifecycle_battle_created" | "audit_updated" | "lifecycle_deposit";
+/**
+ * Events the reducer models, by emitting standard. The arena standard is `IndexerConfig.standard`
+ * (`valtrum`); the others are fixed companion standards emitted by the backing and payout contracts.
+ * Any other event from an allowlisted emitter is reported as `unknown_event` (a degraded status),
+ * never silently dropped.
+ */
+export type SupportedEventName =
+  | "lifecycle_battle_created"
+  | "audit_updated"
+  | "lifecycle_deposit"
+  | "backing_updated"
+  | "lifecycle_representation_trust_changed"
+  | "late_deposit_recorded"
+  | "asset_suspended"
+  | "asset_resumed"
+  | "custody_attested"
+  | "reconciliation_unresolved"
+  | "operator_changed"
+  | "resume_policy_changed"
+  | "payout_signature_requested"
+  | "payout_signature_received"
+  | "payout_signature_failed"
+  | "payout_state_changed";
 
 export const SUPPORTED_EVENTS: readonly SupportedEventName[] = [
   "lifecycle_battle_created",
   "audit_updated",
   "lifecycle_deposit",
+  "backing_updated",
+  "lifecycle_representation_trust_changed",
+  "late_deposit_recorded",
+  "asset_suspended",
+  "asset_resumed",
+  "custody_attested",
+  "reconciliation_unresolved",
+  "operator_changed",
+  "resume_policy_changed",
+  "payout_signature_requested",
+  "payout_signature_received",
+  "payout_signature_failed",
+  "payout_state_changed",
 ];
+
+/** Companion NEP-297 standards of the Valtrum contracts, with the events each one models. */
+export const BACKING_STANDARD = "valtrum_backing";
+export const PAYOUT_STANDARD = "valtrum_payout";
+/** Emitted by the player-policy contract; no event of it is modelled, so it is always reported. */
+export const PLAYER_POLICY_STANDARD = "valtrum_player_policy";
+export const COMPANION_STANDARDS: readonly string[] = [BACKING_STANDARD, PAYOUT_STANDARD, PLAYER_POLICY_STANDARD];
 
 /** Where an accepted event came from. The emitter is the receipt executor, never an event field. */
 export interface EventProvenance {
@@ -140,6 +182,49 @@ export type AcceptedEvent =
       community: string;
       accountId: string;
       amount: string;
+    })
+  | (EventCommon & {
+      name: "backing_updated";
+      battleId: string;
+      community: string;
+      approved: boolean;
+      evidenceHash: string | null;
+      expiresAtMs: string | null;
+    })
+  | (EventCommon & { name: "lifecycle_representation_trust_changed"; representation: string; trusted: boolean })
+  | (EventCommon & { name: "late_deposit_recorded"; battleId: string; beneficiary: string; refundAddress: string; units: string })
+  | (EventCommon & { name: "asset_suspended"; reason: string })
+  | (EventCommon & { name: "asset_resumed"; by: string; reorg: boolean; deficit: boolean; stillSuspended: boolean })
+  | (EventCommon & {
+      name: "custody_attested";
+      sequence: string;
+      sourceBlockNumber: string;
+      balance: string;
+      required: string | null;
+      covered: boolean;
+    })
+  | (EventCommon & { name: "reconciliation_unresolved"; holder: string; requestId: string })
+  | (EventCommon & { name: "operator_changed"; previous: string | null; next: string | null; by: string })
+  | (EventCommon & { name: "resume_policy_changed"; previous: string; next: string; by: string })
+  | (EventCommon & {
+      name: "payout_signature_requested";
+      backing: string;
+      holder: string;
+      requestId: string;
+      payloadHash: string;
+      maxFeePerGas: string;
+      nonce: string;
+    })
+  | (EventCommon & { name: "payout_signature_received"; backing: string; holder: string; requestId: string; txHash: string; maxFeePerGas: string })
+  | (EventCommon & { name: "payout_signature_failed"; backing: string; holder: string; requestId: string; maxFeePerGas: string })
+  | (EventCommon & {
+      name: "payout_state_changed";
+      backing: string;
+      holder: string;
+      requestId: string;
+      from: string | null;
+      to: string;
+      reason: string | null;
     });
 
 /** Why a log/item was not accepted as known state. Retained for diagnosis, never applied. */
