@@ -23,7 +23,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 | Delegation | None in v1. Only the participant's own account votes, and a player agent cannot vote unless a later grant design explicitly allows it. |
 | Execution | The arena contract tallies the votes itself. After the window closes, **anyone** can trigger finalization and execution. No owner, worker, multisig or external DAO can create, change or veto a decision. |
 | Burn method | A verified transfer of the burn portion on Robinhood to a frozen irrecoverable sink address, confirmed by a finalized receipt. It is reported as "sent to sink", not as a supply reduction. |
-| SputnikDAO, Trezu | Not used for the winners' vote, which the arena contract tallies (D22). Since D28 (2026-11-09) a SputnikDAO on testnet is planned to own protocol-level authority and receive the protocol fee ([#113](https://github.com/mferdinandr/valtrum/issues/113)); it cannot change or veto a battle's tally. Trezu is only an optional interface to that DAO, and its testnet support is unverified (see [ecosystem](ecosystem.md)). |
+| SputnikDAO, Trezu | Not used for the winners' vote, which the arena contract tallies (D22). Since D28 (2026-11-09) a SputnikDAO on testnet is planned to own protocol-level authority and receive the protocol fee ([#113](https://github.com/mferdinandr/valtrum/issues/113)); it cannot change or veto a battle's tally. Trezu is only an optional interface to that DAO, and its testnet support is unverified (see [ecosystem](ecosystem.md)). Map, evidence, runbook: [sputnik-authority.md](sputnik-authority.md); Trezu documents no testnet support (checked 2026-11-09). |
 
 ## Rules for implementation
 
@@ -74,6 +74,10 @@ Owner decisions taken for the implementation (D24): the window is 1 minute to 30
   - `get_escrow_disposition`: returned, burn pending, burn confirmed, still escrowed.
   - `confirm_payout` consumes a DAO burn only with a finalized debit to the sink.
 - **Payout** (`contracts/payout/src/contract.rs`): `request_dao_burn(backing, holder, request_id, destination)`. It's permissionless (the operator attaches one yocto, anyone else the request deposit), then follows the normal signing and confirmation path. A failed request refunds whoever paid.
+
+## Protocol authority under a SputnikDAO (issue #113, D28)
+
+The vote above is unchanged. Protocol-level changes (`set_lifecycle_dao_window`, `set_lifecycle_fee`, the reference-token registry, `set_dao_sink` and the protocol fee recipient) go to a SputnikDAO council through one-yocto `FunctionCall` proposals. Automated roles (payout operator, relayer, agent, scheduler) and the deploy key stay outside the DAO. Method map, evidence, runbook and open questions: [sputnik-authority.md](sputnik-authority.md). Status: sandbox-verified with the official SputnikDAO 3.31 wasm; no testnet DAO exists yet.
 
 ## Open items left by this design
 
