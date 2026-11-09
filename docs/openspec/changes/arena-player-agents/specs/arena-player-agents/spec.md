@@ -56,3 +56,22 @@ A persistent policy contract SHALL authenticate grant creation and revocation fr
 #### Scenario: Canonical input and event envelope
 - **WHEN** a grant or action contains unknown fields, including nested asset or battle fields
 - **THEN** input is rejected; accepted policy changes emit versioned NEP-297 events with an array of data records
+
+### Requirement: Reservation release and grant lifecycle
+A user or delegate SHALL cancel an undispatched reservation, and an undispatched reservation SHALL expire after a configured lifetime. A dispatched obligation SHALL NOT be released by timeout, cancel or revocation. A delegate SHALL differ from the user and revocation SHALL be permanent per grant id.
+
+#### Scenario: Cancel before dispatch
+- **WHEN** the user or delegate cancels an undispatched reservation, even after revocation
+- **THEN** its budget is restored once, a repeat is harmless and infrastructure callers are denied
+
+#### Scenario: Expiry
+- **WHEN** an undispatched reservation passes its expiry and anyone releases it
+- **THEN** its budget is restored; before expiry the release fails and an expired reservation cannot be dispatched
+
+#### Scenario: Dispatched obligation retained
+- **WHEN** a dispatched obligation sees cancel, expiry or revocation
+- **THEN** it stays reserved until explicit evidence reconciles it
+
+#### Scenario: Permanent revocation and delegate rule
+- **WHEN** a revoked grant is replaced by a higher version, or a user names themselves delegate
+- **THEN** the call is rejected; a new local grant id is required, and asset identity remains immutable
