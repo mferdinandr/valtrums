@@ -85,6 +85,12 @@ The auditor schedules validation after proposal and refreshes it before lock und
 
 The evidence TTL is configurable (default 600 s) and the audit pass runs inside the agent's regular pass, refreshing an approval before its remaining life falls under two pass intervals. The contract itself does not check approval expiry at lock; lock refusal on expiry relies on the pass withdrawing the approval (submitting Pending), and the agent does not yet drive `lock_lifecycle_battle`. The behavior after a live token-policy change remains OPEN: do not invent an hourly live check for a 30-second round or silently introduce a live refund rule. GoPlus signals are point-in-time evidence, not guarantees against later contract changes.
 
+## Field reasons across surfaces
+
+Every non-pass finding carries a reason `{ code, field?, message }`. The same codes and fields appear in three places for one decision: the lifecycle pass log line `audit report archived` (`reasons`: code, field, known; plus `reasonCodes`, `unknownReasonCodes`, `reasonsTruncated`), the archived report (`reasons`), and the read model used by the MCP `inspect_audit` tool, the terminal and the HTTP service (`reasonSummary` beside the full `report`). All are built by `summarizeReasons` in `agent/src/audit/reason-summary.ts`.
+
+Known codes are `critical`, `unknown_field`, `wrong_source`, `reference_mismatch`, `reference_unregistered`, `reference_conflict`, `tax_policy_unresolved`, `tax_above_limit`, `admin_policy_unresolved`, `admin_privilege_not_renounced`, `ownership_unknown`, and the families `source_<status>` and `lp_<code>`. A code outside this set is passed through as-is with `known: false` (and `(unknown reason code)` in the text report); it is never dropped. The log carries codes and fields only, never the free-text message or provider responses, each value is cut at 96 characters and at most 32 reasons are listed (`reasonsTruncated` says when more existed). This is text and codes only and does not influence any approval decision.
+
 ## Required scenarios
 
 - Critical flag true plus another field absent: Reject with both reasons preserved.

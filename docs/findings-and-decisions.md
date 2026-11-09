@@ -250,7 +250,7 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 | P2 | [#109](https://github.com/mferdinandr/valtrum/issues/109) | persist indexer cursors and reconcile reorgs after restart | testnet-integrations (3) |
 | P2 | [#114](https://github.com/mferdinandr/valtrum/issues/114) | testnet fixture of the 1Click API pinned to recorded mainnet responses | D29 |
 | P3 | [#110](https://github.com/mferdinandr/valtrum/issues/110) | verify market-data sources for mainnet reference tokens | testnet-integrations (1) |
-| P3 | [#111](https://github.com/mferdinandr/valtrum/issues/111) | wire consistent audit field reasons into lifecycle logs and clients | audit (1) |
+| P3 | [#111](https://github.com/mferdinandr/valtrum/issues/111) | wire consistent audit field reasons into lifecycle logs and clients (done on `feat/audit-field-reasons`) | audit (1) |
 | P3, blocked | [#112](https://github.com/mferdinandr/valtrum/issues/112) | decide minimum executable-depth policy for concentrated liquidity (owner) | audit (1) |
 
 ## Open items and who acts
