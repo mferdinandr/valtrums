@@ -51,6 +51,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: contracts
+      # Read-only download of the official SputnikDAO wasm from the testnet factory,
+      # verified against its pinned code hash (needed by the sputnik_authority tests).
+      - run: python3 ../scripts/fetch-sputnikdao-wasm.py
       - run: cargo test -p valtrum-integration
 
   node:

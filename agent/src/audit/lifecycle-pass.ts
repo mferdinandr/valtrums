@@ -4,6 +4,7 @@ import type { ReferenceRegistrySource } from "../reference-registry.js";
 import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
 import type { LifecycleLocker } from "./lifecycle-lock.js";
 import type { ArchiveProvenance, ReportArchive } from "./report-archive.js";
+import { summarizeReasons } from "./reason-summary.js";
 import { AuditReportStore, buildAuditReport } from "./report.js";
 
 /** Subset of the arena's `LifecycleView` this pass reads. */
@@ -130,6 +131,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
               attribution: { arena: deps.arena!, battleId: id, community: i },
               provenance,
             });
+            const reasonSummary = summarizeReasons(built.reasons);
             log.info("audit report archived", {
               arena: deps.arena,
               battleId: id,
@@ -143,7 +145,10 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
               assetToken: built.asset.token,
               custodyDomain: built.asset.custodyDomain,
               expiresAt: built.times.expiresAt,
-              reasonCodes: built.reasons.map((r) => r.code).slice(0, 32),
+              reasonCodes: reasonSummary.reasons.map((r) => r.code),
+              reasons: reasonSummary.reasons,
+              reasonsTruncated: reasonSummary.truncated,
+              unknownReasonCodes: reasonSummary.reasons.filter((r) => !r.known).map((r) => r.code),
               observationId: put.observation.observationId,
               archived: put.created,
             });

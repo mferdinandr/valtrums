@@ -64,6 +64,22 @@ pnpm -F @valtrum/web dev
 
 The agent needs ARENA_CONTRACT_ID, AGENT_ACCOUNT_ID and exactly one private-key source. See [agent README](../agent/README.md) and [container instructions](../deploy/README.md). A TS start script does not automatically load the root .env file; export the values or use Compose's env_file. Public RPC throttling can stall work.
 
+## Target contracts on NEAR testnet (deployed 2026-11-09)
+
+Live testnet deployment from the owner's accounts; details, code hashes and transactions in [testnet-evidence.md](testnet-evidence.md) and [evidence/2026-11-09-near-testnet-deploy.json](evidence/2026-11-09-near-testnet-deploy.json).
+
+| Role | Account |
+| --- | --- |
+| Owner / deploy key | `valtrum-owner-b694.testnet` |
+| DAO (protocol account, backing owner) | `valtrum-protocol.sputnikv2.testnet` |
+| Arena (lifecycle activated, protocol = DAO) | `arena.valtrum-owner-b694.testnet` |
+| Receipt registry | `registry.valtrum-owner-b694.testnet` |
+| Payout (signer `v1.signer-prod.testnet`) | `payout.valtrum-owner-b694.testnet` |
+| Player policy | `policy.valtrum-owner-b694.testnet` |
+| Backing (fixture asset, DAO-owned) | `backing1.valtrum-owner-b694.testnet` |
+
+Measured storage: wasm size times 1e19 yoctoNEAR plus a small overhead (arena 664 KB is 7.0 NEAR, backing 389 KB, payout 304 KB, policy 209 KB, registry 160 KB); the DAO create cost the owner 6.1 NEAR. Deployed through a script that signs in process (keys read from the git-ignored `.env`, never passed as arguments); each account was created, keyed with the owner key, deployed and initialised in one transaction. Build: `cd contracts/<crate> && cargo near build non-reproducible-wasm --no-abi --out-dir <dir>`. Still not deployed: Robinhood custody and mock tokens (separate work), real-token backings, payout backing registration, reference-registry entries.
+
 ## Planned target rollout: no ready-to-run deploy command
 
 Target only NEAR testnet and Robinhood Chain testnet. No target custody, representation, four-mode arena, DAO or MCP deployment script exists yet.

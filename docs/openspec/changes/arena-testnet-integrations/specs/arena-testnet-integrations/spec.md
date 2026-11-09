@@ -69,7 +69,7 @@ After a reorg the indexer SHALL retract provisional projections and suspend conf
 - **THEN** provisional blocks, every deduplication key and blocks holding conflict evidence remain, and the checkpoint is labelled a summary, not raw history
 
 ### Requirement: Protocol-controlled reference-token registry
-The arena SHALL keep one owner-controlled registry mapping each testnet mock token to one Robinhood mainnet (4663) reference token, with an entry hash per entry and a version bumped on every change. Audit and scoring SHALL read this registry only. Battle creation SHALL refuse a reference pair that is unregistered or differs from the entry. An entry attests nothing about the mock contract.
+The arena SHALL keep one protocol-controlled registry (changed only by the protocol account with one yocto, not the arena owner) mapping each testnet mock token to one Robinhood mainnet (4663) reference token, with an entry hash per entry and a version bumped on every change. Audit and scoring SHALL read this registry only. Battle creation SHALL refuse a reference pair that is unregistered or differs from the entry. An entry attests nothing about the mock contract.
 
 #### Scenario: Registered mapping
 - **WHEN** a community commits the reference pair registered for its token
