@@ -145,8 +145,22 @@ async fn world(communities: usize) -> anyhow::Result<World> {
     )
     .await?
     .into_result()?;
-    // The protocol (here the owner) sets the shortest DAO vote window, which
-    // battles created afterwards snapshot.
+    // The protocol (here the owner) sets the DAO vote window, which battles
+    // created afterwards snapshot. 29 seconds is below the 30-second bound.
+    assert!(owner_call(
+        "set_lifecycle_dao_window",
+        json!({"window_secs": "29"}),
+        yocto(),
+    )
+    .await?
+    .is_failure());
+    owner_call(
+        "set_lifecycle_dao_window",
+        json!({"window_secs": "30"}),
+        yocto(),
+    )
+    .await?
+    .into_result()?;
     owner_call(
         "set_lifecycle_dao_window",
         json!({"window_secs": "60"}),

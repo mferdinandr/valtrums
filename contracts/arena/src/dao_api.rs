@@ -1,7 +1,7 @@
 //! DAO vote on a battle's escrowed winning principal and its execution
 //! (decision D22, design in `docs/dao-governance.md`).
 //!
-//! - The protocol account sets the vote window (1 minute to 30 days); each
+//! - The protocol account sets the vote window (30 seconds to 30 days); each
 //!   battle snapshots it at creation. A battle created without one has no vote
 //!   and its principal stays escrowed.
 //! - The window opens when the final winner is recorded. Only participants of
@@ -31,7 +31,7 @@ use near_sdk::{
 
 const NS_PER_SECOND: u64 = 1_000_000_000;
 /// Bounds of the protocol-adjustable vote window (owner decision for #75).
-pub const MIN_DAO_WINDOW_SECS: u64 = 60;
+pub const MIN_DAO_WINDOW_SECS: u64 = 30;
 pub const MAX_DAO_WINDOW_SECS: u64 = 30 * 24 * 60 * 60;
 const RELEASE_GAS: Gas = Gas::from_tgas(15);
 const CALLBACK_GAS: Gas = Gas::from_tgas(20);
@@ -200,7 +200,7 @@ impl Arena {
 
 #[near]
 impl Arena {
-    /// Protocol only, exactly one yocto. Sets the DAO vote window (1 minute to
+    /// Protocol only, exactly one yocto. Sets the DAO vote window (30 seconds to
     /// 30 days) that battles created afterwards snapshot. Existing battles keep
     /// theirs, so a change cannot shorten or extend a vote in progress.
     #[payable]
@@ -212,7 +212,7 @@ impl Arena {
         );
         require!(
             (MIN_DAO_WINDOW_SECS..=MAX_DAO_WINDOW_SECS).contains(&window_secs.0),
-            "DAO window must be between 1 minute and 30 days"
+            "DAO window must be between 30 seconds and 30 days"
         );
         self.lifecycle_dao_window_ns = Some(window_secs.0 * NS_PER_SECOND);
     }
@@ -607,10 +607,12 @@ mod tests {
         context("owner.testnet", NearToken::from_yoctonear(1), 0);
         assert!(panics(|| arena.set_lifecycle_dao_window(U64(300))));
         context("protocol.testnet", NearToken::from_yoctonear(1), 0);
-        assert!(panics(|| arena.set_lifecycle_dao_window(U64(59))));
+        assert!(panics(|| arena.set_lifecycle_dao_window(U64(29))));
         assert!(panics(
             || arena.set_lifecycle_dao_window(U64(MAX_DAO_WINDOW_SECS + 1))
         ));
+        arena.set_lifecycle_dao_window(U64(30));
+        assert_eq!(arena.get_lifecycle_dao_window(), Some(U64(30)));
         arena.set_lifecycle_dao_window(U64(300));
         assert_eq!(arena.get_lifecycle_dao_window(), Some(U64(300)));
         // Battle 1 was created before: it has no vote and its principal stays escrowed.
