@@ -624,8 +624,7 @@ mod wrapper {
 
     fn expect_panic<F: FnOnce()>(f: F) -> String {
         let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
-            .err()
-            .expect("expected a panic");
+            .expect_err("expected a panic");
         err.downcast_ref::<String>()
             .cloned()
             .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
