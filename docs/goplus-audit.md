@@ -140,6 +140,6 @@ Limitations:
 - GoPlus returned a result for all 13 tokens, but `cannot_sell_all` is missing for 8 of them (REBATE, OAK, PENNY, WIF, Rabbit, RICO, HODL, CHAD). The policy holds a missing required field Pending, so REBATE, OAK, Rabbit and RICO, which the 2026-11-07 table called "GoPlus clean", cannot pass on GoPlus data alone.
 - Only Uniswap-style v2/v3 pools are read. Most liquidity of REBATE, OAK, STRATEGY and PENNY sits in Uniswap v4 pools, which the fetcher cannot value (see "Uniswap v4" in the findings log).
 - Reads used recent blocks of keyless public RPCs, not finalized blocks: both free tiers refuse state older than a few seconds. The block hash was cross-checked between the providers.
-- Token authenticity (look-alike contracts) was not checked; the addresses are the findings-log candidates.
+- Token authenticity (look-alike contracts) was not checked on 2026-11-08; the addresses are the findings-log candidates. A 2026-11-09 rerun against the live RPC, a wider candidate search and on-chain authenticity checks are in [reference-token-scan.md](reference-token-scan.md): 11 tokens pass today.
 - No result was submitted on-chain; this is evidence only.
 
