@@ -1,15 +1,11 @@
 "use client";
 
-import { TargetFlow } from "@/components/target-flow";
-import { FlowNotice } from "@/components/flow-notice";
 import { SessionPanel } from "@/components/terminal/session-panel";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
 
 export default function TerminalPage() {
   return (
     <div className="space-y-6">
-      <FlowNotice compact />
-      <TargetFlow page="terminal" />
       <div>
         <h1 className="text-lg text-neon-green">Intent terminal</h1>
         <p className="mt-2 text-xl text-mute">

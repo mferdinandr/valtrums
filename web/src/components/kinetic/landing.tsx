@@ -11,6 +11,8 @@ import {
   Check,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { FlowNotice } from "@/components/flow-notice";
+import { TargetFlow } from "@/components/target-flow";
 import { MemeMechanics } from "@/components/meme-mechanics";
 
 const PracticeScene = dynamic(() => import("./practice-scene"), { ssr: false, loading: () => <div className="scene-floor h-[340px] sm:h-[420px]" /> });
@@ -233,6 +235,7 @@ export function Landing() {
           </div>
         </div>
       </section>
+      <div className="my-8 space-y-4"><FlowNotice /><TargetFlow page="arena" /></div>
       <section id="product-flow" className="flow-section scroll-mt-32">
         <div className="flow-section-heading">
           <div><p className="eyebrow text-neon-green">THE VALTRUM JOURNEY / PLANNED</p><h2 className="mt-3 text-3xl md:text-4xl">From community to outcome.</h2></div>
