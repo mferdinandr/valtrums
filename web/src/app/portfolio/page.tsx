@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { MemeMechanics } from "@/components/meme-mechanics";
 import { TargetFlow } from "@/components/target-flow";
 import { FlowNotice } from "@/components/flow-notice";
 import { Badge } from "@/components/ui/badge";
@@ -262,6 +263,7 @@ export default function PortfolioPage() {
       <div className="space-y-4">
         <FlowNotice compact />
         <TargetFlow page="portfolio" />
+      <MemeMechanics compact />
         <h1 className="text-lg text-neon-pink">Current portfolio</h1>
         <p className="text-2xl text-mute">
           Connect a wallet to see your positions and credit.
@@ -277,6 +279,7 @@ export default function PortfolioPage() {
     <div className="space-y-6">
       <FlowNotice compact />
       <TargetFlow page="portfolio" />
+      <MemeMechanics compact />
       <div><p className="eyebrow text-neon-green">04 / TRACK YOUR OUTCOME</p><h1 className="mt-3 text-3xl">Your portfolio.</h1><p className="mt-2 text-sm text-mute">Follow positions, claim eligible outcomes, then withdraw liquid balances.</p></div>
       {error && (
         <p role="alert" className="text-xl text-neon-red">
