@@ -10,9 +10,12 @@ import {
   Swords,
   Check,
 } from "lucide-react";
-import { KineticScene } from "./scene";
+import dynamic from "next/dynamic";
+
+const PracticeScene = dynamic(() => import("./practice-scene"), { ssr: false, loading: () => <div className="scene-floor h-[340px] sm:h-[420px]" /> });
+const PRACTICE_TOKENS = ["CASHCAT", "BTCETHUSDT", "REBATE", "OAK", "WIF"] as const;
 import { Button } from "@/components/ui/button";
-import type { Side } from "@/lib/arena/types";
+
 
 type Step = "choose" | "loaded" | "live" | "result";
 const LENGTH = 6000;
@@ -35,7 +38,7 @@ const STEPS = [
 ];
 
 export function Landing() {
-  const [side, setSide] = useState<Side>("A");
+  const [side, setSide] = useState(0);
   const [step, setStep] = useState<Step>("choose");
   const [remaining, setRemaining] = useState(LENGTH);
   const stepPanel = useRef<HTMLDivElement>(null);
@@ -70,25 +73,21 @@ export function Landing() {
   };
   return (
     <div className="landing-page">
-      <section className="relative grid items-center gap-4 pb-12 pt-5 lg:grid-cols-[.9fr_1.1fr] lg:pb-20 lg:pt-10">
+      <section className="landing-hero relative grid items-center gap-8 pb-12 pt-5 lg:grid-cols-[.9fr_1.1fr] lg:pb-20 lg:pt-10">
         <div className="relative z-10 max-w-xl">
-          <p className="eyebrow flex items-center gap-2 text-neon-green">
-            <span className="status-dot" /> Token communities. Mechanical
-            rivalry.
-          </p>
-          <h1 className="mt-7 font-pixel text-[clamp(3.8rem,8.5vw,8rem)] font-medium leading-[.9] tracking-[-.075em]">
-            Your tribe.
+          <p className="landing-kicker"><span className="status-dot" /> THE COMMUNITY BATTLEGROUND <span className="landing-kicker-tag">NEAR TESTNET</span></p>
+          <h1 className="landing-title mt-7 font-pixel text-[clamp(3.8rem,7.5vw,7rem)] font-bold leading-[.9] tracking-[-.075em]">
+            PICK A SIDE.
             <br />
-            <span className="text-neon-green">Their liquidity.</span>
+            <span className="text-neon-green">OWN THE ARENA.</span>
           </h1>
           <p className="mt-7 max-w-sm text-sm leading-7 text-mute">
-            A battleground for token communities. Choose a side, back it with
-            your coins, and follow the outcome inside a living mechanical arena.
+            Multiple communities enter. One side comes out on top. Back your tribe, follow the battle, and see where the rivalry takes you.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link href="/arena">
-                Enter Arena <ArrowUpRight size={17} />
+                Enter the arena <ArrowUpRight size={17} />
               </Link>
             </Button>
             <Button asChild variant="ghost" size="lg">
@@ -97,42 +96,19 @@ export function Landing() {
               </a>
             </Button>
           </div>
-          <p className="mt-5 text-[11px] leading-6 text-mute">
-            Built on NEAR · Testnet experience
-            <br />
-            Explore first. Connect your wallet when you are ready.
-          </p>
+          <div className="landing-brief"><span><strong>01</strong> PICK YOUR TRIBE</span><span><strong>02</strong> WATCH THE BATTLE</span><span><strong>03</strong> CLAIM YOUR OUTCOME</span></div>
         </div>
         <div
           id="practice"
-          className="relative min-w-0 scroll-mt-32 overflow-hidden rounded-2xl border border-edge bg-[#161f26]"
+          className="practice-card relative min-w-0 scroll-mt-32 overflow-hidden rounded-2xl border border-edge bg-[#161f26]"
         >
           <div className="flex items-center justify-between gap-3 border-b border-edge px-5 py-4">
-            <span className="eyebrow text-neon-amber">Practice chamber</span>
+            <span className="eyebrow text-neon-amber">✦ &nbsp; Practice chamber</span>
             <span className="font-mono text-[10px] text-mute">
               SIMULATION / NO FUNDS
             </span>
           </div>
-          <KineticScene
-            mode="battle"
-            className="h-[340px] sm:h-[420px]"
-            battle={{
-              selected: side,
-              onSelect: setSide,
-              selectable: step === "choose",
-              lockedSide: null,
-              phase: step === "loaded" ? "preview" : "idle",
-              status:
-                step === "live"
-                  ? "Live"
-                  : step === "result"
-                    ? "Settled"
-                    : "Approved",
-              winner: step === "result" ? "A" : null,
-              symbols: ["LIME", "LILAC"],
-              progress: 1 - remaining / LENGTH,
-            }}
-          />
+          <PracticeScene selected={side} onSelect={setSide} selectable={step === "choose"} />
           <div className="relative border-t border-edge bg-void/60 p-5">
             <div className="mb-4 flex gap-1.5" aria-hidden="true">
               {["choose", "loaded", "live", "result"].map((item, index) => (
@@ -161,26 +137,26 @@ export function Landing() {
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {(["A", "B"] as const).map((s) => (
+              {PRACTICE_TOKENS.map((token, s) => (
                 <button
-                  key={s}
+                  key={token}
                   disabled={step !== "choose"}
                   onClick={() => setSide(s)}
                   aria-pressed={side === s}
-                  className={`relative rounded-lg border px-4 py-3 text-left transition-colors duration-200 disabled:cursor-default ${side === s ? (s === "A" ? "border-neon-green/60 bg-neon-green/10" : "border-neon-pink/60 bg-neon-pink/10") : "border-edge enabled:hover:bg-white/5"}`}
+                  className={`relative rounded-lg border px-4 py-3 text-left transition-colors duration-200 disabled:cursor-default ${side === s ? "border-neon-green/60 bg-neon-green/10" : "border-edge enabled:hover:bg-white/5"}`}
                 >
                   {side === s && (
                     <Check
                       size={14}
                       aria-hidden="true"
-                      className={`absolute right-3 top-3 ${s === "A" ? "text-neon-green" : "text-neon-pink"}`}
+                      className="absolute right-3 top-3 text-neon-green"
                     />
                   )}
                   <span className="block font-pixel text-sm">
-                    {s === "A" ? "LIME" : "LILAC"}
+                    {token}
                   </span>
                   <span className="text-[10px] text-mute">
-                    {side === s ? "Your practice tribe" : "Tribe " + s}
+                    {side === s ? "Your practice tribe" : "Tribe " + (s + 1)}
                   </span>
                 </button>
               ))}
@@ -216,8 +192,7 @@ export function Landing() {
                 {step === "loaded" && (
                   <>
                     <p className="mb-3 text-xs leading-6 text-mute">
-                      The lid opens and preview capsules orbit your vault. No
-                      assets move. Ready to see a shortened practice round?
+                      Your practice tribe is ready. No assets move. Ready to see a shortened practice round?
                     </p>
                     <Button
                       onClick={() => {
@@ -233,8 +208,7 @@ export function Landing() {
                 {step === "live" && (
                   <div className="flex items-center justify-between py-3">
                     <p className="max-w-[220px] text-xs leading-6 text-mute">
-                      Both vaults are locked. The ring tracks this scripted
-                      practice interval.
+                      The practice tribes are locked in. This is a scripted practice interval.
                     </p>
                     <span
                       aria-hidden="true"
@@ -247,12 +221,12 @@ export function Landing() {
                 {step === "result" && (
                   <>
                     <p className="font-pixel text-lg text-neon-green">
-                      LIME wins this practice round.
+                      CASHCAT wins this practice round.
                     </p>
                     <p className="mt-2 text-xs leading-6 text-mute">
-                      {side === "A"
+                      {side === 0
                         ? "You chose the winning side. In an actual battle, inspect your claim in Portfolio."
-                        : "You chose LILAC. In an actual battle, the losing side loses its deposited coins."}
+                        : `You chose ${PRACTICE_TOKENS[side]}. In an actual battle, the losing side loses its deposited coins.`}
                     </p>
                     <Link
                       href="/arena"
@@ -265,9 +239,7 @@ export function Landing() {
               </div>
             </div>
             <p className="mt-4 border-t border-edge pt-3 text-[10px] leading-5 text-mute">
-              6-second scripted walkthrough. LIME always wins this demo.
-              Fictional tokens, no wallet, no transactions and no live market
-              data. Actual battles use their configured duration.
+              6-second scripted walkthrough with five illustrative tribes. CASHCAT always wins this demo. Names reference researched tokens, not verified or approved assets. No wallet, transactions or live market data. Actual battles currently support two tribes.
             </p>
           </div>
         </div>
@@ -292,13 +264,13 @@ export function Landing() {
             what you can do and what you receive.
           </p>
         </div>
-        <div className="grid md:grid-cols-3">
+        <div className="mechanics-grid grid gap-3 md:grid-cols-3">
           {STEPS.map((item) => (
             <article
               key={item.number}
-              className="border-t border-edge py-7 pr-6 md:border-r md:px-7 md:first:pl-0 md:last:border-r-0"
+              className="mechanics-card border border-edge p-6"
             >
-              <span className="font-mono text-4xl text-neon-green/35">
+              <span className="mechanics-number font-mono text-4xl text-neon-green/35">
                 {item.number}
               </span>
               <h3 className="mt-5 text-xl">{item.title}</h3>

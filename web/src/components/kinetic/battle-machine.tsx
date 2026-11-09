@@ -28,8 +28,8 @@ function TokenLabel({ symbol }: { symbol: string }) {
       context.fillStyle = "#192313";
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.font = "bold 120px sans-serif";
-      context.fillText(symbol.slice(0, 3), 256, 128, 470);
+      context.font = "bold 100px sans-serif";
+      context.fillText(symbol, 256, 128, 470);
     }
     const result = new CanvasTexture(canvas);
     result.colorSpace = SRGBColorSpace;
