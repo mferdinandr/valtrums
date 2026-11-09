@@ -43,9 +43,11 @@ function Token({
   side,
   reduced,
   assembly,
+  z = 0,
 }: {
   color: string;
   x: number;
+  z?: number;
   side: number;
   reduced: boolean;
   assembly: boolean;
@@ -58,7 +60,7 @@ function Token({
     ref.current.rotation.y += delta * 0.25 * side;
   });
   return (
-    <group position={[x, 0.3, 0]}>
+    <group position={[x, 0.3, z]}>
       <mesh position={[0, -0.65, 0]}>
         <cylinderGeometry args={[0.72, 0.86, 0.22, 8]} />
         <meshStandardMaterial
@@ -239,6 +241,9 @@ function Assembly({ mode, reduced }: { mode: MachineMode; reduced: boolean }) {
             reduced={reduced}
             assembly={mode === "create"}
           />
+          {mode === "arena" && (
+            <Token color="#7ad9dd" x={0} z={-1.5} side={1} reduced={reduced} assembly={false} />
+          )}
           <Line
             points={[
               [-1.12, -0.5, 0],

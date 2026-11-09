@@ -183,3 +183,16 @@ dd {
     transform: none;
   }
 }
+
+.arena-card { padding: 1.25rem; border: 1px solid #3c4a4a; border-radius: 1rem; background: linear-gradient(145deg, #202c30, #151d22); transition: border-color .2s, transform .2s; }
+.arena-card:hover { border-color: #a7cb63; transform: translateY(-3px); }
+.arena-card-id, .arena-card-label, .arena-count { color: #98a7a5; font: 700 9px/1.4 monospace; letter-spacing: .12em; }
+.arena-count { flex-shrink: 0; padding: .45rem .6rem; border: 1px solid #455353; border-radius: .4rem; }
+.arena-roster { overflow: hidden; border: 1px solid #394646; border-radius: .75rem; background: #10191c; }
+.arena-contender { display: flex; align-items: center; gap: .75rem; padding: .8rem; }
+.arena-contender + .arena-contender { border-top: 1px solid #303e3e; }
+.arena-avatar { display: grid; place-items: center; flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: .65rem; font-weight: 700; background: #d0f57020; color: #d0f570; border: 1px solid #d0f57055; }
+.arena-avatar-1 { background: #c8a6f720; color: #c8a6f7; border-color: #c8a6f755; }
+.arena-avatar-2 { background: #7ad9dd20; color: #7ad9dd; border-color: #7ad9dd55; }
+.arena-avatar-3 { background: #f2c56f20; color: #f2c56f; border-color: #f2c56f55; }
+@media (prefers-reduced-motion: reduce) { .arena-card:hover { transform: none; } }

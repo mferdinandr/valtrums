@@ -60,8 +60,7 @@ export default function ArenaPage() {
             <span className="text-neon-green">Enter the arena.</span>
           </h1>
           <p className="mt-5 max-w-sm text-sm leading-7 text-mute">
-            Two communities. One winning side. Back your token, follow the
-            battle and share in the outcome.
+            Find a battle, back your community and follow the action in the arena.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild size="lg">
@@ -77,7 +76,7 @@ export default function ArenaPage() {
           </div>
           <div className="mt-8 flex gap-5 border-t border-edge/70 py-5 text-[10px] text-mute">
             <span className="flex items-center gap-2">
-              <Swords size={13} /> Community vs community
+              <Swords size={13} /> Community battles
             </span>
             <span className="flex items-center gap-2">
               <Coins size={13} /> Token-backed vaults
@@ -88,15 +87,10 @@ export default function ArenaPage() {
           <div className="absolute right-6 top-6 z-10 hidden font-mono text-[9px] uppercase leading-5 tracking-widest text-mute/70 lg:block">
             Kinetic arena
             <br />
-            Two sides / One outcome
+            Many tribes / One arena
           </div>
           <KineticScene className="h-[310px] sm:h-[400px] lg:h-full lg:min-h-[480px]" />
-          <span className="absolute bottom-16 left-[18%] rounded border border-neon-green/20 bg-void/80 px-3 py-1.5 font-pixel text-[10px] text-neon-green">
-            TRIBE A
-          </span>
-          <span className="absolute bottom-16 right-[15%] rounded border border-neon-pink/20 bg-void/80 px-3 py-1.5 font-pixel text-[10px] text-neon-pink">
-            TRIBE B
-          </span>
+
         </div>
       </section>
       <div className="grid gap-3 sm:grid-cols-3">
@@ -139,9 +133,9 @@ export default function ArenaPage() {
       <section id="battle-list" className="scroll-mt-40 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="eyebrow">Find your next rivalry</p>
+            <p className="eyebrow text-neon-green">SELECT YOUR BATTLE / THE ARENA</p>
             <h2 className="mt-2 text-2xl">
-              The battle floor{" "}
+              Battle lobby{" "}
               <span className="ml-2 align-middle font-mono text-xs text-mute">
                 {data
                   ? `${data.length.toString().padStart(2, "0")} BATTLES`
@@ -198,8 +192,10 @@ export default function ArenaPage() {
             <BattleCard
               key={b.id}
               battle={b}
-              metaA={metas[b.token_a]!}
-              metaB={metas[b.token_b]!}
+              participants={[
+                { token: metas[b.token_a]!, vault: b.vault_a, winner: b.winner === "A" },
+                { token: metas[b.token_b]!, vault: b.vault_b, winner: b.winner === "B" },
+              ]}
             />
           ))}
         </div>

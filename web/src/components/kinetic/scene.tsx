@@ -72,7 +72,7 @@ export function KineticScene({
         aria-label={
           battle
             ? "Interactive battle arena. Select a community using a podium or the buttons below."
-            : `${mode === "portfolio" ? "Mechanical vaults" : mode === "terminal" ? "Mechanical assistant core" : "Two token emblems on an orbital arena"}, decorative 3D illustration`
+            : `${mode === "portfolio" ? "Mechanical vaults" : mode === "terminal" ? "Mechanical assistant core" : "Token emblems on an orbital arena"}, decorative 3D illustration`
         }
       >
         {fallback}
