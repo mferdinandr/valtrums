@@ -7,8 +7,10 @@
 //!
 //! No signing, token transfer, MPC call or custody access happens here: a reservation is an
 //! authorization and a budget hold, never a transfer or proof of funds. Outcome transitions
-//! (dispatch/consume/release/reconcile) are modeled in the pure core and are exposed only by the
-//! `sandbox-fixtures` build; the normal contract has no confirmation or unlock bypass.
+//! (dispatch/consume/reconcile) are modeled in the pure core and are exposed only by the
+//! `sandbox-fixtures` build; the normal contract has no confirmation or unlock bypass. The normal
+//! build can only release a reservation that was never dispatched: the user or delegate cancels it,
+//! or anyone releases it after its expiry. A dispatched obligation is never released by either.
 use crate::{
     AssetKey, BattleScope, Budget, CanonicalAction, Grant, GrantId, Hash, Reservation,
     ReservationState,
