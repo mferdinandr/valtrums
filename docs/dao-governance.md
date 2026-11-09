@@ -77,7 +77,7 @@ Owner decisions taken for the implementation (D24): the window is 1 minute to 30
 
 ## Protocol authority under a SputnikDAO (issue #113, D28)
 
-The vote above is unchanged. Protocol-level changes (`set_lifecycle_dao_window`, `set_lifecycle_fee`, `set_dao_sink` and the protocol fee recipient) go to a SputnikDAO council through one-yocto `FunctionCall` proposals. Automated roles (payout operator, relayer, agent, scheduler) and the deploy key stay outside the DAO. Method map, evidence, runbook and open questions: [sputnik-authority.md](sputnik-authority.md). Status: sandbox-verified with the official SputnikDAO 3.31 wasm; no testnet DAO exists yet.
+The vote above is unchanged. Protocol-level changes (`set_lifecycle_dao_window`, `set_lifecycle_fee`, the reference-token registry, `set_dao_sink` and the protocol fee recipient) go to a SputnikDAO council through one-yocto `FunctionCall` proposals. Automated roles (payout operator, relayer, agent, scheduler) and the deploy key stay outside the DAO. Method map, evidence, runbook and open questions: [sputnik-authority.md](sputnik-authority.md). Status: sandbox-verified with the official SputnikDAO 3.31 wasm; no testnet DAO exists yet.
 
 ## Open items left by this design
 

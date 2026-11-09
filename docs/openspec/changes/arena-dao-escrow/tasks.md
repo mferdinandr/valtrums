@@ -31,6 +31,7 @@ Check tasks only after implementation and verification. Governance is decided (D
 - [x] Show in the sandbox, with the real arena and backing and the official SputnikDAO 3.31 wasm, that a council majority proposal with one yocto changes the DAO window, fee and burn sink, and that a non-council account, a lone member and the deploy owner cannot. (`contracts/integration/tests/sputnik_authority.rs`; fixtures: sandbox accounts, direct DAO deploy.)
 - [x] Show that the DAO cannot release escrowed principal or submit a disposition. (Same file; no funded battle in that test, see the limits in the doc.)
 - [x] Write the council setup runbook, proposal templates and the list of inputs needed from the owner. (`docs/sputnik-authority.md`.)
-- [ ] Owner decisions Q1 to Q3 (reference-registry authority, backing owner scope, fee withdrawal) and any contract change they require.
+- [x] Owner decisions Q1 to Q3 (D33). Q1 changed the arena: the reference-registry methods require the protocol account and one yocto (unit tests in `reference_registry.rs`, sandbox tests `reference_registry.rs` and `sputnik_authority.rs`). Q2 (the DAO is the backing owner from initialisation) and Q3 (the fee stays a DAO entitlement; EVM withdrawal is a known gap) need no code.
+- [ ] Initialise each testnet backing with the DAO as `owner` (deployment prerequisite; the owner cannot be changed afterwards). Blocked until the DAO exists.
 - [ ] Create the DAO on testnet through `sputnikv2.testnet` and record account, factory transaction, code hash, policy and date. Blocked: the owner has no testnet accounts or funds yet.
 - [ ] Execute one real change through a passed proposal on the testnet contracts and record proposal id, transactions and the negative calls. Blocked on the previous task.

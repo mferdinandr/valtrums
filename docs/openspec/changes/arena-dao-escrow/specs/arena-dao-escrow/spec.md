@@ -54,7 +54,7 @@ After the final winner is recorded, the winning community's participants SHALL v
 - **THEN** it is paid to the frozen sink address on Robinhood and reported as sent to sink only after a finalized receipt, never as a supply burn
 
 ### Requirement: Protocol authority under a council DAO
-Protocol-level changes (the DAO vote window, the fee policy and the once-per-token burn sink) and the protocol fee recipient SHALL be controlled by a SputnikDAO council with a simple-majority policy through one-yocto function-call proposals. Automated roles (payout operator, relayer, agent, scheduler) and the deploy key SHALL NOT be held by the DAO. The DAO SHALL NOT be able to submit, change or veto a battle's disposition or move escrowed principal.
+Protocol-level changes (the DAO vote window, the fee policy, the reference-token registry and the once-per-token burn sink) and the protocol fee recipient SHALL be controlled by a SputnikDAO council with a simple-majority policy through one-yocto function-call proposals. Automated roles (payout operator, relayer, agent, scheduler) and the deploy key SHALL NOT be held by the DAO. The DAO SHALL NOT be able to submit, change or veto a battle's disposition or move escrowed principal.
 
 #### Scenario: Council majority changes a protocol parameter
 - **WHEN** a council member proposes a one-yocto call to the arena or a backing owned by the DAO and a majority approves
