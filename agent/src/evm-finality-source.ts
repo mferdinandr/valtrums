@@ -23,14 +23,14 @@ export class RpcFinalitySource implements FinalitySource {
 
   constructor(
     private readonly url: string,
-    private readonly opts: { fetch?: FetchLike; timeoutMs?: number; userAgent?: string } = {},
+    private readonly opts: { fetch?: FetchLike; timeoutMs?: number; userAgent?: string; /** Optional second endpoint used only for historical `balanceOf` reads (some nodes prune state). */ stateUrl?: string } = {},
   ) {}
 
-  private async rpc(method: string, params: unknown[]): Promise<unknown> {
+  private async rpc(method: string, params: unknown[], url: string = this.url): Promise<unknown> {
     const doFetch: FetchLike = this.opts.fetch ?? ((u, i) => fetch(u, i));
     let res: Response;
     try {
-      res = await doFetch(this.url, {
+      res = await doFetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": this.opts.userAgent ?? "valtrum-custody-verifier/0.1 (read-only testnet evidence)" },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++this.id, method, params }),
@@ -90,7 +90,7 @@ export class RpcFinalitySource implements FinalitySource {
   /** Needs historical state at `blockNumber`; a node that pruned it errors, which the verifier reports as Pending. */
   async balanceOfAt(token: string, account: string, blockNumber: bigint): Promise<bigint> {
     const data = encodeBalanceOf(account);
-    const out = await this.rpc("eth_call", [{ to: normalizeAddress(token), data }, `0x${blockNumber.toString(16)}`]);
+    const out = await this.rpc("eth_call", [{ to: normalizeAddress(token), data }, `0x${blockNumber.toString(16)}`], this.opts.stateUrl ?? this.url);
     return hexBig(out, "balanceOf result");
   }
 }

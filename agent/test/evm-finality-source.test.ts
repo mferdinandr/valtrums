@@ -77,6 +77,17 @@ describe("RpcFinalitySource", () => {
     await expect(source.chainId()).rejects.not.toThrow(/SECRETKEY/);
   });
 
+  it("reads historical balances from the state endpoint only", async () => {
+    const main = { finalized: 8, historical: false, calls: [] as string[] };
+    const state = { finalized: 8, historical: true, calls: [] as string[] };
+    const nodes: Record<string, ReturnType<typeof fakeNode>> = { "https://main.invalid": fakeNode(main), "https://state.invalid": fakeNode(state) };
+    const fetch = (url: string, init: RequestInit) => nodes[url]!(url, init);
+    const source = new RpcFinalitySource("https://main.invalid", { fetch, stateUrl: "https://state.invalid" });
+    expect((await verifyDeposit(source, mapping, request)).status).toBe("verified");
+    expect(state.calls).toEqual(["eth_call", "eth_call"]);
+    expect(main.calls).not.toContain("eth_call");
+  });
+
   it("sends an honest user agent", async () => {
     let ua = "";
     const fetch = async (_u: string, init: RequestInit) => {

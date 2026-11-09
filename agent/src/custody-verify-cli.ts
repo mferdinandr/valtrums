@@ -4,7 +4,7 @@
  * It signs and sends nothing and holds no secrets. The RPC URL is never printed.
  *
  *   node dist/custody-verify-cli.js --rpc <url> --tx <hash> --log-index <n> --token <addr> --custody <addr>
- *     --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30]
+ *     --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30] [--max-depth 256] [--state-rpc <url>]
  */
 import { verifyDeposit, type AssetMapping, type Verdict } from "./custody-verifier.js";
 import { RpcFinalitySource } from "./evm-finality-source.js";
@@ -15,14 +15,14 @@ const serialize = (v: unknown): unknown => JSON.parse(JSON.stringify(v, (_k, x) 
 
 export async function pollVerdicts(
   source: RpcFinalitySource, mapping: AssetMapping, request: { transactionHash: string; logIndex: number; battleId?: bigint },
-  opts: { waitSeconds: number; pollSeconds: number; now?: () => number; sleep?: (ms: number) => Promise<void> },
+  opts: { waitSeconds: number; pollSeconds: number; maxAncestryDepth?: bigint; now?: () => number; sleep?: (ms: number) => Promise<void> },
 ): Promise<TimelineEntry[]> {
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const start = now();
   const timeline: TimelineEntry[] = [];
   for (;;) {
-    const verdict: Verdict = await verifyDeposit(source, mapping, request);
+    const verdict: Verdict = await verifyDeposit(source, mapping, request, opts.maxAncestryDepth !== undefined ? { maxAncestryDepth: opts.maxAncestryDepth } : {});
     const fin = await source.finalizedBlock();
     const reasonOrNone = verdict.status === "verified" ? undefined : verdict.reason;
     const last = timeline[timeline.length - 1];
@@ -53,11 +53,11 @@ async function main(): Promise<void> {
     mappingVersion: BigInt(arg("mapping-version")),
   };
   const battle = process.argv.includes("--battle") ? BigInt(arg("battle")) : undefined;
-  const source = new RpcFinalitySource(arg("rpc"));
+  const source = new RpcFinalitySource(arg("rpc"), process.argv.includes("--state-rpc") ? { stateUrl: arg("state-rpc") } : {});
   const timeline = await pollVerdicts(
     source, mapping,
     { transactionHash: arg("tx"), logIndex: Number(arg("log-index")), ...(battle !== undefined ? { battleId: battle } : {}) },
-    { waitSeconds: Number(arg("wait-seconds", "0")), pollSeconds: Number(arg("poll-seconds", "30")) },
+    { waitSeconds: Number(arg("wait-seconds", "0")), pollSeconds: Number(arg("poll-seconds", "30")), maxAncestryDepth: BigInt(arg("max-depth", "256")) },
   );
   console.log(JSON.stringify({ chainId: mapping.chainId.toString(), tx: arg("tx"), timeline }, null, 2));
 }
