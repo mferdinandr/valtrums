@@ -72,3 +72,5 @@ Known risks the owner accepted for the demo: WALLET is not a memecoin by theme a
 
 Registration: the entries are added to the arena's on-chain reference registry by the protocol account (D33), which is the DAO once it exists. Nothing is registered yet.
 
+
+Authenticity, look-alike and holder-concentration review of these six (issue #125, 2026-11-09): [token-authenticity.md](token-authenticity.md).
