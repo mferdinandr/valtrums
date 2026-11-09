@@ -299,3 +299,7 @@ dd {
 .battle-list-action { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; min-height: 40px; min-width: 76px; padding: .5rem .8rem; border: 1px solid #647465; border-radius: 999px; color: #e5eee0; font-size: .75rem; font-weight: 700; }
 .battle-list-action-join { border-color: #d0f570; background: #d0f570; color: #15201b; }
 @media (prefers-reduced-motion: reduce) { .battle-list-card:hover { transform: none; } }
+
+.battle-card-id { color: #aab9ac; font: 700 11px monospace; letter-spacing: .08em; }
+.arena-preview-section { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); align-items: center; gap: 1rem; padding: 1rem; border: 1px dashed #6c7655; border-radius: 1rem; }
+@media (max-width: 640px) { .arena-preview-section { grid-template-columns: 1fr; } }

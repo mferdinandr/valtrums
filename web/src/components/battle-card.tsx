@@ -8,7 +8,7 @@ import { useNow } from "@/hooks/use-now";
 import { msUntilNs, toBigInt } from "@/lib/amounts";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/arena/status";
 import type { BattleView, TokenMeta } from "@/lib/arena/types";
-import { ArrowUpRight, Clock3, Swords } from "lucide-react";
+import { ArrowUpRight, Clock3 } from "lucide-react";
 
 export interface ArenaParticipant {
   token: TokenMeta;
@@ -35,11 +35,11 @@ export function BattleCard({ battle, participants }: { battle: BattleView; parti
   return (
     <Link href={`/battles/${battle.id}`} className="battle-list-card group block h-full" aria-label={`${names}, battle ${battle.id}, ${STATUS_LABEL[battle.status]}. ${depositOpen ? "Join battle" : "View battle"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2"><span className="battle-type"><Swords size={13} /> COMMUNITY BATTLE</span><span className="battle-tribe-count">{participants.length} TRIBES</span></div>
         <Badge tone={STATUS_TONE[battle.status]}>{STATUS_LABEL[battle.status]}</Badge>
+        <span className="battle-card-id">#{String(battle.id).padStart(3, "0")}</span>
       </div>
-      <h3 className="mt-4 text-xl leading-tight">{names}</h3>
-      <p className="mt-2 text-xs leading-5 text-mute">Price performance · Battle #{battle.id}</p>
+      <h3 className="mt-4 text-xl leading-tight">Price performance challenge</h3>
+      <p className="mt-2 text-xs leading-5 text-mute">{participants.map(({ token }) => token.symbol).join(" · ")}</p>
       <div className="battle-list-bottom">
         <div className="min-w-0"><div className="flex items-center"><div className="battle-token-stack" aria-hidden="true">{participants.map(({ token }, index) => <TokenAvatar key={token.id} token={token} index={index} />)}</div><span className="ml-3 text-xs text-mute">{participants.length} communities</span></div>
           <p className="mt-3 flex items-center gap-1.5 text-xs text-mute"><Clock3 size={13} />{timer ? <>{timer.label}: <span className="text-neon-amber"><Countdown targetNs={timer.ns} /></span></> : STATUS_LABEL[battle.status]}</p></div>
@@ -47,4 +47,15 @@ export function BattleCard({ battle, participants }: { battle: BattleView; parti
       </div>
     </Link>
   );
+}
+
+const PREVIEW_TOKENS = ["CASHCAT", "BTCETHUSDT", "REBATE", "OAK", "WIF"].map((symbol) => ({ id: `preview:${symbol}`, symbol, decimals: 0 }));
+
+export function MultiCommunityPreview() {
+  return <article className="battle-list-card h-full" aria-label="Illustrative five-community price gain battle preview">
+    <div className="flex items-center justify-between gap-2"><Badge tone="amber">Preview</Badge><span className="battle-card-id"># —</span></div>
+    <h3 className="mt-4 text-xl leading-tight">Price gain challenge</h3>
+    <p className="mt-2 text-xs leading-5 text-mute">{PREVIEW_TOKENS.map((token) => token.symbol).join(" · ")}</p>
+    <div className="battle-list-bottom"><div><div className="flex items-center"><div className="battle-token-stack" aria-hidden="true">{PREVIEW_TOKENS.map((token, index) => <TokenAvatar key={token.id} token={token} index={index} />)}</div><span className="ml-3 text-xs text-mute">5 communities</span></div><p className="mt-3 text-xs text-mute">Illustration · not a live battle</p></div><span className="battle-list-action text-mute">Preview</span></div>
+  </article>;
 }
