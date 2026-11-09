@@ -11,6 +11,7 @@ import {
   Check,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { MemeMechanics } from "@/components/meme-mechanics";
 
 const PracticeScene = dynamic(() => import("./practice-scene"), { ssr: false, loading: () => <div className="scene-floor h-[340px] sm:h-[420px]" /> });
 const PRACTICE_TOKENS = ["CASHCAT", "BTCETHUSDT", "REBATE", "OAK", "WIF"] as const;
@@ -282,10 +283,21 @@ export function Landing() {
           ))}
         </div>
       </section>
+      <MemeMechanics />
       <section className="target-flow">
         <div className="target-flow-top"><div><p className="eyebrow text-neon-amber">PLANNED / AFTER THE FINAL ROUND</p><h2 className="mt-4 text-3xl">Two paths after a battle.</h2><p className="mt-4 max-w-xl text-sm leading-7 text-mute">The target design separates losing-token rewards from the winning community’s principal. Neither path implies an automatic transfer or burn.</p></div><span className="target-flow-status">NOT AVAILABLE YET</span></div>
         <div className="outcome-grid"><article><span className="eyebrow text-neon-green">01 / LOSING VAULTS</span><h3>Original-token rewards</h3><p>Winners receive an entitlement in each losing token. Allocation, pending payout and confirmed receipt are distinct states.</p></article><article><span className="eyebrow text-neon-cyan">02 / WINNING PRINCIPAL</span><h3>DAO escrow</h3><p>Winning principal stays in escrow until a DAO decision to burn or return it. Governance rules are still open.</p></article></div>
         <p className="mt-5 text-xs leading-6 text-mute">Planned mechanics. The current arena uses different settlement and balance rules.</p>
+      </section>
+      <section className="track-section" aria-label="What powers Valtrum">
+        <p className="eyebrow text-neon-green">FOUR IDEAS / ONE ARENA</p><h2 className="mt-3 text-3xl">More than a meme.</h2>
+        <div className="track-grid">{[
+          ["01", "Meme coins with mechanics", "Communities compete; rival tokens become rewards."],
+          ["02", "Games with real economies", "Locked vaults, 30-second rounds and transparent outcomes."],
+          ["03", "Social money", "A community’s winning principal waits for a DAO decision."],
+          ["04", "AI swarms", "User-funded player agents compete within delegated limits."],
+        ].map(([number, title, text]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
+        <p className="mt-4 text-xs leading-6 text-mute">These are planned hackathon demonstrations. Player agents, DAO governance and target settlement are not yet available.</p>
       </section>
       <section className="relative my-14 overflow-hidden border-y border-edge py-12 md:my-20 md:py-16">
         <div className="pointer-events-none absolute -right-16 -top-28 h-96 w-96 rounded-full border-[40px] border-neon-green/5" />

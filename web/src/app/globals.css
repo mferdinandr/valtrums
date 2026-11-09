@@ -251,3 +251,23 @@ dd {
 .outcome-grid p { margin-top: .6rem; color: #a7b4b0; font-size: .8rem; line-height: 1.7; }
 @media (max-width: 800px) { .target-flow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .outcome-grid { grid-template-columns: 1fr; } }
+
+.meme-mechanics { padding: 1.5rem; border: 1px solid #546246; border-radius: 1rem; background: radial-gradient(ellipse at 100% 0, #b9db5015, transparent 50%), #182321; }
+.meme-example { margin-top: 1.5rem; overflow: hidden; border: 1px solid #435449; border-radius: .75rem; background: #101a1a; }
+.meme-example-intro { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: 1rem; border-bottom: 1px solid #435449; }
+.meme-example-intro span, .meme-paths span { color: #d0f570; font: 700 10px/1.5 monospace; letter-spacing: .1em; }
+.meme-example-intro small { color: #a7b4b0; }
+.meme-example-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: 1rem; border-bottom: 1px solid #34443d; }
+.meme-example-row small { display: block; margin-top: .2rem; color: #a7b4b0; }
+.meme-example-row strong { color: #d0f570; }
+.meme-example-note { padding: 1rem; color: #a7b4b0; font-size: .75rem; line-height: 1.7; }
+.meme-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin-top: 1rem; }
+.meme-paths > div { padding: 1rem; border: 1px solid #425249; border-radius: .65rem; }
+.meme-paths p, .track-grid p { margin-top: .5rem; color: #a7b4b0; font-size: .75rem; line-height: 1.7; }
+.track-section { padding: 3rem 0; }
+.track-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-top: 1.5rem; }
+.track-grid article { padding: 1.1rem; border: 1px solid #425249; border-radius: .7rem; background: #182321; }
+.track-grid span { color: #d0f570; font: 700 10px monospace; }
+.track-grid h3 { margin-top: 1rem; font-size: 1rem; }
+@media (max-width: 900px) { .track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .meme-paths, .track-grid { grid-template-columns: 1fr; } }
