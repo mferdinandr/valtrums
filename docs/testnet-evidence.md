@@ -36,7 +36,9 @@ Dated, read-only evidence for the testnet integration tasks (issue [#72](https:/
 
 That arena is the **legacy two-sided arena**: `get_config` returns the old bond, router and USDC configuration, and `get_lifecycle_battle_count` fails with `MethodNotFound`. **The target arena (lifecycle, reference registry, escrow, DAO) is not deployed**, and neither are the backing, payout, receipt-registry or player-policy contracts. So no target account mapping exists to verify yet.
 
-## 2. Signer, custody path, derived address, gas and code hashes: not verified
+## 2. Signer, custody path, derived address, gas and code hashes: custody and code hashes verified, signer not
+
+Update 2026-11-09: the Robinhood custody contract and six mock tokens are deployed, with gas cost and code-hash comparison, in section 3b. The Robinhood official RPC now has valid TLS. The payout MPC signer, the derived custody address and every NEAR contract are still not deployed. Original 2026-11-08 note:
 
 All of these need the isolated target deployment. Specifically:
 - the arena, backing, payout, receipt registry and player-policy contracts on fresh testnet accounts;
@@ -46,11 +48,31 @@ All of these need the isolated target deployment. Specifically:
 
 None of these exist yet. Record the code hashes with `view_account` (as above) once deployed.
 
-## 3. Source receipts, attribution, finality and reorg evidence: not verified
+## 3. Source receipts, attribution, finality and reorg evidence: partly verified
 
-This needs funded deposits and payouts on the target deployment. Recorded so far: Robinhood testnet exposes a `finalized` head (about 7,300 blocks behind the latest at the time of reading). The indexer (#92) and the payout reconciler only treat source receipts as final along that head. No real receipt has been recorded.
+Update 2026-11-09: a real fixture deposit on Robinhood testnet was verified end to end through the custody verifier (section 3b). Payout receipts, the NEAR side, and a live reorg are still not verified. Original 2026-11-08 note: this needs funded deposits and payouts on the target deployment. Recorded then: Robinhood testnet exposes a `finalized` head (about 7,300 blocks behind the latest at the time of reading). The indexer (#92) and the payout reconciler only treat source receipts as final along that head. No real receipt has been recorded.
+
+## 3b. Robinhood testnet: custody, mock tokens, one real deposit (recorded 2026-11-09)
+
+Raw values: [`evidence/2026-11-09-evm-testnet-deploy.json`](evidence/2026-11-09-evm-testnet-deploy.json). Addresses and the rebuild recipe: [deployment.md](deployment.md). All contracts and the deposit are **fixtures** (mock tokens, no value); only the observations of the network are live evidence. Not covered: any NEAR contract, the MPC signer, a payout, or a signed registry attestation.
+
+**Identity (re-verified).** `https://rpc.testnet.chain.robinhood.com` now serves a valid certificate (the 2026-11-08 TLS failure is gone) and reports chain id `0xb626` = 46630. dRPC agrees on the chain id and on block hashes (it may share an upstream, so this is weak independence). The explorer `explorer.testnet.chain.robinhood.com` is reachable and runs Blockscout. The `safe` and `finalized` tags exist: at 03:56Z `finalized` was about 7,300 blocks (18 minutes) behind latest and `safe` about 5,200 blocks; `finalized` moves in jumps of 2,000 to 3,000 blocks.
+
+**Historical state.** The official RPC sits behind a load balancer with inconsistent pruning: reads 1,000 blocks back succeed, at about 7,300 blocks back they succeed about 1 time in 6, and at 12,000 or more they fail. dRPC served 40,000 blocks back consistently. A receipt block is only finalized once it is more than 7,300 blocks old, so the official RPC alone often cannot answer the verifier's `balanceOf` at the receipt block.
+
+**Deployment.** Custody `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` and six mock tokens (`mCASHCAT`, `mWALLET`, `mGOOD`, `mAI`, `mVLAD`, `mDEGEN`, each marked "Mock", 18 decimals, mint only by the deployer) were deployed from `0xcE806A7E…75c6`. Forge tests pass (9). On-chain code hashes equal the local build (custody directly; the mocks after patching the owner immutable). Gas for everything including the deposit: 0.0000357 ETH. Explorer source verification is blocked on the explorer side (its verifier lists no compilers); the compiler settings and hashes are recorded instead.
+
+**Deposit.** Tx `0xf80c2d84…052b`, block 150,680,936, log index 1: 100 mCASHCAT for battle 1, beneficiary `valtrum-user1-b694.testnet`, refund address the deployer, mapping version 3 (fixture value; D17 needs a new version for the changed event layout and none is committed). `received` equals `requested`.
+
+**Verifier.** Before finality: `pending` ("receipt is not finalized", 04:00:57Z). The node's `finalized` tag covered the block about 18 minutes after the deposit. With the default ancestry depth of 256 the verifier stays `pending` ("receipt too far below finalized head"). With `--max-depth 30000` and historical balances read from dRPC it returned **verified** at 05:49:37Z: token, battle, beneficiary, refund address and `actualReceived` 100e18 attributed, finalized head 150,694,540. The unsigned attestation has no signer; the registry signer is not deployed.
+
+**Finding.** The ancestry walk is one RPC call per block: 382 seconds for 4,175 blocks, 3,522 seconds for about 14,000. A 30-second product cannot use it as is; the policy (trust the `finalized` tag plus a by-number hash equality check, or batched reads) needs an owner decision, and it changes the verifier's trust assumption, so it was not changed here.
+
+**Reorg verification.** Procedure: re-read the deposit block by number from two endpoints and compare hash and parent hash, repeat after a delay, check it is at or below `finalized`, and walk parents to the finalized head. Done at 04:32Z and 05:49Z: the hash was stable and both endpoints agreed. This cannot show a reorg: none occurred, the chain is a single-sequencer Arbitrum-style L2, the two endpoints may share an upstream, and "finalized" is the node's own label, not a check against Ethereum Sepolia. The retract and suspend path stays fixture-tested.
 
 ## 4. Fixture labels
+
+- **EVM testnet fixtures (section 3b):** the six `m*` mock tokens, `TestnetDepositCustody` (a prototype whose source says no real funds), mapping version 3, and the deposit itself.
 
 - **Runtime mock adapters** are labelled `FIXTURE` in code:
   - agent: `MockStepExecutor`, mock DEX market, honeypot and quote;
