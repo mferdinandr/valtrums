@@ -81,3 +81,22 @@ The target SHALL include NEAR Intents funding/routing and Bitte agent orchestrat
 #### Scenario: Intended service flow
 - **WHEN** a supported funding action is orchestrated through Bitte and routed through Intents
 - **THEN** evidence binds the preview, authorization, route status and final custody receipt to the same user action; fixture evidence remains labeled
+
+### Requirement: Labelled testnet Intents fixture
+A local fixture of the 1Click API with a fake solver SHALL provide the testnet funding path through the route `intents-fixture`. It SHALL be accepted only in a testnet configuration, labelled in logs, responses, previews, statuses and UI, and pinned to the recorded mainnet responses. It SHALL NOT count as Intents verification; the real route stays a gap and other routes stay refused.
+
+#### Scenario: Fixture matches the recording
+- **WHEN** the fixture's discovery and dry quotes are compared with the recorded mainnet responses
+- **THEN** field names, types, formats, decimals and quoted amounts match, and any drift fails a test
+
+#### Scenario: Route acceptance
+- **WHEN** a deposit names `intents-fixture` outside a testnet configuration, or any route other than `direct` and the enabled fixture route
+- **THEN** the action boundary refuses it as `unsupported_route` before anything is stored
+
+#### Scenario: Solver failure and refund
+- **WHEN** the fake solver fails or refunds a funded quote
+- **THEN** nothing is credited, and a replayed delivery receipt credits at most once
+
+#### Scenario: Fixture labelling
+- **WHEN** a quote, status, preview, action status or terminal result concerns the fixture
+- **THEN** it carries the fixture label and is never presented as a verified Intents integration

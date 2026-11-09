@@ -23,10 +23,17 @@ Check tasks only after implementation and verification. Research can proceed ind
 
 - [ ] Verify Intents testnet asset discovery, quote, route and funding/refund status for the selected assets.
   - [x] Recorded 2026-11-08 (`docs/intents-evidence.md`): 1Click lists Robinhood mainnet (`hood`: USDG, WETH, ETH, CASHCAT, USDe, PONS) and dry-quotes NEAR USDC to CASHCAT, USDG and ETH; it lists no testnet asset, so no testnet route, funding or refund status can be verified.
+- [x] Build a local testnet fixture of the 1Click API (discovery, dry and committed quote, deposit submission, execution status including refund and failure) with a fake solver that can complete, fail or refund. (`agent/src/intents-fixture/`; `agent/test/intents-fixture/solver.test.ts`, `server.test.ts`.) Fixture only.
+- [x] Pin the fixture's discovery and dry-quote responses to the recorded mainnet responses with golden and drift tests. (`agent/test/intents-fixture/golden.test.ts`; the recording is a summary, so unrecorded fields are checked against the OpenAPI list.)
+- [x] Accept the `intents-fixture` route only in a testnet configuration, label it in logs, status responses and UI, and keep refusing every other route. (`agent/test/intents-fixture/route.test.ts`, `web/src/lib/terminal/actions.test.ts`.) The real `intents` route stays refused.
+- [x] Document the mainnet-to-mock asset mapping and the migration to a real route. (`docs/intents-asset-mapping.md`.)
+- [x] Record a labelled fixture trace binding the user action, preview, authorization, route status and custody receipt. (`docs/evidence/2026-11-09-intents-fixture-trace.json`, `agent/test/intents-fixture/trace.test.ts`.) Fixture evidence: it does not complete the Intents binding task below.
+- [ ] Record the live fixture or real-route trace on the testnet deployment and custody (needs #72 and funded accounts).
+- [ ] Add a script that refreshes the recording using only the public read-only endpoints with `dry: true` and no credentials, then re-run the drift tests.
 - [ ] Verify Bitte orchestration of a canonical arena preview and user-authorized action.
   - Not verified: no Bitte account or agent exists; the #76 action boundary and #77 proposals are the integration points.
 - [ ] Bind the user action, preview, authorization, Intents route status and final custody receipt in recorded evidence.
-  - Not verified: needs the target testnet deployment, a supported route and a funded action.
+  - Not verified: needs the target testnet deployment, a supported route and a funded action. A fixture-only trace exists (see the fixture tasks above); it is not live evidence.
 - [x] Record unsupported routes as integration gaps; direct deposit alone does not complete Intents or Bitte acceptance. (`docs/intents-evidence.md` section 4: Intents on testnet and Bitte are gaps; the arena boundary refuses non-direct routes with `unsupported_route`.)
 
 ## Observability and recovery
