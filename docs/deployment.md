@@ -78,3 +78,36 @@ Target only NEAR testnet and Robinhood Chain testnet. No target custody, represe
 8. Record addresses, code hashes, policy versions, signer paths, finality, receipts and failures for a two/three-community demo.
 
 This rollout must not overwrite the historical deployment or claim an unsupported Intents/testnet route. [Security review](security-review.md) and [roadmap](implementation-roadmap.md) list unfinished checks.
+
+## Robinhood testnet (46630): custody and mock tokens deployed 2026-11-09
+
+Recorded in [testnet-evidence.md](testnet-evidence.md) section 6 and [`evidence/2026-11-09-evm-testnet-deploy.json`](evidence/2026-11-09-evm-testnet-deploy.json). These are **fixtures** on a public testnet (no value), deployed with the owner's testnet deployer address `0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6`. Keys stay in the git-ignored `.env` and a local Foundry keystore; nothing secret is committed.
+
+| Contract | Address |
+| --- | --- |
+| `TestnetDepositCustody` | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` |
+| `mCASHCAT` (mock) | `0x5b2BA17e5be1B611c1299809Db89c5Fe21D9D0a6` |
+| `mWALLET` (mock) | `0x78e7621559bC0E3CC10F8bB61dc2a371afe66e27` |
+| `mGOOD` (mock) | `0xAED11A367b102f2da3ac2dFcF1De9cC97A47a850` |
+| `mAI` (mock) | `0x973C4E0601c03a4899b8c9643b299aaaecE4ba0A` |
+| `mVLAD` (mock) | `0xD879e8483d63265abe2549A347017E59a04a15BC` |
+| `mDEGEN` (mock) | `0x209AA417c2aa45a13304Acc51c4c393d0Ac5Ba84` |
+
+Reproduce the build and compare code hashes (Solidity 0.8.28, optimizer on with 200 runs, EVM `cancun`, default metadata hash `ipfs`):
+
+```bash
+cd evm && forge test && forge build
+cast code <address> --rpc-url https://rpc.testnet.chain.robinhood.com | xargs cast keccak   # compare with deployedBytecode in out/<File>.sol/<Contract>.json
+```
+
+`MockToken` stores its owner as an immutable, so its runtime code embeds the deployer address; patch the immutable reference with the owner before comparing (the evidence file records the matching hash). Deploy with a Foundry keystore (`forge create <file>:<Contract> --broadcast --account <name> --password-file <file> --rpc-url ...`), never with the key on the command line. Explorer source verification is blocked (see the evidence file).
+
+Read-only verification of a deposit (signs and sends nothing):
+
+```bash
+pnpm -C agent build
+node agent/dist/custody-verify-cli.js --rpc https://rpc.testnet.chain.robinhood.com --tx <hash> --log-index <n> \
+  --token <addr> --custody <addr> --mapping-version 3 --battle <id> --wait-seconds 2700 --poll-seconds 20
+```
+
+Mapping version `3` is a **fixture value** taken from the verifier tests. D17 changed the event layout, so a real deployment must commit a new version that invalidates receipts of the old layout; the owner has not fixed a value.
