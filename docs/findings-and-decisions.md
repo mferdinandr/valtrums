@@ -106,6 +106,18 @@ Third-party sources only; not checked against an official Uniswap or Robinhood p
 - The same repository warns that Robinhood Chain ships a modified UniversalRouter and that look-alike router addresses exist.
 - v4 pools share one PoolManager, so a pool's liquidity cannot be read with `balanceOf` on a pool address; it needs StateView reads and tick math. Feasibility is unconfirmed.
 
+## Research findings (2026-11-09): market-data verification for the six demo tokens
+
+Issue [#110](https://github.com/mferdinandr/valtrum/issues/110); record in [market-data-verification.md](market-data-verification.md) and [evidence/2026-11-09-market-data-verification.json](evidence/2026-11-09-market-data-verification.json). Recorded live read-only evidence (04:25Z to 04:41Z), no fixtures; tokens: CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN.
+
+- The owner `REFERENCE_RPC_URL` (the Robinhood-hosted public RPC) was unreachable from 04:20Z to 04:37Z (connection reset, TLS handshake timeout; TLS not bypassed), although the same host answered the earlier 2026-11-09 token scan. A keyless PublicNode RPC (not the owner's) answered for the latest block only.
+- Price: `slot0` at latest is readable in about 350 to 380 ms and within 0.15% of DexScreener for five tokens (AI differed by 15.5%, a stale snapshot). No price at a past boundary block: every older block, `safe`/`finalized` state and past log range returned a 403 or "historical state not available".
+- Finality: `finalized` trails `latest` by 10,047 blocks (1,066 s, about 18 minutes), `safe` by 6,163 blocks (653 s); block time about 0.106 s (about 283 blocks per 30 s round). Single sample (2026-11-08: about 14 minutes).
+- Circulating supply: no source for any token. Total supply is exact on-chain; GeckoTerminal market cap is null for three tokens and inconsistent for DEGEN (30 times its fdv). VLAD and DEGEN keep 70% and 88% of supply in one contract each (not identified).
+- Volume and drawdown: DexScreener's shortest window is 5 minutes; GeckoTerminal trades lag from 20 s to 37 minutes, return 300 trades and use whole-second timestamps; second candles are paid-only (401). Trades appear in 100%, 38%, 12%, 9%, 3% and 1% of 30 second windows (AI, CASHCAT, WALLET, GOOD, DEGEN, VLAD), so most rounds of the thin tokens tie at zero.
+- Affected modes: all four lack reproducible boundary data; Market Cap % Growth and Volume-to-Market Cap Ratio additionally lack a supply rule. Live forward sampling could demonstrate Price % Gain and Lowest % Drawdown for all six, unfinalized.
+- Provider, cadence, tolerance, supply rule and finality tag remain owner decisions; options are under "Deviations / assumptions" in the record. Not verified: the owner RPC, Uniswap v4 reads, a live sampling run across a round.
+
 ## Research findings (2026-11-08): scoring market data
 
 Full record: [scoring-market-data.md](scoring-market-data.md) (issue [#68](https://github.com/mferdinandr/valtrum/issues/68)); request log in [evidence/2026-11-08-scoring-market-data.json](evidence/2026-11-08-scoring-market-data.json). Aggregator responses only, not on-chain verified.
@@ -268,7 +280,7 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 | DAO governance: default vote window value and per-token sink address | Owner | Governance decided (D22); these deployment values remain |
 | Testnet accounts and funds for #72 and #113 | Owner | Names of the 2 to 3 council accounts, funded NEAR testnet accounts, Robinhood testnet funds and RPC; keys only in a git-ignored `.env` (D28) |
 | Retention for the audit report archive (`MAX_OBSERVATIONS` 100,000, no prune) | Owner | Not decided in #109, which covered the indexer only; the archive stops accepting observations at its limit |
-| Scoring provider, cadence, boundary tolerance, anti-manipulation limits and a circulating-supply rule | Owner | Options in [scoring-market-data.md](scoring-market-data.md); a working mainnet archive RPC is a prerequisite for the recommended on-chain option |
+| Scoring provider, cadence, boundary tolerance, anti-manipulation limits and a circulating-supply rule | Owner | Options in [scoring-market-data.md](scoring-market-data.md); a working mainnet archive RPC is a prerequisite for the recommended on-chain option; the 2026-11-09 check ([market-data-verification.md](market-data-verification.md)) found the owner RPC unreachable and no archive state on the free public RPC |
 
 ## Planned improvements (not scheduled)
 
