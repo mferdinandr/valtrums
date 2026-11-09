@@ -6,8 +6,9 @@ Check tasks only after implementation and verification. Research can proceed ind
 
 - [ ] Verify NEAR testnet and Robinhood testnet chain ID `46630`, configured RPC identity and testnet account mappings.
   - [x] Recorded 2026-11-08 (`docs/testnet-evidence.md`): NEAR testnet `chain_id`/genesis hash and Robinhood testnet chain id 46630 agree across two providers each; Robinhood's own testnet RPC fails TLS. The only deployment (`8875bb`) is the legacy arena (no lifecycle API), so target account mappings cannot be verified until the target is deployed.
+  - NEAR side verified 2026-11-09: the target arena, backing, receipt registry, payout and player-policy exist on `*.valtrum-owner-b694.testnet` and the DAO on `sputnikv2.testnet` (`docs/evidence/2026-11-09-near-testnet-deploy.json`). The Robinhood side (custody, mock tokens) is not mapped yet.
 - [ ] Verify signer account, custody path, derived address, gas funding and deployed code hashes for the isolated testnet setup.
-  - Not verified: no target deployment, MPC signer configuration, derived address or funded gas exists yet (`docs/testnet-evidence.md`, section 2).
+  - Partly verified 2026-11-09 (`docs/evidence/2026-11-09-near-testnet-deploy.json`, `docs/testnet-evidence.md` section 2): signer `v1.signer-prod.testnet` inspected, the EVM address of `payout.valtrum-owner-b694.testnet` with path `valtrum-custody-1` computed, one zero-value `sign` call succeeded and its signature recovers to the derived address, NEAR code hashes equal the built wasm. Still open: funding that address with Robinhood testnet ETH and registering the backing in payout (needs the EVM deployment).
 - [x] Refuse signing and source receipt acceptance when RPC chain identity differs from configuration. Verified by fake-RPC tests (`agent/test/chain-guard.test.ts`, `foreign-executor.test.ts`, `custody-verifier.test.ts`); no live network claim.
 - [ ] Record actual source receipt, attribution, finality and reorg-verification evidence.
   - Not verified: needs funded deposits and payouts on the target deployment; only the presence of a `finalized` head on Robinhood testnet is recorded.

@@ -259,6 +259,14 @@ Known file overlaps between issues, noted as comments on them: #63 and #60 both 
 | Retention for the audit report archive (`MAX_OBSERVATIONS` 100,000, no prune) | Owner | Not decided in #109, which covered the indexer only; the archive stops accepting observations at its limit |
 | Scoring provider, cadence, boundary tolerance, anti-manipulation limits and a circulating-supply rule | Owner | Options in [scoring-market-data.md](scoring-market-data.md); a working mainnet archive RPC is a prerequisite for the recommended on-chain option |
 
+## Status notes, 2026-11-09 (NEAR testnet deployment, #72 and #113)
+
+Appended status only; no decision rows were added or changed.
+
+- D33 and D28: live. The DAO `valtrum-protocol.sputnikv2.testnet` was created from the owner's accounts (tx `7mPdsL7ZjtkJjgskKAactY3jtm98eaCMyCxjXGaevKVK`, 6 NEAR deposit accepted), the arena protocol account and a fixture backing owner point at it, and a 2-of-3 council proposal changed the arena DAO window to 86400 on testnet. The owner and a lone council member were refused. Evidence: [evidence/2026-11-09-near-testnet-deploy.json](evidence/2026-11-09-near-testnet-deploy.json), [sputnik-authority.md](sputnik-authority.md).
+- D21 and D17: the NEAR contracts are deployed on `*.valtrum-owner-b694.testnet` and the signer `v1.signer-prod.testnet` interface was exercised once (zero-value `sign`, 1 yocto, signature recovers to the derived address). Derived custody address for `payout.valtrum-owner-b694.testnet` with path `valtrum-custody-1`: `0x0b740E3E90491f57699fCCD8276400E65BC70c41`, not funded or registered. Open: Robinhood custody funding and payout registration, real-token backings, reference-registry proposals (need the mock token addresses), the arena deploy transaction hash (lost), the `usdc` fixture and registry verifier assumptions.
+- Public NEAR testnet RPC endpoints rate-limit quickly (the official one answers 429 as deprecated); use a keyed provider for repeat runs.
+
 ## Planned improvements (not scheduled)
 
 - Fallback audit for tokens GoPlus does not cover: static checks from Sourcify and on-chain reads can only fill administration and ownership context.
