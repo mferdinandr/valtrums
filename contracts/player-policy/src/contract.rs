@@ -7,8 +7,10 @@
 //!
 //! No signing, token transfer, MPC call or custody access happens here: a reservation is an
 //! authorization and a budget hold, never a transfer or proof of funds. Outcome transitions
-//! (dispatch/consume/release/reconcile) are modeled in the pure core and are exposed only by the
-//! `sandbox-fixtures` build; the normal contract has no confirmation or unlock bypass.
+//! (dispatch/consume/reconcile) are modeled in the pure core and are exposed only by the
+//! `sandbox-fixtures` build; the normal contract has no confirmation or unlock bypass. The normal
+//! build can only release a reservation that was never dispatched: the user or delegate cancels it,
+//! or anyone releases it after its expiry. A dispatched obligation is never released by either.
 use crate::{
     AssetKey, BattleScope, Budget, CanonicalAction, Grant, GrantId, Hash, Reservation,
     ReservationState,
@@ -19,6 +21,13 @@ use near_sdk::store::LookupMap;
 use near_sdk::{
     env, near, require, AccountId, BorshStorageKey, NearToken, PanicOnDefault, Promise,
 };
+
+/// Default lifetime of an undispatched reservation: 1 hour. Agent choice (owner decision 2026-11-09:
+/// expiry exists, length is configurable); recorded as an assumption.
+pub const DEFAULT_RESERVATION_TTL_NS: u64 = 3_600_000_000_000;
+/// Bounds for the configurable reservation lifetime: 1 minute to 7 days.
+pub const MIN_RESERVATION_TTL_NS: u64 = 60_000_000_000;
+pub const MAX_RESERVATION_TTL_NS: u64 = 604_800_000_000_000;
 
 #[near(serializers = [borsh])]
 #[derive(BorshStorageKey)]
@@ -50,6 +59,8 @@ pub struct PlayerPolicy {
     owner: AccountId,
     /// Only meaningful in the `sandbox-fixtures` build; unused (and unsettable) otherwise.
     executor: Option<AccountId>,
+    /// Lifetime applied to new reservations; existing reservations keep their own expiry.
+    reservation_ttl_ns: u64,
     grants: LookupMap<Hash, StoredGrant>,
     grant_versions: LookupMap<VersionKey, Grant>,
     budgets: LookupMap<Hash, Budget>,
@@ -156,6 +167,7 @@ pub struct ReservationView {
     pub amount: U128,
     pub version: U64,
     pub action_hash: Hash,
+    pub expires_ns: U64,
 }
 
 fn emit(event: &str, data: Value) {
@@ -189,6 +201,7 @@ impl PlayerPolicy {
         Self {
             owner,
             executor: None,
+            reservation_ttl_ns: DEFAULT_RESERVATION_TTL_NS,
             grants: LookupMap::new(StorageKey::Grants),
             grant_versions: LookupMap::new(StorageKey::GrantVersions),
             budgets: LookupMap::new(StorageKey::Budgets),
@@ -203,6 +216,7 @@ impl PlayerPolicy {
     #[payable]
     pub fn create_grant(&mut self, input: GrantInput) {
         let user = env::predecessor_account_id();
+        require!(input.delegate != user, "Delegate must differ from user");
         let grant = Grant {
             user: user.clone(),
             delegate: input.delegate,
@@ -223,6 +237,9 @@ impl PlayerPolicy {
         let id = grant.id().0;
         let before = env::storage_usage();
         if let Some(existing) = self.grants.get(&id) {
+            // Revocation is permanent per grant id: a version bump never re-enables it. The user
+            // continues with a new local id.
+            require!(!existing.revoked, "Grant revoked");
             require!(
                 grant.version > existing.grant.version,
                 "Grant version must increase"
@@ -267,8 +284,9 @@ impl PlayerPolicy {
         );
     }
 
-    /// Revoke the caller's own grant. Persistent and idempotent. Blocks new authorizations; it does
-    /// not erase existing obligations, which remain attributable.
+    /// Revoke the caller's own grant. Permanent (no version bump or replacement re-enables it) and
+    /// idempotent. Blocks new authorizations; it does not erase or release existing obligations,
+    /// which remain attributable. Undispatched reservations can be cancelled or expire.
     #[payable]
     pub fn revoke_grant(&mut self, local_id: Hash) {
         near_sdk::assert_one_yocto();
@@ -331,6 +349,15 @@ impl PlayerPolicy {
             existing
                 .matches(&action_hash)
                 .unwrap_or_else(|_| env::panic_str("Conflicting request"));
+            require!(
+                existing.state != ReservationState::Released,
+                "Reservation released; use a new request id"
+            );
+            require!(
+                existing.state != ReservationState::Reserved
+                    || env::block_timestamp() < existing.expires_ns,
+                "Reservation expired"
+            );
             // Idempotent: refund the whole deposit; no new storage or budget charge.
             let deposit = env::attached_deposit();
             if !deposit.is_zero() {
@@ -345,6 +372,9 @@ impl PlayerPolicy {
         budget
             .reserve(canonical.amount)
             .unwrap_or_else(|_| env::panic_str("Budget exceeded"));
+        let expires_ns = env::block_timestamp()
+            .checked_add(self.reservation_ttl_ns)
+            .unwrap_or_else(|| env::panic_str("Expiry overflow"));
         let reservation = Reservation {
             request_key,
             action_hash,
@@ -352,6 +382,7 @@ impl PlayerPolicy {
             version: canonical.version,
             amount: canonical.amount,
             state: ReservationState::Reserved,
+            expires_ns,
         };
         let before = env::storage_usage();
         self.budgets.insert(id, budget);
@@ -368,8 +399,108 @@ impl PlayerPolicy {
                 "amount": U128(canonical.amount),
                 "reserved": U128(budget.reserved),
                 "consumed": U128(budget.consumed),
+                "expires_ns": U64(expires_ns),
             }),
         );
+    }
+
+    /// Cancel a reservation that has not been dispatched, restoring its budget. Callable by the
+    /// grant's user or its current delegate, also after revocation or expiry. A dispatched or
+    /// reconciliation-required obligation is never released here.
+    #[payable]
+    pub fn cancel_reservation(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
+        near_sdk::assert_one_yocto();
+        let caller = env::predecessor_account_id();
+        let (id, mut reservation, mut budget) =
+            self.load_reservation(&user, &local_id, &request_id);
+        let stored = self
+            .grants
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("Unknown grant"));
+        require!(
+            caller == stored.grant.user || caller == stored.grant.delegate,
+            "Not authorized"
+        );
+        let changed = reservation
+            .release(&mut budget)
+            .unwrap_or_else(|_| env::panic_str("Reservation cannot be cancelled"));
+        self.store_release(id, reservation, budget, changed, "cancelled", &user);
+    }
+
+    /// Release a reservation that was never dispatched once its expiry has passed. Permissionless:
+    /// it only restores unused budget and can never touch a dispatched obligation.
+    #[payable]
+    pub fn release_expired(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
+        near_sdk::assert_one_yocto();
+        let (id, mut reservation, mut budget) =
+            self.load_reservation(&user, &local_id, &request_id);
+        let changed = reservation
+            .expire(&mut budget, env::block_timestamp())
+            .unwrap_or_else(|_| env::panic_str("Reservation cannot be released"));
+        self.store_release(id, reservation, budget, changed, "expired", &user);
+    }
+
+    /// Owner-only: set the lifetime of future reservations within fixed bounds. It does not change
+    /// existing reservations and cannot grant spending authority.
+    #[payable]
+    pub fn set_reservation_ttl(&mut self, ttl_ns: U64) {
+        near_sdk::assert_one_yocto();
+        require!(env::predecessor_account_id() == self.owner, "Only owner");
+        require!(
+            (MIN_RESERVATION_TTL_NS..=MAX_RESERVATION_TTL_NS).contains(&ttl_ns.0),
+            "TTL out of bounds"
+        );
+        self.reservation_ttl_ns = ttl_ns.0;
+    }
+
+    fn load_reservation(
+        &self,
+        user: &AccountId,
+        local_id: &Hash,
+        request_id: &Hash,
+    ) -> (Hash, Reservation, Budget) {
+        let key = request_lookup(user, local_id, request_id);
+        let reservation = self
+            .reservations
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| env::panic_str("Unknown reservation"));
+        let budget = *self
+            .budgets
+            .get(&reservation.grant)
+            .unwrap_or_else(|| env::panic_str("Missing budget"));
+        (reservation.grant, reservation, budget)
+    }
+
+    fn store_release(
+        &mut self,
+        grant: Hash,
+        reservation: Reservation,
+        budget: Budget,
+        changed: bool,
+        reason: &str,
+        user: &AccountId,
+    ) {
+        let key = reservation.request_key;
+        let amount = reservation.amount;
+        self.budgets.insert(grant, budget);
+        self.reservations.insert(key, reservation);
+        self.budgets.flush();
+        self.reservations.flush();
+        if changed {
+            emit(
+                "reservation_released",
+                json!({
+                    "user": user,
+                    "grant_id": hex(&grant),
+                    "request_key": hex(&key),
+                    "amount": U128(amount),
+                    "reason": reason,
+                    "reserved": U128(budget.reserved),
+                    "consumed": U128(budget.consumed),
+                }),
+            );
+        }
     }
 
     // --- Views (bounded, read-only) ---
@@ -410,6 +541,7 @@ impl PlayerPolicy {
             amount: U128(r.amount),
             version: U64(r.version),
             action_hash: r.action_hash,
+            expires_ns: U64(r.expires_ns),
         })
     }
 
@@ -514,8 +646,8 @@ impl PlayerPolicy {
             );
         }
         reservation
-            .dispatch()
-            .unwrap_or_else(|_| env::panic_str("Wrong state"));
+            .dispatch(env::block_timestamp())
+            .unwrap_or_else(|_| env::panic_str("Wrong state or reservation expired"));
         self.reservations.insert(key, reservation);
     }
 

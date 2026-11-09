@@ -79,7 +79,7 @@ Replay must reproduce the same projection without minting, allocating or paying 
 
 ## Planned player-agent and MCP boundary
 
-A player policy binds user, contracts/methods, chain/asset/community filters, per-action/cumulative token budgets, gas, expiry, destinations and revocation. Unused funds remain attributable/recoverable. Model output cannot widen a grant. Enforce token limits and expiry outside the browser; legacy session keys only provide narrower method/receiver/gas restrictions.
+A player policy binds user, contracts/methods, chain/asset/community filters, per-action/cumulative token budgets, gas, expiry, destinations and revocation. Unused funds remain attributable/recoverable: the user or delegate may cancel an undispatched reservation, undispatched reservations expire (default 1 hour, configurable), a dispatched obligation is never released by timeout or revocation alone, a delegate differs from the user and revocation is permanent per grant id. Model output cannot widen a grant. Enforce token limits and expiry outside the browser; legacy session keys only provide narrower method/receiver/gas restrictions.
 
 | Planned MCP tool | Permission | Result |
 | --- | --- | --- |
