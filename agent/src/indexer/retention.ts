@@ -20,6 +20,14 @@ import type { StoreState, StoredBlock } from "./store.js";
 /** Default number of finalized blocks kept behind the finalized head. An agent choice (assumption). */
 export const DEFAULT_FINALIZED_RETENTION_DEPTH = 10_000;
 
+/** Parse a retention depth from a flag or environment value; unset means the default. */
+export function parseRetentionDepth(raw: string | undefined, name = "INDEXER_RETENTION_DEPTH"): number {
+  const value = raw?.trim();
+  if (!value) return DEFAULT_FINALIZED_RETENTION_DEPTH;
+  if (!/^[1-9][0-9]{0,8}$/.test(value)) throw new Error(`${name} must be a positive integer`);
+  return Number(value);
+}
+
 export interface RetentionCheckpoint {
   /** Always `summary`: a hashed summary of pruned history, never the history itself. */
   kind: "summary";

@@ -3,6 +3,7 @@ import { argv, env as processEnv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { IndexerEngine } from "./engine.js";
 import { buildProjection } from "./projection.js";
+import { parseRetentionDepth } from "./retention.js";
 import { RecordedBlockSource, validateRecordedChain } from "./recorded-source.js";
 import { JsonFileIndexerStore } from "./store.js";
 import type { IndexerConfig, IndexerHealthStatus } from "./types.js";
@@ -89,7 +90,7 @@ export async function runIndexerCli(
     case "import": {
       const chainPath = parsed.flags.get("chain");
       if (!chainPath) {
-        io.err("usage: import --chain <file.json> [--dir <state>] [--contract a,b] [--network n]");
+        io.err("usage: import --chain <file.json> [--dir <state>] [--contract a,b] [--network n] [--retention-depth n]");
         return 1;
       }
       let chain;
@@ -99,7 +100,14 @@ export async function runIndexerCli(
         io.err(`cannot read recorded chain: ${err instanceof Error ? err.message : String(err)}`);
         return 1;
       }
-      const engine = new IndexerEngine(new RecordedBlockSource(chain), new JsonFileIndexerStore(dir), deriveConfig(chain, parsed.flags));
+      let depth: number;
+      try {
+        depth = parseRetentionDepth(parsed.flags.get("retention-depth") ?? env.INDEXER_RETENTION_DEPTH, "retention depth");
+      } catch (err) {
+        io.err(err instanceof Error ? err.message : String(err));
+        return 1;
+      }
+      const engine = new IndexerEngine(new RecordedBlockSource(chain), new JsonFileIndexerStore(dir), deriveConfig(chain, parsed.flags), { finalizedRetentionDepth: depth });
       await engine.open();
       try {
         // Drain to the head: keep syncing until the processed head stops advancing.
@@ -138,6 +146,9 @@ export async function runIndexerCli(
           diagnosticsDropped: state.diagnosticsDropped,
           ignoredLogs: state.ignoredLogs,
           blocks: state.blocks.length,
+          // A summary of pruned finalized history, not raw history; null until the first prune.
+          checkpoint: state.checkpoint,
+          reorgSuspension: state.reorgSuspension,
         }),
       );
       return exitForHealth(state.health.status);
