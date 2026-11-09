@@ -1,6 +1,7 @@
 import { compareDecimal, formatDecimal, parseDecimal } from "./decimal.js";
 import type { AuditRecord, Reason } from "./decision.js";
 import { CRITICAL_FLAGS, PRIVILEGE_FLAGS, TAX_FIELDS, type Tri } from "./goplus.js";
+import { isKnownReasonCode } from "./reason-summary.js";
 import { VALUATION_SOURCE } from "./liquidity.js";
 import { ownershipRenounced, type Renounced } from "./policy.js";
 
@@ -199,7 +200,7 @@ export function formatAuditReport(r: AuditReport): string {
   lines.push(`Valuation source: ${r.liquidity.valuationSource}. ${r.liquidity.valuationNote}`);
   lines.push("Reasons:");
   if (r.reasons.length === 0) lines.push("  none");
-  for (const x of r.reasons) lines.push(`  [${x.code}]${x.field ? ` ${x.field}:` : ""} ${x.message}`);
+  for (const x of r.reasons) lines.push(`  [${x.code}]${x.field ? ` ${x.field}:` : ""} ${x.message}${isKnownReasonCode(x.code) ? "" : " (unknown reason code)"}`);
   return lines.join("\n");
 }
 
