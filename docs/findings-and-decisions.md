@@ -135,6 +135,16 @@ Issue [#72](https://github.com/mferdinandr/valtrum/issues/72); record in [testne
 - **Robinhood's own RPCs:** the testnet RPC fails TLS, and the mainnet hosts serve an expired certificate.
 - **Deployment:** the only testnet deployment (`8875bb`) is the legacy arena (`get_lifecycle_battle_count` returns MethodNotFound). The target contracts, the MPC signer, the derived custody address and gas are not deployed, so signer and receipt evidence cannot be recorded yet.
 
+## Status note (2026-11-09): Robinhood testnet deployment and deposit
+
+Issue [#72](https://github.com/mferdinandr/valtrum/issues/72), EVM half; record in [testnet-evidence.md](testnet-evidence.md) section 3b and [evidence/2026-11-09-evm-testnet-deploy.json](evidence/2026-11-09-evm-testnet-deploy.json). Fixtures except the network observations.
+
+- **Done:** `TestnetDepositCustody` and six mock tokens (`mCASHCAT`, `mWALLET`, `mGOOD`, `mAI`, `mVLAD`, `mDEGEN`) deployed on 46630 with the owner-authorised deployer (custody `0xb994DCAb…7798`); code hashes match the local build; one real deposit (mapping version 3) was verified by the custody verifier after the node's `finalized` tag covered it. Total gas 0.0000357 ETH.
+- **Official RPC:** `rpc.testnet.chain.robinhood.com` has valid TLS now (it failed on 2026-11-08), but its historical state is pruned inconsistently behind a load balancer.
+- **Finality:** the `finalized` tag lags latest by about 7,300 to 8,500 blocks (about 18 minutes) and moves in jumps. The verifier's ancestry walk (default depth 256, one call per block) stays `pending` unless given `--max-depth`, and then took 382 to 3,522 seconds. The finality-check policy for a 30-second product is an open design question for the owner; the verifier was not weakened here.
+- **D17:** the deposit needs a mapping version that invalidates receipts of the old event layout. Version 3 is a fixture value from the verifier tests; the committed value is still undecided.
+- **Not verified:** source verification on the explorer (its verifier lists no compilers), a live reorg, the payout signer and every NEAR contract. Mock-to-reference mapping for the registry (D21) is proposed in the evidence file, not registered.
+
 ## Research findings (2026-11-08): Intents and Bitte
 
 Issue [#78](https://github.com/mferdinandr/valtrum/issues/78); record in [intents-evidence.md](intents-evidence.md).

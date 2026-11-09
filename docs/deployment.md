@@ -81,7 +81,7 @@ This rollout must not overwrite the historical deployment or claim an unsupporte
 
 ## Robinhood testnet (46630): custody and mock tokens deployed 2026-11-09
 
-Recorded in [testnet-evidence.md](testnet-evidence.md) section 6 and [`evidence/2026-11-09-evm-testnet-deploy.json`](evidence/2026-11-09-evm-testnet-deploy.json). These are **fixtures** on a public testnet (no value), deployed with the owner's testnet deployer address `0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6`. Keys stay in the git-ignored `.env` and a local Foundry keystore; nothing secret is committed.
+Recorded in [testnet-evidence.md](testnet-evidence.md) section 3b and [`evidence/2026-11-09-evm-testnet-deploy.json`](evidence/2026-11-09-evm-testnet-deploy.json). These are **fixtures** on a public testnet (no value), deployed with the owner's testnet deployer address `0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6`. Keys stay in the git-ignored `.env` and a local Foundry keystore; nothing secret is committed.
 
 | Contract | Address |
 | --- | --- |
