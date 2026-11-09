@@ -179,3 +179,7 @@ Set the DAO window through a passed proposal on the testnet arena: record the DA
 ## Future work
 
 Open membership; participant-weighted DAO; DAO as upgrade-key holder; redeploying with the DAO as arena owner. All recorded as out of scope for the hackathon.
+
+## Testnet accounts created by the owner (public ids only)
+
+Reported 2026-11-09, not independently checked here: owner `valtrum-owner-b694.testnet`; council `valtrum-council1-b694.testnet`, `valtrum-council2-b694.testnet`, `valtrum-council3-b694.testnet`; 10 NEAR each. Their keys are in the owner's git-ignored `.env` and must never be written to the repo. These answer inputs 1 and 3 above in part (the council and a funded payer; the DAO name, proposal period and the existing arena and backing ids are still needed). Q1 to Q3 remain open. Nothing has been deployed with these accounts.
