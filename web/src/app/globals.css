@@ -271,3 +271,15 @@ dd {
 .track-grid h3 { margin-top: 1rem; font-size: 1rem; }
 @media (max-width: 900px) { .track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .meme-paths, .track-grid { grid-template-columns: 1fr; } }
+
+.arena-list-header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1.5rem; padding: 1.5rem 0 .5rem; }
+.arena-create { display: inline-flex; min-height: 44px; align-items: center; gap: .5rem; padding: 0 1rem; border-radius: .6rem; background: #d0f570; color: #111b17; font-size: .75rem; font-weight: 700; }
+.arena-view-tabs { display: flex; gap: .5rem; border-bottom: 1px solid #3d4b45; }
+.arena-view-tab { display: inline-flex; align-items: center; gap: .55rem; padding: .8rem 1rem; border-bottom: 2px solid transparent; color: #9caaa7; font-size: .8rem; }
+.arena-view-tab-active { border-color: #d0f570; color: #d0f570; }
+.arena-view-tab span { padding: .2rem .4rem; border-radius: .3rem; background: #35433d; font: 10px monospace; }
+.arena-filter-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.arena-search { display: flex; align-items: center; gap: .65rem; flex: 1 1 18rem; max-width: 28rem; padding: .7rem .9rem; border: 1px solid #435249; border-radius: .6rem; color: #9caaa7; background: #141e1e; }
+.arena-search:focus-within { border-color: #d0f570; }
+.arena-search input { width: 100%; border: 0; outline: 0; color: #edf3e5; background: transparent; font-size: .8rem; }
+.arena-dao-empty { padding: 2rem; border: 1px solid #435249; border-radius: .9rem; background: #182321; }
