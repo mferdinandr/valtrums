@@ -30,7 +30,7 @@ Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms.
 
 ## OPEN QUESTION
 
-DAO membership, weights, quorum, deadline, execution/fallback; behavior after a live token-policy change and minimum executable liquidity depth (tax/admin policy v1 and evidence lifetime are decided; see the [decision log](findings-and-decisions.md) and [GoPlus policy](goplus-audit.md)); oracle providers/cadence/boundaries/supply; custody proof/finality/reorgs/gas/tax/burn; pre-lock cancellation and outage response; protocol identity and position rules. Preserve the [full question register](product-spec.md#open-question-register); do not decide DAO rules implicitly.
+DAO membership, weights, quorum, deadline, execution/fallback; behavior after a live token-policy change (minimum executable liquidity depth decided in D32, 2026-11-09) (tax/admin policy v1 and evidence lifetime are decided; see the [decision log](findings-and-decisions.md) and [GoPlus policy](goplus-audit.md)); oracle providers/cadence/boundaries/supply; custody proof/finality/reorgs/gas/tax/burn; pre-lock cancellation and outage response; protocol identity and position rules. Preserve the [full question register](product-spec.md#open-question-register); do not decide DAO rules implicitly.
 
 ## Ordered implementation checklist
 
