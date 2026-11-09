@@ -1,5 +1,6 @@
 import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
 import type { Nep413Verifier } from "../session.js";
+import { FIXTURE_LABEL, FIXTURE_ROUTE, assertFixtureAllowed } from "../../intents-fixture/label.js";
 import { sha256Hex } from "./canonical.js";
 import {
   ActionError,
@@ -8,6 +9,7 @@ import {
   type UnsignedTransaction,
   bindingHash,
   buildPreview,
+  fundingRoutes,
   previewHash,
   validateRequest,
 } from "./preview.js";
@@ -82,6 +84,8 @@ export interface ActionAttribution {
   grant: { localId: string; revoked: boolean; expired: boolean; missing: boolean } | null;
   /** On-chain reservation of a grant action, once the delegate's `reserve` landed. */
   reservation: { state: string; amount: string } | null;
+  /** The funding route of a deposit; a fixture route is always flagged and labelled. */
+  route: { name: string; fixture: boolean; label: string | null } | null;
 }
 
 const TX_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
@@ -94,13 +98,14 @@ export class ActionService {
 
   constructor(private readonly deps: ActionServiceDeps) {
     if (!deps.recipient.trim()) throw new Error("action service recipient is required");
+    if (deps.ctx.intentsFixture) assertFixtureAllowed(deps.ctx.network);
     this.now = deps.now ?? Date.now;
     this.maxNonceAgeMs = deps.maxNonceAgeMs ?? 5 * 60 * 1000;
   }
 
   /** Validates the request, reads fresh state and stores a canonical preview. */
   async preview(caller: string, raw: unknown): Promise<ActionRecord> {
-    const request = this.assignIds(validateRequest(raw));
+    const request = this.assignIds(validateRequest(raw, fundingRoutes(this.deps.ctx)));
     const nowMs = this.now();
     const preview = await buildPreview(request, caller, this.deps.source, this.deps.ctx, nowMs);
     const hash = previewHash(preview);
@@ -262,7 +267,14 @@ export class ActionService {
       position,
       grant,
       reservation,
+      route: record.preview.kind === "deposit" ? this.routeOf(record) : null,
     };
+  }
+
+  private routeOf(record: ActionRecord): NonNullable<ActionAttribution["route"]> {
+    const name = String((record.preview.binding as { route?: unknown }).route ?? "direct");
+    const fixture = name === FIXTURE_ROUTE;
+    return { name, fixture, label: fixture ? FIXTURE_LABEL : null };
   }
 
   private async grantState(record: ActionRecord): Promise<ActionAttribution["grant"]> {
