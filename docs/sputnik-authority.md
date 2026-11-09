@@ -2,7 +2,7 @@
 
 Design, evidence and runbook for issue [#113](https://github.com/mferdinandr/valtrum/issues/113) (owner decisions of 2026-11-09, D28). The winners' burn-or-return vote stays in the arena contract (D22, [dao-governance.md](dao-governance.md)). What moves under a SputnikDAO is **protocol-level authority and the protocol fee recipient**, so these changes need a council vote instead of one key.
 
-**Status (2026-11-09): sandbox-verified, not deployed.** The owner has since created testnet accounts (see the end), but no DAO exists on testnet yet and nothing was deployed. Live evidence below is read-only; everything about the contracts running under a DAO is a sandbox test with the official SputnikDAO wasm.
+**Status (2026-11-09): created and exercised live on NEAR testnet, plus sandbox-verified.** The DAO `valtrum-protocol.sputnikv2.testnet` exists, the target contracts are deployed on the owner's testnet accounts and one real change went through a passed proposal (see "Live result" below; raw data in [`evidence/2026-11-09-near-testnet-deploy.json`](evidence/2026-11-09-near-testnet-deploy.json)). All of it is live testnet evidence from the owner's accounts; the backing asset and the arena `usdc` are fixtures. The sandbox tests below remain the proof for what was not run live.
 
 ## Owner decisions (issue #113, 2026-11-09)
 
@@ -89,11 +89,33 @@ All reads on 2026-11-09 through `https://test.rpc.fastnear.com`, block heights n
 
 **Not verified:**
 
-- The minimum factory `create` deposit. The DAO account must pay for about 540 KB of code (about 5.4 NEAR at 1e19 yocto per byte) plus state, so the deposit must exceed that; the commonly used UI value is not confirmed here. Confirm on the first real create with a dry estimate, and expect the refund path if it is too low.
-- Any live DAO, because none was created (no accounts).
+- The minimum factory `create` deposit: 6 NEAR was accepted (measured below), but no lower amount was tried, so the true minimum is still unknown. The DAO account keeps all of it (about 5.4 NEAR is the locked storage of its 540 KB code).
+- Any live DAO: now exists, see "Live result".
 - That `sputnikv2.testnet` will keep offering 3.31 as default, or keep the code stored.
 - Trezu on testnet: see below.
 - That the DAO account can call payout to withdraw the protocol fee to Robinhood.
+
+## Live result (NEAR testnet, 2026-11-09)
+
+All values are live testnet observations through two providers (NEAR official RPC and FastNEAR); full data in [`evidence/2026-11-09-near-testnet-deploy.json`](evidence/2026-11-09-near-testnet-deploy.json). Sender of every transaction below: the owner's testnet accounts (keys never leave the owner's git-ignored `.env`).
+
+**DAO.** `valtrum-protocol.sputnikv2.testnet`, created by `valtrum-owner-b694.testnet` through `sputnikv2.testnet.create` with an attached 6 NEAR: tx `7mPdsL7ZjtkJjgskKAactY3jtm98eaCMyCxjXGaevKVK`. Code hash `AA4nA45vauiac3jdVwJTzSdUP3oj2r1fDaPAb2mHdgcH` (equals the pinned default), `version()` 2.3.1, storage 540,409 bytes (5.40 NEAR locked). `get_policy`: council group `valtrum-council1/2/3-b694.testnet`, threshold `[1,2]` (2 of 3), quorum 0, `RoleWeight`, proposal bond 1 NEAR, proposal period 7 days, everyone may `AddProposal`. `get_config`: name `valtrum-protocol`, purpose `Valtrum protocol authority`. `get_factory_info`: `auto_update: true` (R2 still open). Measured cost to the owner: 6.098 NEAR (10.000 to 3.902): 6 NEAR deposit, about 0.098 NEAR gas. The DAO then held 6.0 NEAR, 0.58 NEAR above its storage; proposal bonds are refunded on approval (council 1 ended at 9.999 NEAR after three proposals).
+
+**Wiring.** Arena `arena.valtrum-owner-b694.testnet` (owner `valtrum-owner-b694.testnet`, lifecycle activated, tx `9vSv86jDGprayv1t1XrLmFjeSo53ScL1ytWfm6Ztn2nj`) was pointed at the DAO with `set_lifecycle_protocol` (tx `wUShjEunfPeR1aifN5JJZ2UxixQjYY4VmeU8wpakqKu`). Backing `backing1.valtrum-owner-b694.testnet` was initialised with `owner` = the DAO (fixture asset, one check before the call: the script refuses any other owner).
+
+**Passed proposals** (council 1 proposed with the 1 NEAR bond, councils 2 and 3 approved; status after one vote `InProgress`, after two `Approved`):
+
+| Id | Target and method | Result |
+| --- | --- | --- |
+| 0 | arena `set_lifecycle_dao_window` `{"window_secs":"86400"}` | `Approved`; `get_lifecycle_dao_window` now returns `"86400"` (before: `null`). Txs: add `8HoNsBZgGyZpC5xkcNysC6xVV8gGiMrqCLwujJQcapv6`, votes `2StfjsM5Boy1SL75Dtf9yjEFZje6SThbgV9jikBhyrTt`, `3csSTk4ZbHQKkY2dUyqJJzC988DJxT2Q73UYENQdfYAd` |
+| 1 | `backing1` `set_paused` `{"paused":true}` | `Approved` (proves the DAO is the backing owner). Txs: add `6U6PRe4VT7BM1uCNW3r8BmkgdVqgHs9mf75ncPB63yvS`, votes `D7NGo2pPiMG96Rt2LSmMtWfMC5AsFLRkaVcRwCL2L6Bw`, `HZDwzYqaE6xjHkJzAiUHHEMikXtw3thaANKsDaAhfvGW` |
+| 2 | `backing1` `set_paused` `{"paused":false}` | `Approved`. Txs: add `Bn266PqFuMs51bRGwq2vypzAmFDPUbs2efTUQvoNHYQR`, votes `BnZRs8GMhAqt6rrCjuGRcZhRgj7G4Xt6VUDz6fAtxJKt`, `DeexBQLuNJYcWiEoiPbz9yhSjjNSGHeKviz7mpkmdVSd` |
+
+**Negative calls (all failed on chain):** the deploy owner and a lone council member calling `set_lifecycle_dao_window` got `Only the protocol account can change the DAO window`; the owner calling `backing1.set_paused` got `Only owner`; the owner (not a council member) voting got `ERR_PERMISSION_DENIED`. Hashes of the rejected transactions were not captured; the panic messages are in the evidence file.
+
+**Limits.** The pause itself was not read back (the backing has no paused view; Sputnik marks a proposal `Failed` if the call fails, and these ended `Approved`). The arena deployment transaction hash was lost to a script crash after the send; its code hash and state are verified. Nothing was run through the unauthorised-upgrade or factory-update paths (R2).
+
+**Follow-up proposals (not run: they need the mock token addresses from the EVM deployment):** for each mock token call `add_reference_entry` through the DAO on the arena with `{"chain_id":"46630","token_address":"<mock>","reference_chain_id":"4663","reference_address":"<mainnet reference token>"}` (template in the table above), then initialise one real backing per token with the DAO as `owner`, register each backing in payout (`register_backing`, owner, one yocto) and set each backing's burn sink (`set_dao_sink`, through the DAO, once).
 
 ## Trezu
 
@@ -182,7 +204,7 @@ Set the DAO window through a passed proposal on the testnet arena: record the DA
 
 ## Fixed deployment parameters
 
-DAO name `valtrum-protocol` (so `valtrum-protocol.sputnikv2.testnet`), default policy (proposal bond 1 NEAR, proposal period 7 days, council of 3 accounts, threshold 2 of 3): council `valtrum-council1-b694.testnet`, `valtrum-council2-b694.testnet`, `valtrum-council3-b694.testnet`. The deploy key stays with `valtrum-owner-b694.testnet`. Still unverified: the minimum factory `create` deposit (estimate about 6 NEAR or more; the owner account has 10 NEAR, so a rejected create refunds and may need a higher amount than the account can fund after gas).
+DAO name `valtrum-protocol` (so `valtrum-protocol.sputnikv2.testnet`), default policy (proposal bond 1 NEAR, proposal period 7 days, council of 3 accounts, threshold 2 of 3): council `valtrum-council1-b694.testnet`, `valtrum-council2-b694.testnet`, `valtrum-council3-b694.testnet`. The deploy key stays with `valtrum-owner-b694.testnet`. Still unverified: the minimum factory `create` deposit (estimate about 6 NEAR or more; the owner account has 10 NEAR, so a rejected create refunds and may need a higher amount than the account can fund after gas). Measured on 2026-11-09: the create deposit of 6 NEAR was accepted.
 
 ## Future work
 
