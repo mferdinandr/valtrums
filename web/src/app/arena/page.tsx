@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { TargetFlow } from "@/components/target-flow";
 import { FlowNotice } from "@/components/flow-notice";
 import { BattleCard } from "@/components/battle-card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export default function ArenaPage() {
   return (
     <div className="space-y-8">
       <FlowNotice />
+      <TargetFlow page="arena" />
       <div className="flex items-center justify-between">
         <p className="eyebrow">01 / Browse available battles</p>
         <span className="eyebrow hidden sm:block">01 — Arena lobby</span>

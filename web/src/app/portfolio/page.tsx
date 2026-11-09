@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TargetFlow } from "@/components/target-flow";
 import { FlowNotice } from "@/components/flow-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -259,7 +260,9 @@ export default function PortfolioPage() {
   if (!accountId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-lg text-neon-pink">Portfolio</h1>
+        <FlowNotice compact />
+        <TargetFlow page="portfolio" />
+        <h1 className="text-lg text-neon-pink">Current portfolio</h1>
         <p className="text-2xl text-mute">
           Connect a wallet to see your positions and credit.
         </p>
@@ -273,6 +276,7 @@ export default function PortfolioPage() {
   return (
     <div className="space-y-6">
       <FlowNotice compact />
+      <TargetFlow page="portfolio" />
       <div><p className="eyebrow text-neon-green">04 / TRACK YOUR OUTCOME</p><h1 className="mt-3 text-3xl">Your portfolio.</h1><p className="mt-2 text-sm text-mute">Follow positions, claim eligible outcomes, then withdraw liquid balances.</p></div>
       {error && (
         <p role="alert" className="text-xl text-neon-red">

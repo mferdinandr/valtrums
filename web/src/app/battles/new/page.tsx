@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { TargetFlow } from "@/components/target-flow";
 import { FlowNotice } from "@/components/flow-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -67,6 +68,7 @@ export default function CreateBattlePage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <FlowNotice />
+      <TargetFlow page="create" />
       <div><Link href="/arena" className="text-xs text-neon-green">← Back to battles</Link><p className="eyebrow mt-5 text-neon-green">CREATE / CURRENT ARENA</p><h1 className="mt-3 text-3xl">Set up a rivalry.</h1><p className="mt-3 text-sm leading-6 text-mute">Choose two token contracts and a duration. Review the bond before proposing your battle for audit.</p></div>
       <Card>
         <CardTitle>01 / Choose communities and duration</CardTitle>

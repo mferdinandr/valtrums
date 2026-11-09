@@ -2,6 +2,7 @@
 
 import { use, useEffect } from "react";
 import Link from "next/link";
+import { TargetFlow } from "@/components/target-flow";
 import { FlowNotice } from "@/components/flow-notice";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -168,6 +169,7 @@ function Detail({
   return (
     <div className="space-y-6">
       <FlowNotice compact />
+      <TargetFlow page="battle" />
       <div className="battle-detail-heading">
         <div><Link href="/arena" className="text-xs text-neon-green">← Back to battles</Link><p className="eyebrow mt-4">02 / INSPECT &amp; JOIN</p></div>
         <p className="text-xs leading-6 text-mute">Review the battle status and vaults before choosing a tribe.</p>
