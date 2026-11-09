@@ -1,0 +1,1569 @@
+{
+ "label": "RECORDED LIVE READ-ONLY EVIDENCE, 2026-11-09 (UTC). Robinhood mainnet 4663, the six owner-selected demo reference tokens. Third-party aggregator responses and on-chain reads from a keyless public RPC; nothing is a fixture. Excerpts and derived values only; no secrets.",
+ "issue": "https://github.com/mferdinandr/valtrum/issues/110",
+ "collectedBetween": [
+  "2026-11-09T04:25:51Z",
+  "2026-11-09T04:38:50Z"
+ ],
+ "policyUnderTest": {
+  "roundSeconds": 30,
+  "quote": "USD",
+  "boundary": "[t0, t1) half-open",
+  "pointPrices": "not TWAP",
+  "finality": "frozen per battle (value OPEN)",
+  "source": "frozen per battle (provider OPEN)"
+ },
+ "ownerRpc": {
+  "variable": "REFERENCE_RPC_URL",
+  "host": "redacted in this record (it is the Robinhood-hosted public mainnet RPC, host redacted by rule)",
+  "attempts": [
+   {
+    "at": "about 04:20Z (before the 04:25Z aggregator run)",
+    "calls": "eth_chainId x3 via curl, no TLS bypass",
+    "result": "curl (35) connection reset by peer"
+   },
+   {
+    "at": "about 04:23Z",
+    "calls": "TCP connect and TLS client hello",
+    "result": "connection timed out after 20 s at the TLS handshake"
+   },
+   {
+    "at": "about 04:31Z (after the aggregator run)",
+    "calls": "eth_chainId via the on-chain probe",
+    "result": "curl (35) connection reset by peer"
+   },
+   {
+    "at": "about 04:37Z",
+    "calls": "eth_chainId via the on-chain probe",
+    "result": "curl (35) connection reset by peer"
+   }
+  ],
+  "verdict": "UNREACHABLE from this network on 2026-11-09 between about 04:20Z and 04:37Z (attempt times are approximate); the same host answered the 2026-11-09 02:46Z to 03:48Z reference-token scan, so the failure is intermittent or network-specific. TLS was not bypassed and no other route to that host was tried."
+ },
+ "rpc": {
+  "label": "RECORDED",
+  "endpoint": "https://robinhood-rpc.publicnode.com (keyless public RPC from the chainlist registry; NOT the owner RPC; used because the owner RPC was unreachable, read-only calls only)",
+  "chainId": "0x1237",
+  "fetchedAt": "2026-11-09T04:29:43Z",
+  "sampling": {
+   "at": "2026-11-09T04:38:44Z",
+   "rpc": "https://robinhood-rpc.publicnode.com",
+   "eth_call_slot0_finalized": {
+    "http": 200,
+    "ms": 501,
+    "ok": false,
+    "error": "historical state 3b4cf620317e396ad29f8db3ad7904b57ab170f23f37f705701cb4536fdaff8c is not available"
+   },
+   "eth_call_slot0_safe": {
+    "http": 200,
+    "ms": 344,
+    "ok": false,
+    "error": "historical state 0792e0d4ef5e6250573e24d0d9e6f472c6b315d462d0e2dccbdfb3d2c5cfd298 is not available"
+   },
+   "sequential_31_latest_calls": {
+    "total_ms": 20572,
+    "ok": 31,
+    "p50_ms": 412,
+    "max_ms": 6716
+   },
+   "batch_31_latest_calls": {
+    "http": 200,
+    "ms": 477,
+    "ok": 31
+   },
+   "getLogs_latest_block": {
+    "http": 200,
+    "ms": 444,
+    "error": null,
+    "n": 0
+   },
+   "note": "31 sequential eth_call at latest took the total below; the batch form returned 31 results in one request"
+  },
+  "archive": "every eth_call at a block more than about one block old, and every eth_getLogs over a past range, returned HTTP 403 \"Archive requests require a personal token\"; eth_call at safe and finalized returned \"historical state ... is not available\""
+ },
+ "wethUsdPriceFromD5Pool": {
+  "pool": "0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca",
+  "priceUsd": 2139.85,
+  "note": "derived from slot0 at latest; used only to convert pool prices to USD"
+ },
+ "finality": {
+  "label": "RECORDED",
+  "request": "eth_getBlockByNumber latest, safe, finalized (public RPC)",
+  "fetchedAt": "2026-11-09T04:29:43Z",
+  "heads": {
+   "latest": {
+    "number": 109780435,
+    "timestamp": 1794198584,
+    "ms": 377,
+    "error": null
+   },
+   "safe": {
+    "number": 109774272,
+    "timestamp": 1794197931,
+    "ms": 342,
+    "error": null
+   },
+   "finalized": {
+    "number": 109770388,
+    "timestamp": 1794197518,
+    "ms": 358,
+    "error": null
+   }
+  },
+  "finalizedLagBlocks": 10047,
+  "finalizedLagSeconds": 1066,
+  "safeLagBlocks": 6163,
+  "safeLagSeconds": 653,
+  "secondsPerBlockDerived": 0.1061,
+  "blocksPerThirtySecondRound": 283,
+  "roundIntervalSeconds": 30,
+  "stateAtFinalizedOrSafe": {
+   "eth_call finalized": {
+    "http": 200,
+    "ms": 501,
+    "ok": false,
+    "error": "historical state 3b4cf620317e396ad29f8db3ad7904b57ab170f23f37f705701cb4536fdaff8c is not available"
+   },
+   "eth_call safe": {
+    "http": 200,
+    "ms": 344,
+    "ok": false,
+    "error": "historical state 0792e0d4ef5e6250573e24d0d9e6f472c6b315d462d0e2dccbdfb3d2c5cfd298 is not available"
+   }
+  },
+  "verdict": "finalized head trails latest by about 17.8 minutes (about 36 rounds); state at finalized or safe is not served by the free public RPC",
+  "limitations": [
+   "single sample of the lag; not a distribution",
+   "reorg behaviour and data-availability rules not observed",
+   "block timestamps have 1-second resolution (about 9 blocks share a timestamp)"
+  ]
+ },
+ "tokens": {
+  "CASHCAT": {
+   "address": "0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0xA70fc67C9F69da90B63a0e4C05D229954574E313 (and WETH/USDG pool) at latest",
+    "pool": "0xA70fc67C9F69da90B63a0e4C05D229954574E313",
+    "poolLiquidityUsdDexscreener": 1581174.48,
+    "onchainPriceUsd": 0.07330003105755521,
+    "dexscreenerPriceUsd": 0.0734,
+    "geckoterminalPriceUsd": 0.07274311663,
+    "deviationVsDexscreenerPct": -0.14,
+    "latencyMs": [
+     404,
+     369,
+     346,
+     363,
+     401
+    ],
+    "latencyMsMedian": 369,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 1000000000.0,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 12331717.82397331,
+    "burnedSharePct": 1.233,
+    "totalMinusBurnedWhole": 987668282.1760267,
+    "geckoterminalMarketCapUsd": "71846069.0444974",
+    "geckoterminalFdvUsd": "71846069.0444974",
+    "dexscreenerMarketCapEqualsFdv": true,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 524,
+     "holderCount": "114415",
+     "topHolders": [
+      {
+       "rank": 1,
+       "sharePct": 12.1,
+       "isContract": false
+      },
+      {
+       "rank": 2,
+       "sharePct": 4.85,
+       "isContract": false
+      },
+      {
+       "rank": 3,
+       "sharePct": 4.78,
+       "isContract": false
+      },
+      {
+       "rank": 4,
+       "sharePct": 4.53,
+       "isContract": false
+      },
+      {
+       "rank": 5,
+       "sharePct": 3.01,
+       "isContract": false
+      }
+     ],
+     "lpHolderCount": 10
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 0,
+     "h1": 2062.08,
+     "h6": 89998.94,
+     "h24": 722449.97
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 299,
+     "fetchedAt": "2026-11-09T04:26:14Z",
+     "count": 300,
+     "spanHours": 2.79,
+     "newestTradeLagSeconds": 442,
+     "thirtySecondWindowsWithTrade": 128,
+     "thirtySecondWindowsInSpan": 336,
+     "windowShare": 0.381,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109774285,
+      "block_timestamp": "2026-11-09T04:18:52Z",
+      "kind": "sell",
+      "volume_in_usd": "82.5634373778252",
+      "price_from_in_usd": "0.0727431166324451",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 735,
+     "fetchedAt": "2026-11-09T04:26:21Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 501,
+     "sample": [
+      1794197880,
+      0.0727836352383553,
+      0.0727932158580486,
+      0.07274311663244509,
+      0.07274311663244509,
+      909.8094159699261
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 369
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 30,
+    "uniswapV4Pairs": 12,
+    "v4LiquidityUsd": 1467258.67,
+    "totalListedLiquidityUsd": 4661407.04,
+    "note": "v4 pools were not probed on-chain"
+   }
+  },
+  "WALLET": {
+   "address": "0x0339f5459fC690ac85f1782E15782A151b4a9e1b",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0x9501A20Bedb8beA0798FE5D4c411f5e270965D49 (and WETH/USDG pool) at latest",
+    "pool": "0x9501A20Bedb8beA0798FE5D4c411f5e270965D49",
+    "poolLiquidityUsdDexscreener": 1174083.18,
+    "onchainPriceUsd": 0.008618191280476665,
+    "dexscreenerPriceUsd": 0.008627,
+    "geckoterminalPriceUsd": 0.008533315339,
+    "deviationVsDexscreenerPct": -0.1,
+    "latencyMs": [
+     349,
+     354,
+     374,
+     423,
+     383
+    ],
+    "latencyMsMedian": 374,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 1000000000.0,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 54814086.476223946,
+    "burnedSharePct": 5.481,
+    "totalMinusBurnedWhole": 945185913.523776,
+    "geckoterminalMarketCapUsd": null,
+    "geckoterminalFdvUsd": "8533315.33924102",
+    "dexscreenerMarketCapEqualsFdv": true,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 267,
+     "holderCount": "10009",
+     "topHolders": [
+      {
+       "rank": 1,
+       "sharePct": 8.08,
+       "isContract": true
+      },
+      {
+       "rank": 2,
+       "sharePct": 5.48,
+       "isContract": false
+      },
+      {
+       "rank": 3,
+       "sharePct": 2.71,
+       "isContract": true
+      },
+      {
+       "rank": 4,
+       "sharePct": 2.5,
+       "isContract": false
+      },
+      {
+       "rank": 5,
+       "sharePct": 2.06,
+       "isContract": true
+      }
+     ],
+     "lpHolderCount": 10
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 288.43,
+     "h1": 482.58,
+     "h6": 27300.68,
+     "h24": 112295.65
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 30005,
+     "fetchedAt": "2026-11-09T04:35:20Z",
+     "count": 300,
+     "spanHours": 14.46,
+     "newestTradeLagSeconds": 21,
+     "thirtySecondWindowsWithTrade": 206,
+     "thirtySecondWindowsInSpan": 1735,
+     "windowShare": 0.119,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109783435,
+      "block_timestamp": "2026-11-09T04:34:59Z",
+      "kind": "sell",
+      "volume_in_usd": "36.3294718095635",
+      "price_from_in_usd": "0.00853333338002892",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 912,
+     "fetchedAt": "2026-11-09T04:33:38Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 518,
+     "sample": [
+      1794198300,
+      0.00854036073270085,
+      0.00854036073270085,
+      0.008533315339241019,
+      0.008533315339241019,
+      1.27744595253472
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 374
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 10,
+    "uniswapV4Pairs": 7,
+    "v4LiquidityUsd": 72985.02,
+    "totalListedLiquidityUsd": 1247344.78,
+    "note": "v4 pools were not probed on-chain"
+   }
+  },
+  "GOOD": {
+   "address": "0x5F62c57E5C537887117eEF828b7e3aD41C009FEb",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0x8EA7c66395fD7e25E9713Edd0B297d4ABE05C304 (and WETH/USDG pool) at latest",
+    "pool": "0x8EA7c66395fD7e25E9713Edd0B297d4ABE05C304",
+    "poolLiquidityUsdDexscreener": 134925.38,
+    "onchainPriceUsd": 0.0005254877558281268,
+    "dexscreenerPriceUsd": 0.0005257,
+    "geckoterminalPriceUsd": 0.0005308334652,
+    "deviationVsDexscreenerPct": -0.04,
+    "latencyMs": [
+     371,
+     367,
+     374,
+     362,
+     342
+    ],
+    "latencyMsMedian": 367,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 999999992.5074515,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 0.0,
+    "burnedSharePct": 0.0,
+    "totalMinusBurnedWhole": 999999992.5074515,
+    "geckoterminalMarketCapUsd": "529157.094563325",
+    "geckoterminalFdvUsd": "530833.461174468",
+    "dexscreenerMarketCapEqualsFdv": false,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 239,
+     "holderCount": "3545",
+     "topHolders": [
+      {
+       "rank": 1,
+       "sharePct": 13.62,
+       "isContract": true
+      },
+      {
+       "rank": 2,
+       "sharePct": 7.18,
+       "isContract": true
+      },
+      {
+       "rank": 3,
+       "sharePct": 4.32,
+       "isContract": true
+      },
+      {
+       "rank": 4,
+       "sharePct": 2.0,
+       "isContract": true
+      },
+      {
+       "rank": 5,
+       "sharePct": 2.0,
+       "isContract": false
+      }
+     ],
+     "lpHolderCount": 8
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 0,
+     "h1": 2081.03,
+     "h6": 7213.07,
+     "h24": 32715.51
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 1976,
+     "fetchedAt": "2026-11-09T04:33:59Z",
+     "count": 300,
+     "spanHours": 22.09,
+     "newestTradeLagSeconds": 1129,
+     "thirtySecondWindowsWithTrade": 242,
+     "thirtySecondWindowsInSpan": 2651,
+     "windowShare": 0.091,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109772190,
+      "block_timestamp": "2026-11-09T04:15:10Z",
+      "kind": "buy",
+      "volume_in_usd": "48.77004145",
+      "price_from_in_usd": "2141.62",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 658,
+     "fetchedAt": "2026-11-09T04:34:21Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 1161,
+     "sample": [
+      1794197700,
+      0.000529755108694647,
+      0.0005308334651517629,
+      0.000529755108694647,
+      0.0005308334651517629,
+      48.77004145
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 367
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 3,
+    "uniswapV4Pairs": 0,
+    "v4LiquidityUsd": 0,
+    "totalListedLiquidityUsd": 144722.0,
+    "note": "v4 pools were not probed on-chain"
+   }
+  },
+  "AI": {
+   "address": "0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0xEf55CAC3003dEaC4494A6e0Eb4D7c9E5e0d7F5B3 (and WETH/USDG pool) at latest",
+    "pool": "0xEf55CAC3003dEaC4494A6e0Eb4D7c9E5e0d7F5B3",
+    "poolLiquidityUsdDexscreener": 107385.14,
+    "onchainPriceUsd": 0.0003708450197129476,
+    "dexscreenerPriceUsd": 0.0004391,
+    "geckoterminalPriceUsd": 0.000416070357,
+    "deviationVsDexscreenerPct": -15.54,
+    "latencyMs": [
+     368,
+     353,
+     345,
+     347,
+     348
+    ],
+    "latencyMsMedian": 348,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 1000000000.0,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 0.0,
+    "burnedSharePct": 0.0,
+    "totalMinusBurnedWhole": 1000000000.0,
+    "geckoterminalMarketCapUsd": null,
+    "geckoterminalFdvUsd": "416070.356990644",
+    "dexscreenerMarketCapEqualsFdv": true,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 287,
+     "holderCount": null,
+     "topHolders": [],
+     "lpHolderCount": 1
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 9040.11,
+     "h1": 256032.44,
+     "h6": 694763.59,
+     "h24": 694763.59
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 1322,
+     "fetchedAt": "2026-11-09T04:34:42Z",
+     "count": 300,
+     "spanHours": 0.26,
+     "newestTradeLagSeconds": 54,
+     "thirtySecondWindowsWithTrade": 32,
+     "thirtySecondWindowsInSpan": 32,
+     "windowShare": 1.0,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109782766,
+      "block_timestamp": "2026-11-09T04:33:48Z",
+      "kind": "sell",
+      "volume_in_usd": "10.5109563826732",
+      "price_from_in_usd": "0.000382659011137091",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 541,
+     "fetchedAt": "2026-11-09T04:27:42Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 102,
+     "sample": [
+      1794198360,
+      0.00041877270673149297,
+      0.00043935761595638597,
+      0.00041607035699064396,
+      0.00043935761595638597,
+      2781.389470793845
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 348
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 1,
+    "uniswapV4Pairs": 0,
+    "v4LiquidityUsd": 0,
+    "totalListedLiquidityUsd": 107385.14,
+    "note": "v4 pools were not probed on-chain"
+   }
+  },
+  "VLAD": {
+   "address": "0xFDbB27E971E72E38C41b1c772FB409c94dd92789",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0x8a3aE9184141C085BAD6aBfEFcC626dE288be3d3 (and WETH/USDG pool) at latest",
+    "pool": "0x8a3aE9184141C085BAD6aBfEFcC626dE288be3d3",
+    "poolLiquidityUsdDexscreener": 49423.22,
+    "onchainPriceUsd": 0.00023350837672518902,
+    "dexscreenerPriceUsd": 0.0002338,
+    "geckoterminalPriceUsd": 0.0002314163448,
+    "deviationVsDexscreenerPct": -0.12,
+    "latencyMs": [
+     362,
+     349,
+     403,
+     359,
+     356
+    ],
+    "latencyMsMedian": 359,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 1000000000.0,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 50361226.61075273,
+    "burnedSharePct": 5.036,
+    "totalMinusBurnedWhole": 949638773.3892473,
+    "geckoterminalMarketCapUsd": null,
+    "geckoterminalFdvUsd": "231416.34480995",
+    "dexscreenerMarketCapEqualsFdv": true,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 265,
+     "holderCount": "992",
+     "topHolders": [
+      {
+       "rank": 1,
+       "sharePct": 70.0,
+       "isContract": true
+      },
+      {
+       "rank": 2,
+       "sharePct": 11.2,
+       "isContract": true
+      },
+      {
+       "rank": 3,
+       "sharePct": 5.04,
+       "isContract": false
+      },
+      {
+       "rank": 4,
+       "sharePct": 1.28,
+       "isContract": false
+      },
+      {
+       "rank": 5,
+       "sharePct": 0.91,
+       "isContract": true
+      }
+     ],
+     "lpHolderCount": 1
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 0,
+     "h1": 1,
+     "h6": 2106.72,
+     "h24": 8359.72
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 738,
+     "fetchedAt": "2026-11-09T04:35:03Z",
+     "count": 50,
+     "spanHours": 23.46,
+     "newestTradeLagSeconds": 1061,
+     "thirtySecondWindowsWithTrade": 31,
+     "thirtySecondWindowsInSpan": 2815,
+     "windowShare": 0.011,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109773431,
+      "block_timestamp": "2026-11-09T04:17:22Z",
+      "kind": "sell",
+      "volume_in_usd": "1.00930437768153",
+      "price_from_in_usd": "0.00023141634480995",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 719,
+     "fetchedAt": "2026-11-09T04:28:17Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 677,
+     "sample": [
+      1794197820,
+      0.000236430443516398,
+      0.000236430443516398,
+      0.00023141634480994998,
+      0.00023141634480994998,
+      1.00930437768153
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 359
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 3,
+    "uniswapV4Pairs": 2,
+    "v4LiquidityUsd": 32.59,
+    "totalListedLiquidityUsd": 49455.81,
+    "note": "v4 pools were not probed on-chain"
+   }
+  },
+  "DEGEN": {
+   "address": "0x0830a9dD26A04E959657aB6788d45F5725590c32",
+   "price": {
+    "label": "RECORDED",
+    "source": "on-chain Uniswap v3 slot0 on the highest-liquidity v2/v3 pool (public RPC, latest block) converted with the D5 WETH/USDG pool",
+    "request": "eth_call slot0() to 0x5408AD4b4F1D5091B99953Af963500a792f47bc3 (and WETH/USDG pool) at latest",
+    "pool": "0x5408AD4b4F1D5091B99953Af963500a792f47bc3",
+    "poolLiquidityUsdDexscreener": 113150.05,
+    "onchainPriceUsd": 0.0008364678395892067,
+    "dexscreenerPriceUsd": 0.0008371,
+    "geckoterminalPriceUsd": 0.0008458964315,
+    "deviationVsDexscreenerPct": -0.08,
+    "latencyMs": [
+     388,
+     370,
+     377,
+     377,
+     373
+    ],
+    "latencyMsMedian": 377,
+    "vsIntervalSeconds": 30,
+    "readableAtBoundaryBlock": false,
+    "boundaryReadError": "HTTP 403 Archive requests require a personal token (free public RPC refuses any state older than the latest blocks)",
+    "limitations": [
+     "current point price only; no price at a past boundary block could be read",
+     "USD needs a second price (WETH/USD from the D5 pool)",
+     "pool choice must be frozen: other pools of the same token quote different prices",
+     "Uniswap v4 pools are not readable by the probe"
+    ]
+   },
+   "circulatingSupply": {
+    "label": "RECORDED",
+    "request": "eth_call totalSupply() and balanceOf(0x0), balanceOf(0xdead) on the token (public RPC, latest block); GoPlus token_security 4663; GeckoTerminal token; DexScreener token-pairs",
+    "totalSupplyWhole": 1195302942.1191468,
+    "balanceZeroWhole": 0.0,
+    "balanceDeadWhole": 0.875,
+    "burnedSharePct": 0.0,
+    "totalMinusBurnedWhole": 1195302941.2441468,
+    "geckoterminalMarketCapUsd": "30351668.7756006",
+    "geckoterminalFdvUsd": "1011102.49260336",
+    "dexscreenerMarketCapEqualsFdv": true,
+    "goplus": {
+     "http": 200,
+     "latencyMs": 506,
+     "holderCount": "2689",
+     "topHolders": [
+      {
+       "rank": 1,
+       "sharePct": 88.17,
+       "isContract": true
+      },
+      {
+       "rank": 2,
+       "sharePct": 9.72,
+       "isContract": true
+      },
+      {
+       "rank": 3,
+       "sharePct": 1.35,
+       "isContract": true
+      },
+      {
+       "rank": 4,
+       "sharePct": 0.13,
+       "isContract": false
+      },
+      {
+       "rank": 5,
+       "sharePct": 0.11,
+       "isContract": false
+      }
+     ],
+     "lpHolderCount": 3
+    },
+    "coingeckoOnchainApi": {
+     "http": 401,
+     "note": "401: requests without an API key are not allowed"
+    },
+    "verdict": "GAP: no source labels circulating supply; only total supply (on-chain) and an unfrozen total-minus-burned rule are available",
+    "limitations": [
+     "battle-rules.md forbids total supply as circulating supply",
+     "excluded addresses (burn, treasury, vesting, locker) are not defined in any frozen policy",
+     "aggregator market caps equal fdv or are null"
+    ]
+   },
+   "eligibleVolume": {
+    "label": "RECORDED",
+    "dexscreenerVolumeWindows": {
+     "m5": 0,
+     "h1": 28.58,
+     "h6": 1397.96,
+     "h24": 15381.36
+    },
+    "dexscreenerShortestWindowSeconds": 300,
+    "geckoterminalTrades": {
+     "http": 200,
+     "latencyMs": 1189,
+     "fetchedAt": "2026-11-09T04:29:14Z",
+     "count": 157,
+     "spanHours": 23.17,
+     "newestTradeLagSeconds": 2216,
+     "thirtySecondWindowsWithTrade": 76,
+     "thirtySecondWindowsInSpan": 2780,
+     "windowShare": 0.027,
+     "fields": [
+      "block_number",
+      "block_timestamp",
+      "from_token_address",
+      "from_token_amount",
+      "is_anomalous",
+      "kind",
+      "price_from_in_currency_token",
+      "price_from_in_usd",
+      "price_to_in_currency_token",
+      "price_to_in_usd",
+      "to_token_address",
+      "to_token_amount",
+      "tx_from_address",
+      "tx_hash",
+      "volume_in_usd"
+     ],
+     "sample": {
+      "block_number": 109759119,
+      "block_timestamp": "2026-11-09T03:52:18Z",
+      "kind": "buy",
+      "volume_in_usd": "28.599316998433",
+      "price_from_in_usd": "2142.96",
+      "is_anomalous": false
+     },
+     "anomalousCount": 0
+    },
+    "onchainSwapLogs": {
+     "request": "eth_getLogs Swap topic on the top pool for 280 and 2,800 blocks back",
+     "http": 403,
+     "error": "Archive requests require a personal token",
+     "readableForPastBlockRange": false,
+     "readableAtLatestBlockOnly": true
+    },
+    "verdict": "GAP: no source supplies exact [t0,t1) volume for a past round; the only exact path (Swap logs) needs an archive RPC",
+    "limitations": [
+     "DexScreener shortest window is a rolling 5 minutes",
+     "GeckoTerminal returns the latest 300 trades per pool with second-resolution timestamps and minutes of lag",
+     "one pool per request; eligible-pool list not frozen",
+     "no volume evidence is an invalid observation, not zero"
+    ]
+   },
+   "drawdownSampling": {
+    "label": "RECORDED",
+    "geckoterminalMinuteCandles": {
+     "http": 200,
+     "latencyMs": 662,
+     "fetchedAt": "2026-11-09T04:29:23Z",
+     "candles": 120,
+     "resolutionSeconds": 60,
+     "newestCandleLagSeconds": 2243,
+     "sample": [
+      1794196320,
+      0.000830419213281795,
+      0.0008458964315363809,
+      0.000830419213281795,
+      0.0008458964315363809,
+      28.599316998433
+     ]
+    },
+    "geckoterminalSecondCandles": {
+     "http": 401,
+     "note": "timeframe=second is exclusive to Paid plan subscribers (tested on the CASHCAT pool; same endpoint for every pool)"
+    },
+    "onchainPerBlockHistory": {
+     "readable": false,
+     "error": "HTTP 403 archive"
+    },
+    "forwardLiveSampling": {
+     "note": "latest-state eth_call is readable; see rpc.sampling for 31 calls",
+     "pointReadMedianMs": 377
+    },
+    "verdict": "PARTIAL: free history is 60 s candles (coarser than the 30 s round); live forward sampling of latest state is possible in principle but is not finalized and was not run across a round",
+    "limitations": [
+     "no retrospective per-second or per-block samples without an archive RPC",
+     "trade prices leave gaps in rounds without trades; gaps cannot be treated as flat"
+    ]
+   },
+   "v4Exposure": {
+    "pairsListed": 3,
+    "uniswapV4Pairs": 0,
+    "v4LiquidityUsd": 0,
+    "totalListedLiquidityUsd": 147573.96,
+    "note": "v4 pools were not probed on-chain"
+   }
+  }
+ },
+ "requestLog": [
+  {
+   "tag": "ds-CASHCAT",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetchedAt": "2026-11-09T04:25:51Z",
+   "http": 200,
+   "latencyMs": 224
+  },
+  {
+   "tag": "gp-CASHCAT",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetchedAt": "2026-11-09T04:25:51Z",
+   "http": 200,
+   "latencyMs": 524
+  },
+  {
+   "tag": "gt-token-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetchedAt": "2026-11-09T04:25:59Z",
+   "http": 200,
+   "latencyMs": 497
+  },
+  {
+   "tag": "gt-pools-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4/pools?page=1",
+   "fetchedAt": "2026-11-09T04:26:06Z",
+   "http": 200,
+   "latencyMs": 612
+  },
+  {
+   "tag": "gt-trades-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/trades",
+   "fetchedAt": "2026-11-09T04:26:14Z",
+   "http": 200,
+   "latencyMs": 299
+  },
+  {
+   "tag": "gt-ohlcv-min-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:26:21Z",
+   "http": 200,
+   "latencyMs": 735
+  },
+  {
+   "tag": "gt-ohlcv-sec-CASHCAT",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xd42a491087a15e5afd51feb3606066cc152d2b09/ohlcv/second?aggregate=15&limit=10",
+   "fetchedAt": "2026-11-09T04:26:29Z",
+   "http": 401,
+   "latencyMs": 565
+  },
+  {
+   "tag": "cg-contract-CASHCAT",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+   "fetchedAt": "2026-11-09T04:26:33Z",
+   "http": 401,
+   "latencyMs": 403
+  },
+  {
+   "tag": "ds-WALLET",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0x0339f5459fC690ac85f1782E15782A151b4a9e1b",
+   "fetchedAt": "2026-11-09T04:26:34Z",
+   "http": 200,
+   "latencyMs": 415
+  },
+  {
+   "tag": "gp-WALLET",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0x0339f5459fC690ac85f1782E15782A151b4a9e1b",
+   "fetchedAt": "2026-11-09T04:26:34Z",
+   "http": 200,
+   "latencyMs": 267
+  },
+  {
+   "tag": "gt-token-WALLET",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0339f5459fC690ac85f1782E15782A151b4a9e1b",
+   "fetchedAt": "2026-11-09T04:26:41Z",
+   "http": 200,
+   "latencyMs": 803
+  },
+  {
+   "tag": "cg-contract-WALLET",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0x0339f5459fC690ac85f1782E15782A151b4a9e1b",
+   "fetchedAt": "2026-11-09T04:26:52Z",
+   "http": 401,
+   "latencyMs": 492
+  },
+  {
+   "tag": "ds-GOOD",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0x5F62c57E5C537887117eEF828b7e3aD41C009FEb",
+   "fetchedAt": "2026-11-09T04:26:53Z",
+   "http": 200,
+   "latencyMs": 429
+  },
+  {
+   "tag": "gp-GOOD",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0x5F62c57E5C537887117eEF828b7e3aD41C009FEb",
+   "fetchedAt": "2026-11-09T04:26:53Z",
+   "http": 200,
+   "latencyMs": 239
+  },
+  {
+   "tag": "gt-token-GOOD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x5F62c57E5C537887117eEF828b7e3aD41C009FEb",
+   "fetchedAt": "2026-11-09T04:27:01Z",
+   "http": 200,
+   "latencyMs": 590
+  },
+  {
+   "tag": "cg-contract-GOOD",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0x5F62c57E5C537887117eEF828b7e3aD41C009FEb",
+   "fetchedAt": "2026-11-09T04:27:11Z",
+   "http": 401,
+   "latencyMs": 567
+  },
+  {
+   "tag": "ds-AI",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8",
+   "fetchedAt": "2026-11-09T04:27:12Z",
+   "http": 200,
+   "latencyMs": 472
+  },
+  {
+   "tag": "gp-AI",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8",
+   "fetchedAt": "2026-11-09T04:27:13Z",
+   "http": 200,
+   "latencyMs": 287
+  },
+  {
+   "tag": "gt-token-AI",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8",
+   "fetchedAt": "2026-11-09T04:27:20Z",
+   "http": 200,
+   "latencyMs": 628
+  },
+  {
+   "tag": "gt-pools-AI",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8/pools?page=1",
+   "fetchedAt": "2026-11-09T04:27:28Z",
+   "http": 200,
+   "latencyMs": 641
+  },
+  {
+   "tag": "gt-ohlcv-min-AI",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xef55cac3003deac4494a6e0eb4d7c9e5e0d7f5b3/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:27:42Z",
+   "http": 200,
+   "latencyMs": 541
+  },
+  {
+   "tag": "cg-contract-AI",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8",
+   "fetchedAt": "2026-11-09T04:27:46Z",
+   "http": 401,
+   "latencyMs": 451
+  },
+  {
+   "tag": "ds-VLAD",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0xFDbB27E971E72E38C41b1c772FB409c94dd92789",
+   "fetchedAt": "2026-11-09T04:27:47Z",
+   "http": 200,
+   "latencyMs": 452
+  },
+  {
+   "tag": "gp-VLAD",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0xFDbB27E971E72E38C41b1c772FB409c94dd92789",
+   "fetchedAt": "2026-11-09T04:27:47Z",
+   "http": 200,
+   "latencyMs": 265
+  },
+  {
+   "tag": "gt-token-VLAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xFDbB27E971E72E38C41b1c772FB409c94dd92789",
+   "fetchedAt": "2026-11-09T04:27:54Z",
+   "http": 200,
+   "latencyMs": 540
+  },
+  {
+   "tag": "gt-pools-VLAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0xFDbB27E971E72E38C41b1c772FB409c94dd92789/pools?page=1",
+   "fetchedAt": "2026-11-09T04:28:02Z",
+   "http": 200,
+   "latencyMs": 892
+  },
+  {
+   "tag": "gt-ohlcv-min-VLAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x8a3ae9184141c085bad6abfefcc626de288be3d3/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:28:17Z",
+   "http": 200,
+   "latencyMs": 719
+  },
+  {
+   "tag": "cg-contract-VLAD",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0xFDbB27E971E72E38C41b1c772FB409c94dd92789",
+   "fetchedAt": "2026-11-09T04:28:21Z",
+   "http": 401,
+   "latencyMs": 408
+  },
+  {
+   "tag": "ds-DEGEN",
+   "url": "https://api.dexscreener.com/token-pairs/v1/robinhood/0x0830a9dD26A04E959657aB6788d45F5725590c32",
+   "fetchedAt": "2026-11-09T04:28:21Z",
+   "http": 200,
+   "latencyMs": 423
+  },
+  {
+   "tag": "gt-token-DEGEN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0830a9dD26A04E959657aB6788d45F5725590c32",
+   "fetchedAt": "2026-11-09T04:28:59Z",
+   "http": 200,
+   "latencyMs": 561
+  },
+  {
+   "tag": "gt-pools-DEGEN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0830a9dD26A04E959657aB6788d45F5725590c32/pools?page=1",
+   "fetchedAt": "2026-11-09T04:29:06Z",
+   "http": 200,
+   "latencyMs": 807
+  },
+  {
+   "tag": "gt-trades-DEGEN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x5408ad4b4f1d5091b99953af963500a792f47bc3/trades",
+   "fetchedAt": "2026-11-09T04:29:14Z",
+   "http": 200,
+   "latencyMs": 1189
+  },
+  {
+   "tag": "gt-ohlcv-min-DEGEN",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x5408ad4b4f1d5091b99953af963500a792f47bc3/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:29:23Z",
+   "http": 200,
+   "latencyMs": 662
+  },
+  {
+   "tag": "cg-contract-DEGEN",
+   "url": "https://api.coingecko.com/api/v3/onchain/networks/robinhood/tokens/0x0830a9dD26A04E959657aB6788d45F5725590c32",
+   "fetchedAt": "2026-11-09T04:29:26Z",
+   "http": 401,
+   "latencyMs": 485
+  },
+  {
+   "tag": "gt-pools-WALLET",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x0339f5459fC690ac85f1782E15782A151b4a9e1b/pools?page=1",
+   "fetchedAt": "2026-11-09T04:32:06Z",
+   "http": 200,
+   "latencyMs": 702
+  },
+  {
+   "tag": "gt-pools-GOOD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/0x5F62c57E5C537887117eEF828b7e3aD41C009FEb/pools?page=1",
+   "fetchedAt": "2026-11-09T04:32:27Z",
+   "http": 200,
+   "latencyMs": 711
+  },
+  {
+   "tag": "gt-trades-WALLET",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x9501A20Bedb8beA0798FE5D4c411f5e270965D49/trades",
+   "fetchedAt": "2026-11-09T04:35:20Z",
+   "http": 200,
+   "latencyMs": 30005
+  },
+  {
+   "tag": "gt-ohlcv-min-WALLET",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x9501A20Bedb8beA0798FE5D4c411f5e270965D49/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:33:38Z",
+   "http": 200,
+   "latencyMs": 912
+  },
+  {
+   "tag": "gt-trades-GOOD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x8EA7c66395fD7e25E9713Edd0B297d4ABE05C304/trades",
+   "fetchedAt": "2026-11-09T04:33:59Z",
+   "http": 200,
+   "latencyMs": 1976
+  },
+  {
+   "tag": "gt-ohlcv-min-GOOD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x8EA7c66395fD7e25E9713Edd0B297d4ABE05C304/ohlcv/minute?aggregate=1&limit=120",
+   "fetchedAt": "2026-11-09T04:34:21Z",
+   "http": 200,
+   "latencyMs": 658
+  },
+  {
+   "tag": "gt-trades-AI",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xEf55CAC3003dEaC4494A6e0Eb4D7c9E5e0d7F5B3/trades",
+   "fetchedAt": "2026-11-09T04:34:42Z",
+   "http": 200,
+   "latencyMs": 1322
+  },
+  {
+   "tag": "gt-trades-VLAD",
+   "url": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x8a3aE9184141C085BAD6aBfEFcC626dE288be3d3/trades",
+   "fetchedAt": "2026-11-09T04:35:03Z",
+   "http": 200,
+   "latencyMs": 738
+  },
+  {
+   "tag": "gp-DEGEN",
+   "url": "https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=0x0830a9dD26A04E959657aB6788d45F5725590c32",
+   "fetchedAt": "2026-11-09T04:35:09Z",
+   "http": 200,
+   "latencyMs": 506
+  }
+ ],
+ "notRun": [
+  "the owner RPC at any archive depth",
+  "an archive RPC with a personal token",
+  "Uniswap v4 PoolManager/StateView reads",
+  "a live forward sampling run across a 30 second round",
+  "paid GeckoTerminal or DexScreener products",
+  "CoinGecko pro or on-chain endpoints (401 without a key)",
+  "GoPlus holder labels as a supply source (holder data only)"
+ ]
+}
