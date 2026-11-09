@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowDown,
   ArrowUpRight,
   RotateCcw,
   ShieldCheck,
   Swords,
   Check,
+  Plus,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { KineticScene } from "./scene";
 import { TargetFlow } from "@/components/target-flow";
 import { MemeMechanics } from "@/components/meme-mechanics";
 
@@ -63,32 +64,22 @@ export function Landing() {
   };
   return (
     <div className="landing-page">
-      <section className="landing-hero relative grid items-center gap-8 pb-12 pt-5 lg:grid-cols-[.9fr_1.1fr] lg:pb-20 lg:pt-10">
-        <div className="relative z-10 max-w-xl">
-          <p className="landing-kicker"><span className="status-dot" /> THE COMMUNITY BATTLEGROUND <span className="landing-kicker-tag">NEAR TESTNET</span></p>
-          <h1 className="landing-title mt-7 font-pixel text-[clamp(3.8rem,7.5vw,7rem)] font-bold leading-[.9] tracking-[-.075em]">
-            PICK A SIDE.
-            <br />
-            <span className="text-neon-green">OWN THE ARENA.</span>
-          </h1>
-          <p className="mt-7 max-w-sm text-sm leading-7 text-mute">
-            Pick your tribe and enter the arena. Browse battles, inspect the vaults and status, then back a community while deposits are open.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button asChild size="lg">
-              <Link href="/arena">
-                Enter the arena <ArrowUpRight size={17} />
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="lg">
-              <a href="#practice">
-                Try without a wallet <ArrowDown size={15} />
-              </a>
-            </Button>
-          </div>
-          <p className="mt-5 text-xs leading-6 text-neon-amber">Five-tribe practice illustrates the planned experience. Current battles support two communities.</p>
-          <div className="landing-brief"><span><strong>01</strong> PICK YOUR TRIBE</span><span><strong>02</strong> WATCH THE BATTLE</span><span><strong>03</strong> CLAIM YOUR OUTCOME</span></div>
+      <div className="mb-5 flex items-center justify-between">
+        <p className="eyebrow">01 / The community battleground</p>
+        <span className="eyebrow hidden sm:block">VALTRUM — ARENA LOBBY</span>
+      </div>
+      <section className="machine-hero grid lg:grid-cols-[.95fr_1.05fr]">
+        <div className="relative z-10 px-6 pt-9 sm:px-9 lg:py-14 lg:pl-12">
+          <span className="inline-flex items-center gap-2 rounded-full border border-neon-green/25 bg-neon-green/5 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.14em] text-neon-green"><span className="status-dot" /> Community battles / NEAR testnet</span>
+          <h1 className="mt-6 text-[clamp(2.8rem,5.7vw,5.5rem)] font-medium leading-[.98] tracking-[-.065em]">Pick your tribe.<br /><span className="text-neon-green">Enter the arena.</span></h1>
+          <p className="mt-5 max-w-sm text-sm leading-7 text-mute">Discover token communities, inspect their vaults and follow the battle. Choose your side while deposits are open.</p>
+          <div className="mt-7 flex flex-wrap gap-3"><Button asChild size="lg"><Link href="/arena">Explore battles <ArrowUpRight size={16} /></Link></Button><Button asChild variant="ghost" size="lg"><Link href="/battles/new"><Plus size={15} /> Create battle</Link></Button></div>
+          <div className="mt-8 flex flex-wrap gap-5 border-t border-edge/70 py-5 text-[10px] text-mute"><span>COMMUNITY VS COMMUNITY</span><span>TOKEN-BACKED VAULTS</span></div>
         </div>
+        <div className="relative min-w-0"><div className="absolute right-6 top-6 z-10 hidden font-mono text-[9px] uppercase leading-5 tracking-widest text-mute/70 lg:block">Kinetic arena<br />Community rivalry</div><KineticScene className="h-[310px] sm:h-[400px] lg:h-full lg:min-h-[480px]" /></div>
+      </section>
+      <section className="mt-12 grid items-start gap-8 lg:grid-cols-[.7fr_1.3fr]">
+        <div className="max-w-md"><p className="eyebrow text-neon-green">PRACTICE / NO WALLET NEEDED</p><h2 className="mt-4 text-3xl md:text-4xl">Pick a tribe. Try a round.</h2><p className="mt-4 text-sm leading-7 text-mute">Explore a scripted five-tribe round and see how the planned arena works. No funds or transactions are involved.</p><p className="mt-4 text-xs leading-6 text-neon-amber">Current battles support two communities; multi-community rounds are planned.</p></div>
         <div
           id="practice"
           className="practice-card relative min-w-0 scroll-mt-32 overflow-hidden rounded-2xl border border-edge bg-[#161f26]"

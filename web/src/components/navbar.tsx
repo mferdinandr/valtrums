@@ -7,7 +7,6 @@ import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
 import {
   Aperture,
-  ArrowUpRight,
   Swords,
   Layers3,
   Terminal,
@@ -23,7 +22,6 @@ const LINKS = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const landing = pathname === "/";
   return (
     <header className="sticky top-0 z-40 border-b border-edge/70 bg-void/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 lg:px-10">
@@ -42,35 +40,7 @@ export function Navbar() {
           aria-label="Main navigation"
           className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto md:flex-1 md:justify-center"
         >
-          {landing ? (
-            <>
-              <a
-                href="#practice"
-                className="flex items-center px-3 py-2 text-xs text-mute hover:text-neon-green"
-              >
-                Try a round
-              </a>
-              <a
-                href="#product-flow"
-                className="flex items-center px-3 py-2 text-xs text-mute hover:text-neon-green"
-              >
-                Product flow
-              </a>
-              <a
-                href="#mechanics"
-                className="flex items-center px-3 py-2 text-xs text-mute hover:text-neon-green"
-              >
-                How it works
-              </a>
-              <Link
-                href="/arena"
-                className="flex items-center gap-2 px-3 py-2 text-xs text-neon-green"
-              >
-                <Swords size={14} /> Arena
-              </Link>
-            </>
-          ) : (
-            LINKS.map((l) => {
+          {LINKS.map((l) => {
               const active =
                 l.href === "/arena"
                   ? pathname === "/arena" ||
@@ -92,20 +62,10 @@ export function Navbar() {
                   <l.icon size={14} /> {l.label}
                 </Link>
               );
-            })
-          )}
+            })}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          {landing ? (
-            <Link
-              href="/arena"
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-neon-green px-4 font-pixel text-xs font-semibold text-void transition-colors hover:bg-[#defa9a]"
-            >
-              Enter Arena <ArrowUpRight size={14} aria-hidden="true" />
-            </Link>
-          ) : (
-            <WalletButton />
-          )}
+          <WalletButton />
         </div>
       </div>
     </header>
