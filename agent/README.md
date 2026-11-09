@@ -98,6 +98,21 @@ Assumptions and limits of this mode:
 
 `NEAR_RPC_URL` selects the node. Public endpoints rate-limit (HTTP 429): the agent retries read-only calls on 429, 5xx and network errors with exponential backoff (up to 5 attempts, 1 s to 15 s), but a busy public endpoint can still starve it. For anything longer than a quick test use a dedicated or less loaded provider, for example `https://test.rpc.fastnear.com` on testnet. Transactions are not retried blindly; the next pass rebuilds the work from on-chain state.
 
+## Opt-in observability (both off by default)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUDIT_REPORT_ARCHIVE_ENABLED` | unset | `true` archives every lifecycle audit report to a durable append-only file; requires `AUDIT_ENABLED=true` (startup fails otherwise) |
+| `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file |
+| `INDEXER_ENABLED` | unset | `true` runs the read-only event indexer on every pass. There is no live block source yet, so `INDEXER_RECORDED_CHAIN` is required and its blocks and finality are **fixture assertions**, not chain state |
+| `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`) |
+| `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the backing and payout contracts) |
+| `INDEXER_STATE_DIR` | `./.agent-state/indexer` | indexer state directory (single writer) |
+| `INDEXER_RETENTION_DEPTH` | `10000` | finalized blocks kept behind the finalized head; older ones become a hashed summary checkpoint and are pruned (provisional blocks and dedup keys never are) |
+| `INDEXER_ANCHOR_HEIGHT`, `INDEXER_ANCHOR_HASH` | lowest recorded height, genesis | declared start of the processed chain |
+
+The indexer has no write authority and an indexer failure never blocks settlement or payout passes.
+
 ## Limits
 
 - The contract stores no liquidity baseline, so it is kept locally. If the file is lost, the watchdog takes the current liquidity as the new baseline (logged), and a drop before that point goes unnoticed.
