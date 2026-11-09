@@ -219,6 +219,7 @@ fn reservation(amount: u128) -> Reservation {
         version: 1,
         amount,
         state: ReservationState::Reserved,
+        expires_ns: 1_000,
     }
 }
 
@@ -239,7 +240,7 @@ fn safe_release_only_before_dispatch() {
     let mut b = Budget::new(100);
     b.reserve(60).unwrap();
     let mut r = reservation(60);
-    r.dispatch().unwrap();
+    r.dispatch(0).unwrap();
     // A dispatched (possibly executing) obligation cannot be released without reconciliation proof.
     assert_eq!(r.release(&mut b), Err(PolicyError::WrongState));
     assert_eq!(b.reserved, 60); // still held
@@ -250,7 +251,7 @@ fn reconciliation_resolves_an_ambiguous_dispatch_exactly_once() {
     let mut b = Budget::new(100);
     b.reserve(60).unwrap();
     let mut r = reservation(60);
-    r.dispatch().unwrap();
+    r.dispatch(0).unwrap();
     r.mark_reconciliation().unwrap();
     assert_eq!(r.state, ReservationState::ReconciliationRequired);
     assert_eq!(b.reserved, 60); // reservation retained while ambiguous
@@ -311,7 +312,7 @@ fn transition_sequences_keep_the_invariant() {
         let mut r = reservation(40);
         for step in *script {
             let _ = match *step {
-                "dispatch" => r.dispatch().map(|_| ()),
+                "dispatch" => r.dispatch(0).map(|_| ()),
                 "consume" => r.consume(&mut b).map(|_| ()),
                 "release" => r.release(&mut b).map(|_| ()),
                 "mark" => r.mark_reconciliation().map(|_| ()),
