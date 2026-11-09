@@ -1,55 +1,185 @@
-@import "@fontsource/press-start-2p/400.css";
-@import "@fontsource/vt323/400.css";
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+.battle-portal {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .battle-portal {
+    display: block;
+  }
+}
+
 @layer base {
   html {
     color-scheme: dark;
+    scroll-behavior: smooth;
+    scroll-padding-top: 6rem;
   }
   body {
-    @apply bg-void font-term text-xl text-ink antialiased;
-    background-image:
-      linear-gradient(rgba(46, 230, 255, 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(46, 230, 255, 0.04) 1px, transparent 1px);
-    background-size: 24px 24px;
+    @apply bg-void font-term text-sm text-ink antialiased;
+    background-image: radial-gradient(
+      ellipse at 90% 0%,
+      #32465544,
+      transparent 55%
+    );
   }
   h1,
   h2,
   h3 {
-    @apply font-pixel uppercase tracking-wide;
+    @apply font-pixel font-medium tracking-tight;
   }
   ::selection {
-    @apply bg-neon-pink text-black;
+    @apply bg-neon-green text-black;
   }
 }
 
 @layer components {
   .pixel-frame {
-    @apply border-2 border-edge bg-panel shadow-pixel;
-  }
-  .scanlines::after {
-    content: "";
-    pointer-events: none;
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0) 0,
-      rgba(0, 0, 0, 0) 2px,
-      rgba(0, 0, 0, 0.18) 3px
-    );
-    z-index: 50;
+    @apply rounded-xl border border-edge bg-panel/90;
   }
   .blink {
-    animation: blink 1s steps(2, start) infinite;
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+  .eyebrow {
+    @apply font-pixel text-[10px] font-medium uppercase tracking-[0.2em] text-mute;
+  }
+  .kinetic-card {
+    position: relative;
+    overflow: hidden;
+    transition:
+      transform 0.3s,
+      border-color 0.3s,
+      background 0.3s;
+  }
+  .kinetic-card:hover {
+    transform: translateY(-4px);
+    border-color: #748554;
+    background: #202d33;
+  }
+  .scene-floor {
+    background:
+      radial-gradient(ellipse at 30% 55%, #d0f57012, transparent 55%),
+      radial-gradient(ellipse at 80% 45%, #c8a6f714, transparent 60%);
+  }
+  .orbital-fallback {
+    position: absolute;
+    width: 55%;
+    aspect-ratio: 1;
+    left: 23%;
+    top: 15%;
+    border: 1px solid #d0f57055;
+    border-radius: 50%;
+    transform: rotateX(58deg) rotateZ(-20deg);
+    box-shadow:
+      0 0 0 25px #d0f57006,
+      0 0 0 55px #d0f57005,
+      inset 0 0 70px #d0f57012;
+  }
+  .machine-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border: 1px solid #36434a;
+    border-radius: 18px;
+    background: linear-gradient(120deg, #243039, #161e23 70%);
+  }
+  .machine-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.35;
+    background-image:
+      linear-gradient(#a4b5850c 1px, transparent 1px),
+      linear-gradient(90deg, #a4b5850c 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .route-content .text-xl {
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+  .route-content .text-2xl {
+    font-size: 1.05rem;
+    line-height: 1.65;
+  }
+  .route-content .text-lg {
+    font-size: 0.875rem;
+    line-height: 1.65;
+  }
+  .route-content .font-pixel.text-\[8px\],
+  .route-content .font-pixel.text-\[9px\] {
+    font-size: 11px;
+  }
+  .route-content select {
+    border-radius: 8px;
+    border-width: 1px;
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #d0f570;
+    box-shadow: 0 0 10px #d0f57066;
   }
 }
-
-@keyframes blink {
+button,
+select {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+.practice-step {
+  animation: step-arrive 240ms ease-out both;
+}
+@keyframes step-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
   to {
-    visibility: hidden;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (hover: none) {
+  .kinetic-card:hover {
+    transform: none;
+  }
+}
+:focus-visible {
+  outline: 2px solid #d0f570;
+  outline-offset: 5px;
+}
+p,
+dd {
+  overflow-wrap: anywhere;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .kinetic-card:hover {
+    transform: none;
   }
 }

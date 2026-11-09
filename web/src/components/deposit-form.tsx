@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { DepositPhase } from "@/components/kinetic/battle-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
@@ -17,6 +18,10 @@ export function DepositForm({
   metaB,
   lockedSide,
   onDone,
+  selectedSide,
+  onSelectSide,
+  onVisualChange,
+  disabled = false,
 }: {
   battle: BattleView;
   metaA: TokenMeta;
@@ -24,6 +29,10 @@ export function DepositForm({
   /** A wallet can only back one tribe per battle. */
   lockedSide: Side | null;
   onDone: () => void;
+  selectedSide?: Side;
+  onSelectSide?: (side: Side) => void;
+  onVisualChange?: (phase: DepositPhase) => void;
+  disabled?: boolean;
 }) {
   const api = useArena();
   const { accountId, signIn } = useWallet();
@@ -31,22 +40,78 @@ export function DepositForm({
   const [amount, setAmount] = useState("");
   const action = useAction();
   const [ok, setOk] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [review, setReview] = useState(false);
 
-  const activeSide = lockedSide ?? side;
+  const activeSide = lockedSide ?? selectedSide ?? side;
   const meta = activeSide === "A" ? metaA : metaB;
   const tokenId = activeSide === "A" ? battle.token_a : battle.token_b;
   const parsed = parseUnits(amount, meta.decimals);
   const invalid = amount !== "" && (parsed === null || parsed <= 0n);
+  const phase: DepositPhase = action.busy
+    ? "pending"
+    : ok
+      ? "success"
+      : submitted
+        ? "submitted"
+        : action.error
+          ? "error"
+          : review
+            ? "review"
+            : parsed !== null && parsed > 0n
+              ? "preview"
+              : "idle";
+  useEffect(() => {
+    onVisualChange?.(phase);
+  }, [phase, onVisualChange]);
+  useEffect(() => {
+    setReview(false);
+  }, [activeSide]);
 
   const submit = async () => {
-    if (!accountId || parsed === null || parsed <= 0n) return;
+    if (
+      !accountId ||
+      parsed === null ||
+      parsed <= 0n ||
+      disabled ||
+      action.busy
+    )
+      return;
     setOk(false);
+    setSubmitted(false);
+    let previous: bigint | null = null;
+    let credited = false;
     const success = await action.run(() =>
-      api.depositCoin({ signerId: accountId, battleId: battle.id, side: activeSide, tokenId, amount: parsed }),
+      (async () => {
+        try {
+          const position = await api.getPosition(battle.id, accountId);
+          previous = BigInt(position?.coin_amount ?? "0");
+        } catch {
+          /* A failed read never establishes credited funds. */
+        }
+        await api.depositCoin({
+          signerId: accountId,
+          battleId: battle.id,
+          side: activeSide,
+          tokenId,
+          amount: parsed,
+        });
+        try {
+          const position = await api.getPosition(battle.id, accountId);
+          credited =
+            previous !== null &&
+            position?.side === activeSide &&
+            BigInt(position.coin_amount) >= previous + parsed;
+        } catch {
+          /* Preserve submitted status while the view is unavailable. */
+        }
+      })(),
     );
     if (success) {
-      setOk(true);
+      setOk(credited);
+      setSubmitted(!credited);
       setAmount("");
+      setReview(false);
       onDone();
     }
   };
@@ -57,16 +122,26 @@ export function DepositForm({
       <div className="grid grid-cols-2 gap-2">
         {(["A", "B"] as const).map((s) => {
           const m = s === "A" ? metaA : metaB;
-          const disabled = lockedSide !== null && lockedSide !== s;
+          const sideDisabled =
+            disabled ||
+            action.busy ||
+            review ||
+            (lockedSide !== null && lockedSide !== s);
           return (
             <button
               key={s}
               type="button"
-              disabled={disabled}
-              onClick={() => setSide(s)}
+              disabled={sideDisabled}
+              onClick={() => {
+                setSide(s);
+                onSelectSide?.(s);
+                setOk(false);
+                setSubmitted(false);
+                action.clearError();
+              }}
               aria-pressed={activeSide === s}
               className={cn(
-                "border-2 px-3 py-3 font-pixel text-[10px] uppercase disabled:opacity-30",
+                "rounded-lg border px-3 py-3 font-pixel text-[11px] uppercase disabled:opacity-40",
                 activeSide === s
                   ? s === "A"
                     ? "border-neon-cyan bg-neon-cyan/15 text-neon-cyan"
@@ -86,29 +161,82 @@ export function DepositForm({
           inputMode="decimal"
           placeholder="0.0"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            setOk(false);
+            setSubmitted(false);
+            action.clearError();
+          }}
+          disabled={disabled || action.busy || review}
           aria-invalid={invalid}
         />
-        {invalid && <p className="mt-1 text-lg text-neon-red">Enter a positive amount with at most {meta.decimals} decimals.</p>}
+        {invalid && (
+          <p className="mt-1 text-lg text-neon-red">
+            Enter a positive amount with at most {meta.decimals} decimals.
+          </p>
+        )}
         {parsed !== null && parsed > 0n && (
           <p className="mt-1 text-lg text-mute">
-            Sends {formatUnits(parsed, meta.decimals, 6)} {meta.symbol} via ft_transfer_call
+            Sends {formatUnits(parsed, meta.decimals, 6)} {meta.symbol} via
+            ft_transfer_call
           </p>
         )}
       </div>
       <div className="mt-4">
         {accountId ? (
-          <Button onClick={() => void submit()} disabled={action.busy || parsed === null || parsed <= 0n}>
-            {action.busy ? "Sending..." : "Deposit"}
-          </Button>
+          review ? (
+            <div className="space-y-3 rounded-lg border border-neon-amber/40 bg-neon-amber/5 p-4">
+              <p className="text-sm text-neon-amber">
+                Review: {amount} {meta.symbol} → battle #{battle.id}, tribe{" "}
+                {activeSide}
+              </p>
+              <p className="text-xs text-mute">
+                The animation is a preview. Your wallet authorizes the transfer.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => void submit()}
+                  disabled={disabled || action.busy}
+                >
+                  {action.busy ? "Waiting for transaction…" : "Confirm deposit"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={action.busy}
+                  onClick={() => setReview(false)}
+                >
+                  Edit deposit
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              onClick={() => setReview(true)}
+              disabled={
+                disabled || action.busy || parsed === null || parsed <= 0n
+              }
+            >
+              Review deposit
+            </Button>
+          )
         ) : (
           <Button variant="cyan" onClick={() => void signIn()}>
             Connect wallet to deposit
           </Button>
         )}
       </div>
-      {action.error && <p role="alert" className="mt-2 text-lg text-neon-red">{action.error}</p>}
+      {action.error && (
+        <p role="alert" className="mt-2 text-lg text-neon-red">
+          {action.error}
+        </p>
+      )}
       {ok && <p className="mt-2 text-lg text-neon-green">Deposit sent.</p>}
+      {submitted && (
+        <p role="status" className="mt-2 text-sm text-neon-amber">
+          Deposit submitted. Credit is not verified yet; inspect your position
+          before retrying.
+        </p>
+      )}
     </Card>
   );
 }

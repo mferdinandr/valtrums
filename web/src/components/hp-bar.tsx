@@ -20,7 +20,14 @@ export interface HpBarProps {
 }
 
 /** Segmented HP-style meter. */
-export function HpBar({ percent, tone = "green", label, right, segments = 20, className }: HpBarProps) {
+export function HpBar({
+  percent,
+  tone = "green",
+  label,
+  right,
+  segments = 20,
+  className,
+}: HpBarProps) {
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = Math.round((clamped / 100) * segments);
   return (
@@ -37,10 +44,16 @@ export function HpBar({ percent, tone = "green", label, right, segments = 20, cl
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(clamped)}
-        className="flex h-5 gap-[2px] border-2 border-edge bg-black p-[2px]"
+        className="flex h-3 gap-[3px] overflow-hidden rounded border border-edge bg-void p-[2px]"
       >
         {Array.from({ length: segments }, (_, i) => (
-          <div key={i} className={cn("h-full flex-1", i < filled ? TONES[tone] : "bg-edge/40")} />
+          <div
+            key={i}
+            className={cn(
+              "h-full flex-1",
+              i < filled ? TONES[tone] : "bg-edge/40",
+            )}
+          />
         ))}
       </div>
     </div>

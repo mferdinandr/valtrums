@@ -14,7 +14,12 @@ import { useState } from "react";
 import { fallbackMeta, useTokenMetas } from "@/hooks/use-token-metas";
 import { formatUnits, formatUsdc, toBigInt } from "@/lib/amounts";
 import { previewClaimForBattle, priceBasis } from "@/lib/arena/payout";
-import { liquidTokenIds, metaFor, readLiquidBalances, withdrawLiquidChecked } from "@/lib/arena/withdraw";
+import {
+  liquidTokenIds,
+  metaFor,
+  readLiquidBalances,
+  withdrawLiquidChecked,
+} from "@/lib/arena/withdraw";
 import { isRefundable, STATUS_LABEL, STATUS_TONE } from "@/lib/arena/status";
 import type { BattleView, PositionView, TokenMeta } from "@/lib/arena/types";
 
@@ -48,7 +53,10 @@ function PositionRow({
   const { battle, position } = row;
   const meta = position.side === "A" ? metaA : metaB;
 
-  const canClaim = battle.status === "Settled" && battle.winner === position.side && !position.claimed;
+  const canClaim =
+    battle.status === "Settled" &&
+    battle.winner === position.side &&
+    !position.claimed;
   const lost = battle.status === "Settled" && battle.winner !== position.side;
   const canRefund = isRefundable(battle.status) && !position.claimed;
 
@@ -57,56 +65,85 @@ function PositionRow({
     () => (canClaim ? api.getSettlementPlan(battle.id) : Promise.resolve(null)),
     [api, battle.id, canClaim],
   );
-  const preview = canClaim && basis ? previewClaimForBattle(battle, position, metaA, metaB, basis, plan.data) : null;
+  const preview =
+    canClaim && basis
+      ? previewClaimForBattle(battle, position, metaA, metaB, basis, plan.data)
+      : null;
   const coinId = position.side === "A" ? battle.token_a : battle.token_b;
 
-  const act = (fn: () => Promise<void>) => void action.run(fn).then((ok) => ok && onDone());
+  const act = (fn: () => Promise<void>) =>
+    void action.run(fn).then((ok) => ok && onDone());
 
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link href={`/battles/${battle.id}`} className="font-pixel text-[11px] text-neon-cyan hover:underline">
+        <Link
+          href={`/battles/${battle.id}`}
+          className="font-pixel text-[11px] text-neon-cyan hover:underline"
+        >
           #{battle.id} {metaA.symbol} vs {metaB.symbol}
         </Link>
-        <Badge tone={STATUS_TONE[battle.status]}>{STATUS_LABEL[battle.status]}</Badge>
+        <Badge tone={STATUS_TONE[battle.status]}>
+          {STATUS_LABEL[battle.status]}
+        </Badge>
       </div>
       <p className="mt-2 text-xl">
-        Tribe {position.side} ({meta.symbol}): {formatUnits(toBigInt(position.coin_amount), meta.decimals, 4)} {meta.symbol}{" "}
-        <span className="text-mute">(~{formatUsdc(toBigInt(position.usdc_equiv))})</span>
+        Tribe {position.side} ({meta.symbol}):{" "}
+        {formatUnits(toBigInt(position.coin_amount), meta.decimals, 4)}{" "}
+        {meta.symbol}{" "}
+        <span className="text-mute">
+          (~{formatUsdc(toBigInt(position.usdc_equiv))})
+        </span>
       </p>
 
       {preview && (
         <ul className="mt-2 text-lg text-mute">
-          <li className="text-neon-amber">Step 1, Claim: credits your liquid balance and grants locked credit.</li>
-          <li>
-            Principal back: {formatUnits(preview.principalCoin, meta.decimals, 4)} {meta.symbol}
+          <li className="text-neon-amber">
+            Step 1, Claim: credits your liquid balance and grants locked credit.
           </li>
           <li>
-            Liquid reward (55% pool): {formatUnits(preview.rewardCoin, meta.decimals, 4)} {meta.symbol} (~
+            Principal back:{" "}
+            {formatUnits(preview.principalCoin, meta.decimals, 4)} {meta.symbol}
+          </li>
+          <li>
+            Liquid reward (55% pool):{" "}
+            {formatUnits(preview.rewardCoin, meta.decimals, 4)} {meta.symbol} (~
             {formatUsdc(preview.rewardUsdc)})
           </li>
           <li className="text-neon-green">
-            Liquid after claim: {formatUnits(preview.totalCoin, meta.decimals, 4)} {meta.symbol}
+            Liquid after claim:{" "}
+            {formatUnits(preview.totalCoin, meta.decimals, 4)} {meta.symbol}
           </li>
           <li>
-            New locked credit (35% pool): {formatUsdc(preview.credit)}. Burned {formatUsdc(preview.burn)}, fee{" "}
-            {formatUsdc(preview.fee)}.
+            New locked credit (35% pool): {formatUsdc(preview.credit)}. Burned{" "}
+            {formatUsdc(preview.burn)}, fee {formatUsdc(preview.fee)}.
           </li>
-          <li className="text-neon-amber">Step 2, Withdraw: sends the coins to your wallet.</li>
-          {preview.estimated && <li>Estimated from final prices until the sale is reported.</li>}
+          <li className="text-neon-amber">
+            Step 2, Withdraw: sends the coins to your wallet.
+          </li>
+          {preview.estimated && (
+            <li>Estimated from final prices until the sale is reported.</li>
+          )}
         </ul>
       )}
 
       {canRefund && (
         <p className="mt-2 text-lg text-mute">
-          Step 1, Refund: credits your full deposit of {formatUnits(toBigInt(position.coin_amount), meta.decimals, 4)}{" "}
-          {meta.symbol} to your liquid balance. Step 2, Withdraw: sends it to your wallet.
+          Step 1, Refund: credits your full deposit of{" "}
+          {formatUnits(toBigInt(position.coin_amount), meta.decimals, 4)}{" "}
+          {meta.symbol} to your liquid balance. Step 2, Withdraw: sends it to
+          your wallet.
         </p>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         {canClaim && (
-          <Button disabled={action.busy} onClick={() => act(() => api.claim({ signerId: accountId, battleId: battle.id }))}>
+          <Button
+            disabled={action.busy}
+            onClick={() =>
+              act(() => api.claim({ signerId: accountId, battleId: battle.id }))
+            }
+          >
             {action.busy ? "Claiming..." : "Claim"}
           </Button>
         )}
@@ -114,27 +151,48 @@ function PositionRow({
           <Button
             variant="pink"
             disabled={action.busy}
-            onClick={() => act(() => api.withdrawInitialDeposit({ signerId: accountId, battleId: battle.id }))}
+            onClick={() =>
+              act(() =>
+                api.withdrawInitialDeposit({
+                  signerId: accountId,
+                  battleId: battle.id,
+                }),
+              )
+            }
           >
             {action.busy ? "Refunding..." : "Refund deposit"}
           </Button>
         )}
         {position.claimed && (
           <span className="text-neon-green">
-            {isRefundable(battle.status) ? "Refunded to liquid balance" : "Claimed to liquid balance"}
+            {isRefundable(battle.status)
+              ? "Refunded to liquid balance"
+              : "Claimed to liquid balance"}
           </span>
         )}
         {position.claimed && balance > 0n && (
-          <Button variant="cyan" disabled={busyToken !== null} onClick={() => onWithdraw({ ...meta, id: coinId })}>
-            {busyToken === coinId ? "Withdrawing..." : `Withdraw ${formatUnits(balance, meta.decimals, 4)} ${meta.symbol}`}
+          <Button
+            variant="cyan"
+            disabled={busyToken !== null}
+            onClick={() => onWithdraw({ ...meta, id: coinId })}
+          >
+            {busyToken === coinId
+              ? "Withdrawing..."
+              : `Withdraw ${formatUnits(balance, meta.decimals, 4)} ${meta.symbol}`}
           </Button>
         )}
-        {lost && <span className="text-mute">Tribe lost. Nothing to claim.</span>}
+        {lost && (
+          <span className="text-mute">Tribe lost. Nothing to claim.</span>
+        )}
         {!canClaim && !canRefund && !position.claimed && !lost && (
           <span className="text-mute">Waiting for the battle to finish.</span>
         )}
       </div>
-      {action.error && <p role="alert" className="mt-2 text-lg text-neon-red">{action.error}</p>}
+      {action.error && (
+        <p role="alert" className="mt-2 text-lg text-neon-red">
+          {action.error}
+        </p>
+      )}
     </Card>
   );
 }
@@ -150,7 +208,8 @@ export default function PortfolioPage() {
     const usdc = (await api.getConfig()).usdc;
     const count = await api.getBattleCount();
     const battles: BattleView[] = [];
-    for (let from = 0; from < count; from += 100) battles.push(...(await api.getBattles(from, 100)));
+    for (let from = 0; from < count; from += 100)
+      battles.push(...(await api.getBattles(from, 100)));
     const rows = (
       await Promise.all(
         battles.map(async (battle) => {
@@ -160,13 +219,18 @@ export default function PortfolioPage() {
       )
     ).filter((r): r is Row => r !== null);
     const sorted = rows.sort((x, y) => y.battle.id - x.battle.id);
-    const tokenIds = liquidTokenIds(usdc, sorted.map((r) => r.battle));
+    const tokenIds = liquidTokenIds(
+      usdc,
+      sorted.map((r) => r.battle),
+    );
     const balances = await readLiquidBalances(api, accountId, tokenIds);
     const walletUsdc = await env.chain.usdcBalance(accountId);
     return { account, usdc, tokenIds, balances, walletUsdc, rows: sorted };
   }, [api, env, accountId]);
 
-  const metas = useTokenMetas((data?.rows ?? []).flatMap((r) => [r.battle.token_a, r.battle.token_b]));
+  const metas = useTokenMetas(
+    (data?.rows ?? []).flatMap((r) => [r.battle.token_a, r.battle.token_b]),
+  );
   const withdraw = useAction();
   const [busyToken, setBusyToken] = useState<string | null>(null);
 
@@ -177,7 +241,11 @@ export default function PortfolioPage() {
     setBusyToken(meta.id);
     void withdraw
       .run(async () => {
-        await withdrawLiquidChecked(api, { signerId: accountId, token: meta.id, amount });
+        await withdrawLiquidChecked(api, {
+          signerId: accountId,
+          token: meta.id,
+          amount,
+        });
       })
       .finally(() => {
         setBusyToken(null);
@@ -185,12 +253,15 @@ export default function PortfolioPage() {
       });
   };
 
-  if (walletLoading) return <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>;
+  if (walletLoading)
+    return <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>;
   if (!accountId) {
     return (
       <div className="space-y-4">
         <h1 className="text-lg text-neon-pink">Portfolio</h1>
-        <p className="text-2xl text-mute">Connect a wallet to see your positions and credit.</p>
+        <p className="text-2xl text-mute">
+          Connect a wallet to see your positions and credit.
+        </p>
         <Button variant="cyan" onClick={() => void signIn()}>
           Connect wallet
         </Button>
@@ -201,8 +272,14 @@ export default function PortfolioPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-lg text-neon-pink">Portfolio</h1>
-      {error && <p role="alert" className="text-xl text-neon-red">Could not load portfolio: {error}</p>}
-      {loading && !data && <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>}
+      {error && (
+        <p role="alert" className="text-xl text-neon-red">
+          Could not load portfolio: {error}
+        </p>
+      )}
+      {loading && !data && (
+        <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>
+      )}
       {data && (
         <>
           <div className="grid gap-4 md:grid-cols-2">
@@ -219,13 +296,21 @@ export default function PortfolioPage() {
             />
           </div>
 
-          <FundBalance walletUsdc={data.walletUsdc} balance={data.balances[data.usdc] ?? 0n} onFunded={reload} />
+          <FundBalance
+            walletUsdc={data.walletUsdc}
+            balance={data.balances[data.usdc] ?? 0n}
+            onFunded={reload}
+          />
 
           <section className="space-y-4">
             <h2 className="text-sm text-neon-cyan">Positions</h2>
             {data.rows.length === 0 && (
               <p className="text-2xl text-mute">
-                No positions yet. <Link href="/" className="text-neon-cyan underline">Pick a battle</Link>.
+                No positions yet.{" "}
+                <Link href="/arena" className="text-neon-cyan underline">
+                  Pick a battle
+                </Link>
+                .
               </p>
             )}
             {data.rows.map((row) => (
@@ -233,9 +318,19 @@ export default function PortfolioPage() {
                 key={row.battle.id}
                 row={row}
                 accountId={accountId}
-                metaA={metas[row.battle.token_a] ?? fallbackMeta(row.battle.token_a)}
-                metaB={metas[row.battle.token_b] ?? fallbackMeta(row.battle.token_b)}
-                balance={data.balances[row.position.side === "A" ? row.battle.token_a : row.battle.token_b] ?? 0n}
+                metaA={
+                  metas[row.battle.token_a] ?? fallbackMeta(row.battle.token_a)
+                }
+                metaB={
+                  metas[row.battle.token_b] ?? fallbackMeta(row.battle.token_b)
+                }
+                balance={
+                  data.balances[
+                    row.position.side === "A"
+                      ? row.battle.token_a
+                      : row.battle.token_b
+                  ] ?? 0n
+                }
                 busyToken={busyToken}
                 onWithdraw={onWithdraw}
                 onDone={reload}

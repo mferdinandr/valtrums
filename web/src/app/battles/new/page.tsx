@@ -18,7 +18,8 @@ const DURATIONS = [
 ];
 
 const ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
-const validAccount = (s: string): boolean => s.length >= 2 && s.length <= 64 && ACCOUNT_RE.test(s);
+const validAccount = (s: string): boolean =>
+  s.length >= 2 && s.length <= 64 && ACCOUNT_RE.test(s);
 
 export default function CreateBattlePage() {
   const api = useArena();
@@ -33,17 +34,29 @@ export default function CreateBattlePage() {
   const a = tokenA.trim().toLowerCase();
   const b = tokenB.trim().toLowerCase();
   const problem =
-    a && !validAccount(a) ? "Token A is not a valid account id."
-    : b && !validAccount(b) ? "Token B is not a valid account id."
-    : a && a === b ? "Pick two different coins."
-    : null;
+    a && !validAccount(a)
+      ? "Token A is not a valid account id."
+      : b && !validAccount(b)
+        ? "Token B is not a valid account id."
+        : a && a === b
+          ? "Pick two different coins."
+          : null;
   const ready = validAccount(a) && validAccount(b) && !problem;
   const bond = cfg.data ? toBigInt(cfg.data.bond) : null;
 
   const submit = async () => {
     if (!accountId || !ready) return;
     setDone(false);
-    if (await action.run(() => api.proposeBattle({ signerId: accountId, tokenA: a, tokenB: b, durationSecs: secs }))) {
+    if (
+      await action.run(() =>
+        api.proposeBattle({
+          signerId: accountId,
+          tokenA: a,
+          tokenB: b,
+          durationSecs: secs,
+        }),
+      )
+    ) {
       setDone(true);
       setTokenA("");
       setTokenB("");
@@ -58,11 +71,21 @@ export default function CreateBattlePage() {
         <div className="space-y-4">
           <div>
             <Label htmlFor="token-a">Token A (NEP-141 contract id)</Label>
-            <Input id="token-a" placeholder="pepe.tkn.testnet" value={tokenA} onChange={(e) => setTokenA(e.target.value)} />
+            <Input
+              id="token-a"
+              placeholder="pepe.tkn.testnet"
+              value={tokenA}
+              onChange={(e) => setTokenA(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="token-b">Token B (NEP-141 contract id)</Label>
-            <Input id="token-b" placeholder="shib.tkn.testnet" value={tokenB} onChange={(e) => setTokenB(e.target.value)} />
+            <Input
+              id="token-b"
+              placeholder="shib.tkn.testnet"
+              value={tokenB}
+              onChange={(e) => setTokenB(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="duration">Battle duration</Label>
@@ -79,20 +102,32 @@ export default function CreateBattlePage() {
               ))}
             </select>
           </div>
-          {problem && <p role="alert" className="text-lg text-neon-red">{problem}</p>}
+          {problem && (
+            <p role="alert" className="text-lg text-neon-red">
+              {problem}
+            </p>
+          )}
         </div>
       </Card>
 
       <Card className="border-neon-amber">
         <CardTitle className="text-neon-amber">Bond</CardTitle>
-        <p className="text-3xl text-neon-amber">{bond === null ? "--" : formatUsdc(bond)}</p>
+        <p className="text-3xl text-neon-amber">
+          {bond === null ? "--" : formatUsdc(bond)}
+        </p>
         <p className="mt-2 text-lg text-mute">
-          Sent in USDC with the proposal. The agent audits both coins; if the battle fails the audit and is voided, the bond is forfeited.
+          Sent in USDC with the proposal. The agent audits both coins; if the
+          battle fails the audit and is voided, the bond is forfeited.
         </p>
       </Card>
 
       {accountId ? (
-        <Button size="lg" variant="pink" onClick={() => void submit()} disabled={!ready || action.busy || cfg.data?.paused}>
+        <Button
+          size="lg"
+          variant="pink"
+          onClick={() => void submit()}
+          disabled={!ready || action.busy || cfg.data?.paused}
+        >
           {action.busy ? "Sending..." : "Propose battle"}
         </Button>
       ) : (
@@ -100,11 +135,21 @@ export default function CreateBattlePage() {
           Connect wallet to propose
         </Button>
       )}
-      {cfg.data?.paused && <p className="text-lg text-neon-red">The arena is paused.</p>}
-      {action.error && <p role="alert" className="text-lg text-neon-red">{action.error}</p>}
+      {cfg.data?.paused && (
+        <p className="text-lg text-neon-red">The arena is paused.</p>
+      )}
+      {action.error && (
+        <p role="alert" className="text-lg text-neon-red">
+          {action.error}
+        </p>
+      )}
       {done && (
         <p className="text-xl text-neon-green">
-          Proposal sent. <Link href="/" className="underline">See it in the arena</Link>.
+          Proposal sent.{" "}
+          <Link href="/arena" className="underline">
+            See it in the arena
+          </Link>
+          .
         </p>
       )}
     </div>

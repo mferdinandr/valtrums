@@ -26,7 +26,10 @@ export function WalletButton() {
   }
   return (
     <div className="flex items-center gap-2">
-      <span className="border-2 border-neon-green px-2 py-2 font-pixel text-[9px] text-neon-green" title={accountId}>
+      <span
+        className="max-w-[150px] truncate rounded-lg border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
+        title={accountId}
+      >
         {shorten(accountId)}
       </span>
       <Button variant="ghost" size="sm" onClick={() => void signOut()}>
