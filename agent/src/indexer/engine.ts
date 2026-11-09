@@ -1,7 +1,8 @@
 import { silentLogger, type Logger } from "../logger.js";
 import { parseBlock } from "./parser.js";
 import { buildProjection, type Projection } from "./projection.js";
-import { JsonFileIndexerStore, MAX_DIAGNOSTICS, type StoreState } from "./store.js";
+import { DEFAULT_FINALIZED_RETENTION_DEPTH, pruneFinalized } from "./retention.js";
+import { JsonFileIndexerStore, MAX_BLOCKS, MAX_DIAGNOSTICS, type ReorgSuspension, type StoreState } from "./store.js";
 import type {
   BlockRef,
   BlockSource,
@@ -57,6 +58,12 @@ export interface EngineOptions {
   maxBlocksPerSync?: number;
   /** Max quarantine records retained; older ones are dropped and counted. Defaults to the store cap. */
   maxDiagnostics?: number;
+  /**
+   * Finalized blocks kept behind the finalized head; older ones are folded into a hashed checkpoint
+   * and pruned (never provisional blocks, never dedup keys). Default
+   * {@link DEFAULT_FINALIZED_RETENTION_DEPTH} (an agent choice, listed as an assumption).
+   */
+  finalizedRetentionDepth?: number;
   log?: Logger;
 }
 
@@ -66,6 +73,8 @@ export class IndexerEngine {
   private readonly now: () => number;
   private readonly maxPerSync: number;
   private readonly maxDiag: number;
+  private readonly retentionDepth: number;
+  private checkpointVerified = false;
   private readonly log: Logger;
   private lastSyncMs: number | null = null;
   private operations: Promise<void> = Promise.resolve();
@@ -85,6 +94,10 @@ export class IndexerEngine {
     this.maxDiag = opts.maxDiagnostics ?? MAX_DIAGNOSTICS;
     if (!Number.isSafeInteger(this.maxPerSync) || this.maxPerSync < 1) throw new Error("maxBlocksPerSync must be a positive safe integer");
     if (!Number.isSafeInteger(this.maxDiag) || this.maxDiag < 1 || this.maxDiag > MAX_DIAGNOSTICS) throw new Error("maxDiagnostics must be within the store diagnostic limit");
+    this.retentionDepth = opts.finalizedRetentionDepth ?? DEFAULT_FINALIZED_RETENTION_DEPTH;
+    if (!Number.isSafeInteger(this.retentionDepth) || this.retentionDepth < 1 || this.retentionDepth + this.maxPerSync > MAX_BLOCKS) {
+      throw new Error("finalizedRetentionDepth must be a positive safe integer that, with maxBlocksPerSync, fits the store block limit");
+    }
     this.log = opts.log ?? silentLogger;
   }
 
@@ -98,6 +111,7 @@ export class IndexerEngine {
       }
       this.state = await this.store.open(this.config);
       this.rebuildDedup();
+      this.checkpointVerified = false;
       this.opened = true;
     } finally {
       this.opening = false;
@@ -135,6 +149,31 @@ export class IndexerEngine {
   }
 
   /**
+   * Finalized-only view for confirmations (for example crediting a deposit or acting on a payout).
+   * It is suspended while a reorg retraction awaits finality or while the indexer needs
+   * reconciliation or is degraded, and then reports no credits rather than a stale or provisional
+   * number. It is a read model: it never refunds, restores backing or sends a payout.
+   */
+  confirmations(): ConfirmationView {
+    const status = this.state?.health.status ?? "pending";
+    const suspension = this.state?.reorgSuspension ?? null;
+    const finalizedHeight = this.committedFinalizedHeight();
+    let reason: string | null = null;
+    if (suspension) reason = suspension.reason;
+    else if (status === "reconciliation_required" || status === "degraded") reason = `indexer status is ${status}: ${this.state.health.reason}`;
+    const credits: Record<string, Record<string, string>> = {};
+    if (reason === null) {
+      const proj = this.projection();
+      for (const [key, battle] of Object.entries(proj.battles)) {
+        const byCommunity: Record<string, bigint> = {};
+        for (const d of battle.deposits) if (d.ref.finalized) byCommunity[d.community] = (byCommunity[d.community] ?? 0n) + BigInt(d.amount);
+        if (Object.keys(byCommunity).length > 0) credits[key] = Object.fromEntries(Object.entries(byCommunity).map(([c, v]) => [c, v.toString()]));
+      }
+    }
+    return { confirmable: reason === null, reason, suspension, finalizedHeight: finalizedHeight < 0n ? null : finalizedHeight.toString(), finalizedCredits: credits };
+  }
+
+  /**
    * The last persisted health. It is read from committed state, so a restart reports the real last
    * status (pending/degraded/reconciliation_required) instead of defaulting to healthy; the next
    * {@link sync} recomputes it.
@@ -154,17 +193,25 @@ export class IndexerEngine {
 
   private async syncOnce(): Promise<IndexerHealth> {
     const flags: SyncFlags = { reconciliation: false, degraded: false, pending: false, reason: "" };
+    let pruned = 0;
     const committedFinalBefore = this.committedFinalizedHeight();
 
     const { latest, finalized } = await this.source.head();
 
-    await this.reconcileProvisional(flags);
+    await this.verifyCheckpoint(flags);
+    if (!flags.reconciliation) await this.reconcileProvisional(flags);
     if (this.state.conflictBlocks.length > 0) {
       flags.reconciliation = true;
       flags.reason ||= "unresolved event conflicts remain in the retained source chain";
     }
     if (!flags.reconciliation) await this.extend(flags);
     if (!flags.reconciliation) this.promoteFinality(finalized, committedFinalBefore, flags);
+
+    const suspension = this.state.reorgSuspension;
+    if (suspension && !flags.reconciliation) {
+      flags.pending = true;
+      flags.reason ||= suspension.reason;
+    }
 
     // Caught up only when the processed head equals the source latest head by hash.
     const head = this.state.cursors.processedHead;
@@ -174,6 +221,7 @@ export class IndexerEngine {
       if (!flags.reason) flags.reason = finalized === null ? "source declares no finalized head" : "not yet caught up to the source head";
     }
 
+    if (!flags.reconciliation) pruned = pruneFinalized(this.state, this.retentionDepth);
     this.capDiagnostics();
     const status = this.deriveStatus(flags);
     const reason = flags.reason || REASON_BY_STATUS[status];
@@ -190,8 +238,29 @@ export class IndexerEngine {
       quarantined: this.state.diagnostics.length,
       diagnosticsDropped: this.state.diagnosticsDropped,
       ignoredLogs: this.state.ignoredLogs,
+      prunedThisSync: pruned,
+      checkpointHeight: this.state.checkpoint?.height ?? null,
     });
     return health;
+  }
+
+  /**
+   * After a restart, check the retention checkpoint against the source once: when the source can still
+   * serve the checkpoint height, its hash must match. A different hash means the finalized history we
+   * summarized is not the source's, which needs reconciliation. A source that cannot serve that height
+   * (pruned, skipped or incomplete) leaves the checkpoint verified only by its parent link to the first
+   * retained block, which the store validates on load; that limit is reported by the checkpoint label.
+   */
+  private async verifyCheckpoint(flags: SyncFlags): Promise<void> {
+    const cp = this.state.checkpoint;
+    if (!cp || this.checkpointVerified) return;
+    const at = await this.source.blockAt(cp.height);
+    if (at.kind === "block" && at.block.header.hash !== cp.hash) {
+      flags.reconciliation = true;
+      flags.reason = `source block at checkpoint height ${cp.height} differs from the retained checkpoint; preserving evidence`;
+      return;
+    }
+    this.checkpointVerified = true;
   }
 
   private async reconcileProvisional(flags: SyncFlags): Promise<void> {
@@ -220,6 +289,21 @@ export class IndexerEngine {
       flags.reconciliation = true;
       flags.reason = `fork conflicts with finalized state at or below height ${height.toString()}; preserving evidence`;
       return;
+    }
+    const retractedEvents = this.state.journal.filter((e) => orphan.has(e.provenance.blockHash)).length;
+    const retractedHeights = this.state.blocks.filter((b) => orphan.has(b.hash)).map((b) => BigInt(b.height));
+    if (retractedHeights.length > 0) {
+      const highest = retractedHeights.reduce((m, h) => (h > m ? h : m));
+      const prior = this.state.reorgSuspension;
+      const until = prior && BigInt(prior.untilFinalizedHeight) > highest ? BigInt(prior.untilFinalizedHeight) : highest;
+      const since = prior && BigInt(prior.sinceHeight) < height ? BigInt(prior.sinceHeight) : height;
+      this.state.reorgSuspension = {
+        sinceHeight: since.toString(),
+        untilFinalizedHeight: until.toString(),
+        retractedBlocks: (prior?.retractedBlocks ?? 0) + retractedHeights.length,
+        retractedEvents: (prior?.retractedEvents ?? 0) + retractedEvents,
+        reason: `provisional blocks from height ${since.toString()} were retracted by a reorg; confirmations stay suspended until finality reaches height ${until.toString()}`,
+      };
     }
     this.state.blocks = this.state.blocks.filter((b) => !orphan.has(b.hash));
     this.state.journal = this.state.journal.filter((e) => !orphan.has(e.provenance.blockHash));
@@ -334,6 +418,8 @@ export class IndexerEngine {
     }
     for (const b of this.state.blocks) if (cmpHeight(b.height, finalized.height) <= 0) b.finalized = true;
     this.state.cursors.finalizedHead = { height: finalized.height, hash: finalized.hash };
+    const sus = this.state.reorgSuspension;
+    if (sus && fh >= BigInt(sus.untilFinalizedHeight)) this.state.reorgSuspension = null; // finality restored on the canonical chain
   }
 
   private deriveStatus(flags?: SyncFlags): IndexerHealthStatus {
@@ -373,6 +459,15 @@ export class IndexerEngine {
       this.state.diagnosticsDropped += over;
     }
   }
+}
+
+export interface ConfirmationView {
+  confirmable: boolean;
+  reason: string | null;
+  suspension: ReorgSuspension | null;
+  finalizedHeight: string | null;
+  /** Credited deposit totals from finalized blocks only, per battle namespace key and community. */
+  finalizedCredits: Record<string, Record<string, string>>;
 }
 
 interface SyncFlags {

@@ -15,7 +15,7 @@ Check tasks only after implementation and verification. Player authorization and
 - [x] Hash and persist previews and bind user authorization or a valid scoped grant to the canonical action. (Canonical-JSON SHA-256 `previewHash`; versioned JSON store `actions/store.ts`; NEP-413 signature over the preview hash, or the grant delegate preparing the contract's `reserve` call.)
 - [x] Revalidate preview, balances, audit, round state and grant scope before signing or reserving budget. (`ActionService.prepare` rebuilds the preview from fresh reads and refuses any change in the binding hash.)
 - [x] Return durable action identity and status; reject changed or expired previews without valid authorization. (`act_…` ids; statuses previewed, authorized, ready_to_sign, broadcast, confirmed, failed, rejected, expired.)
-- [x] Explicitly reject unsupported testnet funding routes and label fixture outputs as fixtures. (Only `direct` deposits; any other route returns `unsupported_route` before anything is stored or built.)
+- [x] Explicitly reject unsupported testnet funding routes and label fixture outputs as fixtures. (Only `direct` deposits; any other route returns `unsupported_route` before anything is stored or built. The only addition is the labelled testnet `intents-fixture` route of #114 / D29, enabled by `INTENTS_FIXTURE=1` on testnet; the real `intents` route stays refused.)
 - [x] Connect MCP tool and terminal action paths to the same authorization and status boundary. (MCP action tools and `/actions` HTTP routes call one `ActionService`; the terminal uses `web/src/lib/terminal/actions.ts` through `/api/arena/actions`.)
 
 ## Verification

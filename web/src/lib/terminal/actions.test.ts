@@ -1,7 +1,7 @@
 // FIXTURE-ONLY: the action API and wallet are scripted; nothing reaches a network.
 import { describe, expect, it } from "vitest";
 import { proxyAction } from "../arena-read/proxy";
-import { actionAuthorizationMessage, runTerminalAction, type ActionWallet, type UnsignedTransaction } from "./actions";
+import { actionAuthorizationMessage, fixtureNotice, runTerminalAction, type ActionWallet, type UnsignedTransaction } from "./actions";
 
 const ok = (data: unknown, status = 200) => new Response(JSON.stringify(status < 400 ? { data } : data), { status });
 const TX: UnsignedTransaction = {
@@ -122,5 +122,29 @@ describe("action proxy", () => {
     expect((await proxyAction({ method: "GET" }, "", null, env, doFetch)).status).toBe(405);
     expect((await proxyAction({ method: "POST" }, "x".repeat(9000), null, env, doFetch)).status).toBe(413);
     expect(seen).toHaveLength(3);
+  });
+});
+
+describe("intents-fixture label in the terminal path", () => {
+  const FIXTURE = { route: "intents-fixture", fixture: true, fixtureLabel: "FIXTURE: local 1Click API fixture on testnet. Not NEAR Intents; no real solver, no mainnet funds." };
+  const fixtureRecord = (status: string) => {
+    const r = record(status);
+    return { ...r, preview: { ...r.preview, binding: FIXTURE } };
+  };
+
+  it("labels results of an action bound to the fixture route, on success and on a stalled receipt", async () => {
+    const steps = () => [ok(fixtureRecord("previewed")), ok(fixtureRecord("authorized")), ok({ record: fixtureRecord("ready_to_sign"), transaction: TX }), ok(fixtureRecord("broadcast"))];
+    const done = await runTerminalAction({ kind: "deposit", route: "intents-fixture" }, { session: "s", wallet: wallet().w, fetchImpl: scripted([...steps(), ok(fixtureRecord("confirmed"))]).fetchImpl, sleep: async () => {} });
+    expect(done).toMatchObject({ ok: true, fixture: FIXTURE.fixtureLabel });
+    const stalled = await runTerminalAction({ kind: "deposit", route: "intents-fixture" }, { session: "s", wallet: wallet().w, fetchImpl: scripted([...steps(), ok(fixtureRecord("broadcast"))]).fetchImpl, sleep: async () => {}, maxPolls: 1 });
+    expect(stalled).toMatchObject({ ok: false, status: "broadcast", fixture: FIXTURE.fixtureLabel });
+  });
+
+  it("does not label a direct action", async () => {
+    const api = scripted([ok(record("previewed")), ok(record("authorized")), ok({ record: record("ready_to_sign"), transaction: TX }), ok(record("broadcast")), ok(record("confirmed"))]);
+    const result = await runTerminalAction({ kind: "deposit" }, { session: "s", wallet: wallet().w, fetchImpl: api.fetchImpl, sleep: async () => {} });
+    expect(result).not.toHaveProperty("fixture");
+    expect(fixtureNotice({ route: "direct" })).toBeNull();
+    expect(fixtureNotice(undefined)).toBeNull();
   });
 });

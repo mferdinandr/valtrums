@@ -45,6 +45,29 @@ A read-only indexer SHALL parse Valtrum NEP-297 logs with receipt provenance, pe
 - **WHEN** a log is from a non-allowlisted emitter or failed outcome, carries an unsafe numeric value, or reuses an event identity with a different payload
 - **THEN** it is quarantined with bounded provenance rather than applied, and recorded coverage is labeled a declared source assertion, not verified finality
 
+#### Scenario: Every emitted event is projected or reported
+- **WHEN** an allowlisted contract emits a `valtrum`, `valtrum_backing` or `valtrum_payout` event the indexer does not model
+- **THEN** it is quarantined as unsupported and the status is degraded, never silently dropped; modelled events include backing approval, trust change, late deposit with refund address, suspension and payout events
+
+#### Scenario: Replay after the same receipt is delivered again
+- **WHEN** a receipt already applied, even in a pruned block, is delivered again
+- **THEN** an identical payload changes nothing and a different payload requires reconciliation, never a second credit
+
+### Requirement: Indexer reorg suspension and retention
+After a reorg the indexer SHALL retract provisional projections and suspend confirmations until finality returns, and SHALL bound storage by summarizing finalized blocks older than a configurable depth into a hashed checkpoint. It SHALL never prune provisional blocks or deduplication keys.
+
+#### Scenario: Reorg suspends confirmations
+- **WHEN** provisional blocks are replaced by a fork
+- **THEN** their effects are retracted, the status is not healthy and confirmations report no credits until finality reaches the highest retracted height, also after a restart
+
+#### Scenario: Restart after pruning
+- **WHEN** the indexer restarts after old finalized blocks were pruned
+- **THEN** it verifies the checkpoint against the journal and the retained chain, keeps its cursors and does not double count, and a mismatch fails closed or requires reconciliation
+
+#### Scenario: Pruning keeps what protects funds
+- **WHEN** blocks are pruned
+- **THEN** provisional blocks, every deduplication key and blocks holding conflict evidence remain, and the checkpoint is labelled a summary, not raw history
+
 ### Requirement: Protocol-controlled reference-token registry
 The arena SHALL keep one protocol-controlled registry (changed only by the protocol account with one yocto, not the arena owner) mapping each testnet mock token to one Robinhood mainnet (4663) reference token, with an entry hash per entry and a version bumped on every change. Audit and scoring SHALL read this registry only. Battle creation SHALL refuse a reference pair that is unregistered or differs from the entry. An entry attests nothing about the mock contract.
 
@@ -81,3 +104,22 @@ The target SHALL include NEAR Intents funding/routing and Bitte agent orchestrat
 #### Scenario: Intended service flow
 - **WHEN** a supported funding action is orchestrated through Bitte and routed through Intents
 - **THEN** evidence binds the preview, authorization, route status and final custody receipt to the same user action; fixture evidence remains labeled
+
+### Requirement: Labelled testnet Intents fixture
+A local fixture of the 1Click API with a fake solver SHALL provide the testnet funding path through the route `intents-fixture`. It SHALL be accepted only in a testnet configuration, labelled in logs, responses, previews, statuses and UI, and pinned to the recorded mainnet responses. It SHALL NOT count as Intents verification; the real route stays a gap and other routes stay refused.
+
+#### Scenario: Fixture matches the recording
+- **WHEN** the fixture's discovery and dry quotes are compared with the recorded mainnet responses
+- **THEN** field names, types, formats, decimals and quoted amounts match, and any drift fails a test
+
+#### Scenario: Route acceptance
+- **WHEN** a deposit names `intents-fixture` outside a testnet configuration, or any route other than `direct` and the enabled fixture route
+- **THEN** the action boundary refuses it as `unsupported_route` before anything is stored
+
+#### Scenario: Solver failure and refund
+- **WHEN** the fake solver fails or refunds a funded quote
+- **THEN** nothing is credited, and a replayed delivery receipt credits at most once
+
+#### Scenario: Fixture labelling
+- **WHEN** a quote, status, preview, action status or terminal result concerns the fixture
+- **THEN** it carries the fixture label and is never presented as a verified Intents integration

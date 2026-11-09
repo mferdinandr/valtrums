@@ -18,7 +18,8 @@
     "audit:report:get": "node dist/audit/report-cli.js get",
     "audit:report:seed-demo": "node dist/audit/report-cli.js seed-demo",
     "read:mcp": "node dist/mcp/cli.js mcp",
-    "read:serve": "node dist/mcp/cli.js http"
+    "read:serve": "node dist/mcp/cli.js http",
+    "intents:fixture": "node dist/intents-fixture/cli.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
