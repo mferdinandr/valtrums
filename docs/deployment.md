@@ -77,6 +77,8 @@ Live testnet deployment from the owner's accounts; details, code hashes and tran
 | Payout (signer `v1.signer-prod.testnet`) | `payout.valtrum-owner-b694.testnet` |
 | Player policy | `policy.valtrum-owner-b694.testnet` |
 | Backing (fixture asset, DAO-owned) | `backing1.valtrum-owner-b694.testnet` |
+| Backings for the six mock tokens (DAO-owned, wired 2026-11-09) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
+| Registry verifier | `valtrum-verifier-b694.testnet` |
 
 Measured storage: wasm size times 1e19 yoctoNEAR plus a small overhead (arena 664 KB is 7.0 NEAR, backing 389 KB, payout 304 KB, policy 209 KB, registry 160 KB); the DAO create cost the owner 6.1 NEAR. Deployed through a script that signs in process (keys read from the git-ignored `.env`, never passed as arguments); each account was created, keyed with the owner key, deployed and initialised in one transaction. Build: `cd contracts/<crate> && cargo near build non-reproducible-wasm --no-abi --out-dir <dir>`. Still not deployed: Robinhood custody and mock tokens (separate work), real-token backings, payout backing registration, reference-registry entries.
 

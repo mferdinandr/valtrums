@@ -115,7 +115,12 @@ All values are live testnet observations through two providers (NEAR official RP
 
 **Limits.** The pause itself was not read back (the backing has no paused view; Sputnik marks a proposal `Failed` if the call fails, and these ended `Approved`). The arena deployment transaction hash was lost to a script crash after the send; its code hash and state are verified. Nothing was run through the unauthorised-upgrade or factory-update paths (R2).
 
-**Follow-up proposals (not run: they need the mock token addresses from the EVM deployment):** for each mock token call `add_reference_entry` through the DAO on the arena with `{"chain_id":"46630","token_address":"<mock>","reference_chain_id":"4663","reference_address":"<mainnet reference token>"}` (template in the table above), then initialise one real backing per token with the DAO as `owner`, register each backing in payout (`register_backing`, owner, one yocto) and set each backing's burn sink (`set_dao_sink`, through the DAO, once).
+**Wiring run (2026-11-09, live testnet; data in [`evidence/2026-11-09-near-testnet-wiring.json`](evidence/2026-11-09-near-testnet-wiring.json)).** The follow-ups above were executed:
+
+- Six backings `backing-<symbol>.valtrum-owner-b694.testnet` (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN) were initialised with the **DAO as owner** over the six Robinhood testnet mock tokens (FIXTURES). They were wired into registry `set_representation`, arena `set_lifecycle_representation_trusted` and payout `register_backing`. Confirmed: `is_lifecycle_representation_trusted` is true for all six (it was false for `backing1`, the cause of the earlier trusted-flag finding).
+- Proposals 3 to 16 (council1 proposed with the 1 NEAR bond, council2 and council3 approved, 2 of 3): arena vote window set to 30 seconds (read back: 30, was 86400), `set_dao_sink` for each backing (read back: `0x...dead` on all six; this is once-only and irreversible), six `add_reference_entry` mappings of each mock token to its mainnet reference token (read back), and `FactoryInfoUpdate` with `auto_update` false (R2 closed on testnet).
+- Negative checks from `valtrum-user1-b694.testnet`, which is not a council member: `set_lifecycle_dao_window`, `add_reference_entry` and `act_proposal` are all refused; `set_dao_sink` is refused with "Only owner".
+- Not done: a funded battle, and any DAO action on escrowed principal. The no-authority claim over votes and escrow rests on the sandbox test, not on a live run.
 
 ## Trezu
 
