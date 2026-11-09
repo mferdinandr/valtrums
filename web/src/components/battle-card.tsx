@@ -56,6 +56,6 @@ export function MultiCommunityPreview() {
     <div className="flex items-center justify-between gap-2"><Badge tone="amber">Preview</Badge><span className="battle-card-id"># —</span></div>
     <h3 className="mt-4 text-xl leading-tight">Price gain challenge</h3>
     <p className="mt-2 text-xs leading-5 text-mute">{PREVIEW_TOKENS.map((token) => token.symbol).join(" · ")}</p>
-    <div className="battle-list-bottom"><div><div className="flex items-center"><div className="battle-token-stack" aria-hidden="true">{PREVIEW_TOKENS.map((token, index) => <TokenAvatar key={token.id} token={token} index={index} />)}</div><span className="ml-3 text-xs text-mute">5 communities</span></div><p className="mt-3 text-xs text-mute">Illustration · not a live battle</p></div><span className="battle-list-action text-mute">Preview</span></div>
+    <div className="battle-list-bottom"><div className="min-w-0"><div className="flex flex-wrap items-center gap-y-2"><div className="battle-token-stack" aria-hidden="true">{PREVIEW_TOKENS.map((token, index) => <TokenAvatar key={token.id} token={token} index={index} />)}</div><span className="ml-3 text-xs text-mute">5 communities</span></div><p className="mt-3 text-xs text-mute">Illustration · not a live battle</p></div><span className="battle-list-action text-mute">Preview</span></div>
   </article>;
 }
