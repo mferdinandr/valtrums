@@ -1,5 +1,6 @@
 import type { DataOrigin } from "../envelope.js";
 import type { ScoringMode } from "../read-source.js";
+import { FIXTURE_LABEL, FIXTURE_ROUTE } from "../../intents-fixture/label.js";
 import { hashCanonical } from "./canonical.js";
 import type { ActionReadSource } from "./source.js";
 
@@ -30,6 +31,14 @@ const RESERVE_DEPOSIT_YOCTO = "10000000000000000000000";
 
 export type ActionKind = "create_battle" | "deposit" | "payout";
 export const SUPPORTED_FUNDING_ROUTES = ["direct"] as const;
+
+/**
+ * Funding routes the boundary accepts for this configuration. `intents-fixture` (D29) is the local
+ * 1Click fixture and is accepted only when the context enables it (testnet configuration only,
+ * enforced by `ActionService`). The real `intents` route is not supported and stays refused.
+ */
+export const fundingRoutes = (ctx: Pick<PreviewContext, "intentsFixture">): readonly string[] =>
+  ctx.intentsFixture ? [...SUPPORTED_FUNDING_ROUTES, FIXTURE_ROUTE] : SUPPORTED_FUNDING_ROUTES;
 
 export interface AssetRequest {
   chainId: string;
@@ -136,6 +145,8 @@ export interface PreviewContext {
   arena: string;
   payout: string | null;
   policy: string | null;
+  /** Accept the `intents-fixture` funding route. Only valid when `network` is `near-testnet`. */
+  intentsFixture?: boolean;
 }
 
 const ACCOUNT = /^(?=.{2,64}$)([a-z\d]+([-_][a-z\d]+)*\.)*[a-z\d]+([-_][a-z\d]+)*$/;
@@ -165,7 +176,7 @@ function validateGrant(grant: unknown): GrantRequest {
 }
 
 /** Validates a request's shape. Unknown kinds and unsupported funding routes are refused here. */
-export function validateRequest(raw: unknown): ActionRequest {
+export function validateRequest(raw: unknown, routes: readonly string[] = SUPPORTED_FUNDING_ROUTES): ActionRequest {
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== "object" || Array.isArray(r)) return fail("invalid_request", "request must be an object");
   const allowed: Record<string, string[]> = {
@@ -208,8 +219,11 @@ export function validateRequest(raw: unknown): ActionRequest {
     if (!Number.isSafeInteger(battleId) || battleId < 1) fail("invalid_request", "battleId must be a positive integer");
     if (!Number.isSafeInteger(community) || community < 0 || community > 15) fail("invalid_request", "community must be 0 to 15");
     const route = r.route === undefined ? "direct" : String(r.route);
-    if (!(SUPPORTED_FUNDING_ROUTES as readonly string[]).includes(route)) {
-      fail("unsupported_route", `funding route "${route}" is not supported on testnet; only a direct deposit of the representation token is. Nothing was submitted.`);
+    if (!routes.includes(route)) {
+      fail(
+        "unsupported_route",
+        `funding route "${route}" is not supported on testnet; only ${routes.map((r) => `"${r}"`).join(" and ")} ${routes.length > 1 ? "are" : "is"}. Nothing was submitted.`,
+      );
     }
     if (r.requestId !== undefined && (typeof r.requestId !== "string" || !HEX32.test(r.requestId) || /^0{64}$/.test(r.requestId))) {
       fail("invalid_request", "requestId must be 32 non-zero bytes of lowercase hex");
@@ -316,6 +330,12 @@ export async function buildPreview(
     if (battle.locked) fail("battle_locked", "the battle is locked; deposits are closed");
     const community = battle.communities[request.community];
     if (!community) return fail("invalid_request", `battle ${request.battleId} has no community ${request.community}`);
+    if (request.route === FIXTURE_ROUTE) {
+      // Revalidation repeats this check, so a context that turned the fixture off rejects old previews.
+      if (!ctx.intentsFixture) fail("unsupported_route", `funding route "${FIXTURE_ROUTE}" is not enabled in this configuration`);
+      if (request.grant) fail("unsupported_route", `funding route "${FIXTURE_ROUTE}" is not available through a grant`);
+      limitations.push(FIXTURE_LABEL);
+    }
     if (!community.audit_evidence_hash) fail("audit_missing", "the community has no passing audit");
     if (!community.audit_expires_at_ms || BigInt(community.audit_expires_at_ms) <= BigInt(nowMs)) {
       fail("audit_expired", "the community's audit approval has expired");
@@ -335,7 +355,8 @@ export async function buildPreview(
       auditEvidenceHash: community.audit_evidence_hash,
       backingEvidenceHash: community.backing_evidence_hash,
       amount: request.amount,
-      route: "direct",
+      route: request.route ?? "direct",
+      ...(request.route === FIXTURE_ROUTE ? { fixture: true, fixtureLabel: FIXTURE_LABEL } : {}),
     };
     const transferGas = 100n * TGAS;
     if (request.grant) return grantPreview(base, request.grant, caller, source, ctx, nowMs, value, binding, {

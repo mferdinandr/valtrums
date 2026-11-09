@@ -60,6 +60,12 @@ pub enum PolicyError {
     NonIncreasingVersion,
     /// The same request identity was reused with a different bound action.
     Conflict,
+    /// The delegate must be an account other than the grant's user.
+    DelegateIsUser,
+    /// The reservation passed its expiry and can no longer be admitted for execution.
+    ReservationExpired,
+    /// The reservation has not reached its expiry yet.
+    NotExpired,
     /// The transition is not allowed from the current reservation state.
     WrongState,
     /// A terminal outcome conflicts with the one already recorded.
@@ -172,6 +178,9 @@ impl Grant {
     /// Validate scope, caps and bounds. Canonicalizes the asset. Fails closed on any violation.
     pub fn validate(mut self) -> Result<Self, PolicyError> {
         self.asset = self.asset.canonicalize()?;
+        if self.delegate == self.user {
+            return Err(PolicyError::DelegateIsUser);
+        }
         if self.contracts.is_empty() || self.contracts.len() > MAX_LIST {
             return Err(if self.contracts.is_empty() {
                 PolicyError::EmptyScope
@@ -434,6 +443,8 @@ pub struct Reservation {
     pub version: u64,
     pub amount: u128,
     pub state: ReservationState,
+    /// Nanoseconds since the epoch; an undispatched reservation can be released from this time.
+    pub expires_ns: u64,
 }
 
 impl Reservation {
@@ -447,10 +458,14 @@ impl Reservation {
         }
     }
 
-    /// Admit the action for execution. Returns false if already dispatched (idempotent).
-    pub fn dispatch(&mut self) -> Result<bool, PolicyError> {
+    /// Admit the action for execution. Returns false if already dispatched (idempotent). An
+    /// expired, never-dispatched reservation is refused, so expiry cannot race a late dispatch.
+    pub fn dispatch(&mut self, now_ns: u64) -> Result<bool, PolicyError> {
         match self.state {
             ReservationState::Reserved => {
+                if now_ns >= self.expires_ns {
+                    return Err(PolicyError::ReservationExpired);
+                }
                 self.state = ReservationState::Dispatched;
                 Ok(true)
             }
@@ -459,11 +474,31 @@ impl Reservation {
         }
     }
 
-    /// Safe no-execution release. Only valid before dispatch, or after a reconciliation that proved
+    /// Safe no-execution release, also used for a user or delegate cancel. Only valid before dispatch, or after a reconciliation that proved
     /// no execution. A dispatched obligation can never be released without that proof.
     pub fn release(&mut self, budget: &mut Budget) -> Result<bool, PolicyError> {
         match self.state {
             ReservationState::Reserved => {
+                budget.release(self.amount)?;
+                self.state = ReservationState::Released;
+                Ok(true)
+            }
+            ReservationState::Released => Ok(false),
+            ReservationState::Consumed => Err(PolicyError::ConflictingOutcome),
+            ReservationState::Dispatched | ReservationState::ReconciliationRequired => {
+                Err(PolicyError::WrongState)
+            }
+        }
+    }
+
+    /// Automatic expiry of a reservation that was never dispatched. Dispatched and
+    /// reconciliation-required obligations are never released by time alone.
+    pub fn expire(&mut self, budget: &mut Budget, now_ns: u64) -> Result<bool, PolicyError> {
+        match self.state {
+            ReservationState::Reserved => {
+                if now_ns < self.expires_ns {
+                    return Err(PolicyError::NotExpired);
+                }
                 budget.release(self.amount)?;
                 self.state = ReservationState::Released;
                 Ok(true)

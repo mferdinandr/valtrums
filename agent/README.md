@@ -98,6 +98,21 @@ Assumptions and limits of this mode:
 
 `NEAR_RPC_URL` selects the node. Public endpoints rate-limit (HTTP 429): the agent retries read-only calls on 429, 5xx and network errors with exponential backoff (up to 5 attempts, 1 s to 15 s), but a busy public endpoint can still starve it. For anything longer than a quick test use a dedicated or less loaded provider, for example `https://test.rpc.fastnear.com` on testnet. Transactions are not retried blindly; the next pass rebuilds the work from on-chain state.
 
+## Opt-in observability (both off by default)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUDIT_REPORT_ARCHIVE_ENABLED` | unset | `true` archives every lifecycle audit report to a durable append-only file; requires `AUDIT_ENABLED=true` (startup fails otherwise) |
+| `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file |
+| `INDEXER_ENABLED` | unset | `true` runs the read-only event indexer on every pass. There is no live block source yet, so `INDEXER_RECORDED_CHAIN` is required and its blocks and finality are **fixture assertions**, not chain state |
+| `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`) |
+| `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the backing and payout contracts) |
+| `INDEXER_STATE_DIR` | `./.agent-state/indexer` | indexer state directory (single writer) |
+| `INDEXER_RETENTION_DEPTH` | `10000` | finalized blocks kept behind the finalized head; older ones become a hashed summary checkpoint and are pruned (provisional blocks and dedup keys never are) |
+| `INDEXER_ANCHOR_HEIGHT`, `INDEXER_ANCHOR_HASH` | lowest recorded height, genesis | declared start of the processed chain |
+
+The indexer has no write authority and an indexer failure never blocks settlement or payout passes.
+
 ## Limits
 
 - The contract stores no liquidity baseline, so it is kept locally. If the file is lost, the watchdog takes the current liquidity as the new baseline (logged), and a drop before that point goes unnoticed.
@@ -139,3 +154,12 @@ Minimum battle timeline with `TWAP_WINDOW_SECS=60`, `AGENT_INTERVAL_SECS=30` (ti
 4. The battle ends `duration` after the lock. Final prices need the same 60 s of history, so settle after `end_time` with samples from the last minute; keep the agent running throughout.
 
 With the default window the same steps take roughly 25 minutes before a lock and 30 minutes of history before settlement.
+
+## Intents fixture (`intents-fixture`, testnet only)
+
+NEAR Intents lists no testnet asset, so the testnet demo uses a local **fixture** of the 1Click API (D29). It is not NEAR Intents and proves no Intents integration; the real `intents` route stays refused.
+
+- `NEAR_NETWORK=testnet pnpm build && pnpm intents:fixture` serves `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit` and `/v0/status` on `127.0.0.1:${INTENTS_FIXTURE_PORT:-8791}`. It refuses to start unless the network is testnet and sends or reads no credentials. `PUT /fixture/solver-mode` with `{"mode":"complete"|"fail"|"refund"}` drives the fake solver.
+- `INTENTS_FIXTURE=1` makes the action service accept `route: "intents-fixture"` on deposits (testnet only; the service refuses to start on any other network). Every preview, status, response and log line carries the fixture label.
+- Tests: `test/intents-fixture/` (golden and drift tests against `docs/evidence/2026-11-09-intents-routes.json`, solver, route, server and trace tests; no network). Mapping and migration: `docs/intents-asset-mapping.md`.
+

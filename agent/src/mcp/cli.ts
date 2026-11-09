@@ -68,6 +68,8 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
           arena: required(env, "ARENA_CONTRACT_ID"),
           payout: env.PAYOUT_CONTRACT_ID?.trim() || null,
           policy: env.PLAYER_POLICY_CONTRACT_ID?.trim() || null,
+          // Testnet only: ActionService refuses to start with this flag on any other network.
+          ...(env.INTENTS_FIXTURE?.trim() === "1" ? { intentsFixture: true } : {}),
         },
         store: new ActionStore(storePath),
         recipient: env.ACTION_RECIPIENT?.trim() || required(env, "READ_SESSION_RECIPIENT"),

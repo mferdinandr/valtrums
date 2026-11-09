@@ -32,6 +32,8 @@ export interface ReservationView {
   amount: string;
   version: string;
   action_hash: number[];
+  /** Nanosecond timestamp after which an undispatched reservation can be released (#108). */
+  expires_ns?: string;
 }
 
 export interface ActionReadSource {

@@ -46,7 +46,22 @@ async fn owner_controlled_registry_gates_reference_pairs_at_creation() -> anyhow
         "reference_address": REFERENCE,
     });
 
-    // A creator cannot add an entry.
+    // Only the protocol account (here the treasury) changes the registry: a
+    // creator and the arena owner cannot add an entry, and zero yocto is refused.
+    assert!(env
+        .arena_call_yocto(&env.owner, "add_reference_entry", entry.clone())
+        .await?
+        .into_result()
+        .is_err());
+    assert!(env
+        .treasury
+        .call(env.arena.id(), "add_reference_entry")
+        .args_json(entry.clone())
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()
+        .is_err());
     assert!(env
         .arena_call_yocto(&creator, "add_reference_entry", entry.clone())
         .await?
@@ -70,15 +85,25 @@ async fn owner_controlled_registry_gates_reference_pairs_at_creation() -> anyhow
     .into_result()
     .is_err());
 
-    env.arena_call_yocto(&env.owner, "add_reference_entry", entry.clone())
+    env.arena_call_yocto(&env.treasury, "add_reference_entry", entry.clone())
         .await?
         .into_result()?;
     // Duplicate registration: refused.
     assert!(env
-        .arena_call_yocto(&env.owner, "add_reference_entry", entry)
+        .arena_call_yocto(&env.treasury, "add_reference_entry", entry)
         .await?
         .into_result()
         .is_err());
+
+    // Removal is protocol-only too.
+    let removal = json!({"chain_id": "46630", "token_address": MOCK});
+    for who in [&env.owner, &creator] {
+        assert!(env
+            .arena_call_yocto(who, "remove_reference_entry", removal.clone())
+            .await?
+            .into_result()
+            .is_err());
+    }
 
     let page = env.arena_view("get_reference_registry", json!({})).await?;
     assert_eq!(page["version"], "1");

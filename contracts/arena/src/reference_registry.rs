@@ -3,7 +3,8 @@
 //! GoPlus covers Robinhood mainnet (`4663`) only, so a testnet mock token is
 //! audited and scored through the mainnet token it represents. This registry is
 //! the single source of those mappings for the audit agent, the scoring oracle
-//! and battle creation. Only the owner changes it (exactly one yocto); creators
+//! and battle creation. Only the protocol account (`lifecycle_protocol`, a SputnikDAO council in
+//! the target deployment) changes it, with exactly one yocto; the arena owner and creators
 //! cannot add entries, and a reference pair a creator declares on a community
 //! is accepted only when it equals the registered entry for that token.
 //!
@@ -184,9 +185,20 @@ impl Arena {
     }
 }
 
+impl Arena {
+    /// The registry changes only through the configured protocol account. With
+    /// no protocol configured, nobody can change it (fail closed).
+    fn assert_protocol(&self) {
+        require!(
+            self.lifecycle_protocol.as_ref() == Some(&env::predecessor_account_id()),
+            "Only the protocol account can change the reference registry"
+        );
+    }
+}
+
 #[near]
 impl Arena {
-    /// Owner only, exactly one yocto. Registers the mainnet reference token for a
+    /// Protocol account only, exactly one yocto. Registers the mainnet reference token for a
     /// testnet token. A token already registered, a reference already used by
     /// another token, a reference outside chain `4663` or a same-chain mapping is
     /// rejected; to change a mapping, remove it first. Existing battles keep the
@@ -199,7 +211,7 @@ impl Arena {
         reference_chain_id: U64,
         reference_address: String,
     ) -> ReferenceEntryView {
-        self.assert_owner();
+        self.assert_protocol();
         near_sdk::assert_one_yocto();
         let token = normalize_address(&token_address)
             .unwrap_or_else(|| env::panic_str("Invalid token address"));
@@ -255,12 +267,12 @@ impl Arena {
         view
     }
 
-    /// Owner only, exactly one yocto. Removes a token's entry. Battles that
+    /// Protocol account only, exactly one yocto. Removes a token's entry. Battles that
     /// committed the old pair are not changed, but the audit holds them as
-    /// unregistered until the owner registers a mapping again.
+    /// unregistered until the protocol registers a mapping again.
     #[payable]
     pub fn remove_reference_entry(&mut self, chain_id: U64, token_address: String) {
-        self.assert_owner();
+        self.assert_protocol();
         near_sdk::assert_one_yocto();
         let token = normalize_address(&token_address)
             .unwrap_or_else(|| env::panic_str("Invalid token address"));
@@ -357,7 +369,7 @@ mod tests {
     }
 
     fn add(arena: &mut Arena, token: &str, reference: &str) -> ReferenceEntryView {
-        context("owner.testnet", NearToken::from_yoctonear(1));
+        context("protocol.testnet", NearToken::from_yoctonear(1));
         arena.add_reference_entry(U64(46630), token.into(), U64(4663), reference.into())
     }
 
@@ -394,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_registers_an_entry_and_views_report_it_with_its_hash() {
+    fn protocol_registers_an_entry_and_views_report_it_with_its_hash() {
         let mut arena = arena();
         let view = add(&mut arena, MOCK, REF);
         assert_eq!(view.token_address, MOCK_LOWER);
@@ -417,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Only the owner can call this method")]
+    #[should_panic(expected = "Only the protocol account can change the reference registry")]
     fn creators_cannot_add_entries() {
         let mut arena = arena();
         context("creator.testnet", NearToken::from_yoctonear(1));
@@ -425,10 +437,60 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Only the protocol account can change the reference registry")]
+    fn the_arena_owner_cannot_add_entries() {
+        let mut arena = arena();
+        context("owner.testnet", NearToken::from_yoctonear(1));
+        arena.add_reference_entry(U64(46630), MOCK.into(), U64(4663), REF.into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the protocol account can change the reference registry")]
+    fn the_arena_owner_cannot_remove_entries() {
+        let mut arena = arena();
+        add(&mut arena, MOCK, REF);
+        context("owner.testnet", NearToken::from_yoctonear(1));
+        arena.remove_reference_entry(U64(46630), MOCK.into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the protocol account can change the reference registry")]
+    fn an_outsider_cannot_remove_entries() {
+        let mut arena = arena();
+        add(&mut arena, MOCK, REF);
+        context("creator.testnet", NearToken::from_yoctonear(1));
+        arena.remove_reference_entry(U64(46630), MOCK.into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn removing_needs_exactly_one_yocto() {
+        let mut arena = arena();
+        add(&mut arena, MOCK, REF);
+        context("protocol.testnet", NearToken::from_yoctonear(0));
+        arena.remove_reference_entry(U64(46630), MOCK.into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the protocol account can change the reference registry")]
+    fn nobody_can_change_the_registry_before_a_protocol_is_set() {
+        context("owner.testnet", NearToken::from_yoctonear(0));
+        let mut arena = Arena::new(
+            account("owner.testnet"),
+            account("usdc.testnet"),
+            account("treasury.testnet"),
+            U128(5_000_000),
+            U64(60),
+        );
+        context("owner.testnet", NearToken::from_yoctonear(1));
+        arena.add_reference_entry(U64(46630), MOCK.into(), U64(4663), REF.into());
+    }
+
+    #[test]
     #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
     fn adding_needs_exactly_one_yocto() {
         let mut arena = arena();
-        context("owner.testnet", NearToken::from_yoctonear(2));
+        context("protocol.testnet", NearToken::from_yoctonear(2));
         arena.add_reference_entry(U64(46630), MOCK.into(), U64(4663), REF.into());
     }
 
@@ -460,7 +522,7 @@ mod tests {
     #[should_panic(expected = "Reference tokens must be on chain 4663")]
     fn reference_outside_chain_4663_is_rejected() {
         let mut arena = arena();
-        context("owner.testnet", NearToken::from_yoctonear(1));
+        context("protocol.testnet", NearToken::from_yoctonear(1));
         arena.add_reference_entry(U64(46630), MOCK.into(), U64(1), REF.into());
     }
 
@@ -468,7 +530,7 @@ mod tests {
     #[should_panic(expected = "A token cannot reference its own chain")]
     fn same_chain_mapping_is_rejected() {
         let mut arena = arena();
-        context("owner.testnet", NearToken::from_yoctonear(1));
+        context("protocol.testnet", NearToken::from_yoctonear(1));
         arena.add_reference_entry(U64(4663), MOCK.into(), U64(4663), REF.into());
     }
 
@@ -483,7 +545,7 @@ mod tests {
     fn removing_bumps_the_version_and_allows_a_new_mapping() {
         let mut arena = arena();
         add(&mut arena, MOCK, REF);
-        context("owner.testnet", NearToken::from_yoctonear(1));
+        context("protocol.testnet", NearToken::from_yoctonear(1));
         arena.remove_reference_entry(U64(46630), MOCK.into());
         assert_eq!(arena.get_reference_entry(U64(46630), MOCK.into()), None);
         assert_eq!(arena.get_reference_registry(None, None).version, U64(2));
@@ -496,7 +558,7 @@ mod tests {
     #[should_panic(expected = "Token has no reference entry")]
     fn removing_an_unknown_entry_fails() {
         let mut arena = arena();
-        context("owner.testnet", NearToken::from_yoctonear(1));
+        context("protocol.testnet", NearToken::from_yoctonear(1));
         arena.remove_reference_entry(U64(46630), MOCK.into());
     }
 
