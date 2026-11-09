@@ -23,3 +23,14 @@ Check tasks only after implementation and verification. Governance is decided (D
 - [x] Verify source-chain return or underlying burn/sink separately from destruction of NEAR representations. (A burn is confirmed only by a finalized debit to the sink through `confirm_payout`; returns pay out through the entitlement payout path. Representation burns at escrow time never count.)
 - [x] Expose pending versus confirmed source disposition accurately. (`get_lifecycle_disposition` and `get_lifecycle_disposition_releases` on the arena; `get_escrow_disposition` on the backing separates burn pending and burn confirmed.)
 - [x] Test split decisions, replay, competing reservations, unauthorized decisions and representation-only burn evidence. (Unit tests in `dao_api.rs` and backing `lib.rs`; sandbox: `lifecycle_integration` two-community battle votes, executes and confirms the burn; `payout` DAO burn through signing and confirmation. Fixtures only.)
+
+## Protocol authority under a SputnikDAO (#113)
+
+- [x] Map every privileged arena, backing, payout and receipt-registry method (caller, one yocto, where configured) and classify it as DAO-owned, automated role or deploy-key owner. (`docs/sputnik-authority.md`, from source at a95fa69.)
+- [x] Verify the SputnikDAO factory, policy and `FunctionCall` proposal interface from official sources and record what is unverified. (Read-only RPC on 2026-11-09 and upstream source at commit 7764926; Trezu has no documented testnet support.)
+- [x] Show in the sandbox, with the real arena and backing and the official SputnikDAO 3.31 wasm, that a council majority proposal with one yocto changes the DAO window, fee and burn sink, and that a non-council account, a lone member and the deploy owner cannot. (`contracts/integration/tests/sputnik_authority.rs`; fixtures: sandbox accounts, direct DAO deploy.)
+- [x] Show that the DAO cannot release escrowed principal or submit a disposition. (Same file; no funded battle in that test, see the limits in the doc.)
+- [x] Write the council setup runbook, proposal templates and the list of inputs needed from the owner. (`docs/sputnik-authority.md`.)
+- [ ] Owner decisions Q1 to Q3 (reference-registry authority, backing owner scope, fee withdrawal) and any contract change they require.
+- [ ] Create the DAO on testnet through `sputnikv2.testnet` and record account, factory transaction, code hash, policy and date. Blocked: the owner has no testnet accounts or funds yet.
+- [ ] Execute one real change through a passed proposal on the testnet contracts and record proposal id, transactions and the negative calls. Blocked on the previous task.
