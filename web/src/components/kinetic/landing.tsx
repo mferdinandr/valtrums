@@ -18,23 +18,11 @@ import { Button } from "@/components/ui/button";
 
 
 type Step = "choose" | "loaded" | "live" | "result";
-const LENGTH = 6000;
+const LENGTH = 30000;
 const STEPS = [
-  {
-    number: "01",
-    title: "Back your community.",
-    text: "Choose a battle, inspect both tokens and deposit into one side while its deposit window is open. Your deposited coins are at risk if your side loses.",
-  },
-  {
-    number: "02",
-    title: "Let the rivalry play out.",
-    text: "Deposits close before the battle runs. The current app compares price performance between two communities. Inspect its recorded timing, available performance and settlement steps.",
-  },
-  {
-    number: "03",
-    title: "Claim. Then withdraw.",
-    text: "If your side wins, claim into your arena liquid balance, then withdraw to your wallet. Locked credit is separate from withdrawable tokens.",
-  },
+  { number: "01", title: "Choose a community.", text: "Discover a battle with two or more communities. Check the scoring mode and audit status before joining." },
+  { number: "02", title: "Play the round.", text: "Deposits lock before a 30-second round. Tied leaders advance to another round while all vaults remain locked." },
+  { number: "03", title: "Follow the outcome.", text: "Winning players receive losing-token entitlements. Winning principal stays in DAO escrow for a burn or return decision." },
 ];
 
 export function Landing() {
@@ -192,7 +180,7 @@ export function Landing() {
                 {step === "loaded" && (
                   <>
                     <p className="mb-3 text-xs leading-6 text-mute">
-                      Your practice tribe is ready. No assets move. Ready to see a shortened practice round?
+                      Your practice tribe is ready. No assets move. Ready to see a 30-second practice round?
                     </p>
                     <Button
                       onClick={() => {
@@ -239,7 +227,7 @@ export function Landing() {
               </div>
             </div>
             <p className="mt-4 border-t border-edge pt-3 text-[10px] leading-5 text-mute">
-              6-second scripted walkthrough with five illustrative tribes. CASHCAT always wins this demo. Names reference researched tokens, not verified or approved assets. No wallet, transactions or live market data. Actual battles currently support two tribes.
+              30-second scripted walkthrough with five illustrative tribes. CASHCAT always wins this demo. Names reference researched tokens, not verified or approved assets. No wallet, transactions or live market data. Actual battles currently support two tribes.
             </p>
           </div>
         </div>
@@ -267,17 +255,16 @@ export function Landing() {
         <div className="mb-10 flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="eyebrow text-neon-green">
-              How the current arena works
+              The planned battle flow
             </p>
             <h2 className="mt-4 text-3xl tracking-tight md:text-5xl">
-              Current rules.
+              One battle.
               <br />
-              Know the mechanics.
+              Separate outcomes.
             </h2>
           </div>
           <p className="max-w-sm text-sm leading-7 text-mute">
-            The machine makes the action visible. The battle data determines
-            what you can do and what you receive.
+            A clear path from joining a community to tracking rewards and the DAO decision.
           </p>
         </div>
         <div className="mechanics-grid grid gap-3 md:grid-cols-3">
@@ -295,76 +282,10 @@ export function Landing() {
           ))}
         </div>
       </section>
-      <section className="overflow-hidden rounded-2xl border border-edge bg-panel p-6 md:p-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_1.5fr]">
-          <div>
-            <p className="eyebrow text-neon-amber">Current app mechanics</p>
-            <h2 className="mt-4 text-3xl">
-              Where does the
-              <br />
-              losing vault go?
-            </h2>
-            <p className="mt-4 max-w-sm text-sm leading-7 text-mute">
-              The current implementation sells the losing token into USDC and
-              splits those proceeds. Winning principal is returned through the
-              liquid balance.
-            </p>
-          </div>
-          <div>
-            <div
-              className="mb-6 flex h-8 gap-1 overflow-hidden rounded-md"
-              aria-hidden="true"
-            >
-              <span className="w-[55%] bg-neon-green" />
-              <span className="w-[35%] bg-neon-cyan" />
-              <span className="w-[5%] bg-neon-pink" />
-              <span className="w-[5%] bg-neon-amber" />
-            </div>
-            <dl className="grid grid-cols-2 gap-6">
-              {[
-                {
-                  value: "55%",
-                  title: "Winner-token rewards",
-                  text: "Buys liquid winner tokens.",
-                  color: "text-neon-green",
-                },
-                {
-                  value: "35%",
-                  title: "Locked credit",
-                  text: "Separate credit for future deposits.",
-                  color: "text-neon-cyan",
-                },
-                {
-                  value: "5%",
-                  title: "Buy & burn",
-                  text: "Buys and burns winner tokens.",
-                  color: "text-neon-pink",
-                },
-                {
-                  value: "5%",
-                  title: "Protocol fee",
-                  text: "Allocated to the protocol.",
-                  color: "text-neon-amber",
-                },
-              ].map((item) => (
-                <div key={item.title}>
-                  <dt className={`font-mono text-3xl ${item.color}`}>
-                    {item.value}
-                  </dt>
-                  <dd className="mt-2 font-pixel text-sm">{item.title}</dd>
-                  <dd className="mt-1 text-xs leading-6 text-mute">
-                    {item.text}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <p className="mt-5 text-[11px] leading-6 text-mute">
-              Inspect the actual battle and settlement preview before
-              depositing. Creating a battle requires the configured USDC
-              proposal bond.
-            </p>
-          </div>
-        </div>
+      <section className="target-flow">
+        <div className="target-flow-top"><div><p className="eyebrow text-neon-amber">PLANNED / AFTER THE FINAL ROUND</p><h2 className="mt-4 text-3xl">Two paths after a battle.</h2><p className="mt-4 max-w-xl text-sm leading-7 text-mute">The target design separates losing-token rewards from the winning community’s principal. Neither path implies an automatic transfer or burn.</p></div><span className="target-flow-status">NOT AVAILABLE YET</span></div>
+        <div className="outcome-grid"><article><span className="eyebrow text-neon-green">01 / LOSING VAULTS</span><h3>Original-token rewards</h3><p>Winners receive an entitlement in each losing token. Allocation, pending payout and confirmed receipt are distinct states.</p></article><article><span className="eyebrow text-neon-cyan">02 / WINNING PRINCIPAL</span><h3>DAO escrow</h3><p>Winning principal stays in escrow until a DAO decision to burn or return it. Governance rules are still open.</p></article></div>
+        <p className="mt-5 text-xs leading-6 text-mute">Planned mechanics. The current arena uses different settlement and balance rules.</p>
       </section>
       <section className="relative my-14 overflow-hidden border-y border-edge py-12 md:my-20 md:py-16">
         <div className="pointer-events-none absolute -right-16 -top-28 h-96 w-96 rounded-full border-[40px] border-neon-green/5" />
