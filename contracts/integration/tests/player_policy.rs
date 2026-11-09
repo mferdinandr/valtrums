@@ -62,6 +62,7 @@ fn action(user: &Account, amount: &str, request: u8) -> Value {
 struct World {
     worker: near_workspaces::Worker<near_workspaces::network::Sandbox>,
     policy: Contract,
+    owner: Account,
     user: Account,
     agent: Account,
 }
@@ -83,6 +84,7 @@ async fn deploy() -> anyhow::Result<World> {
     Ok(World {
         worker,
         policy,
+        owner,
         user,
         agent,
     })
@@ -357,6 +359,216 @@ async fn replacement_rejections_preserve_asset_budget_and_grant_version() -> any
     Ok(())
 }
 
+async fn reserve_ok(w: &World, amount: &str, request: u8) -> anyhow::Result<()> {
+    w.agent
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&w.user, amount, request))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    Ok(())
+}
+
+fn reservation_args(w: &World, request: u8) -> Value {
+    json!({"user": w.user.id(), "local_id": b32(7), "request_id": b32(request)})
+}
+
+async fn reservation_state(w: &World, request: u8) -> anyhow::Result<String> {
+    let v: Value = w
+        .policy
+        .view("get_reservation")
+        .args_json(reservation_args(w, request))
+        .await?
+        .json()?;
+    Ok(v["state"].as_str().unwrap_or_default().to_string())
+}
+
+#[tokio::test]
+async fn a_delegate_equal_to_the_user_is_rejected() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    let r = w
+        .user
+        .call(w.policy.id(), "create_grant")
+        .args_json(grant_input(&w.user, "100", FUTURE_NS))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?;
+    assert!(r.into_result().is_err());
+    let g: Option<Value> = w
+        .policy
+        .view("get_grant")
+        .args_json(json!({"user": w.user.id(), "local_id": b32(7)}))
+        .await?
+        .json()?;
+    assert!(g.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn revocation_is_permanent_and_a_version_bump_cannot_undo_it() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    w.user
+        .call(w.policy.id(), "revoke_grant")
+        .args_json(json!({"local_id": b32(7)}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let mut bumped = grant_input(&w.agent, "100", FUTURE_NS);
+    bumped["input"]["version"] = json!("2");
+    let r = w
+        .user
+        .call(w.policy.id(), "create_grant")
+        .args_json(bumped)
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?;
+    assert!(r.into_result().is_err());
+    let g: Value = w
+        .policy
+        .view("get_grant")
+        .args_json(json!({"user": w.user.id(), "local_id": b32(7)}))
+        .await?
+        .json()?;
+    assert_eq!(
+        (g["revoked"].as_bool(), g["version"].as_str()),
+        (Some(true), Some("1"))
+    );
+    assert!(w
+        .agent
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&w.user, "10", 1))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()
+        .is_err());
+    // A new local id is a fresh grant with its own budget.
+    let mut fresh = grant_input(&w.agent, "100", FUTURE_NS);
+    fresh["input"]["local_id"] = json!(b32(8));
+    w.user
+        .call(w.policy.id(), "create_grant")
+        .args_json(fresh)
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn undispatched_reservation_is_cancelled_by_user_or_delegate_only() -> anyhow::Result<()> {
+    let w = deploy().await?;
+    create_grant(&w, "100", FUTURE_NS).await?;
+    reserve_ok(&w, "60", 1).await?;
+    let auditor = w.worker.dev_create_account().await?;
+    for caller in [&auditor, &w.owner] {
+        let r = caller
+            .call(w.policy.id(), "cancel_reservation")
+            .args_json(reservation_args(&w, 1))
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?;
+        assert!(r.into_result().is_err(), "infrastructure must not cancel");
+    }
+    assert_eq!(budget(&w).await?["reserved"], "60");
+    // Exactly one yocto is required.
+    let no_deposit = w
+        .agent
+        .call(w.policy.id(), "cancel_reservation")
+        .args_json(reservation_args(&w, 1))
+        .transact()
+        .await?;
+    assert!(no_deposit.into_result().is_err());
+    w.agent
+        .call(w.policy.id(), "cancel_reservation")
+        .args_json(reservation_args(&w, 1))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    assert_eq!(reservation_state(&w, 1).await?, "released");
+    let b = budget(&w).await?;
+    assert_eq!(
+        (b["reserved"].as_str(), b["available"].as_str()),
+        (Some("0"), Some("100"))
+    );
+    // The released request id cannot be reserved again; a new one can.
+    assert!(w
+        .agent
+        .call(w.policy.id(), "reserve")
+        .args_json(action(&w.user, "60", 1))
+        .deposit(NearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()
+        .is_err());
+    reserve_ok(&w, "60", 2).await?;
+    // The user may cancel after revoking the grant.
+    w.user
+        .call(w.policy.id(), "revoke_grant")
+        .args_json(json!({"local_id": b32(7)}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    assert_eq!(budget(&w).await?["reserved"], "60"); // revocation alone releases nothing
+    w.user
+        .call(w.policy.id(), "cancel_reservation")
+        .args_json(reservation_args(&w, 2))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    assert_eq!(budget(&w).await?["reserved"], "0");
+    Ok(())
+}
+
+#[tokio::test]
+async fn reservations_expire_and_anyone_can_release_them_after_the_configured_ttl(
+) -> anyhow::Result<()> {
+    let w = deploy().await?;
+    // The owner shortens the lifetime of new reservations to the 60 second minimum.
+    w.owner
+        .call(w.policy.id(), "set_reservation_ttl")
+        .args_json(json!({"ttl_ns": "60000000000"}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let stranger = w.worker.dev_create_account().await?;
+    assert!(stranger
+        .call(w.policy.id(), "set_reservation_ttl")
+        .args_json(json!({"ttl_ns": "60000000000"}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()
+        .is_err());
+    create_grant(&w, "100", FUTURE_NS).await?;
+    reserve_ok(&w, "60", 1).await?;
+    let release = |who: &Account| {
+        who.call(w.policy.id(), "release_expired")
+            .args_json(reservation_args(&w, 1))
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+    };
+    assert!(
+        release(&stranger).await?.into_result().is_err(),
+        "not expired yet"
+    );
+    assert_eq!(budget(&w).await?["reserved"], "60");
+    w.worker.fast_forward(200).await?;
+    release(&stranger).await?.into_result()?;
+    assert_eq!(reservation_state(&w, 1).await?, "released");
+    assert_eq!(budget(&w).await?["available"], "100");
+    release(&stranger).await?.into_result()?; // idempotent
+    assert_eq!(budget(&w).await?["available"], "100");
+    Ok(())
+}
+
 #[tokio::test]
 async fn unknown_action_fields_fail_without_reserving_budget() -> anyhow::Result<()> {
     let w = deploy().await?;
@@ -406,7 +618,7 @@ fn fixture_player_policy_wasm() -> anyhow::Result<Vec<u8>> {
 /// Runs in the existing sandbox CI job without enabling fixture methods in the normal build.
 /// Synthetic execution outcomes are not evidence of real player spending or foreign finality.
 #[tokio::test]
-async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconciliation(
+async fn revocation_blocks_queued_admission_but_preserves_dispatched_reconciliation(
 ) -> anyhow::Result<()> {
     let worker = near_workspaces::sandbox().await?;
     let policy = worker.dev_deploy(&fixture_player_policy_wasm()?).await?;
@@ -457,15 +669,26 @@ async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconcilia
         .transact()
         .await?
         .into_result()?;
+    // Revocation is permanent per grant id: a version bump cannot re-enable the grant.
     let mut replacement = grant_input(&agent, "100", FUTURE_NS);
     replacement["input"]["version"] = json!("2");
     replacement["input"]["destinations"] = json!(["0x0000000000000000000000000000000000000099"]);
-    user.call(policy.id(), "create_grant")
+    let bump = user
+        .call(policy.id(), "create_grant")
         .args_json(replacement)
         .deposit(NearToken::from_near(1))
         .transact()
+        .await?;
+    assert!(bump.into_result().is_err(), "a revoked grant stays revoked");
+    let grant: Value = policy
+        .view("get_grant")
+        .args_json(json!({"user": user.id(), "local_id": b32(7)}))
         .await?
-        .into_result()?;
+        .json()?;
+    assert_eq!(
+        (grant["version"].as_str(), grant["revoked"].as_bool()),
+        (Some("1"), Some(true))
+    );
     let stale_dispatch = executor
         .call(policy.id(), "fixture_dispatch")
         .args_json(queued.clone())
@@ -474,26 +697,40 @@ async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconcilia
         .await?;
     // The raw `cargo build` wasm used by these sandbox tests reports every contract panic as a
     // WebAssembly `unreachable` trap, so the panic text is not observable here. The reason
-    // ("Grant version changed") is asserted by the unit tests; this test checks the outcome: the
-    // call fails and the queued v1 reservation is left untouched.
+    // ("Grant revoked") is asserted by the unit tests; this test checks the outcome: the call
+    // fails and the queued v1 reservation is left untouched.
     assert!(
         stale_dispatch.into_result().is_err(),
-        "replacement must not revive the queued v1 action"
+        "a revoked grant must not admit the queued action"
     );
     let queued_state: Value = policy
         .view("get_reservation")
-        .args_json(queued)
+        .args_json(queued.clone())
         .await?
         .json()?;
     assert_eq!(queued_state["state"], "reserved");
     assert_eq!(queued_state["version"], "1");
-    // Revoking the replacement still cannot block reconciliation of an old dispatched action.
-    user.call(policy.id(), "revoke_grant")
-        .args_json(json!({"local_id": b32(7)}))
+    // The dispatched obligation cannot be cancelled by the user or the delegate.
+    for caller in [&user, &agent] {
+        let cancel = caller
+            .call(policy.id(), "cancel_reservation")
+            .args_json(dispatched.clone())
+            .deposit(NearToken::from_yoctonear(1))
+            .transact()
+            .await?;
+        assert!(
+            cancel.into_result().is_err(),
+            "dispatched must not be cancelled"
+        );
+    }
+    // The never-dispatched reservation can be cancelled after revocation, restoring its budget.
+    user.call(policy.id(), "cancel_reservation")
+        .args_json(queued)
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?
         .into_result()?;
+    // Revocation still cannot block reconciliation of the already dispatched action.
     for method in ["fixture_dispatch", "fixture_mark_reconciliation"] {
         executor
             .call(policy.id(), method)
@@ -520,7 +757,7 @@ async fn replacement_blocks_queued_admission_but_preserves_dispatched_reconcilia
         .await?
         .json()?;
     assert_eq!(budget["consumed"], "60");
-    assert_eq!(budget["reserved"], "40");
+    assert_eq!(budget["reserved"], "0");
     assert_eq!(budget["authorized_limit"], "100");
     Ok(())
 }
