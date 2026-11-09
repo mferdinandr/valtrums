@@ -61,7 +61,7 @@ PR [#93](https://github.com/mferdinandr/valtrum/pull/93), issue [#58](https://gi
 
 Method: tokens found through DexScreener (224 from keyword searches plus 24 from quote-asset pool lists), then each checked against GoPlus Token Security without credentials. 13 of roughly 250 tokens had GoPlus data (about 5%). The candidate set is not exhaustive: DexScreener endpoints return at most 30 pools per query. Liquidity and pool types come from DexScreener and were not verified on-chain. Authenticity was not verified: many names have look-alike tokens at other addresses, so check each token on the official explorer before it enters the registry.
 
-"Expected result" is our reading of audit policy v1 and the 10,000 USD liquidity rule, not the output of the audit code. It is superseded by the live run of the audit code on 2026-11-08 ([goplus-audit.md, "Live coverage"](goplus-audit.md#live-coverage-2026-11-08)): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, and REBATE, OAK, Rabbit and RICO stay Pending because GoPlus omits `cannot_sell_all`.
+"Expected result" is our reading of audit policy v1 and the 10,000 USD liquidity rule, not the output of the audit code. It is superseded by the live run of the audit code on 2026-11-08 ([goplus-audit.md, "Live coverage"](goplus-audit.md#live-coverage-2026-11-08)): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, and REBATE, OAK, Rabbit and RICO stay Pending because GoPlus omits `cannot_sell_all`. A wider scan on 2026-11-09 found 9 more passing tokens and GoPlus data for nearly every token queried ([reference-token-scan.md](reference-token-scan.md)).
 
 | Token | Mainnet 4663 address | Liquidity | Pool | Expected result |
 | --- | --- | --- | --- | --- |
@@ -142,6 +142,17 @@ Issue [#78](https://github.com/mferdinandr/valtrum/issues/78); record in [intent
 - **Robinhood mainnet:** 1Click lists it as blockchain `hood` with USDG, WETH, ETH, CASHCAT, USDe and PONS. USDG and WETH are the audit's verified addresses, and CASHCAT is a candidate reference token. Dry quotes from NEAR USDC to CASHCAT, USDG and ETH succeed (about 20 seconds estimated).
 - **Testnet:** 1Click lists no testnet asset, so an Intents route for testnet funding is an integration gap. `0x…dEaD` is refused as a recipient.
 - **Bitte:** no account or agent exists; orchestration and the binding of action, route and custody receipt are not verified.
+
+## Research findings (2026-11-09): reference-token scan
+
+Full record: [reference-token-scan.md](reference-token-scan.md); raw data in [evidence/2026-11-09-reference-token-scan.json](evidence/2026-11-09-reference-token-scan.json). The audit code ran unmodified against the live `4663` RPC and GoPlus (no credential); nothing was registered and no funds moved.
+
+- **11 of 127 audited tokens pass policy v1 today** (24 reject, 92 pending): CASHCAT, WALLET, HOODRAT, GOOD, moon, AI (Affair Inu), VLAD (The Robinhood), SANTACOIN, BTCETHUSDT, WIF (RobinWifHat) and DEGEN. All pass on v2 and v3 pools alone; none needs Uniswap v4 or native-ETH reading.
+- The 2026-11-07 coverage figure is out of date: GoPlus returned data for 179 of 181 queried tokens, not 13 of about 250. Of the 13 earlier candidates only CASHCAT and BTCETHUSDT pass; STRATEGY rejects; the rest are Pending (`cannot_sell_all` or taxes unknown, or LP at or below USD 10,000).
+- Supporting Uniswap v4 and native-ETH quotes (D32 keeps them unsupported) would add one token at most (BULL `0x49bac477...`, GoPlus clean, USD 52k in native-ETH v4). Six more tokens are blocked only by a missing `cannot_sell_all` in GoPlus (PONS, RAM, GOO, ORBIO, microduck, BOW); that is a data gap, not a liquidity gap, and policy v1 holds it Pending.
+- Authenticity: no explorer was reachable (TLS handshake failure, not retried). Only CASHCAT is on 1Click and its address matches; 7 of the 11 are Sourcify verified, HOODRAT, SANTACOIN and WIF are not, and moon (its implementation is verified, the clone is not) is an EIP-1167 clone that GoPlus reports as `is_proxy` 0. Several passing names have look-alike tokens (AI, VLAD, WIF, HOODRAT, WALLET); WALLET is named after a real Robinhood product. Pass is not an endorsement: HOODRAT keeps an active whitelist (admissible only because ownership is renounced), moon charges 5 percent each way, DEGEN has a live owner (no active capability) and a supply above 1B.
+- GoPlus rate-limited the unauthenticated client after about 100 requests (code 4029); 48 discovered tokens (13 with search liquidity of USD 5,000 or more) were never queried, so the set is not exhaustive.
+- No decision is taken here: which tokens enter the registry (D11, D21), whether `cannot_sell_all` absence stays Pending, and whether v4 reading is worth building remain with the owner.
 
 ## Work branches
 
