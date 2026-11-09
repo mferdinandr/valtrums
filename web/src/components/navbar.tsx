@@ -51,6 +51,12 @@ export function Navbar() {
                 Try a round
               </a>
               <a
+                href="#product-flow"
+                className="flex items-center px-3 py-2 text-xs text-mute hover:text-neon-green"
+              >
+                Product flow
+              </a>
+              <a
                 href="#mechanics"
                 className="flex items-center px-3 py-2 text-xs text-mute hover:text-neon-green"
               >

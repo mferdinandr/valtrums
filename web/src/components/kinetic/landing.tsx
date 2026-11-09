@@ -96,6 +96,7 @@ export function Landing() {
               </a>
             </Button>
           </div>
+          <p className="mt-5 text-xs leading-6 text-neon-amber">Five-tribe practice illustrates the planned experience. Current battles support two communities.</p>
           <div className="landing-brief"><span><strong>01</strong> PICK YOUR TRIBE</span><span><strong>02</strong> WATCH THE BATTLE</span><span><strong>03</strong> CLAIM YOUR OUTCOME</span></div>
         </div>
         <div
@@ -243,6 +244,22 @@ export function Landing() {
           </div>
         </div>
       </section>
+      <section id="product-flow" className="flow-section scroll-mt-32">
+        <div className="flow-section-heading">
+          <div><p className="eyebrow text-neon-green">THE VALTRUM JOURNEY / PLANNED</p><h2 className="mt-3 text-3xl md:text-4xl">From community to outcome.</h2></div>
+          <p className="max-w-md text-sm leading-7 text-mute">The target experience brings multiple communities into short rounds. The current arena below still uses its existing two-community rules.</p>
+        </div>
+        <div className="flow-grid">
+          {[
+            ["01", "Discover", "Find a battle and inspect its communities, scoring mode and audit status."],
+            ["02", "Join a tribe", "Back an eligible community before deposits lock. The creator participates too."],
+            ["03", "Follow the rounds", "A 30-second round picks a winner; tied leaders enter another round."],
+            ["04", "Track your outcome", "Winning players receive losing-token entitlements; winning principal enters DAO escrow."],
+          ].map(([number, title, description]) => <article className="flow-step" key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></article>)}
+        </div>
+        <div className="mt-7 border-t border-edge pt-6"><p className="eyebrow text-neon-amber">PLANNED / FOUR WAYS TO COMPETE</p><div className="mode-grid">{["Price % Gain", "Market Cap % Growth", "Volume-to-Market Cap", "Lowest % Drawdown"].map((mode) => <span key={mode}>{mode}</span>)}</div></div>
+        <p className="mt-5 text-xs leading-6 text-mute">Planned product flow. Scoring modes, overtime, Robinhood payouts and DAO escrow are not yet available in the current app.</p>
+      </section>
       <section
         id="mechanics"
         className="scroll-mt-32 border-t border-edge py-12 md:py-20"
@@ -250,12 +267,12 @@ export function Landing() {
         <div className="mb-10 flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="eyebrow text-neon-green">
-              The rules behind the rivalry
+              How the current arena works
             </p>
             <h2 className="mt-4 text-3xl tracking-tight md:text-5xl">
-              A game face.
+              Current rules.
               <br />
-              An economy underneath.
+              Know the mechanics.
             </h2>
           </div>
           <p className="max-w-sm text-sm leading-7 text-mute">
