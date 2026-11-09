@@ -52,3 +52,23 @@ All 11 have 18 decimals, code present, are not EIP-1967 proxies and were queried
 - Decisions are point-in-time (TTL 600 s); each token was evaluated at its own time, between 02:46Z and 03:48Z, and thin pools can move.
 - Tokenized stocks (for example SPY, NVDA, MSTR, AAPL) were out of scope; the ones run through the audit were Pending on missing GoPlus fields.
 - A pass attests the reference token under policy v1, not that it is a good or safe asset. No simulation of buys and sells was run (D10).
+
+## Owner selection for the demo (2026-11-09)
+
+The owner chose these six tokens as the reference tokens of the hackathon demo, from the 11 that pass audit policy v1 today: **CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN**.
+
+| Token | Mainnet 4663 address |
+| --- | --- |
+| CASHCAT | `0x020bfC650A365f8BB26819deAAbF3E21291018b4` |
+| WALLET | `0x0339f5459fC690ac85f1782E15782A151b4a9e1b` |
+| GOOD | `0x5F62c57E5C537887117eEF828b7e3aD41C009FEb` |
+| AI (Affair Inu) | `0x0d4a117DCcCe7ba3D0a475ec9068c20C35310Fd8` |
+| VLAD (The Robinhood) | `0xFDbB27E971E72E38C41b1c772FB409c94dd92789` |
+| DEGEN | `0x0830a9dD26A04E959657aB6788d45F5725590c32` |
+
+Why these six: all have Sourcify-verified source, no clone and no active whitelist, 18 decimals, about 1B supply (DEGEN 1.195B), and counted liquidity between USD 15,850 and USD 990,012. Excluded on purpose: BTCETHUSDT (thin margin over USD 10,000 and an on-chain name made of hundreds of other coins' names, which is untrusted text that can break a UI or a terminal prompt); HOODRAT, SANTACOIN and WIF (source not verified); moon (clone, 5% tax at the cap).
+
+Known risks the owner accepted for the demo: WALLET is not a memecoin by theme and imitates a Robinhood product name (another token named WALLET exists); AI and VLAD share tickers with other tokens, so the registry must key on the address, never the ticker; most of the six rest on a single pool of USD 16k to 65k, which is easy to move, and the value counted is the quote-side balance, not executable depth (D32). A pass attests audit policy v1 at one point in time only.
+
+Registration: the entries are added to the arena's on-chain reference registry by the protocol account (D33), which is the DAO once it exists. Nothing is registered yet.
+
