@@ -1,5 +1,6 @@
 import type { AuditResult } from "./decision.js";
 import type { ArchivedObservation, ArchiveProvenance } from "./report-archive.js";
+import { summarizeReasons, type ReasonSummary } from "./reason-summary.js";
 import { formatAuditReport, type AuditReport } from "./report.js";
 
 /**
@@ -33,6 +34,8 @@ export type ObservationView = {
   /** This API cannot establish current approval; it never claims one from a stored pass or a TTL. */
   currentApproval: typeof CURRENT_APPROVAL;
   limitations: string[];
+  /** Same reason codes and fields as the lifecycle log line and `report.reasons`; unknown codes are flagged, not dropped. */
+  reasonSummary: { reasons: ReasonSummary[]; truncated: boolean };
   report: AuditReport;
 };
 
@@ -111,6 +114,7 @@ export function toView(o: ArchivedObservation, now: Date): ObservationView {
     freshness: freshnessOf(o.report, now),
     currentApproval: CURRENT_APPROVAL,
     limitations: limitationsOf(o.report),
+    reasonSummary: summarizeReasons(o.report.reasons),
     report: o.report,
   };
 }
