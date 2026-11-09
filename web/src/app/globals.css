@@ -284,7 +284,7 @@ dd {
 .arena-search input { width: 100%; border: 0; outline: 0; color: #edf3e5; background: transparent; font-size: .8rem; }
 .arena-dao-empty { padding: 2rem; border: 1px solid #435249; border-radius: .9rem; background: #182321; }
 
-.battle-list-card { padding: 1.25rem; border: 1px solid #46574a; border-radius: 1rem; background: linear-gradient(145deg, #26342f, #17221f); transition: border-color .2s, transform .2s; }
+.battle-list-card { padding: 1.25rem; border: 1px solid #46574a; border-radius: 1rem; background: #202d28; transition: border-color .2s, transform .2s; }
 .battle-list-card:hover { border-color: #d0f570; transform: translateY(-3px); }
 .battle-type, .battle-tribe-count { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .55rem; border-radius: .45rem; background: #3b4c36; color: #d0f570; font: 700 9px/1 monospace; letter-spacing: .08em; }
 .battle-tribe-count { background: #34413e; color: #c9d4c9; }
@@ -301,5 +301,3 @@ dd {
 @media (prefers-reduced-motion: reduce) { .battle-list-card:hover { transform: none; } }
 
 .battle-card-id { color: #aab9ac; font: 700 11px monospace; letter-spacing: .08em; }
-.arena-preview-section { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); align-items: center; gap: 1rem; padding: 1rem; border: 1px dashed #6c7655; border-radius: 1rem; }
-@media (max-width: 640px) { .arena-preview-section { grid-template-columns: 1fr; } }

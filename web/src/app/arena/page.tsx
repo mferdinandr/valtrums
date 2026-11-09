@@ -67,7 +67,6 @@ export default function ArenaPage() {
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by battle status">
           {STATUS_FILTERS.map((f) => <button key={f.value} onClick={() => setFilter(f.value)} aria-pressed={filter === f.value} className={cn("rounded-lg border px-4 py-2 font-pixel text-xs transition-colors", filter === f.value ? "border-neon-green/40 bg-neon-green/10 text-neon-green" : "border-edge text-mute hover:text-ink")}>{f.label}</button>)}
         </div>
-        <div className="arena-preview-section"><div><p className="eyebrow text-neon-amber">MULTI-COMMUNITY / DESIGN PREVIEW</p><p className="mt-2 text-xs leading-6 text-mute">Example of a five-community battle. This is illustrative and cannot be joined.</p></div><MultiCommunityPreview /></div>
         <p className="text-xs text-mute">{data ? `${shown.length} ${shown.length === 1 ? "battle" : "battles"} shown` : "Loading battles…"} · Current data contains two communities per battle.</p>
         {error && (
           <Card className="border-neon-red text-neon-red">
@@ -85,6 +84,7 @@ export default function ArenaPage() {
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filter === "All" && !term && <MultiCommunityPreview />}
           {shown.map(({ battle, participants }) => (
             <BattleCard key={battle.id} battle={battle} participants={participants} />
           ))}
