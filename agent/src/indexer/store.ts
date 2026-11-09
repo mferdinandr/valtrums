@@ -1,14 +1,17 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { eventPayloadDigest } from "./parser.js";
+import { eventsDigestUpTo, type RetentionCheckpoint } from "./retention.js";
 import type { AcceptedEvent, BlockRef, DiagnosticRecord, IndexerConfig, IndexerHealthStatus } from "./types.js";
 
 /**
  * Durable indexer state as one versioned atomic snapshot, with stronger recovery guarantees than
  * the legacy baseline store: corrupt or unsupported state is preserved and fails closed with a
  * recovery message, never silently reset to an empty cursor. A single-writer lock prevents two runs
- * from overwriting the same state directory. Operating limits are bounded and documented; there is
- * no retention/prune, so the snapshot grows with processed blocks and accepted events.
+ * from overwriting the same state directory. Operating limits are bounded and documented. Finalized
+ * blocks older than a configurable depth are summarized into a hashed checkpoint and pruned (see
+ * retention.ts); the journal and its dedup keys are never pruned, so the snapshot still grows with
+ * accepted events (MAX_JOURNAL) but no longer with processed blocks.
  */
 
 export const STORE_SCHEMA = "arena-indexer-store-v1";
@@ -64,6 +67,8 @@ export interface StoreState {
   health: { status: IndexerHealthStatus; reason: string };
   /** Active reorg suspension of dependent confirmations; null when none. Persisted across restarts. */
   reorgSuspension: ReorgSuspension | null;
+  /** Hashed summary of pruned finalized history; null until the first prune. Restart verifies from it. */
+  checkpoint: RetentionCheckpoint | null;
 }
 
 /** Health persisted into a freshly created store before any sync has run. */
@@ -157,6 +162,7 @@ export class JsonFileIndexerStore {
       }
     }
     if (s.reorgSuspension === undefined) s.reorgSuspension = null;
+    if (s.checkpoint === undefined) s.checkpoint = null;
     if (s.diagnosticOverflowBlocks === undefined) {
       s.diagnosticOverflowBlocks = s.diagnosticsDropped > 0 ? s.blocks.map((b) => b?.hash) : [];
     }
@@ -187,6 +193,7 @@ export class JsonFileIndexerStore {
           cursors: { processedHead: null, finalizedHead: null },
           health: { ...INITIAL_HEALTH },
           reorgSuspension: null,
+          checkpoint: null,
         };
       }
       assertCompatibleConfig(existing.config, config);
@@ -306,6 +313,19 @@ function validateState(state: StoreState): void {
     check(counter(r.retractedBlocks) && counter(r.retractedEvents) && typeof r.reason === "string" && r.reason.length <= 512, "invalid reorg suspension counters");
     check(state.health.status !== "healthy", "healthy status hides an active reorg suspension");
   }
+  const checkpoint = state.checkpoint;
+  if (checkpoint !== null) {
+    const c = record(checkpoint, "checkpoint");
+    check(c.kind === "summary" && typeof c.note === "string", "checkpoint is not labelled as a summary");
+    check(decimal(c.height) && text(c.hash) && (c.parentHash === null || text(c.parentHash)), "invalid checkpoint block");
+    check(counter(c.prunedBlocks) && c.prunedBlocks > 0 && counter(c.prunedEvents), "invalid checkpoint counters");
+    check(typeof c.eventsDigest === "string" && /^[0-9a-f]{64}$/.test(c.eventsDigest) && typeof c.digest === "string" && /^[0-9a-f]{64}$/.test(c.digest), "invalid checkpoint digest");
+    check(BigInt(c.height) >= BigInt(state.config.anchorHeight), "checkpoint precedes the start anchor");
+    check(state.blocks.length > 0, "a checkpoint requires the finalized head block to be retained");
+    // The journal keeps every dedup record, so the checkpoint's event commitment is re-derivable.
+    const ev = eventsDigestUpTo(state.journal, BigInt(c.height));
+    check(ev.count === c.prunedEvents && ev.digest === c.eventsDigest, "checkpoint event commitment differs from the journal");
+  }
   const blocks = new Map<string, StoredBlock>();
   let previous: StoredBlock | undefined;
   let finalized: StoredBlock | undefined;
@@ -317,6 +337,7 @@ function validateState(state: StoreState): void {
     check(typeof b.finalized === "boolean", "invalid block finality");
     check(!blocks.has(b.hash), "duplicate block hash");
     check(previous ? BigInt(b.height) > BigInt(previous.height) && b.parentHash === previous.hash
+      : checkpoint ? BigInt(b.height) > BigInt(checkpoint.height) && b.parentHash === checkpoint.hash
       : BigInt(b.height) >= BigInt(state.config.anchorHeight) && b.parentHash === state.config.anchorHash, "broken block ordering or parent linkage");
     if (b.finalized) {
       check(!provisionalSeen, "finalized blocks must be a prefix");
@@ -337,7 +358,10 @@ function validateState(state: StoreState): void {
   const provenance = (value: unknown) => {
     const p = record(value, "event provenance");
     const block = typeof p.blockHash === "string" ? blocks.get(p.blockHash) : undefined;
-    check(block && p.blockHeight === block.height && p.blockTimestampMs === block.timestampMs, "event references an absent or inconsistent block");
+    // An event whose block was pruned into the checkpoint keeps only its dedup record; its block is
+    // covered by the checkpoint commitment instead of being retained.
+    const pruned = !block && checkpoint !== null && decimal(p.blockHeight) && BigInt(p.blockHeight) <= BigInt(checkpoint.height);
+    check(pruned || (block && p.blockHeight === block.height && p.blockTimestampMs === block.timestampMs), "event references an absent or inconsistent block");
     check(p.network === state.config.network && typeof p.contract === "string" && state.config.contracts.includes(p.contract), "event source differs from the configured domain");
     check(text(p.receiptId) && counter(p.outcomeIndex) && counter(p.logIndex) && counter(p.itemIndex), "invalid event identity/index");
     check(p.outcomeSuccess === true, "accepted/quarantined event must have a successful outcome");

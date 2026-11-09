@@ -33,6 +33,7 @@ const freshState = (cfg = config()): StoreState => ({
   cursors: { processedHead: { height: "1", hash: "h1" }, finalizedHead: { height: "1", hash: "h1" } },
   health: { status: "healthy", reason: "test fixture" },
   reorgSuspension: null,
+  checkpoint: null,
 });
 
 describe("JsonFileIndexerStore recovery", () => {
