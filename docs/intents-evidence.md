@@ -43,7 +43,33 @@ This needs the target testnet deployment (see [testnet-evidence.md](testnet-evid
 ## 4. Integration gaps
 
 - **Intents on testnet:** 1Click lists no testnet assets, so no Intents route exists for Robinhood testnet `46630` or NEAR testnet. Testnet funding through Intents is an **integration gap**.
-- **Arena boundary:** it refuses every route except `direct` (`unsupported_route`, #76) before anything is built or stored, and the terminal's mock funding router is labelled a fixture.
+- **Arena boundary:** it refuses every route except `direct` and, in a testnet configuration only, the labelled `intents-fixture` (`unsupported_route` for the rest, #76) before anything is built or stored, and the terminal's mock funding router is labelled a fixture.
 - **Mainnet routes:** they exist for Robinhood assets (above), but the project targets testnet only, so they are research evidence, not an accepted route.
 - **Direct deposits:** a direct Robinhood testnet deposit exercises custody but does **not** complete Intents or Bitte acceptance.
 - **Bitte:** a gap until an account and agent exist.
+- **Fixture (D29):** a local fixture of the 1Click API with a fake solver gives the testnet demo a funding path (route `intents-fixture`). It is **not** evidence of Intents: see section 5 and [intents-asset-mapping.md](intents-asset-mapping.md).
+
+## 5. Testnet fixture (fixture evidence, not Intents evidence)
+
+Issue [#114](https://github.com/mferdinandr/valtrum/issues/114), owner decision D29. Code in `agent/src/intents-fixture/`; tests in `agent/test/intents-fixture/`.
+
+**What the tests prove (fixture against recorded responses, no network):**
+- The fixture lists the same six Robinhood assets with the recorded symbols, decimals and field formats, under different (placeholder) asset ids.
+- Its dry quotes for 10 USDC reproduce the recorded `amountIn`, `amountOut`, `minAmountOut` and `timeEstimate` exactly, and have no deposit address. A drift test fails when a recorded field is renamed, retyped, reformatted or its recorded absence changes.
+- A funded quote reaches `SUCCESS` with a fixture custody receipt; a failing solver ends `FAILED` and a refunding one `REFUNDED`, neither credits, and a replayed receipt credits once. The route `intents-fixture` is accepted only on testnet, other routes stay `unsupported_route`, and labels appear in logs, headers, quote and status bodies, previews, `action_status` and the terminal result.
+- [`evidence/2026-11-09-intents-fixture-trace.json`](evidence/2026-11-09-intents-fixture-trace.json) binds the user action, preview hash, NEP-413 authorization, route statuses and the custody receipt in one trace. It is labelled **FIXTURE EVIDENCE**: every actor is the fixture, the fake solver, an in-memory ledger or a scripted receipt verifier.
+
+**What it does not prove:** any real solver, route, quote price, funding or refund behaviour; Bitte; a testnet custody receipt. The live trace needs the testnet accounts and custody from #72 and a real route, and stays an **open item**.
+
+**Verified from the official OpenAPI (2026-11-09, `https://1click.chaindefuser.com/docs/v0/openapi.yaml`, first 100,000 characters read):** the four paths; `TokenResponse` fields; `QuoteRequest` required and optional fields and enums; `QuoteResponse` (`correlationId`, `timestamp`, `signature`, `quoteRequest`, `quote`) and the `Quote` required fields; `SubmitDepositTxRequest/Response`; the `GET /v0/status` query (`depositAddress`, `depositMemo`) and response; the seven status values; `SwapDetails` fields.
+
+**Assumed, not verified (fixture behaviour):**
+- The recording is a summary (symbols, ids, decimals, amounts), not a raw capture: `price`, `priceUpdatedAt`, `quote.*Formatted`, `*Usd` and the quote envelope are checked only against the OpenAPI field list, not against recorded values. Recorded `status: "quoted"` and `message: null` are summary fields, not API fields.
+- Error bodies: the fixture answers `{ "message": "..." }` with HTTP 400 or 404. Only the text `recipient is not valid` was observed.
+- Status progression timing, what `INCOMPLETE_DEPOSIT` and deadline expiry do, and which refund reasons a real solver reports. The fixture never produces `INCOMPLETE_DEPOSIT` and ignores the deadline after the quote.
+- That `minAmountOut` uses floor rounding of `amountOut * (10000 - slippage) / 10000`; it matches the three recorded quotes.
+- Only `EXACT_INPUT`, `ORIGIN_CHAIN` deposit and refund, and `DESTINATION_CHAIN` recipient are supported by the fixture.
+- Dry quotes are unauthenticated and carry the 0.25% unauthenticated fee in reality; the fixture models no fee beyond the recorded amounts.
+- The rest of the OpenAPI document (about 1.8 million characters) was not read.
+
+No script refreshes the recording yet; re-recording is a manual, public, read-only, `dry: true` step (open item).

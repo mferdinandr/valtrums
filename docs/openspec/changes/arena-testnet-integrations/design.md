@@ -42,6 +42,11 @@ Deliver testnet integrations and observability and its acceptance scenarios with
   - **Indexer health** comes from the indexer's `state.json` (read-only, `INDEXER_STATE_DIR`), and its modification time is the last sync. A missing or unreadable state is reported as degraded, never as healthy.
   - **Web:** the portfolio page shows both panels. The account panel takes a read-session token, because the wallet integration has no NEP-413 `signMessage` yet.
 
+- Intents testnet fixture (#114, D29). `agent/src/intents-fixture/` serves the 1Click paths (`/v0/tokens`, `/v0/quote` dry and committed, `/v0/deposit/submit`, `/v0/status`) with field names from the official OpenAPI. A fake solver settles a funded quote through an in-memory custody (complete, fail or refund); a terminal status never changes, so polling cannot credit twice, and `FundingCredits` credits a delivery receipt once by its identity and never credits a refund.
+  - Route and labels. `intents-fixture` joins `direct` only when `PreviewContext.intentsFixture` is set, and `ActionService` and the fixture server refuse to start unless the network is testnet. Revalidation repeats the check, grants are refused, and every other route stays `unsupported_route`. The label appears in the preview binding and limitations, `action_status` (`route`), the terminal result (`fixture`), fixture responses (`valtrumFixture`, `x-valtrum-fixture`) and logs.
+  - Pinning. Golden and drift tests compare discovery and dry quotes with `docs/evidence/2026-11-09-intents-routes.json`. The recording is a summary, so unrecorded fields are checked only against the OpenAPI list. Mapping and migration: [intents-asset-mapping.md](../../../intents-asset-mapping.md). Fixture asset ids and addresses are placeholders until #72.
+  - Boundary. The fixture is not Intents verification. The real route, the live trace and Bitte stay open.
+
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.

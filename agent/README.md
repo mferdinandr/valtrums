@@ -154,3 +154,12 @@ Minimum battle timeline with `TWAP_WINDOW_SECS=60`, `AGENT_INTERVAL_SECS=30` (ti
 4. The battle ends `duration` after the lock. Final prices need the same 60 s of history, so settle after `end_time` with samples from the last minute; keep the agent running throughout.
 
 With the default window the same steps take roughly 25 minutes before a lock and 30 minutes of history before settlement.
+
+## Intents fixture (`intents-fixture`, testnet only)
+
+NEAR Intents lists no testnet asset, so the testnet demo uses a local **fixture** of the 1Click API (D29). It is not NEAR Intents and proves no Intents integration; the real `intents` route stays refused.
+
+- `NEAR_NETWORK=testnet pnpm build && pnpm intents:fixture` serves `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit` and `/v0/status` on `127.0.0.1:${INTENTS_FIXTURE_PORT:-8791}`. It refuses to start unless the network is testnet and sends or reads no credentials. `PUT /fixture/solver-mode` with `{"mode":"complete"|"fail"|"refund"}` drives the fake solver.
+- `INTENTS_FIXTURE=1` makes the action service accept `route: "intents-fixture"` on deposits (testnet only; the service refuses to start on any other network). Every preview, status, response and log line carries the fixture label.
+- Tests: `test/intents-fixture/` (golden and drift tests against `docs/evidence/2026-11-09-intents-routes.json`, solver, route, server and trace tests; no network). Mapping and migration: `docs/intents-asset-mapping.md`.
+
