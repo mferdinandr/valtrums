@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FlowNotice } from "@/components/flow-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -271,7 +272,8 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-lg text-neon-pink">Portfolio</h1>
+      <FlowNotice compact />
+      <div><p className="eyebrow text-neon-green">04 / TRACK YOUR OUTCOME</p><h1 className="mt-3 text-3xl">Your portfolio.</h1><p className="mt-2 text-sm text-mute">Follow positions, claim eligible outcomes, then withdraw liquid balances.</p></div>
       {error && (
         <p role="alert" className="text-xl text-neon-red">
           Could not load portfolio: {error}
@@ -282,6 +284,7 @@ export default function PortfolioPage() {
       )}
       {data && (
         <>
+          <div className="portfolio-guide"><span>01 &nbsp; FOLLOW YOUR POSITION</span><span>02 &nbsp; CLAIM OR REFUND</span><span>03 &nbsp; WITHDRAW BALANCE</span></div>
           <div className="grid gap-4 md:grid-cols-2">
             <CreditPanel account={data.account} />
             <LiquidBalances

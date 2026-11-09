@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { FlowNotice } from "@/components/flow-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
@@ -65,9 +66,10 @@ export default function CreateBattlePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-lg text-neon-pink">New battle</h1>
+      <FlowNotice />
+      <div><Link href="/arena" className="text-xs text-neon-green">← Back to battles</Link><p className="eyebrow mt-5 text-neon-green">CREATE / CURRENT ARENA</p><h1 className="mt-3 text-3xl">Set up a rivalry.</h1><p className="mt-3 text-sm leading-6 text-mute">Choose two token contracts and a duration. Review the bond before proposing your battle for audit.</p></div>
       <Card>
-        <CardTitle>Pick the fighters</CardTitle>
+        <CardTitle>01 / Choose communities and duration</CardTitle>
         <div className="space-y-4">
           <div>
             <Label htmlFor="token-a">Token A (NEP-141 contract id)</Label>
@@ -111,7 +113,7 @@ export default function CreateBattlePage() {
       </Card>
 
       <Card className="border-neon-amber">
-        <CardTitle className="text-neon-amber">Bond</CardTitle>
+        <CardTitle className="text-neon-amber">02 / Review proposal bond</CardTitle>
         <p className="text-3xl text-neon-amber">
           {bond === null ? "--" : formatUsdc(bond)}
         </p>

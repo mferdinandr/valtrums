@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { FlowNotice } from "@/components/flow-notice";
 import { BattleCard } from "@/components/battle-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -45,14 +46,15 @@ export default function ArenaPage() {
 
   return (
     <div className="space-y-8">
+      <FlowNotice />
       <div className="flex items-center justify-between">
-        <p className="eyebrow">The community battleground</p>
+        <p className="eyebrow">01 / Browse available battles</p>
         <span className="eyebrow hidden sm:block">01 — Arena lobby</span>
       </div>
       <section className="machine-hero grid lg:grid-cols-[.95fr_1.05fr]">
         <div className="relative z-10 px-6 pt-9 sm:px-9 lg:py-14 lg:pl-12">
           <span className="inline-flex items-center gap-2 rounded-full border border-neon-green/25 bg-neon-green/5 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[.14em] text-neon-green">
-            <span className="status-dot" /> A little rivalry. Real mechanics.
+            <span className="status-dot" /> Current arena / two communities
           </span>
           <h1 className="mt-6 text-[clamp(2.8rem,5.7vw,5.5rem)] font-medium leading-[.98] tracking-[-.065em]">
             Pick your tribe.
@@ -60,7 +62,7 @@ export default function ArenaPage() {
             <span className="text-neon-green">Enter the arena.</span>
           </h1>
           <p className="mt-5 max-w-sm text-sm leading-7 text-mute">
-            Find a battle, back your community and follow the action in the arena.
+            Browse current battles, inspect the status and vaults, then choose a community while deposits are open.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild size="lg">
@@ -133,7 +135,7 @@ export default function ArenaPage() {
       <section id="battle-list" className="scroll-mt-40 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="eyebrow text-neon-green">SELECT YOUR BATTLE / THE ARENA</p>
+            <p className="eyebrow text-neon-green">01 / DISCOVER A BATTLE</p>
             <h2 className="mt-2 text-2xl">
               Battle lobby{" "}
               <span className="ml-2 align-middle font-mono text-xs text-mute">
