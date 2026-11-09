@@ -6,21 +6,40 @@
 //! budget reservation happen in one `&mut self` transition, so there is no read-then-write gap.
 //!
 //! No signing, token transfer, MPC call or custody access happens here: a reservation is an
-//! authorization and a budget hold, never a transfer or proof of funds. Outcome transitions
-//! (dispatch/consume/reconcile) are modeled in the pure core and are exposed only by the
-//! `sandbox-fixtures` build; the normal contract has no confirmation or unlock bypass. The normal
-//! build can only release a reservation that was never dispatched: the user or delegate cancels it,
-//! or anyone releases it after its expiry. A dispatched obligation is never released by either.
+//! authorization and a budget hold, never a transfer or proof of funds.
+//!
+//! Outcome transitions run in the normal build. The user or delegate admits a reservation for
+//! execution (`dispatch`) and may flag it for reconciliation. Consumption is confirmed only by
+//! finalized source-receipt evidence: `confirm_with_receipt` reads the configured shared receipt
+//! registry's active claim and consumes the obligation only when the claim binds exactly to it. No
+//! executor, auditor, scheduler, relayer, operator, verifier or owner can confirm or release a
+//! dispatched obligation. The normal build can only release a reservation that was never
+//! dispatched: the user or delegate cancels it, or anyone releases it after its expiry. A
+//! dispatched obligation is never released by timeout or revocation, and no production path
+//! releases it at all (a no-execution proof path is an open decision).
 use crate::{
-    AssetKey, BattleScope, Budget, CanonicalAction, Grant, GrantId, Hash, Reservation,
-    ReservationState,
+    receipt_binds, AssetKey, BattleScope, Budget, CanonicalAction, Grant, GrantId, Hash,
+    ReceiptClaim, ReceiptRef, RegistryKey, Reservation, ReservationState,
 };
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{json, Value};
 use near_sdk::store::LookupMap;
 use near_sdk::{
-    env, near, require, AccountId, BorshStorageKey, NearToken, PanicOnDefault, Promise,
+    env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
+    Promise, PromiseError,
 };
+
+/// Storage deposit required up front by `confirm_with_receipt` (covers the used-receipt marker;
+/// the unused part is refunded).
+pub const CONFIRM_STORAGE_DEPOSIT: NearToken = NearToken::from_millinear(5);
+const REGISTRY_GAS: Gas = Gas::from_tgas(10);
+const CALLBACK_GAS: Gas = Gas::from_tgas(30);
+
+#[ext_contract(ext_registry)]
+#[allow(dead_code)]
+trait SharedRegistry {
+    fn get_active_claim(&self, key: RegistryKey) -> Option<ReceiptClaim>;
+}
 
 /// Default lifetime of an undispatched reservation: 1 hour. Agent choice (owner decision 2026-11-09:
 /// expiry exists, length is configurable); recorded as an assumption.
@@ -36,6 +55,7 @@ enum StorageKey {
     GrantVersions,
     Budgets,
     Reservations,
+    Receipts,
 }
 
 /// Immutable key for a retained historical grant version.
@@ -57,6 +77,9 @@ pub struct StoredGrant {
 #[derive(PanicOnDefault)]
 pub struct PlayerPolicy {
     owner: AccountId,
+    /// Shared receipt registry whose finalized claims are the only evidence that consumes an
+    /// obligation. Fixed at initialization: no setter exists.
+    registry: AccountId,
     /// Only meaningful in the `sandbox-fixtures` build; unused (and unsettable) otherwise.
     executor: Option<AccountId>,
     /// Lifetime applied to new reservations; existing reservations keep their own expiry.
@@ -65,6 +88,8 @@ pub struct PlayerPolicy {
     grant_versions: LookupMap<VersionKey, Grant>,
     budgets: LookupMap<Hash, Budget>,
     reservations: LookupMap<Hash, Reservation>,
+    /// Receipts already used to settle an obligation, mapped to that reservation's request key.
+    used_receipts: LookupMap<ReceiptRef, Hash>,
 }
 
 #[near(serializers = [json])]
@@ -197,15 +222,17 @@ fn charge_storage(before: u64) {
 #[near]
 impl PlayerPolicy {
     #[init]
-    pub fn new(owner: AccountId) -> Self {
+    pub fn new(owner: AccountId, registry: AccountId) -> Self {
         Self {
             owner,
+            registry,
             executor: None,
             reservation_ttl_ns: DEFAULT_RESERVATION_TTL_NS,
             grants: LookupMap::new(StorageKey::Grants),
             grant_versions: LookupMap::new(StorageKey::GrantVersions),
             budgets: LookupMap::new(StorageKey::Budgets),
             reservations: LookupMap::new(StorageKey::Reservations),
+            used_receipts: LookupMap::new(StorageKey::Receipts),
         }
     }
 
@@ -376,6 +403,7 @@ impl PlayerPolicy {
             .checked_add(self.reservation_ttl_ns)
             .unwrap_or_else(|| env::panic_str("Expiry overflow"));
         let reservation = Reservation {
+            battle_id: canonical.battle.map(|b| b.battle_id),
             request_key,
             action_hash,
             grant: id,
@@ -440,6 +468,175 @@ impl PlayerPolicy {
         self.store_release(id, reservation, budget, changed, "expired", &user);
     }
 
+    /// Admit a reserved action for execution. Callable by the grant's user or current delegate.
+    /// Current authority (version, revocation, grant expiry, reservation expiry) is re-checked
+    /// only at first admission; a repeat is a no-op, so an already dispatched obligation stays
+    /// reconcilable after replacement, expiry or revocation. Once dispatched, the reservation can
+    /// no longer be cancelled or expired; only receipt evidence resolves it.
+    #[payable]
+    pub fn dispatch(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
+        near_sdk::assert_one_yocto();
+        let caller = env::predecessor_account_id();
+        let (id, mut reservation, _) = self.load_reservation(&user, &local_id, &request_id);
+        let stored = self
+            .grants
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("Unknown grant"));
+        require!(
+            caller == stored.grant.user || caller == stored.grant.delegate,
+            "Not authorized"
+        );
+        if reservation.state == ReservationState::Reserved {
+            require!(
+                reservation.version == stored.grant.version,
+                "Grant version changed"
+            );
+            require!(!stored.revoked, "Grant revoked");
+            require!(
+                env::block_timestamp() < stored.grant.expiry_ns,
+                "Grant expired"
+            );
+        }
+        let key = reservation.request_key;
+        let changed = reservation
+            .dispatch(env::block_timestamp())
+            .unwrap_or_else(|_| env::panic_str("Cannot dispatch reservation"));
+        if changed {
+            self.reservations.insert(key, reservation);
+            self.reservations.flush();
+            emit(
+                "obligation_dispatched",
+                json!({"user": user, "grant_id": hex(&id), "request_key": hex(&key)}),
+            );
+        }
+    }
+
+    /// Flag a dispatched obligation whose outcome is unknown. The reservation stays held: this
+    /// never restores or consumes budget.
+    #[payable]
+    pub fn mark_reconciliation(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
+        near_sdk::assert_one_yocto();
+        let caller = env::predecessor_account_id();
+        let (id, mut reservation, _) = self.load_reservation(&user, &local_id, &request_id);
+        let stored = self
+            .grants
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("Unknown grant"));
+        require!(
+            caller == stored.grant.user || caller == stored.grant.delegate,
+            "Not authorized"
+        );
+        let key = reservation.request_key;
+        let changed = reservation
+            .mark_reconciliation()
+            .unwrap_or_else(|_| env::panic_str("Not a dispatched obligation"));
+        if changed {
+            self.reservations.insert(key, reservation);
+            self.reservations.flush();
+            emit(
+                "reconciliation_required",
+                json!({"user": user, "grant_id": hex(&id), "request_key": hex(&key)}),
+            );
+        }
+    }
+
+    /// Consume a dispatched or reconciliation-required obligation with finalized source-receipt
+    /// evidence. Permissionless: the caller has no authority; the registry's active (undisputed)
+    /// claim for the receipt is. The claim must bind to the obligation's asset, user, battle and
+    /// exact amount, and one receipt settles at most one reservation. Any other outcome (claim
+    /// missing, disputed, mismatched, registry unavailable) changes nothing and refunds the
+    /// deposit. The returned promise resolves to true only when this call consumed.
+    #[payable]
+    pub fn confirm_with_receipt(
+        &mut self,
+        user: AccountId,
+        local_id: Hash,
+        request_id: Hash,
+        receipt: ReceiptRef,
+    ) -> Promise {
+        require!(
+            env::attached_deposit() >= CONFIRM_STORAGE_DEPOSIT,
+            "Insufficient storage deposit"
+        );
+        let (id, reservation, _) = self.load_reservation(&user, &local_id, &request_id);
+        require!(
+            matches!(
+                reservation.state,
+                ReservationState::Dispatched | ReservationState::ReconciliationRequired
+            ),
+            "Not an in-flight obligation"
+        );
+        require!(
+            self.used_receipts.get(&receipt).is_none(),
+            "Receipt already used"
+        );
+        let stored = self
+            .grants
+            .get(&id)
+            .unwrap_or_else(|| env::panic_str("Unknown grant"));
+        let key = RegistryKey {
+            chain_id: U64(stored.grant.asset.chain_id),
+            transaction_hash: receipt.transaction_hash,
+            log_index: receipt.log_index,
+        };
+        ext_registry::ext(self.registry.clone())
+            .with_static_gas(REGISTRY_GAS)
+            .get_active_claim(key)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .with_attached_deposit(env::attached_deposit())
+                    .on_receipt_evidence(
+                        env::predecessor_account_id(),
+                        user,
+                        local_id,
+                        request_id,
+                        receipt,
+                    ),
+            )
+    }
+
+    /// Registry answer for `confirm_with_receipt`. Never panics on bad evidence: it returns false
+    /// and refunds the whole deposit. State is re-read here, so two racing confirmations cannot
+    /// both consume.
+    #[private]
+    #[payable]
+    pub fn on_receipt_evidence(
+        &mut self,
+        caller: AccountId,
+        user: AccountId,
+        local_id: Hash,
+        request_id: Hash,
+        receipt: ReceiptRef,
+        #[callback_result] claim: Result<Option<ReceiptClaim>, PromiseError>,
+    ) -> bool {
+        let attached = env::attached_deposit().as_yoctonear();
+        let before = env::storage_usage();
+        let consumed = match claim {
+            Ok(Some(claim)) => self.apply_receipt(&user, &local_id, &request_id, &receipt, &claim),
+            _ => false,
+        };
+        let cost = if consumed {
+            env::storage_byte_cost()
+                .as_yoctonear()
+                .checked_mul(u128::from(
+                    env::storage_usage()
+                        .checked_sub(before)
+                        .unwrap_or_else(|| env::panic_str("Storage accounting failed")),
+                ))
+                .unwrap_or_else(|| env::panic_str("Storage cost overflow"))
+        } else {
+            0
+        };
+        require!(attached >= cost, "Insufficient storage deposit");
+        if attached > cost {
+            Promise::new(caller)
+                .transfer(NearToken::from_yoctonear(attached - cost))
+                .detach();
+        }
+        consumed
+    }
+
     /// Owner-only: set the lifetime of future reservations within fixed bounds. It does not change
     /// existing reservations and cannot grant spending authority.
     #[payable]
@@ -470,6 +667,60 @@ impl PlayerPolicy {
             .get(&reservation.grant)
             .unwrap_or_else(|| env::panic_str("Missing budget"));
         (reservation.grant, reservation, budget)
+    }
+
+    /// All checks first, then one mutation. Returns true only when the obligation was consumed.
+    fn apply_receipt(
+        &mut self,
+        user: &AccountId,
+        local_id: &Hash,
+        request_id: &Hash,
+        receipt: &ReceiptRef,
+        claim: &ReceiptClaim,
+    ) -> bool {
+        if self.used_receipts.get(receipt).is_some() {
+            return false;
+        }
+        let key = request_lookup(user, local_id, request_id);
+        let Some(mut reservation) = self.reservations.get(&key).cloned() else {
+            return false;
+        };
+        let grant_id = reservation.grant;
+        let (Some(stored), Some(budget)) =
+            (self.grants.get(&grant_id), self.budgets.get(&grant_id))
+        else {
+            return false;
+        };
+        let mut budget = *budget;
+        if !matches!(
+            reservation.state,
+            ReservationState::Dispatched | ReservationState::ReconciliationRequired
+        ) || receipt_binds(&stored.grant, &reservation, claim).is_err()
+            || reservation.consume(&mut budget).is_err()
+        {
+            return false;
+        }
+        self.budgets.insert(grant_id, budget);
+        self.reservations.insert(key, reservation);
+        self.used_receipts.insert(receipt.clone(), key);
+        self.budgets.flush();
+        self.reservations.flush();
+        self.used_receipts.flush();
+        emit(
+            "obligation_consumed",
+            json!({
+                "user": user,
+                "grant_id": hex(&grant_id),
+                "request_key": hex(&key),
+                "amount": U128(claim.actual_received.0),
+                "transaction_hash": hex(&receipt.transaction_hash),
+                "log_index": receipt.log_index,
+                "evidence_hash": hex(&claim.evidence_hash),
+                "reserved": U128(budget.reserved),
+                "consumed": U128(budget.consumed),
+            }),
+        );
+        true
     }
 
     fn store_release(
@@ -504,6 +755,10 @@ impl PlayerPolicy {
     }
 
     // --- Views (bounded, read-only) ---
+
+    pub fn is_receipt_used(&self, receipt: ReceiptRef) -> bool {
+        self.used_receipts.get(&receipt).is_some()
+    }
 
     pub fn get_grant(&self, user: AccountId, local_id: Hash) -> Option<GrantView> {
         let id = GrantId::derive(&user, &local_id).0;
@@ -584,8 +839,11 @@ fn hex(bytes: &Hash) -> String {
     s
 }
 
-/// Fixture-only execution/evidence adapter. Compiled in only under `sandbox-fixtures`; a deployed
-/// build has none of these methods, so no caller can fabricate a confirmation or unlock a budget.
+/// Fixture-only no-execution adapter. Dispatch, reconciliation flagging and receipt-evidence
+/// consumption are production methods; the only thing the normal build deliberately lacks is a way
+/// to release a dispatched obligation (no receipt evidence can prove non-execution). This adapter
+/// exists to exercise that transition in sandbox tests. Compiled in only under `sandbox-fixtures`;
+/// a deployed build has none of these methods. Never deploy it.
 #[cfg(feature = "sandbox-fixtures")]
 #[near]
 impl PlayerPolicy {
@@ -596,121 +854,32 @@ impl PlayerPolicy {
         self.executor = Some(executor);
     }
 
-    fn require_executor(&self) {
+    /// Release a reconciliation-required obligation as not executed (synthetic proof).
+    #[payable]
+    pub fn fixture_release_not_executed(
+        &mut self,
+        user: AccountId,
+        local_id: Hash,
+        request_id: Hash,
+    ) {
+        near_sdk::assert_one_yocto();
         let executor = self
             .executor
             .clone()
             .unwrap_or_else(|| env::panic_str("Executor unset"));
         require!(env::predecessor_account_id() == executor, "Only executor");
-    }
-
-    fn load(
-        &self,
-        user: &AccountId,
-        local_id: &Hash,
-        request_id: &Hash,
-    ) -> (Hash, Reservation, Budget) {
-        let key = request_lookup(user, local_id, request_id);
-        let reservation = self
-            .reservations
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| env::panic_str("Unknown reservation"));
-        let budget = *self
-            .budgets
-            .get(&reservation.grant)
-            .unwrap_or_else(|| env::panic_str("Missing budget"));
-        (key, reservation, budget)
-    }
-
-    #[payable]
-    pub fn fixture_dispatch(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
-        near_sdk::assert_one_yocto();
-        self.require_executor();
-        let (key, mut reservation, _) = self.load(&user, &local_id, &request_id);
-        // Re-check current authority only at first admission. A replacement grant cannot revive
-        // an old queued authorization; an already-dispatched obligation remains reconcilable.
-        if reservation.state == ReservationState::Reserved {
-            let stored = self
-                .grants
-                .get(&reservation.grant)
-                .unwrap_or_else(|| env::panic_str("Unknown grant"));
-            require!(
-                reservation.version == stored.grant.version,
-                "Grant version changed"
-            );
-            require!(!stored.revoked, "Grant revoked");
-            require!(
-                env::block_timestamp() < stored.grant.expiry_ns,
-                "Grant expired"
-            );
-        }
-        reservation
-            .dispatch(env::block_timestamp())
-            .unwrap_or_else(|_| env::panic_str("Wrong state or reservation expired"));
-        self.reservations.insert(key, reservation);
-    }
-
-    #[payable]
-    pub fn fixture_consume(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
-        near_sdk::assert_one_yocto();
-        self.require_executor();
-        let (key, mut reservation, mut budget) = self.load(&user, &local_id, &request_id);
-        reservation
-            .consume(&mut budget)
-            .unwrap_or_else(|_| env::panic_str("Conflicting outcome"));
-        self.budgets.insert(reservation.grant, budget);
-        self.reservations.insert(key, reservation);
-    }
-
-    #[payable]
-    pub fn fixture_release(&mut self, user: AccountId, local_id: Hash, request_id: Hash) {
-        near_sdk::assert_one_yocto();
-        self.require_executor();
-        let (key, mut reservation, mut budget) = self.load(&user, &local_id, &request_id);
-        reservation
-            .release(&mut budget)
+        let (id, mut reservation, mut budget) =
+            self.load_reservation(&user, &local_id, &request_id);
+        let changed = reservation
+            .reconcile(&mut budget, crate::Resolution::NotExecuted)
             .unwrap_or_else(|_| env::panic_str("Wrong state"));
-        self.budgets.insert(reservation.grant, budget);
-        self.reservations.insert(key, reservation);
-    }
-
-    #[payable]
-    pub fn fixture_mark_reconciliation(
-        &mut self,
-        user: AccountId,
-        local_id: Hash,
-        request_id: Hash,
-    ) {
-        near_sdk::assert_one_yocto();
-        self.require_executor();
-        let (key, mut reservation, _) = self.load(&user, &local_id, &request_id);
-        reservation
-            .mark_reconciliation()
-            .unwrap_or_else(|_| env::panic_str("Wrong state"));
-        self.reservations.insert(key, reservation);
-    }
-
-    #[payable]
-    pub fn fixture_reconcile(
-        &mut self,
-        user: AccountId,
-        local_id: Hash,
-        request_id: Hash,
-        executed: bool,
-    ) {
-        near_sdk::assert_one_yocto();
-        self.require_executor();
-        let (key, mut reservation, mut budget) = self.load(&user, &local_id, &request_id);
-        let resolution = if executed {
-            crate::Resolution::Executed
-        } else {
-            crate::Resolution::NotExecuted
-        };
-        reservation
-            .reconcile(&mut budget, resolution)
-            .unwrap_or_else(|_| env::panic_str("Conflicting outcome"));
-        self.budgets.insert(reservation.grant, budget);
-        self.reservations.insert(key, reservation);
+        self.store_release(
+            id,
+            reservation,
+            budget,
+            changed,
+            "fixture_not_executed",
+            &user,
+        );
     }
 }
