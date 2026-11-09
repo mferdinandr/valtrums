@@ -366,6 +366,26 @@ function Detail({
   );
 }
 
+function DemoMultiBattle({ battle, reload }: { battle: BattleView; reload: () => void }) {
+  useEffect(() => {
+    if (battle.status !== "Live") return;
+    const delay = Math.max(0, Number(toBigInt(battle.end_time_ns) / 1000000n) - Date.now());
+    const timer = window.setTimeout(reload, delay + 100);
+    return () => window.clearTimeout(timer);
+  }, [battle.status, battle.end_time_ns, reload]);
+  const communities = battle.demo_communities ?? [];
+  const metas = useTokenMetas(communities.map((community) => community.token));
+  return <div className="space-y-6">
+    <Link href="/arena" className="text-xs text-neon-green">← Back to battles</Link>
+    <section className="pixel-frame p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow text-neon-green">DEMO / BATTLE #{battle.id}</p><h1 className="mt-3 text-3xl">Price gain challenge</h1></div><Badge tone={battle.status === "Live" ? "green" : "amber"}>{battle.status === "Live" ? "Live" : "Awaiting result"} · simulated</Badge></div>
+      <p className="mt-4 max-w-2xl text-sm leading-7 text-mute">Five communities compete in an illustrative 30-second round. This is simulated data; no deposits, payouts or DAO decisions are executed.</p>
+      {battle.status === "Live" ? <p className="mt-4 text-sm text-neon-amber">Round ends in: <Countdown targetNs={toBigInt(battle.end_time_ns)} /></p> : <p className="mt-4 text-sm text-neon-amber">The simulated round ended. No result is calculated.</p>}
+    </section>
+    <section><p className="eyebrow text-neon-green">COMMUNITIES / {communities.length}</p><h2 className="mt-3 text-2xl">The competing vaults</h2><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{communities.map(({ token, vault }, index) => <Card key={token}><p className="eyebrow">TRIBE {String(index + 1).padStart(2, "0")}</p><h3 className="mt-3 text-xl">{metas[token]!.symbol}</h3><p className="mt-2 text-sm text-mute">Vault: {formatUnits(toBigInt(vault), metas[token]!.decimals, 0)} {metas[token]!.symbol}</p></Card>)}</div></section>
+    <Card><p className="text-sm leading-7 text-mute">This demo round is view-only. The connected arena contract currently supports two communities; multi-community deposits and settlement are not available yet.</p></Card>
+  </div>;
+}
+
 export default function BattleDetailPage({
   params,
 }: {
@@ -399,5 +419,6 @@ export default function BattleDetailPage({
         </Link>
       </p>
     );
+  if (data.demo_communities) return <DemoMultiBattle battle={data} reload={reload} />;
   return <Detail battle={data} reload={reload} />;
 }

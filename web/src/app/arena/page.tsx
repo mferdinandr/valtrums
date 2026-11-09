@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BattleCard, MultiCommunityPreview } from "@/components/battle-card";
+import { BattleCard } from "@/components/battle-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useArena } from "@/components/providers";
@@ -29,15 +29,23 @@ export default function ArenaPage() {
     return out.sort((a, b) => b.id - a.id);
   }, [api]);
 
+  useEffect(() => {
+    if (!data?.some((battle) => battle.demo_communities && battle.status === "Live")) return;
+    const timer = window.setInterval(reload, 5000);
+    return () => window.clearInterval(timer);
+  }, [data, reload]);
+
   const metas = useTokenMetas(
-    (data ?? []).flatMap((b) => [b.token_a, b.token_b]),
+    (data ?? []).flatMap((b) => b.demo_communities?.map((community) => community.token) ?? [b.token_a, b.token_b]),
   );
   const entries = useMemo(() => (data ?? []).map((battle) => ({
     battle,
-    participants: [
-      { token: metas[battle.token_a]!, vault: battle.vault_a, winner: battle.winner === "A" },
-      { token: metas[battle.token_b]!, vault: battle.vault_b, winner: battle.winner === "B" },
-    ],
+    participants: battle.demo_communities
+      ? battle.demo_communities.map(({ token, vault }) => ({ token: metas[token]!, vault }))
+      : [
+          { token: metas[battle.token_a]!, vault: battle.vault_a, winner: battle.winner === "A" },
+          { token: metas[battle.token_b]!, vault: battle.vault_b, winner: battle.winner === "B" },
+        ],
   })), [data, metas]);
   const term = query.trim().toLowerCase();
   const shown = entries.filter(({ battle, participants }) =>
@@ -67,7 +75,7 @@ export default function ArenaPage() {
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by battle status">
           {STATUS_FILTERS.map((f) => <button key={f.value} onClick={() => setFilter(f.value)} aria-pressed={filter === f.value} className={cn("rounded-lg border px-4 py-2 font-pixel text-xs transition-colors", filter === f.value ? "border-neon-green/40 bg-neon-green/10 text-neon-green" : "border-edge text-mute hover:text-ink")}>{f.label}</button>)}
         </div>
-        <p className="text-xs text-mute">{data ? `${shown.length} ${shown.length === 1 ? "battle" : "battles"} shown` : "Loading battles…"} · Current data contains two communities per battle.</p>
+        <p className="text-xs text-mute">{data ? `${shown.length} ${shown.length === 1 ? "battle" : "battles"} shown` : "Loading battles…"} · Multi-community battle is simulated in demo mode.</p>
         {error && (
           <Card className="border-neon-red text-neon-red">
             <p>Could not load battles: {error}</p>
@@ -84,7 +92,6 @@ export default function ArenaPage() {
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filter === "All" && !term && <MultiCommunityPreview />}
           {shown.map(({ battle, participants }) => (
             <BattleCard key={battle.id} battle={battle} participants={participants} />
           ))}
