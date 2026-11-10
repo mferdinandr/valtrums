@@ -23,7 +23,6 @@
     "payout:operator": "node dist/payout-role-main.js operator",
     "read:mcp": "node dist/mcp/cli.js mcp",
     "read:serve": "node dist/mcp/cli.js http",
-    "faucet:serve": "pnpm build && node --env-file-if-exists=.env.local dist/faucet/cli.js",
     "faucet:plan": "pnpm build && node dist/faucet/funding-plan-cli.js",
     "player:run": "node --env-file-if-exists=.env.local dist/player/cli.js",
     "intents:fixture": "node dist/intents-fixture/cli.js"

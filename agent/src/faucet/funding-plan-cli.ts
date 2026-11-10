@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { attestArgsFromVerifyOutput, attestCommand, buildPlan, loadFundingFacts } from "./funding-plan.js";
 
 /**
- * `node dist/faucet/funding-plan-cli.js plan --faucet <account> --battle <id> --depositor <0x> [--tokens 1000000] [--symbols CASHCAT,WALLET]`
+ * `node dist/faucet/funding-plan-cli.js plan --faucet <contract account> --operator <account> --battle <id> --depositor <0x> [--tokens 1000000] [--claim 100] [--daily 100000] [--symbols CASHCAT,WALLET]`
  * `node dist/faucet/funding-plan-cli.js attest --file <verify-output.json>`
  *
  * Prints text only. It sends nothing, reads no key and makes no network call.
@@ -24,11 +24,12 @@ export function run(argv: string[], readFile: (p: string) => string = (p) => rea
   }
   if (argv[0] !== "plan") throw new Error("usage: plan --faucet <account> --battle <id> --depositor <0x> | attest --file <json>");
   const faucet = arg(argv, "faucet");
+  const operator = arg(argv, "operator");
   const battleId = arg(argv, "battle");
   const depositor = arg(argv, "depositor");
-  if (!faucet || !battleId || !depositor) throw new Error("plan needs --faucet, --battle and --depositor");
+  if (!faucet || !operator || !battleId || !depositor) throw new Error("plan needs --faucet, --operator, --battle and --depositor");
   const symbols = arg(argv, "symbols")?.split(",").map((s) => s.trim()).filter(Boolean);
-  const steps = buildPlan(facts, { faucet, battleId, depositor, tokens: Number(arg(argv, "tokens") ?? "1000000"), ...(arg(argv, "refund") ? { refund: arg(argv, "refund")! } : {}), ...(symbols ? { symbols } : {}) });
+  const steps = buildPlan(facts, { faucet, operator, battleId, depositor, ...(arg(argv, "claim") ? { claimTokens: Number(arg(argv, "claim")) } : {}), ...(arg(argv, "daily") ? { dailyTokens: Number(arg(argv, "daily")) } : {}), tokens: Number(arg(argv, "tokens") ?? "1000000"), ...(arg(argv, "refund") ? { refund: arg(argv, "refund")! } : {}), ...(symbols ? { symbols } : {}) });
   const lines = ["# Faucet funding plan (NOTHING HAS BEEN SENT)", "", "Run each mutating step yourself, one at a time, after checking the command. Placeholders in <ANGLE BRACKETS> come from earlier steps.", ""];
   steps.forEach((s, i) => {
     lines.push(`${i + 1}. [${s.mutating ? "SENDS A TRANSACTION" : "read-only"}] ${s.title}`, `   chain: ${s.chain}   signer: ${s.signer}`, `   ${s.command}`);

@@ -87,8 +87,8 @@ discovery stays disabled until full deployment coverage and #80 acceptance.
 
 ## Testnet faucet
 
-- [x] Faucet service, ledger, authenticated HTTP handler, CLI and the "Get test tokens" page, covered by unit and fixture tests.
-- [ ] Fund the faucet account with backed representation (operator: mock mint, custody deposit, claim receipt, claim representation) and run it live; needs the owner's per-transaction approval.
-- [ ] Verify one live claim on testnet (storage registration, transfer, balance) and record the evidence.
-- [ ] Choose the production host and rate limiting for public access.
-
+- [x] Faucet contract (`contracts/faucet`) with 26 unit tests, the "Get test tokens" page that reads it over RPC, and the funding plan generator (`pnpm -C agent faucet:plan`).
+- [ ] Sandbox test of the claim flow with a mock NEP-141, including the callback's `#[private]` guard and a failed transfer.
+- [ ] Security review of the contract (the NEAR contract audit checklist) before it holds stock.
+- [ ] Deploy the faucet contract, fund it with backed representation for all six tokens and offer them (operator actions; needs the owner's per-transaction approval; the first live run of deposit, claim receipt and claim representation).
+- [ ] Verify one live claim on testnet and record the evidence.

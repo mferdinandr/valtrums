@@ -1,10 +1,11 @@
 /**
- * The plan for funding the faucet account with backed representation. It only builds text: no network call, no key,
+ * The plan for deploying the faucet contract and funding it with backed representation. It only builds text: no network call, no key,
  * no transaction. Every step that changes state names who signs it, the chain, and the exact command to review, and
  * the operator (the owner) approves and runs each one. Keys are always referenced by environment variable name.
  *
- * Why this path: a representation can only be minted from finalized custody (`claim_representation`), so the faucet
- * account is funded by a real deposit on Robinhood testnet that names the faucet account as beneficiary.
+ * Why this path: a representation can only be minted from finalized custody (`claim_representation`), so the stock is
+ * created by a real deposit on Robinhood testnet that names the operator account as beneficiary. The operator claims
+ * the representation, sends it to the faucet contract and sets the token on the contract.
  */
 export interface Backing {
   symbol: string;
@@ -27,7 +28,14 @@ export interface FundingFacts {
 }
 
 export interface PlanOptions {
+  /** The faucet contract account. */
   faucet: string;
+  /** The operator account: beneficiary of the deposits, owner of the faucet contract and signer of the claims. */
+  operator: string;
+  /** Whole tokens handed out per claim. */
+  claimTokens?: number;
+  /** Whole tokens the faucet may hand out per day per token; 0 means no daily bound. */
+  dailyTokens?: number;
   /** An existing OPEN lifecycle battle that includes the token's backing; claim_receipt fails closed without one. */
   battleId: string;
   /** The EVM address that deposits (and signs approve and deposit). */
@@ -95,6 +103,12 @@ const units = (tokens: number): string => (BigInt(tokens) * 10n ** 18n).toString
 export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
   const problems: string[] = [];
   if (!ACCOUNT.test(o.faucet)) problems.push("the faucet account must be a NEAR account id");
+  if (!ACCOUNT.test(o.operator)) problems.push("the operator account must be a NEAR account id");
+  if (o.faucet === o.operator) problems.push("the faucet contract and the operator must be different accounts");
+  const claimTokens = o.claimTokens ?? 100;
+  const dailyTokens = o.dailyTokens ?? 100_000;
+  if (!Number.isInteger(claimTokens) || claimTokens < 1) problems.push("the claim amount must be a whole number of tokens");
+  if (!Number.isInteger(dailyTokens) || dailyTokens < 0 || (dailyTokens !== 0 && dailyTokens < claimTokens)) problems.push("the daily budget must be 0 or at least one claim");
   if (!/^[1-9][0-9]{0,19}$/.test(o.battleId)) problems.push("the battle id must be a positive integer");
   if (!EVM_ADDR.test(o.depositor)) problems.push("the depositor must be a 20-byte EVM address");
   if (o.refund !== undefined && !EVM_ADDR.test(o.refund)) problems.push("the refund address must be a 20-byte EVM address");
@@ -105,6 +119,8 @@ export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
   if (problems.length > 0) throw new Error(problems.join("; "));
   const refund = o.refund ?? o.depositor;
   const amount = units(o.tokens);
+  const claimAmount = units(claimTokens);
+  const dailyAmount = units(dailyTokens);
   const steps: Step[] = [];
   const add = (s: Step) => steps.push(s);
 
@@ -114,9 +130,24 @@ export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
     note: "claim_receipt fails closed unless this battle exists. It must be open (not locked) and include each backing below, or the deposit is recorded as a late deposit instead of ordinary custody. Create one in the app first if none exists.",
   });
   add({
-    id: "prereq-faucet-account", title: "Create the faucet account (not the owner account) and fund it with testnet NEAR", chain: "near", signer: "the testnet faucet service", mutating: true,
-    command: `near account create-account sponsor-by-faucet-service ${o.faucet} autogenerate-new-keypair save-to-keychain network-config testnet create`,
-    note: "Skip if the account exists. Keep this key separate from the owner key. It needs a few NEAR for storage deposits.",
+    id: "prereq-accounts", title: "Create the operator account and the faucet contract account (separate from the owner account)", chain: "near", signer: "the testnet faucet service", mutating: true,
+    command: `near account create-account sponsor-by-faucet-service ${o.operator} autogenerate-new-keypair save-to-keychain network-config testnet create  &&  near account create-account sponsor-by-faucet-service ${o.faucet} autogenerate-new-keypair save-to-keychain network-config testnet create`,
+    note: "Skip any that exist. Keep these keys separate from the owner key. The faucet contract account needs a few NEAR: it pays storage registration for new holders.",
+  });
+  add({
+    id: "prereq-build", title: "Build the faucet contract", chain: "local", signer: "none", mutating: false,
+    command: "cd contracts/faucet && cargo near build non-reproducible-wasm",
+    note: "Produces the wasm used below. Run the contract tests first: cargo test -p valtrum-faucet.",
+  });
+  add({
+    id: "prereq-deploy", title: "Deploy and initialize the faucet contract with the operator as owner", chain: "near", signer: `the faucet contract account ${o.faucet}`, mutating: true,
+    command: `near contract deploy ${o.faucet} use-file ./target/near/valtrum_faucet.wasm with-init-call new json-args '{"owner":"${o.operator}","cooldown_secs":"86400"}' prepaid-gas '30 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send`,
+    note: "Adjust the wasm path to the build output. The owner can pause the faucet, set tokens and withdraw stock.",
+  });
+  add({
+    id: "prereq-fund-near", title: "Give the faucet contract NEAR for storage registrations", chain: "near", signer: `the operator ${o.operator}`, mutating: true,
+    command: `near tokens ${o.operator} send-near ${o.faucet} '20 NEAR' network-config testnet sign-with-keychain send`,
+    note: "Each new holder of a token costs the faucet 0.00125 NEAR. The daily budget bounds how many can be registered per day.",
   });
   add({
     id: "prereq-rpc", title: "Reach the official Robinhood RPC", chain: "local", signer: "none", mutating: false,
@@ -136,9 +167,9 @@ export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
       command: `cast send ${b.token} "approve(address,uint256)" ${facts.forwarder} ${amount} ${RPC} --private-key "$DEPOSITOR_PRIVATE_KEY"`,
     });
     add({
-      id: `${t}-deposit`, title: `${b.symbol}: deposit through the forwarder, naming the faucet account as beneficiary`, chain: "evm", signer: "the depositor: $DEPOSITOR_PRIVATE_KEY", mutating: true,
-      command: `cast send ${facts.forwarder} "deposit(address,uint64,uint64,address,string,uint256)" ${b.token} ${o.battleId} ${facts.mappingVersion} ${refund} ${o.faucet} ${amount} ${RPC} --private-key "$DEPOSITOR_PRIVATE_KEY"`,
-      note: "The tokens go straight to the holder; the forwarder keeps nothing. Save the transaction hash printed here as <TX_HASH>. mappingVersion must equal the backing's immutable mapping version.",
+      id: `${t}-deposit`, title: `${b.symbol}: deposit through the forwarder, naming the operator account as beneficiary`, chain: "evm", signer: "the depositor: $DEPOSITOR_PRIVATE_KEY", mutating: true,
+      command: `cast send ${facts.forwarder} "deposit(address,uint64,uint64,address,string,uint256)" ${b.token} ${o.battleId} ${facts.mappingVersion} ${refund} ${o.operator} ${amount} ${RPC} --private-key "$DEPOSITOR_PRIVATE_KEY"`,
+      note: "The beneficiary is the operator account. The tokens go straight to the holder; the forwarder keeps nothing. Save the transaction hash printed here as <TX_HASH>. mappingVersion must equal the backing's immutable mapping version.",
     });
     add({
       id: `${t}-logindex`, title: `${b.symbol}: find the log index of the Deposited event`, chain: "evm", signer: "none (read-only)", mutating: false,
@@ -161,29 +192,41 @@ export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
       note: "Generates, but does not send, the registry attest call (1 yoctoNEAR) from the verified attestation. Review the arguments before signing.",
     });
     add({
-      id: `${t}-register`, title: `${b.symbol}: register the faucet account for storage on the representation`, chain: "near", signer: `the faucet account ${o.faucet}`, mutating: true,
-      command: `near account manage-storage-deposit ${b.account} deposit ${o.faucet} '0.01 NEAR' sign-as ${o.faucet} network-config testnet sign-with-keychain send`,
+      id: `${t}-register`, title: `${b.symbol}: register the operator account for storage on the representation`, chain: "near", signer: `the operator ${o.operator}`, mutating: true,
+      command: `near account manage-storage-deposit ${b.account} deposit ${o.operator} '0.01 NEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
       note: "claim_representation requires the beneficiary to be registered already.",
     });
     add({
-      id: `${t}-claim-receipt`, title: `${b.symbol}: claim the attested receipt on the backing`, chain: "near", signer: `any account, here ${o.faucet}`, mutating: true,
-      command: `near contract call-function as-transaction ${b.account} claim_receipt json-args '{"transaction_hash":"<TX_HASH>","log_index":<LOG_INDEX>}' prepaid-gas '100 Tgas' attached-deposit '0.02 NEAR' sign-as ${o.faucet} network-config testnet sign-with-keychain send`,
+      id: `${t}-claim-receipt`, title: `${b.symbol}: claim the attested receipt on the backing`, chain: "near", signer: `any account, here ${o.operator}`, mutating: true,
+      command: `near contract call-function as-transaction ${b.account} claim_receipt json-args '{"transaction_hash":"<TX_HASH>","log_index":<LOG_INDEX>}' prepaid-gas '100 Tgas' attached-deposit '0.02 NEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
       note: "Storage deposit is partly refunded. Use the same <TX_HASH> format as the verification output.",
     });
     add({
-      id: `${t}-claim-representation`, title: `${b.symbol}: mint the representation to the faucet account`, chain: "near", signer: `the faucet account ${o.faucet}`, mutating: true,
-      command: `near contract call-function as-transaction ${b.account} claim_representation json-args '{"beneficiary":"${o.faucet}","amount":"${amount}"}' prepaid-gas '50 Tgas' attached-deposit '1 yoctoNEAR' sign-as ${o.faucet} network-config testnet sign-with-keychain send`,
+      id: `${t}-claim-representation`, title: `${b.symbol}: mint the representation to the operator account`, chain: "near", signer: `the operator ${o.operator}`, mutating: true,
+      command: `near contract call-function as-transaction ${b.account} claim_representation json-args '{"beneficiary":"${o.operator}","amount":"${amount}"}' prepaid-gas '50 Tgas' attached-deposit '1 yoctoNEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
       note: "Mints exactly what the finalized custody backs. This is the first live run of this path on testnet.",
     });
     add({
-      id: `${t}-check`, title: `${b.symbol}: check the faucet balance`, chain: "near", signer: "none (read-only)", mutating: false,
-      command: `near tokens ${o.faucet} view-ft-balance ${b.account} network-config testnet now`,
+      id: `${t}-register-faucet`, title: `${b.symbol}: register the faucet contract for storage on the representation`, chain: "near", signer: `the operator ${o.operator}`, mutating: true,
+      command: `near account manage-storage-deposit ${b.account} deposit ${o.faucet} '0.01 NEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
+    });
+    add({
+      id: `${t}-stock`, title: `${b.symbol}: send the stock to the faucet contract`, chain: "near", signer: `the operator ${o.operator}`, mutating: true,
+      command: `near contract call-function as-transaction ${b.account} ft_transfer json-args '{"receiver_id":"${o.faucet}","amount":"${amount}"}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
+    });
+    add({
+      id: `${t}-offer`, title: `${b.symbol}: offer the token on the faucet (${claimTokens} per claim${dailyTokens === 0 ? ", no daily bound" : `, ${dailyTokens} per day`})`, chain: "near", signer: `the operator ${o.operator} (the contract owner)`, mutating: true,
+      command: `near contract call-function as-transaction ${o.faucet} set_token json-args '{"token":"${b.account}","symbol":"${b.symbol}","amount":"${claimAmount}","daily_budget":"${dailyAmount}"}' prepaid-gas '30 Tgas' attached-deposit '0 NEAR' sign-as ${o.operator} network-config testnet sign-with-keychain send`,
+    });
+    add({
+      id: `${t}-check`, title: `${b.symbol}: check the faucet's stock`, chain: "near", signer: "none (read-only)", mutating: false,
+      command: `near contract call-function as-read-only ${b.account} ft_balance_of json-args '{"account_id":"${o.faucet}"}' network-config testnet now`,
     });
   }
   add({
-    id: "go-live", title: "Start the faucet live", chain: "local", signer: "none", mutating: false,
-    command: `FAUCET_ACCOUNT_ID=${o.faucet} FAUCET_LIVE=1 FAUCET_PRIVATE_KEY=<the faucet key, from a secret store> pnpm -C agent faucet:serve`,
-    note: "Only after every balance check above shows the expected amount. Do not put the key in a file in the repository.",
+    id: "go-live", title: "Point the web app at the faucet contract", chain: "local", signer: "none", mutating: false,
+    command: `echo "NEXT_PUBLIC_FAUCET_CONTRACT_ID=${o.faucet}" >> web/.env.local   # then restart the web dev server`,
+    note: "Only after every stock check above shows the expected amount. There is no faucet server and no faucet key to run or protect.",
   });
   return steps;
 }

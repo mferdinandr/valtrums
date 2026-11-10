@@ -60,13 +60,14 @@ Deliver testnet integrations and observability and its acceptance scenarios with
   - Pinning. Golden and drift tests compare discovery and dry quotes with `docs/evidence/2026-11-09-intents-routes.json`. The recording is a summary, so unrecorded fields are checked only against the OpenAPI list. Mapping and migration: [intents-asset-mapping.md](../../../intents-asset-mapping.md). Fixture asset ids and addresses are placeholders until #72.
   - Boundary. The fixture is not Intents verification. The real route, the live trace and Bitte stay open.
 
-- Testnet faucet (`agent/src/faucet/`, run with `pnpm -C agent faucet:serve`). Defaults chosen by the implementer, each open to the owner:
-  - **Why a NEAR-side faucet:** a representation can only be minted by `claim_representation` from finalized custody, so the faucet never mints. It distributes representation held by a dedicated faucet account whose supply is backed 1:1 by the operator's own EVM deposits (mock `mint`, deposit to custody, `claim_receipt`, `claim_representation` to the faucet account). Players need only a NEAR testnet account; the EVM path stays the operator's.
-  - **Funding the faucet is an operator action** on real testnet accounts and needs the owner's per-transaction approval. It is also the first live run of deposit, claim receipt and claim representation, which are not yet proven on testnet.
-  - **Per claim:** `storage_deposit(registration_only)` for the player (paid by the faucet) when not registered, then `ft_transfer` of the configured amount. Amounts are base units (the representations have 18 decimals).
-  - **Limits (configurable):** one claim per account and token per 24 hours, at most 120 transfers per hour overall, the sender is the faucet account only, and the claim account always comes from the verified read session.
-  - **Process and key:** a separate process with its own key (`FAUCET_PRIVATE_KEY`), so the read API keeps holding no key. The web app proxies to it server side. Dry run by default; `FAUCET_LIVE=1` sends.
-  - **State:** a versioned JSON ledger with atomic writes; a claim is reserved before the transfer and released if the transfer fails. NEAR for gas comes from the public testnet faucet.
+- Testnet faucet (`contracts/faucet`, crate `valtrum-faucet`). Defaults chosen by the implementer, each open to the owner:
+  - **A contract, not a service:** the faucet is a NEAR contract, so nothing has to be hosted and no hot key has to be protected. It lives on NEAR because players hold the NEP-141 representation, not the EVM mock tokens. A first version was a Node service with its own key; it was replaced because it needed a host and a key.
+  - **It never mints.** A representation can only be minted from finalized custody (`claim_representation`), so the stock is created once by the operator: mock `mint`, deposit to custody naming the operator as beneficiary, `claim_receipt`, `claim_representation`, then `ft_transfer` to the faucet contract. `pnpm -C agent faucet:plan` prints every step; nothing in it is sent by the tool.
+  - **Claim:** `claim(token)` by the caller. State is written first; then `storage_deposit(registration_only)` for the caller (paid from the contract's NEAR), `ft_transfer`, and a private callback that restores the record, the daily budget and the record deposit if the transfer failed. The caller attaches a small deposit for the claim record the first time; the excess is refunded.
+  - **Limits:** one claim per account and token per cooldown (24 h), an optional per-token daily budget, at most 32 tokens. Anyone can make many accounts, so the per-account limit does not stop a sybil; the daily budget bounds the loss.
+  - **Owner:** `set_token(token, symbol, amount, daily_budget)`, `remove_token`, `set_cooldown_secs`, `set_paused`, `set_owner`, `withdraw_ft`, `withdraw_near`.
+  - **Web:** the page reads the contract and the token balances over RPC, so it works without any service, and a claim is a transaction the user's wallet signs and pays the gas for. Players need a little testnet NEAR.
+  - **Tests:** 26 unit tests (cooldown, budget windows, failure restoration, owner-only, refunds). The `#[private]` guard of the callback lives in the macro-generated wrapper and needs a sandbox test; none exists yet.
 
 ## Risks / Migration
 

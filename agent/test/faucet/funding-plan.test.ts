@@ -7,7 +7,7 @@ import { attestArgsFromVerifyOutput, attestCommand, buildPlan, loadFundingFacts 
 const dir = new URL("../../../docs/evidence/", import.meta.url);
 const read = (name: string) => JSON.parse(readFileSync(new URL(name, dir), "utf8"));
 const facts = loadFundingFacts(read);
-const opts = { faucet: "valtrum-faucet.testnet", battleId: "7", depositor: "0x1111111111111111111111111111111111111111", tokens: 1_000_000 };
+const opts = { faucet: "valtrum-faucet.testnet", operator: "valtrum-operator.testnet", battleId: "7", depositor: "0x1111111111111111111111111111111111111111", tokens: 1_000_000 };
 
 describe("funding facts", () => {
   it("come from the recorded evidence, for all six tokens", () => {
@@ -28,7 +28,7 @@ describe("funding plan", () => {
     const steps = buildPlan(facts, opts);
     for (const b of facts.backings) {
       const mine = steps.filter((s) => s.id.startsWith(`${b.symbol.toLowerCase()}-`)).map((s) => s.id.split("-").slice(1).join("-"));
-      expect(mine, b.symbol).toEqual(["mint", "approve", "deposit", "logindex", "finality", "verify", "attest", "register", "claim-receipt", "claim-representation", "check"]);
+      expect(mine, b.symbol).toEqual(["mint", "approve", "deposit", "logindex", "finality", "verify", "attest", "register", "claim-receipt", "claim-representation", "register-faucet", "stock", "offer", "check"]);
     }
     const mint = steps.find((s) => s.id === "cashcat-mint")!;
     expect(mint.command).toContain((1_000_000n * 10n ** 18n).toString());
@@ -36,7 +36,7 @@ describe("funding plan", () => {
   it("binds the deposit to the battle, the mapping version, the faucet account and the recorded contracts", () => {
     const deposit = buildPlan(facts, opts).find((s) => s.id === "cashcat-deposit")!;
     const cashcat = facts.backings.find((b) => b.symbol === "CASHCAT")!;
-    expect(deposit.command).toContain(`"deposit(address,uint64,uint64,address,string,uint256)" ${cashcat.token} 7 3 ${opts.depositor} valtrum-faucet.testnet`);
+    expect(deposit.command).toContain(`"deposit(address,uint64,uint64,address,string,uint256)" ${cashcat.token} 7 3 ${opts.depositor} valtrum-operator.testnet`);
     expect(deposit.command).toContain(facts.forwarder);
     expect(deposit.signer).toMatch(/DEPOSITOR_PRIVATE_KEY/);
   });
@@ -45,6 +45,17 @@ describe("funding plan", () => {
     expect(all).not.toMatch(/ed25519:[1-9A-HJ-NP-Za-km-z]{20,}/);
     expect(all).not.toMatch(/0x[0-9a-fA-F]{64}/);
     expect(all).toMatch(/\$DEPLOYER_PRIVATE_KEY/);
+  });
+  it("deploys the contract, sends the stock to it and offers each token with the claim and daily amounts", () => {
+    const steps = buildPlan(facts, { ...opts, claimTokens: 50, dailyTokens: 5_000, symbols: ["cashcat"] });
+    const ids = steps.map((s) => s.id);
+    expect(ids.indexOf("prereq-deploy")).toBeGreaterThan(ids.indexOf("prereq-build"));
+    expect(ids.indexOf("cashcat-stock")).toBeGreaterThan(ids.indexOf("cashcat-claim-representation"));
+    const offer = steps.find((s) => s.id === "cashcat-offer")!;
+    expect(offer.command).toContain(`"amount":"${50n * 10n ** 18n}","daily_budget":"${5_000n * 10n ** 18n}"`);
+    expect(offer.command).toContain('"symbol":"CASHCAT"');
+    expect(steps.find((s) => s.id === "prereq-deploy")!.command).toContain('"owner":"valtrum-operator.testnet"');
+    expect(steps.find((s) => s.id === "go-live")!.command).toContain("NEXT_PUBLIC_FAUCET_CONTRACT_ID=valtrum-faucet.testnet");
   });
   it("marks which steps send a transaction and starts with the read-only checks", () => {
     const steps = buildPlan(facts, { ...opts, symbols: ["degen"] });
@@ -56,6 +67,8 @@ describe("funding plan", () => {
   });
   it("rejects bad inputs with every reason", () => {
     expect(() => buildPlan(facts, { ...opts, faucet: "BAD", battleId: "0", depositor: "0x12", tokens: 0 })).toThrow(/faucet account.*battle id.*depositor.*tokens/);
+    expect(() => buildPlan(facts, { ...opts, operator: opts.faucet })).toThrow(/different accounts/);
+    expect(() => buildPlan(facts, { ...opts, claimTokens: 100, dailyTokens: 50 })).toThrow(/daily budget/);
     expect(() => buildPlan(facts, { ...opts, symbols: ["PEPE"] })).toThrow(/unknown token PEPE/);
   });
 });
@@ -95,7 +108,7 @@ describe("attest call", () => {
 
 describe("funding plan cli", () => {
   it("prints a plan that says nothing was sent, with all six tokens by default", () => {
-    const text = run(["plan", "--faucet", "valtrum-faucet.testnet", "--battle", "7", "--depositor", "0x1111111111111111111111111111111111111111", "--evidence-dir", new URL(".", dir).pathname]);
+    const text = run(["plan", "--faucet", "valtrum-faucet.testnet", "--operator", "valtrum-operator.testnet", "--battle", "7", "--depositor", "0x1111111111111111111111111111111111111111", "--evidence-dir", new URL(".", dir).pathname]);
     expect(text).toMatch(/NOTHING HAS BEEN SENT/);
     for (const s of ["CASHCAT", "WALLET", "GOOD", "AI", "VLAD", "DEGEN"]) expect(text).toContain(`${s}: mint 1000000 mock tokens`);
   });
