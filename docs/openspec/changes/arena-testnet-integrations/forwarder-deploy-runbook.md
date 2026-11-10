@@ -34,7 +34,7 @@ Recommendation: R1 for this testnet, because the old contract holds only mock to
 
 1. **Old contract:** the runtime code hash is unchanged and equals the recorded deposit-only build; it still holds the 100 mCASHCAT of the one test deposit. Confirmed.
 2. **Recorded deposit:** `get_claim` on the registry for that transaction returns `null`: it was never attested, so nothing was minted from the locked tokens. Confirmed.
-3. **Holder:** `0x0b74...0c41` has no code, nonce 0, no tokens, 0.002 ETH of gas. Confirmed. The payout contract's registered `sender` per backing is **not readable** (no view exists), so it stays unconfirmed until the `register_backing` transaction or a real payout shows it.
+3. **Holder:** `0x0b74...0c41` has no code, nonce 0, no tokens, 0.002 ETH of gas. Confirmed. The payout contract's registered `sender` per backing has no view, but the recorded `register_backing` transaction for `backing-cashcat` (`FQVJSyoc...NNV`) was read from chain on 2026-11-10 and carries `sender` = the holder and `path` = `valtrum-custody-1`: confirmed for that backing (the other five were registered with the same binding per `docs/evidence/2026-11-09-near-testnet-wiring.json`, not re-read).
 4. **Deployer:** 0.008064 ETH; gas price 0.01 gwei; the deployment should cost about 4 microETH. Confirmed.
 
 Limit: read through dRPC only because the official RPC refused connections; re-read through the official RPC before deploying.
@@ -71,3 +71,6 @@ ARENA_APPLICATION_CUSTODY_PATHS=[{"label":"forwarder-testnet","depositContract":
 ```
 
 Reaching the official RPC from a network whose DNS blocks it: resolve it through DNS-over-HTTPS and connect to the real address with the correct TLS name (a local relay or `curl --resolve`); do not trust the system resolver's answer for that host.
+
+
+The live deposit-and-payout proof is planned in [live-custody-proof-plan.md](live-custody-proof-plan.md); it needs a locked lifecycle battle and belongs to #80.
