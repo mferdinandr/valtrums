@@ -250,18 +250,12 @@ export function LifecycleBattleDetail({
                   <summary>Asset identity &amp; evidence</summary>
                   {r.label && (
                     <p>
-                      Token label: {r.label.symbol} ({r.label.name},{" "}
-                      {r.label.kind === "testnet-mock" ? "testnet mock" : "mainnet reference"}). A display name only; the
-                      identity is the chain and address below.
+                      Token label: {r.label.symbol} ({r.label.name}). A display name only; the identity is the chain
+                      and address below.
                     </p>
                   )}
                   <p>Representation: {r.representation}</p>
                   <p>Source asset: {r.asset}</p>
-                  <p>
-                    {r.reference
-                      ? `Scored against mainnet reference ${r.reference}`
-                      : "No mainnet reference mapping"}
-                  </p>
                   <p>Cosmetic artwork is not token approval.</p>
                   {!roster[r.index]?.generic &&
                     roster[r.index]?.visualReference.status ===

@@ -93,13 +93,13 @@ function AssetPicker({
               type="button"
               onClick={() => onPick(a)}
               className="lifecycle-asset-option text-xs"
-              title={`${a.chainId}:${a.token} → ${a.referenceChainId}:${a.referenceToken}`}
+              title={`${a.chainId}:${a.token}`}
             >
               <span>
                 {a.label ? <strong>{a.label.symbol} · {a.label.name} · </strong> : null}
                 Token {shortAccount(a.token)}
                 <span className="mt-1 text-mute">
-                  Chain {a.chainId} · reference {shortAccount(a.referenceToken)}
+                  Chain {a.chainId}
                 </span>
               </span>
             </Button>
@@ -226,7 +226,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             />
             <p className="break-all text-xs">
               {a.tokenAddress
-                ? `${a.label ? `${a.label} · ` : ""}Asset ${a.chainId}:${a.tokenAddress} · reference ${a.referenceChainId || "none"}:${a.referenceAddress || "none"}`
+                ? `${a.label ? `${a.label} · ` : ""}Asset ${a.chainId}:${a.tokenAddress}`
                 : "No asset picked yet."}
             </p>
             <details
