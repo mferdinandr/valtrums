@@ -349,8 +349,8 @@ export function LandingJourney() {
                 </Link>
               </Button>
               <Button asChild variant="cyan" size="lg">
-                <Link href="/arena/preview">
-                  <Play size={14} /> Play the 3D preview
+                <Link href="/battles/new">
+                  Create a battle <ArrowUpRight size={14} />
                 </Link>
               </Button>
             </div>
@@ -390,9 +390,8 @@ export function LandingJourney() {
               One friendly rivalry.
             </h2>
             <p>
-              Each crew has its own reactor station. In the carnival preview,
-              the challenges are playful choreography; scripted mode scores
-              decide the round.
+              Each crew has its own reactor station. Open a battle to meet its
+              communities, follow the chart and watch the action in one arena.
             </p>
             <div
               className="journey-crew"
@@ -464,14 +463,13 @@ export function LandingJourney() {
               plays with its own spring reactor.
             </p>
             <p className="journey-small">
-              This is a decorative demonstration. The separate carnival preview
-              uses scripted mode scores, while current battles follow their
-              recorded contract state.
+              This landing is decorative. Inside a battle, the arena follows
+              that battle’s recorded status. Character actions remain cosmetic.
             </p>
             <div className="journey-actions">
               <Button asChild variant="cyan">
-                <Link href="/arena/preview">
-                  <Play size={14} /> Explore the 3D preview
+                <Link href="/arena">
+                  Find a battle <ArrowUpRight size={14} />
                 </Link>
               </Button>
             </div>
@@ -524,8 +522,8 @@ export function LandingJourney() {
               Where to next?
             </h2>
             <p>
-              Browse current testnet battles or explore the separate 3D
-              exhibition. Neither requires a wallet just to look around.
+              Choose a testnet battle to enter its 3D arena, follow the chart
+              and inspect its rules. Watching requires no wallet.
             </p>
             <div className="journey-actions">
               <Button asChild size="lg">
@@ -534,8 +532,8 @@ export function LandingJourney() {
                 </Link>
               </Button>
               <Button asChild variant="cyan" size="lg">
-                <Link href="/arena/preview">
-                  Try the carnival <Play size={14} />
+                <Link href="/battles/new">
+                  Create a battle <ArrowUpRight size={14} />
                 </Link>
               </Button>
             </div>
@@ -668,14 +666,14 @@ export function LandingJourney() {
             </ol>
             <p>
               Robinhood source-token payouts and bounded, user-funded player
-              agents are part of the target. The exhibition demonstrates
-              scripted scenarios; it does not prove live integrations.
+              agents are part of the target. A simulated demo does not prove
+              these live integrations.
             </p>
           </>
         ) : (
           <>
             <p className="journey-note-label">
-              Current wallet app · separate 3D preview
+              Current wallet app · integrated 3D battle arena
             </p>
             <ol>
               <li>
@@ -695,9 +693,9 @@ export function LandingJourney() {
                 claiming and withdrawing are separate steps.
               </li>
               <li>
-                <strong>Try the exhibition.</strong> The wallet-free 3D preview
-                uses scripted scores, personal reactor challenges and overtime
-                fixtures. It moves no funds and uses no live market feed.
+                <strong>Enter the arena.</strong> Open a battle to watch its
+                communities and chart in one 3D arena. Simulated battles are
+                labeled; cosmetic actions never determine the result.
               </li>
             </ol>
             <p>
@@ -714,8 +712,8 @@ export function LandingJourney() {
             </Link>
           </Button>
           <Button asChild variant="cyan">
-            <Link href="/arena/preview">
-              Try 3D preview <Play size={14} />
+            <Link href="/portfolio">
+              Open Portfolio <ArrowUpRight size={14} />
             </Link>
           </Button>
         </div>

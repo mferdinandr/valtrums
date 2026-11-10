@@ -7,7 +7,7 @@ export function RouteFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname(),
     ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (pathname === "/arena/preview" || pathname === "/") return;
+    if (pathname === "/") return;
     const context = gsap.context(() => {
       const media = gsap.matchMedia();
       media.add("(prefers-reduced-motion: no-preference)", () => {
@@ -26,7 +26,7 @@ export function RouteFrame({ children }: { children: ReactNode }) {
     }, ref);
     return () => context.revert();
   }, [pathname]);
-  if (pathname === "/arena/preview" || pathname === "/") return <>{children}</>;
+  if (pathname === "/") return <>{children}</>;
   return (
     <div ref={ref} className="route-content relative">
       <p className="mb-5 flex items-center gap-2 text-[10px] text-mute">

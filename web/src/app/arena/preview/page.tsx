@@ -1,13 +1,6 @@
-import type { Metadata } from "next";
-import { ColosseumPreview } from "@/components/colosseum/preview";
-import "@/components/colosseum/colosseum.css";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Token Carnival — Valtrum playable preview",
-  description:
-    "A cheerful 3D community carnival with five original toy mascots and personal reactor challenges. Thirty-second performance rounds and leader-only overtime. Scripted fixtures, no transactions.",
-};
-
-export default function ColosseumPage() {
-  return <ColosseumPreview />;
+/** Old bookmarks enter the same battle flow as every other visitor. */
+export default function FormerPreviewPage() {
+  redirect("/arena");
 }

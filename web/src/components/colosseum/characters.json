@@ -1,5 +1,5 @@
 {
-  "provenance": "Original cosmetic interpretations of project research candidates; not official mascots or token approvals.",
+  "provenance": "Original toy 3D adaptations informed by contract-matched listing artwork for four tokens. WIF remains an unverified interpretation. Not official artwork or token approval.",
   "sources": [
     "docs/findings-and-decisions.md",
     "docs/product-spec.md",
@@ -14,10 +14,16 @@
       "demoTokenId": "cashcat.demo",
       "referenceChainId": 4663,
       "referenceAddress": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
-      "title": "The Paw-powered Pal",
+      "title": "The Soft-eyed Cashcat",
       "type": "Feline toy mascot",
-      "color": "#3a8967",
-      "description": "A round little cashcat with oversized paws, rosy cheeks and a curling tail. Always ready with a wave.",
+      "color": "#66746f",
+      "description": "A white-and-gray toy cat with big glossy eyes, pale paws, a softly worried expression and a curling tail, inspired by its contract-matched listing image.",
+      "visualReference": {
+        "status": "listing-reviewed",
+        "reviewedAt": "2026-11-10",
+        "imageUrl": "https://cdn.dexscreener.com/cms/images/Lq7a3pS9Wn8EuGp0?width=800&height=800",
+        "listingUrl": "https://dexscreener.com/robinhood/0xa70fc67c9f69da90b63a0e4c05d229954574e313"
+      },
       "researchNote": "2026-11-07 research: potential pass, not current approval."
     },
     {
@@ -26,10 +32,16 @@
       "demoTokenId": "btcethusdt.demo",
       "referenceChainId": 4663,
       "referenceAddress": "0xae2df3c1749daee721c1bfcbbfdde5d61ae7cb99",
-      "title": "The Capsule Crew",
-      "type": "Triple-capsule toy robot",
-      "color": "#8061ae",
-      "description": "One cheerful four-legged robot carrying three candy-colored capsules and a spring-loaded reactor tool.",
+      "title": "All Coins, One Big Grin",
+      "type": "Golden coin mascot",
+      "color": "#946b15",
+      "description": "A smiling gold coin with dark sunglasses, chunky arms, white gloves and red-and-white sneakers. An original toy adaptation of the All Coins in One Coin listing mascot.",
+      "visualReference": {
+        "status": "listing-reviewed",
+        "reviewedAt": "2026-11-10",
+        "imageUrl": "https://cdn.dexscreener.com/cms/images/3sHlDRkvnrmHLHva?width=800&height=800",
+        "listingUrl": "https://dexscreener.com/robinhood/0x708aef3736c15fcc1c0b3606c5b9a33fe8656784"
+      },
       "researchNote": "One token named BTCETHUSDT; not three underlying assets. Research potential pass, not current approval."
     },
     {
@@ -41,7 +53,13 @@
       "title": "The Little Sprout",
       "type": "Walking tree mascot",
       "color": "#4c8245",
-      "description": "A pocket-sized oak with a fluffy leaf canopy, root feet and leafy mittens. Small tree, big enthusiasm.",
+      "description": "A deep-green oak with branching wooden limbs, spreading roots and warm golden veins, adapting the tree-and-gold identity into a friendly walking toy.",
+      "visualReference": {
+        "status": "listing-reviewed",
+        "reviewedAt": "2026-11-10",
+        "imageUrl": "https://cdn.dexscreener.com/cms/images/iaxeBSPnmDpqiFFD?width=800&height=800",
+        "listingUrl": "https://dexscreener.com/robinhood/0xdb324dde34ef01debe23f8f8ab4bb6053154b5dea8646dec9d8ea65e414fad59"
+      },
       "researchNote": "2026-11-07 research: v4 liquidity verification blocked; exhibition presence does not establish eligibility."
     },
     {
@@ -50,10 +68,16 @@
       "demoTokenId": "rebate.demo",
       "referenceChainId": 4663,
       "referenceAddress": "0xb7ff57631b97000d950236ef63bd463da5beba7e",
-      "title": "The Receipt Buddy",
-      "type": "Cash-register toy mascot",
-      "color": "#a87423",
-      "description": "A smiling peach-colored cash register with a receipt scarf, candy buttons and a halo of little coins.",
+      "title": "The Return-arrow Pal",
+      "type": "R-shaped return-arrow mascot",
+      "color": "#8d36bf",
+      "description": "A white R-shaped toy with a violet-magenta return arrow, tiny friendly eyes, gloved hands and purple-soled feet. Inspired by the logo in its contract-matched listing.",
+      "visualReference": {
+        "status": "listing-reviewed",
+        "reviewedAt": "2026-11-10",
+        "imageUrl": "https://cdn.dexscreener.com/cms/images/IwY9AfZ9YdCRNXYN?width=800&height=800",
+        "listingUrl": "https://dexscreener.com/robinhood/0xdfc96a1bc3455ffce6564e1833270c1b0664b761626db961012068007851d83c"
+      },
       "researchNote": "2026-11-07 research: GoPlus clean; v4 liquidity verification blocked. Not current approval."
     },
     {
@@ -65,7 +89,13 @@
       "title": "The Happy Hatdog",
       "type": "Canine toy mascot",
       "color": "#b85878",
-      "description": "A friendly dog with a big soft hat, a pom-pom and a curling tail. Celebrates every little moment.",
+      "description": "A friendly dog with a soft pink hat and curling tail. This temporary interpretation has not been verified against the logo of the recorded WIF contract.",
+      "visualReference": {
+        "status": "unverified",
+        "reviewedAt": "2026-11-10",
+        "imageUrl": null,
+        "listingUrl": null
+      },
       "researchNote": "2026-11-07 research: tax fields empty, Pending. Not current approval."
     }
   ]

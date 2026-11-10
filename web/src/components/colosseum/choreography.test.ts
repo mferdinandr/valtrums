@@ -193,4 +193,37 @@ describe("colosseum exhibition", () => {
       ).toBe(true);
     }
   });
+  it("ships the reviewed logo silhouettes and preserves explicit WIF uncertainty", () => {
+    const required = {
+      btcethusdt: ["GoldenCoin", "Sunglasses"],
+      rebate: ["RebateGlyph", "ReturnArrow"],
+      cashcat: ["Eyes", "Tail"],
+      oak: ["Head", "ArmL", "ArmR"],
+    };
+    for (const [asset, names] of Object.entries(required)) {
+      const data = readFileSync(
+        join(process.cwd(), `public/models/colosseum/${asset}.glb`),
+      );
+      const gltf = JSON.parse(
+        data.subarray(20, 20 + data.readUInt32LE(12)).toString(),
+      );
+      expect(gltf.nodes.map((node: { name?: string }) => node.name)).toEqual(
+        expect.arrayContaining(names),
+      );
+      expect(
+        CONTENDERS.find((c) => c.asset === asset)?.visualReference.status,
+      ).toBe("listing-reviewed");
+      if (asset === "btcethusdt")
+        expect(
+          gltf.nodes.some((n: { name?: string }) => n.name === "Capsule0"),
+        ).toBe(false);
+      if (asset === "rebate")
+        expect(
+          gltf.nodes.some((n: { name?: string }) => n.name === "Receipt"),
+        ).toBe(false);
+    }
+    expect(
+      CONTENDERS.find((c) => c.asset === "wif")?.visualReference,
+    ).toMatchObject({ status: "unverified", imageUrl: null });
+  });
 });

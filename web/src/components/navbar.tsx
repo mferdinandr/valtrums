@@ -5,21 +5,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
-import {
-  Aperture,
-  Swords,
-  Layers3,
-  Terminal,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+import { Aperture, Swords, Layers3, Terminal, Plus } from "lucide-react";
 
 const LINKS = [
   { href: "/arena", label: "Arena", icon: Swords },
   { href: "/battles/new", label: "Create", icon: Plus },
   { href: "/terminal", label: "Terminal", icon: Terminal },
   { href: "/portfolio", label: "Portfolio", icon: Layers3 },
-  { href: "/arena/preview", label: "Play 3D", icon: Sparkles },
 ];
 
 export function Navbar() {

@@ -1,12 +1,17 @@
 "use client";
 
-import { use, useEffect } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Countdown } from "@/components/countdown";
 import { BattleDeck } from "@/components/kinetic/battle-deck";
-import { CarnivalScene } from "@/components/carnival/scene";
+import { BattleArena } from "@/components/colosseum/battle-arena";
+import { ScoreChart } from "@/components/battle-chart/chart";
+import { snapshotSeries } from "@/components/battle-chart/snapshots";
+import { displayStandings } from "@/components/battle-chart/model";
+import { previewScoreSeries } from "@/components/colosseum/score-series";
+import { CONTENDERS, makeRuntime } from "@/components/colosseum/choreography";
 import { HpBar } from "@/components/hp-bar";
 import { useArena, useWallet } from "@/components/providers";
 import { StatusTimeline } from "@/components/status-timeline";
@@ -107,6 +112,7 @@ function Detail({
   reload: () => void;
 }) {
   const api = useArena();
+  const [inspectedSide, setInspectedSide] = useState<Side>("A");
   const { accountId } = useWallet();
   useEffect(() => {
     if (!["Proposed", "Approved", "Live", "Settling"].includes(battle.status))
@@ -123,6 +129,11 @@ function Detail({
     () => api.getLivePrices(battle.id),
     [api, battle.id, battle.status],
   );
+  useEffect(() => {
+    if (battle.status !== "Live") return;
+    const timer = window.setInterval(live.reload, 10000);
+    return () => window.clearInterval(timer);
+  }, [battle.status, live.reload]);
   const plan = useAsync(
     () => api.getSettlementPlan(battle.id),
     [api, battle.id, battle.status],
@@ -134,6 +145,7 @@ function Detail({
   );
 
   const basis = priceBasis(battle, live.data);
+  const chartSeries = snapshotSeries(battle, [metaA, metaB], live.data);
   const bpsA = basis
     ? performanceBps(toBigInt(battle.initial_price_a) || null, basis.a)
     : null;
@@ -197,6 +209,41 @@ function Detail({
         lockedSide={pos?.side ?? null}
         positionLoading={position.loading}
         depositOpen={depositOpen}
+        inspectedSide={inspectedSide}
+        onInspectSide={setInspectedSide}
+        chartLeader={
+          basis?.source !== "initial" &&
+          chartSeries.every((s) => s.points.length === 2)
+            ? lead
+            : null
+        }
+        chart={
+          <ScoreChart
+            title="Price performance"
+            source={`${api.mode === "mock" ? "Simulated adapter" : "Available price"} snapshots · no historical series`}
+            series={chartSeries}
+            selected={inspectedSide}
+            onSelect={(id) => setInspectedSide(id as Side)}
+            duration={1}
+            connected={false}
+            pending={chartSeries.some((series) => series.points.length < 2)}
+            result={
+              battle.winner
+                ? `${battle.winner === "A" ? metaA.symbol : metaB.symbol} · ${api.mode === "mock" ? "simulated" : "contract"} winner`
+                : battle.status === "Voided"
+                  ? "Voided · no winner"
+                  : battle.status === "EmergencyHalted"
+                    ? "Halted · inspect refund status"
+                    : undefined
+            }
+            status={live.error ? "Price source unavailable" : battle.status}
+            note={
+              basis?.source === "live"
+                ? "Spot snapshot only; provider timestamp unavailable. Missing history is not interpolated. Highlighting a line does not change your deposit side."
+                : "Recorded start/final snapshots only. Intermediate observations are unavailable; no connecting history is invented. Highlighting does not change your deposit side."
+            }
+          />
+        }
         onDone={() => {
           reload();
           position.reload();
@@ -381,6 +428,10 @@ function DemoMultiBattle({
   battle: BattleView;
   reload: () => void;
 }) {
+  const [selectedToken, setSelectedToken] = useState(
+    battle.demo_communities?.[0]?.token ?? "",
+  );
+  const now = useNow(250);
   useEffect(() => {
     if (battle.status !== "Live") return;
     const delay = Math.max(
@@ -392,6 +443,38 @@ function DemoMultiBattle({
   }, [battle.status, battle.end_time_ns, reload]);
   const communities = battle.demo_communities ?? [];
   const metas = useTokenMetas(communities.map((community) => community.token));
+  const roster = communities.flatMap((c) => {
+    const contender = CONTENDERS.find(
+      (candidate) => candidate.demoTokenId === c.token,
+    );
+    return contender ? [contender] : [];
+  });
+  const fixture = makeRuntime(roster);
+  fixture.phase = "battle";
+  fixture.scenario = "clean";
+  fixture.time =
+    now > 0
+      ? Math.max(
+          0,
+          Math.min(
+            30,
+            (now - Number(toBigInt(battle.start_time_ns) / 1000000n)) / 1000,
+          ),
+        )
+      : 0;
+  const chartSeries =
+    roster.length === communities.length && roster.length >= 2
+      ? previewScoreSeries(fixture).map((series, index) => ({
+          ...series,
+          id: roster[index]!.demoTokenId,
+        }))
+      : communities.map((c) => ({
+          id: c.token,
+          name: metas[c.token]!.symbol,
+          color: "#526777",
+          points: [],
+        }));
+  const provisional = displayStandings(chartSeries, false).leaders;
   return (
     <div className="space-y-6">
       <Link href="/arena" className="text-xs text-neon-green">
@@ -443,13 +526,34 @@ function DemoMultiBattle({
           ))}
         </div>
       </section>
-      <div className="overflow-hidden rounded-3xl border border-edge bg-[#e5eee3]">
-        <CarnivalScene
-          mode="arena"
-          className="h-[330px]"
-          caption="Decorative mascot fairground · this demo battle is view-only"
-        />
-      </div>
+      <BattleArena
+        battle={battle}
+        tokens={communities.map((c) => metas[c.token]!)}
+        selected={selectedToken}
+        onSelect={setSelectedToken}
+        leaderToken={
+          battle.status === "Live" && provisional.length === 1
+            ? provisional[0]!.id
+            : null
+        }
+        chart={
+          <ScoreChart
+            title="Price gain · chart exhibition"
+            source="Scripted chart samples · not battle observations"
+            series={chartSeries}
+            selected={selectedToken}
+            onSelect={setSelectedToken}
+            duration={30}
+            pending={battle.status !== "Live"}
+            status={
+              battle.status === "Live"
+                ? "Illustrative progress"
+                : "Awaiting result"
+            }
+            note="This chart is a separate visual fixture aligned to the demo clock. It does not calculate this battle’s result. No market feed, deposits or payouts."
+          />
+        }
+      />
       <Card>
         <p className="text-sm leading-7 text-mute">
           This demo round is view-only. The connected arena contract currently
@@ -495,6 +599,6 @@ export default function BattleDetailPage({
       </p>
     );
   if (data.demo_communities)
-    return <DemoMultiBattle battle={data} reload={reload} />;
-  return <Detail battle={data} reload={reload} />;
+    return <DemoMultiBattle key={data.id} battle={data} reload={reload} />;
+  return <Detail key={data.id} battle={data} reload={reload} />;
 }

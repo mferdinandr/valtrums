@@ -1,41 +1,44 @@
-# Token Carnival × Toybox — stage 2
+# Integrated 3D battle arena
 
-Open `/arena/preview` directly or use the preview link on `/arena`.
+Open `/arena`, choose a battle, and follow its 3D scene and chart on the detail
+page. There is no separate Play 3D menu. `/arena/preview` redirects to `/arena`.
 
-This is an isolated multi-community exhibition with five token-inspired GLBs,
-2/3/5-participant rosters, and a six-unit layout fixture (one synthetic unit).
-It includes 30-second rounds, four mode-specific score fixtures, repeated
-leader-only overtime, elimination, evidence-pending, history, overview/follow
-camera, pause and replay. It does not call wallet methods or battle APIs.
-Live observations, financial integration and production identity resolution
-belong to stage 3. All participants here are exhibition fixtures, not approvals.
+`battle-arena.tsx` supplies the reusable viewport, overview/follow cameras, visual
+pause, fullscreen, community selection, chart and loading/failure alternatives.
+Gathering legacy battles retain their existing vault/deposit UI, then use this
+arena when live, settling or finished. The multi-community demo uses the same
+arena with explicitly simulated battle state. The old standalone exhibition UI
+and stylesheet have been removed.
+
+`battle-runtime.ts` adapts the recorded status, start/end interval and settled
+winner into an external round snapshot. This overrides all exhibition resolution:
+clock expiry cannot invent overtime, elimination, a score or a winner. Current
+legacy A/B durations are preserved. Missing results remain pending; halted and
+voided battles do not celebrate. A read-only cosmetic clock can pause without
+pausing backend time or changing a deposit selection.
+
+Character mapping uses exact demo-token IDs. Unknown contracts receive a neutral
+3D token emblem with their actual symbol, never another token's mascot merely
+because its ticker matches. Backend reference-registry integration remains deferred.
 
 The current art direction is a cream/pastel festival with matte toy mascots,
 personal spring-mounted reactor stations, balloons, community signs and spectator
 benches. Mascots have round silhouettes, faces, blink/wave clips and short
 selection hops. Eliminated participants sit at the perimeter; a short confetti
-celebration follows the verified fixture winner. Reduced motion suppresses hops,
+celebration follows the recorded settled winner. Reduced motion suppresses hops,
 station bounce, projectiles and confetti.
 
 There is no player-versus-player damage: every actor targets only its own arena
 station (`challengeAt(owner, count)`). Station impacts are cosmetic choreography;
 they never change a score, lower a rival's performance or select a winner. Real
-market-driven visual intensity remains deferred until reliable live data is
-integrated. The UI explicitly separates this activity from the fixture scores.
+market-driven visual intensity remains limited to available chart observations.
+The selected chart community and a provisional leader ring are visual indicators,
+not inputs to scoring or settlement.
 
-Use **Exhibition setup** before starting to select roster, score mode, scenario
-and playback speed. At 1× a round takes 30 real seconds; 3× is explicitly labelled
-and takes 10 real seconds. The roster and mode controls disappear after start.
-The default repeated-tie fixture resolves over three rounds: leaders tie in round
-1, tie again with fresh scores in round 2, and a unique winner emerges in round 3.
-The fixture resolves then; the leader resolver has no overtime cap. The pending
-scenario stops at the boundary until **Supply demo evidence** is selected.
-Missing evidence never becomes a zero, elimination, win, payout or refund.
-Eliminated characters retreat to spectator benches and stop their challenges. All
-original vaults stay visibly locked through overtime. Scores are revealed only
-after fixture verification; they are not live market observations. Ranking uses
-exact integer rational comparison, including signed gain/growth and lowest
-drawdown ordering. Volume scores are percentages of initial market cap.
+Pure exhibition fixtures remain in `choreography.ts` and `score-series.ts` for
+testing and the labeled demo chart. They exercise four modes, exact ties, repeated
+overtime and missing evidence, but do not control a recorded battle. No new
+financial behavior or backend scoring integration is implied by this renderer.
 
 ## Token identity and visual source
 
@@ -43,15 +46,17 @@ drawdown ordering. Volume scores are percentages of initial market cap.
 It records the frontend demo token ID separately from the Robinhood mainnet
 reference chain/address. Neither reference identity nor a model grants approval.
 
-| Character  | Source                               | Original visual interpretation                                    |
-| ---------- | ------------------------------------ | ----------------------------------------------------------------- |
-| CASHCAT    | Research address + `cashcat.demo`    | Round cat, oversized paws, whiskers and curling tail              |
-| BTCETHUSDT | Research address + `btcethusdt.demo` | One four-legged capsule robot with three colorful modules         |
-| OAK        | Research address + `oak.demo`        | Little walking oak, round canopy, leafy mittens and root feet     |
-| REBATE     | Research address + `rebate.demo`     | Smiling cash register, receipt scarf, candy buttons and coin halo |
-| WIF        | Research address + `wif.demo`        | Friendly hatdog, oversized ribbed hat and pom-pom                 |
+| Character  | Source                                       | Original visual interpretation                                           |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------------------ |
+| CASHCAT    | Contract-matched listing + `cashcat.demo`    | White/gray cat, large glossy eyes, pale paws and soft worried expression |
+| BTCETHUSDT | Contract-matched listing + `btcethusdt.demo` | Gold coin with sunglasses, big grin, arms, white gloves and red sneakers |
+| OAK        | Contract-matched listing + `oak.demo`        | Dark green canopy, branching wooden limbs, root feet and golden veins    |
+| REBATE     | Contract-matched listing + `rebate.demo`     | White extruded R, violet return arrow, small face and toy limbs          |
+| WIF        | Unverified interpretation + `wif.demo`       | Temporary hatdog; logo for the recorded contract has not been verified   |
 
-These are original art concepts, not verified official mascots. The November 7
+Listing artwork was visually reviewed on November 10; URLs/status are recorded in
+`characters.json`. Four models are original 3D adaptations, not official supplied
+artwork or proof of authenticity. WIF remains explicitly unverified. The November 7
 research in `docs/findings-and-decisions.md` describes potential pass for CASHCAT
 and BTCETHUSDT, and blocked v4 liquidity verification for OAK. It explicitly does
 not authenticate the tokens or establish present approval. REBATE has blocked
@@ -81,11 +86,12 @@ instance mixers are stopped on unmount and released with their component.
 
 ## Controls and fallbacks
 
-Contender buttons duplicate mesh selection. Intro is skippable. Pause freezes
-the exhibition clock; hidden tabs suspend it. Reduced motion skips the intro,
-holds model poses and disables projectiles/impacts; the script and result remain
-available in DOM. WebGL or asset failures switch to a semantic command view with
-the same selection/start/reset controls and retry. No audio or camera shake.
+Community buttons duplicate mesh selection. A brief pointer-transparent entry
+fade does not block controls or delay recorded state. Pause freezes only cosmetic
+motion; hidden tabs suspend it. Reduced motion skips the fade, holds model poses
+and disables projectiles/impacts. WebGL or asset failures leave the same community
+buttons, chart, recorded status and financial controls available. No audio or
+camera shake. Highlighting a community cannot alter the deposit form's locked side.
 
 Before the user requested stopping Playwright, the previous industrial version's Chromium checks covered desktop
 1440×1000, mobile 390×844, roster switches (2/3/5/6), first overtime and the full

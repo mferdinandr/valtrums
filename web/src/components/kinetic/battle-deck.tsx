@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { KineticScene } from "./scene";
 import { BattleEntrance } from "./battle-entrance";
+import { BattleArena } from "@/components/colosseum/battle-arena";
 import { DepositForm } from "@/components/deposit-form";
 import { Countdown } from "@/components/countdown";
 import { useNow } from "@/hooks/use-now";
@@ -38,6 +39,10 @@ export function BattleDeck({
   depositOpen,
   positionLoading,
   onDone,
+  chart,
+  inspectedSide,
+  onInspectSide,
+  chartLeader,
 }: {
   battle: BattleView;
   metaA: TokenMeta;
@@ -46,6 +51,10 @@ export function BattleDeck({
   depositOpen: boolean;
   positionLoading: boolean;
   onDone: () => void;
+  chart?: ReactNode;
+  inspectedSide?: Side;
+  onInspectSide?: (side: Side) => void;
+  chartLeader?: Side | null;
 }) {
   const [selected, setSelected] = useState<Side>("A");
   const [phase, setPhase] = useState<DepositPhase>("idle");
@@ -62,6 +71,7 @@ export function BattleDeck({
     !positionLoading &&
     phase !== "pending" &&
     phase !== "review";
+  const arenaOpen = !["Proposed", "Approved"].includes(battle.status);
   return (
     <section
       aria-label="Playable battle arena"
@@ -89,66 +99,88 @@ export function BattleDeck({
       </div>
       <div className="grid xl:grid-cols-[1.6fr_1fr]">
         <div className="relative min-w-0 bg-[#e6f0e6]">
-          <div className="pointer-events-none absolute left-5 top-4 z-10 rounded border border-edge bg-void/70 px-3 py-2 text-[10px] uppercase tracking-wider text-mute">
-            {battle.status === "Live"
-              ? "Battle live / deposits closed"
-              : battle.status === "Settled"
-                ? `Winner: ${battle.winner ?? "unavailable"}`
-                : "Arena / community podiums"}
-          </div>
-          <KineticScene
-            mode="battle"
-            className="h-[390px] sm:h-[480px]"
-            battle={{
-              selected: active,
-              onSelect: setSelected,
-              selectable,
-              lockedSide,
-              phase,
-              status: battle.status,
-              winner: battle.winner,
-              symbols: [metaA.symbol, metaB.symbol],
-              tokenIds: [metaA.id, metaB.id],
-              progress,
-            }}
-          />
-          <div className="grid grid-cols-2 gap-3 px-5 pb-5">
-            {(["A", "B"] as const).map((s) => {
-              const meta = s === "A" ? metaA : metaB;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={
-                    !selectable || (lockedSide !== null && lockedSide !== s)
-                  }
-                  aria-pressed={active === s}
-                  onClick={() => setSelected(s)}
-                  className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-default ${active === s ? (s === "A" ? "border-neon-green/70 bg-neon-green/10" : "border-neon-pink/70 bg-neon-pink/10") : "border-edge bg-void/40"}`}
-                >
-                  <span className="eyebrow">
-                    {active === s
-                      ? "Selected"
-                      : selectable && !lockedSide
-                        ? "Select tribe " + s
-                        : "Tribe " + s}
-                  </span>
-                  <span className="mt-1 block font-pixel text-lg">
-                    {meta.symbol}
-                  </span>
-                  <span className="text-[11px] text-mute">
-                    Vault{" "}
-                    {formatUnits(
-                      toBigInt(s === "A" ? battle.vault_a : battle.vault_b),
-                      meta.decimals,
-                      2,
-                    )}{" "}
-                    {meta.symbol}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {!arenaOpen && (
+            <div className="pointer-events-none absolute left-5 top-4 z-10 rounded border border-edge bg-void/70 px-3 py-2 text-[10px] uppercase tracking-wider text-mute">
+              {battle.status === "Live"
+                ? "Battle live / deposits closed"
+                : battle.status === "Settled"
+                  ? `Winner: ${battle.winner ?? "unavailable"}`
+                  : "Arena / community podiums"}
+            </div>
+          )}
+          {arenaOpen ? (
+            <BattleArena
+              battle={battle}
+              tokens={[metaA, metaB]}
+              selected={(inspectedSide ?? active) === "A" ? metaA.id : metaB.id}
+              onSelect={(id) => onInspectSide?.(id === metaA.id ? "A" : "B")}
+              chart={chart}
+              leaderToken={
+                chartLeader === "A"
+                  ? metaA.id
+                  : chartLeader === "B"
+                    ? metaB.id
+                    : null
+              }
+            />
+          ) : (
+            <KineticScene
+              mode="battle"
+              className="h-[390px] sm:h-[480px]"
+              battle={{
+                selected: depositOpen ? active : (inspectedSide ?? active),
+                onSelect: setSelected,
+                selectable,
+                lockedSide,
+                phase,
+                status: battle.status,
+                winner: battle.winner,
+                symbols: [metaA.symbol, metaB.symbol],
+                tokenIds: [metaA.id, metaB.id],
+                progress,
+              }}
+            />
+          )}
+          {!arenaOpen && chart && <div className="px-5 pb-5">{chart}</div>}
+          {!arenaOpen && (
+            <div className="grid grid-cols-2 gap-3 px-5 pb-5">
+              {(["A", "B"] as const).map((s) => {
+                const meta = s === "A" ? metaA : metaB;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={
+                      !selectable || (lockedSide !== null && lockedSide !== s)
+                    }
+                    aria-pressed={active === s}
+                    onClick={() => setSelected(s)}
+                    className={`rounded-xl border p-3 text-left transition-colors disabled:cursor-default ${active === s ? (s === "A" ? "border-neon-green/70 bg-neon-green/10" : "border-neon-pink/70 bg-neon-pink/10") : "border-edge bg-void/40"}`}
+                  >
+                    <span className="eyebrow">
+                      {active === s
+                        ? "Selected"
+                        : selectable && !lockedSide
+                          ? "Select tribe " + s
+                          : "Tribe " + s}
+                    </span>
+                    <span className="mt-1 block font-pixel text-lg">
+                      {meta.symbol}
+                    </span>
+                    <span className="text-[11px] text-mute">
+                      Vault{" "}
+                      {formatUnits(
+                        toBigInt(s === "A" ? battle.vault_a : battle.vault_b),
+                        meta.decimals,
+                        2,
+                      )}{" "}
+                      {meta.symbol}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div
           data-deck-controls
