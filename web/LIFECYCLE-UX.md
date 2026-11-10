@@ -25,6 +25,11 @@ expanded overview. These are source/layout checks, not measured visual quality.
 
 ## Wallet and data limitations
 
+The header follows the actual provider capability: wallet-enabled application
+mode offers normal NEAR Connect login, then the account and Disconnect. Only a
+deployment without a wallet bridge displays Read only. No email/social login or
+Privy is added. Connecting a wallet does not enable unavailable backend actions.
+
 Preview scope binds account, deployment, request and exact reviewed call. Draft
 changes invalidate old responses immediately, including A -> B -> A; guards run
 before wallet authorization and broadcasting. A step unmount cancels its authority
