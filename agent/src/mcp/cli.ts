@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Near, verifyNep413Signature } from "near-kit";
+import { DEFAULT_REPORT_ARCHIVE_PATH, resolveArchivePath } from "../audit/config.js";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { NearStateSource } from "./account-state.js";
 import { parseDelegateGrants } from "./actions/proposal.js";
@@ -20,7 +21,7 @@ import { ReadSessions } from "./session.js";
  * private key, so it cannot sign even if a handler tried.
  *
  * Env: NEAR_NETWORK, NEAR_RPC_URL, ARENA_CONTRACT_ID, PAYOUT_CONTRACT_ID (optional),
- * READ_SESSION_SECRET (hex, >= 32 bytes), READ_SESSION_RECIPIENT, AUDIT_ARCHIVE_PATH (optional),
+ * READ_SESSION_SECRET (hex, >= 32 bytes), READ_SESSION_RECIPIENT, AUDIT_ARCHIVE_PATH or its alias AUDIT_REPORT_ARCHIVE_PATH (optional; the agent's archive file),
  * READ_API_HOST (default 127.0.0.1), READ_API_PORT (default 8790). Actions (optional): ACTION_STORE_PATH
  * enables them; PLAYER_POLICY_CONTRACT_ID for grant reservations; ACTION_RECIPIENT (NEP-413
  * recipient, default READ_SESSION_RECIPIENT); PLAYER_AGENT_GRANTS (JSON, delegate -> grants it may
@@ -53,7 +54,10 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
     // Our own nonce check runs first (age + replay); near-kit checks the signature and full-access key.
     verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
   });
-  const archivePath = env.AUDIT_ARCHIVE_PATH?.trim();
+  // Same file the agent writes: AUDIT_ARCHIVE_PATH and AUDIT_REPORT_ARCHIVE_PATH are aliases, and the
+  // producer's enable flag selects its default file so both sides agree without extra config.
+  const archivePath =
+    resolveArchivePath(env) ?? (env.AUDIT_REPORT_ARCHIVE_ENABLED?.trim() === "true" ? DEFAULT_REPORT_ARCHIVE_PATH : undefined);
   // Actions are enabled only with a durable store; the service never holds a key either.
   const storePath = env.ACTION_STORE_PATH?.trim();
   const actions = storePath
@@ -91,7 +95,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
     ...(actions ? { actions } : {}),
     now: Date.now,
     ...(archivePath
-      ? { audits: { archive: new JsonFileReportArchive(archivePath), info: { network: `near-${network}`, kind: "recorded" as const, name: "audit-report-archive" } } }
+      ? { audits: { archive: new JsonFileReportArchive(archivePath), arena: required(env, "ARENA_CONTRACT_ID"), info: { network: `near-${network}`, kind: "recorded" as const, name: "audit-report-archive" } } }
       : {}),
   };
 }

@@ -45,7 +45,23 @@ export function loadReportArchiveConfig(
 ): ReportArchiveConfig | null {
   if (env.AUDIT_REPORT_ARCHIVE_ENABLED?.trim() !== "true") return null;
   if (!auditEnabled) throw new Error("AUDIT_REPORT_ARCHIVE_ENABLED=true requires AUDIT_ENABLED=true");
-  return { path: env.AUDIT_REPORT_ARCHIVE_PATH?.trim() || DEFAULT_REPORT_ARCHIVE_PATH };
+  return { path: resolveArchivePath(env) ?? DEFAULT_REPORT_ARCHIVE_PATH };
+}
+
+/**
+ * The one archive file shared by the producer (agent) and the consumer (read API / MCP). The producer
+ * established `AUDIT_REPORT_ARCHIVE_PATH`; the consumer established `AUDIT_ARCHIVE_PATH`. Both names
+ * stay valid for either process so deployed config keeps working. Setting both to different paths is
+ * rejected, because the two sides would silently read and write different files. Returns undefined
+ * when neither is set. Paths are non-secret; messages name variables only.
+ */
+export function resolveArchivePath(env: Record<string, string | undefined>): string | undefined {
+  const producer = env.AUDIT_REPORT_ARCHIVE_PATH?.trim() || undefined;
+  const consumer = env.AUDIT_ARCHIVE_PATH?.trim() || undefined;
+  if (producer && consumer && producer !== consumer) {
+    throw new Error("AUDIT_REPORT_ARCHIVE_PATH and AUDIT_ARCHIVE_PATH are aliases and must match when both are set");
+  }
+  return producer ?? consumer;
 }
 
 /**
