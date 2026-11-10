@@ -158,6 +158,53 @@ impl ObservationTerms {
 struct Record {
     round_id: u64,
     outcome: Resolution,
+    /// sha256 over the exact window, policy hash and every candidate's evidence hash and score
+    /// (see [`round_commitment`]). The full detail is emitted in `round_finalized`; only this
+    /// 32-byte commitment is kept in state.
+    commitment: [u8; 32],
+}
+
+/// What a finalized (non-pending) round resolved on, for the `round_finalized` event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoundFinalization {
+    pub round_id: u64,
+    pub start_ns: u64,
+    pub end_ns: u64,
+    pub policy_hash: String,
+    pub commitment: [u8; 32],
+    /// `(community, evidence_hash, score)` in ascending community order.
+    pub scores: Vec<(u32, String, Score)>,
+}
+
+fn put_str(out: &mut Vec<u8>, text: &str) {
+    out.extend_from_slice(&(text.len() as u32).to_be_bytes());
+    out.extend_from_slice(text.as_bytes());
+}
+
+/// Commitment format `valtrum-round-v1`; fields are length-prefixed or fixed width, so no two
+/// different rounds share an encoding.
+pub fn round_commitment(
+    battle_id: u64,
+    round_id: u64,
+    start_ns: u64,
+    end_ns: u64,
+    policy_hash: &str,
+    scores: &[(u32, String, Score)],
+) -> [u8; 32] {
+    let mut data = Vec::new();
+    put_str(&mut data, "valtrum-round-v1");
+    data.extend_from_slice(&battle_id.to_be_bytes());
+    data.extend_from_slice(&round_id.to_be_bytes());
+    data.extend_from_slice(&start_ns.to_be_bytes());
+    data.extend_from_slice(&end_ns.to_be_bytes());
+    put_str(&mut data, policy_hash);
+    data.extend_from_slice(&(scores.len() as u32).to_be_bytes());
+    for (community, evidence_hash, score) in scores {
+        data.extend_from_slice(&community.to_be_bytes());
+        put_str(&mut data, evidence_hash);
+        data.extend_from_slice(&score.canonical_bytes());
+    }
+    near_sdk::env::sha256_array(&data)
 }
 
 #[near_sdk::near(serializers = [borsh])]
@@ -326,8 +373,19 @@ impl Rounds {
         round_id: u64,
         observations: &[CandidateObservation],
     ) -> Result<Resolution, RoundError> {
+        self.resolve_round_detailed(round_id, observations)
+            .map(|(resolution, _)| resolution)
+    }
+
+    /// Like [`Rounds::resolve_round`], also returning the finalization detail the first time a
+    /// round is finalized. Pending and already-resolved calls return `None`.
+    pub fn resolve_round_detailed(
+        &mut self,
+        round_id: u64,
+        observations: &[CandidateObservation],
+    ) -> Result<(Resolution, Option<RoundFinalization>), RoundError> {
         if let Some(done) = self.history.iter().find(|r| r.round_id == round_id) {
-            return Ok(done.outcome.clone());
+            return Ok((done.outcome.clone(), None));
         }
         if self.winner.is_some() {
             return Err(RoundError::Finished);
@@ -339,7 +397,7 @@ impl Rounds {
         let mut seen: Vec<u32> = observations.iter().map(|o| o.community).collect();
         seen.sort_unstable();
         if seen != self.candidates {
-            return Ok(Resolution::Pending(PendingReason::CandidateMismatch));
+            return Ok((Resolution::Pending(PendingReason::CandidateMismatch), None));
         }
         let mut scored: Vec<(u32, Score)> = Vec::with_capacity(observations.len());
         for observation in observations {
@@ -354,13 +412,19 @@ impl Rounds {
                 end_ns,
             };
             if !self.evidence_is_valid(&context, observation) {
-                return Ok(Resolution::Pending(PendingReason::InvalidEvidence(
-                    community,
-                )));
+                return Ok((
+                    Resolution::Pending(PendingReason::InvalidEvidence(community)),
+                    None,
+                ));
             }
             match self.score(&context, &observation.data) {
                 Some(score) => scored.push((community, score)),
-                None => return Ok(Resolution::Pending(PendingReason::Unscorable(community))),
+                None => {
+                    return Ok((
+                        Resolution::Pending(PendingReason::Unscorable(community)),
+                        None,
+                    ))
+                }
             }
         }
         let lowest_wins = self.mode == ScoringMode::LowestDrawdown;
@@ -397,11 +461,50 @@ impl Rounds {
                 next_candidates: leaders,
             }
         };
+        let mut details: Vec<(u32, String, Score)> = scored
+            .iter()
+            .map(|(community, score)| {
+                let evidence_hash = observations
+                    .iter()
+                    .find(|o| o.community == *community)
+                    .map(|o| o.evidence.evidence_hash.clone())
+                    .unwrap_or_default();
+                (*community, evidence_hash, score.clone())
+            })
+            .collect();
+        details.sort_by_key(|(community, _, _)| *community);
+        let commitment = round_commitment(
+            self.battle_id,
+            round_id,
+            start_ns,
+            end_ns,
+            &self.policy_hash,
+            &details,
+        );
         self.history.push(Record {
             round_id,
             outcome: outcome.clone(),
+            commitment,
         });
-        Ok(outcome)
+        Ok((
+            outcome,
+            Some(RoundFinalization {
+                round_id,
+                start_ns,
+                end_ns,
+                policy_hash: self.policy_hash.clone(),
+                commitment,
+                scores: details,
+            }),
+        ))
+    }
+
+    /// Commitment recorded for a finalized round, if any (pending rounds record nothing).
+    pub fn commitment(&self, round_id: u64) -> Option<[u8; 32]> {
+        self.history
+            .iter()
+            .find(|r| r.round_id == round_id)
+            .map(|r| r.commitment)
     }
 
     fn evidence_is_valid(&self, context: &ObservationContext, o: &CandidateObservation) -> bool {

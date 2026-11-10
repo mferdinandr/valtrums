@@ -126,6 +126,25 @@ impl Score {
         })
     }
 
+    /// Canonical, lossless encoding used by round commitments: one sign byte, then the 32-byte
+    /// big-endian numerator and denominator.
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(65);
+        out.push(u8::from(self.negative));
+        out.extend_from_slice(&self.numerator.to_big_endian());
+        out.extend_from_slice(&self.denominator.to_big_endian());
+        out
+    }
+
+    /// Exact value as decimal strings `(negative, numerator, denominator)` for events.
+    pub fn parts(&self) -> (bool, String, String) {
+        (
+            self.negative,
+            self.numerator.to_string(),
+            self.denominator.to_string(),
+        )
+    }
+
     pub fn compare(&self, other: &Self) -> Ordering {
         match (self.negative, other.negative) {
             (true, false) => Ordering::Less,
@@ -195,6 +214,12 @@ pub fn maximum_drawdown(prices: &[u128]) -> Option<Score> {
         }
     }
     Some(worst)
+}
+
+/// Test-only constructor of a price-gain score for commitment tests in other modules.
+#[cfg(test)]
+pub(crate) fn tests_support_price_gain(start: u128, end: u128) -> Score {
+    price_gain(start, end).expect("score")
 }
 
 #[cfg(test)]

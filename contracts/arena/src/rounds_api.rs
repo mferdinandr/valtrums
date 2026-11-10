@@ -262,6 +262,16 @@ impl Arena {
         self.finish_round(&battle_id, rounds, round_id.0, &candidates)
     }
 
+    /// Hex sha256 commitment recorded when the round was finalized (`valtrum-round-v1`), or `None`
+    /// for an unknown battle, a round that is not finalized and any round finalized before the
+    /// commitment existed. The full detail is in the `round_finalized` event.
+    pub fn get_lifecycle_round_commitment(&self, battle_id: U64, round_id: U64) -> Option<String> {
+        self.lifecycle_rounds
+            .get(&battle_id.0)?
+            .commitment(round_id.0)
+            .map(|c| hex_of(&c))
+    }
+
     pub fn get_lifecycle_round(&self, battle_id: U64) -> Option<RoundView> {
         let rounds = self.lifecycle_rounds.get(&battle_id.0)?;
         let window = rounds.window();
@@ -273,6 +283,10 @@ impl Arena {
             winner: rounds.winner(),
         })
     }
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 impl Arena {
@@ -290,9 +304,44 @@ impl Arena {
         round_id: u64,
         candidates: &[CandidateObservation],
     ) -> RoundOutcome {
-        let resolution = rounds
-            .resolve_round(round_id, candidates)
+        let (resolution, finalization) = rounds
+            .resolve_round_detailed(round_id, candidates)
             .unwrap_or_else(|error| env::panic_str(&format!("Round rejected: {error:?}")));
+        if let Some(done) = &finalization {
+            let (kind, winner, next) = match &resolution {
+                Resolution::Winner(community) => ("winner", Some(*community), Vec::new()),
+                Resolution::Overtime { next_candidates } => {
+                    ("overtime", None, next_candidates.clone())
+                }
+                Resolution::Pending(_) => ("pending", None, Vec::new()),
+            };
+            // Versioned, lossless detail for the indexer; state keeps only the 32-byte commitment.
+            crate::events::emit(
+                "round_finalized",
+                near_sdk::serde_json::json!({
+                    "schema": "round-finalized-v1",
+                    "battle_id": battle_id.0.to_string(),
+                    "round_id": done.round_id.to_string(),
+                    "outcome": kind,
+                    "winner": winner,
+                    "next_candidates": next,
+                    "start_ns": done.start_ns.to_string(),
+                    "end_ns": done.end_ns.to_string(),
+                    "policy_hash": done.policy_hash,
+                    "commitment": hex_of(&done.commitment),
+                    "scores": done.scores.iter().map(|(community, evidence_hash, score)| {
+                        let (negative, numerator, denominator) = score.parts();
+                        near_sdk::serde_json::json!({
+                            "community": community,
+                            "evidence_hash": evidence_hash,
+                            "negative": negative,
+                            "numerator": numerator,
+                            "denominator": denominator,
+                        })
+                    }).collect::<Vec<_>>(),
+                }),
+            );
+        }
         let outcome = match resolution {
             Resolution::Pending(reason) => {
                 return RoundOutcome::Pending {
@@ -620,5 +669,118 @@ pub(crate) mod tests {
             arena.get_lifecycle_round(U64(1)).expect("view").winner,
             Some(0)
         );
+    }
+
+    fn round_events() -> Vec<near_sdk::serde_json::Value> {
+        near_sdk::test_utils::get_logs()
+            .iter()
+            .filter_map(|log| log.strip_prefix("EVENT_JSON:"))
+            .filter_map(|body| {
+                near_sdk::serde_json::from_str::<near_sdk::serde_json::Value>(body).ok()
+            })
+            .filter(|event| event["event"] == "round_finalized")
+            .map(|event| event["data"][0].clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_finalized_round_emits_one_versioned_event_matching_the_stored_commitment() {
+        let mut arena = locked_arena();
+        context("anyone.testnet", NearToken::from_near(1), 0);
+        arena.start_lifecycle_rounds(U64(1), terms());
+        context("oracle.testnet", NearToken::from_yoctonear(1), START);
+        arena.open_lifecycle_round(U64(1), U64(1), U64(START));
+        assert!(arena
+            .get_lifecycle_round_commitment(U64(1), U64(1))
+            .is_none());
+        context(
+            "oracle.testnet",
+            NearToken::from_yoctonear(1),
+            START + ROUND,
+        );
+        let obs = vec![
+            observation(0, 110, START),
+            observation(1, 100, START),
+            observation(2, 102, START),
+        ];
+        // Pending records and emits nothing.
+        assert_eq!(
+            arena.submit_lifecycle_observations(U64(1), U64(1), obs[..2].to_vec()),
+            RoundOutcome::Pending {
+                reason: "candidate_mismatch".into()
+            }
+        );
+        assert!(round_events().is_empty());
+        assert!(arena
+            .get_lifecycle_round_commitment(U64(1), U64(1))
+            .is_none());
+
+        assert_eq!(
+            arena.submit_lifecycle_observations(U64(1), U64(1), obs.clone()),
+            RoundOutcome::Winner { community: 0 }
+        );
+        let events = round_events();
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event["schema"], "round-finalized-v1");
+        assert_eq!(event["battle_id"], "1");
+        assert_eq!(event["round_id"], "1");
+        assert_eq!(event["outcome"], "winner");
+        assert_eq!(event["winner"], 0);
+        assert_eq!(event["start_ns"], START.to_string());
+        assert_eq!(event["end_ns"], (START + ROUND).to_string());
+        let scores = event["scores"].as_array().expect("scores");
+        assert_eq!(scores.len(), 3);
+        assert_eq!(scores[0]["community"], 0);
+        assert_eq!(scores[0]["negative"], false);
+        let stored = arena
+            .get_lifecycle_round_commitment(U64(1), U64(1))
+            .expect("commitment");
+        assert_eq!(stored, event["commitment"].as_str().expect("hex"));
+        assert_eq!(stored.len(), 64);
+
+        // Repeating a recorded round emits nothing and keeps the same commitment.
+        context(
+            "oracle.testnet",
+            NearToken::from_yoctonear(1),
+            START + ROUND,
+        );
+        assert_eq!(
+            arena.submit_lifecycle_observations(U64(1), U64(1), obs),
+            RoundOutcome::Winner { community: 0 }
+        );
+        assert!(round_events().is_empty());
+        assert_eq!(
+            arena.get_lifecycle_round_commitment(U64(1), U64(1)),
+            Some(stored)
+        );
+    }
+
+    #[test]
+    fn the_commitment_binds_window_policy_and_every_score() {
+        use crate::rounds::round_commitment;
+        let score = |v: u128| crate::scoring::tests_support_price_gain(100, v);
+        let scores = vec![
+            (0u32, "h0".to_string(), score(110)),
+            (1, "h1".into(), score(105)),
+        ];
+        let base = round_commitment(1, 1, 10, 20, "p", &scores);
+        assert_eq!(base, round_commitment(1, 1, 10, 20, "p", &scores));
+        assert_ne!(base, round_commitment(2, 1, 10, 20, "p", &scores));
+        assert_ne!(base, round_commitment(1, 2, 10, 20, "p", &scores));
+        assert_ne!(base, round_commitment(1, 1, 11, 20, "p", &scores));
+        assert_ne!(base, round_commitment(1, 1, 10, 21, "p", &scores));
+        assert_ne!(base, round_commitment(1, 1, 10, 20, "q", &scores));
+        let changed = vec![
+            (0u32, "h0".to_string(), score(111)),
+            (1, "h1".into(), score(105)),
+        ];
+        assert_ne!(base, round_commitment(1, 1, 10, 20, "p", &changed));
+        let rehash = vec![
+            (0u32, "hX".to_string(), score(110)),
+            (1, "h1".into(), score(105)),
+        ];
+        assert_ne!(base, round_commitment(1, 1, 10, 20, "p", &rehash));
+        assert_ne!(base, round_commitment(1, 1, 10, 20, "p", &scores[..1]));
     }
 }
