@@ -14,8 +14,9 @@ describe("application mode routes", () => {
     expect(arenaNavigationActive("/arena/new")).toBe(false);
     expect(arenaNavigationActive("/battles/new")).toBe(false);
   });
-  it("allows the list, the lifecycle detail by decimal id and the review page", () => {
+  it("allows the landing page, the list, the lifecycle detail by decimal id and the review page", () => {
     for (const p of [
+      "/",
       "/arena",
       "/arena/new",
       "/arena/1",
@@ -25,7 +26,6 @@ describe("application mode routes", () => {
   });
   it("refuses the legacy flow, other pages and malformed ids", () => {
     for (const p of [
-      "/",
       "/battles/1",
       "/battles/new",
       "/terminal",

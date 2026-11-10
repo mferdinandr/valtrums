@@ -20,6 +20,8 @@ import {
   X,
   Info,
 } from "lucide-react";
+import { useApplicationDeployment } from "@/components/providers";
+import { createBattlePath } from "@/lib/arena-read/routes";
 import { Button } from "@/components/ui/button";
 import registry from "@/components/colosseum/characters.json";
 import {
@@ -102,6 +104,7 @@ function IllustratedWorld() {
 }
 
 export function LandingJourney() {
+  const createPath = createBattlePath(!!useApplicationDeployment());
   const rail = useRef<HTMLElement>(null),
     chapters = useRef<HTMLElement>(null),
     details = useRef<HTMLDialogElement>(null),
@@ -349,7 +352,7 @@ export function LandingJourney() {
                 </Link>
               </Button>
               <Button asChild variant="cyan" size="lg">
-                <Link href="/battles/new">
+                <Link href={createPath}>
                   Create a battle <ArrowUpRight size={14} />
                 </Link>
               </Button>
@@ -435,7 +438,7 @@ export function LandingJourney() {
             </p>
             <div className="journey-actions">
               <Button asChild>
-                <Link href="/battles/new">
+                <Link href={createPath}>
                   Create a battle <ArrowUpRight size={16} />
                 </Link>
               </Button>
@@ -532,7 +535,7 @@ export function LandingJourney() {
                 </Link>
               </Button>
               <Button asChild variant="cyan" size="lg">
-                <Link href="/battles/new">
+                <Link href={createPath}>
                   Create a battle <ArrowUpRight size={14} />
                 </Link>
               </Button>
@@ -541,7 +544,7 @@ export function LandingJourney() {
               className="journey-destinations"
               aria-label="Festival destinations"
             >
-              <Link href="/battles/new">Create Battle ↗</Link>
+              <Link href={createPath}>Create Battle ↗</Link>
               <Link href="/portfolio">Your portfolio ↗</Link>
               <Link href="/terminal">Terminal ↗</Link>
               <button
