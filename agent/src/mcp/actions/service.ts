@@ -96,6 +96,11 @@ export class ActionService {
   private readonly maxNonceAgeMs: number;
   private readonly usedNonces = new Map<string, number>();
 
+  /** The NEP-413 recipient the user signs action approvals for. Public, non-secret configuration. */
+  get recipient(): string {
+    return this.deps.recipient;
+  }
+
   constructor(private readonly deps: ActionServiceDeps) {
     if (!deps.recipient.trim()) throw new Error("action service recipient is required");
     if (deps.ctx.intentsFixture) assertFixtureAllowed(deps.ctx.network);
