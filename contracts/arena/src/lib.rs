@@ -628,6 +628,21 @@ impl Arena {
             })
     }
 
+    /// Stored lifecycle configuration facts (issue #144). Unknown or unconfigured values are `null`/`false`,
+    /// never guessed, and nothing here proves backing, custody or that a battle can be created.
+    pub fn get_lifecycle_readiness(&self) -> lifecycle::LifecycleReadiness {
+        lifecycle::LifecycleReadiness {
+            schema_version: lifecycle::LIFECYCLE_VIEW_SCHEMA_V2,
+            paused: self.paused,
+            lifecycle_activated: self.lifecycle_exclusive,
+            oracle: self.lifecycle_oracle.clone(),
+            protocol: self.lifecycle_protocol.clone(),
+            fee_bps: self.lifecycle_fee_bps,
+            creator_share_bps: self.lifecycle_creator_share_bps,
+            observation_policy_configured: self.lifecycle_observation_policy.is_some(),
+        }
+    }
+
     /// Lossless variant of `get_lifecycle_battle_count`: a decimal-string `U64`.
     pub fn get_lifecycle_battle_count_v2(&self) -> U64 {
         U64(self.lifecycle_battle_count)

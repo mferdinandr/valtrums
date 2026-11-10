@@ -235,6 +235,23 @@ pub struct LifecycleView {
     pub principal_amount: Option<U128>,
 }
 
+/// Configuration facts the arena itself holds, for application readiness (issue #144). It states only
+/// what is stored; it says nothing about backing, custody, audits or whether a battle can be created.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LifecycleReadiness {
+    pub schema_version: u32,
+    pub paused: bool,
+    /// `activate_lifecycle` was called (permanent, fresh arena only).
+    pub lifecycle_activated: bool,
+    pub oracle: Option<AccountId>,
+    pub protocol: Option<AccountId>,
+    pub fee_bps: u16,
+    pub creator_share_bps: u16,
+    /// A lock-time observation policy has been configured (its hash is frozen per battle at lock).
+    pub observation_policy_configured: bool,
+}
+
 /// Schema version of [`LifecycleBattleV2`]. Fields are only ever added within a version.
 pub const LIFECYCLE_VIEW_SCHEMA_V2: u32 = 2;
 
@@ -1594,6 +1611,15 @@ mod tests {
                 .registered
         );
         assert_eq!(arena.lifecycle_lock(id, policy("changed")), Ok(frozen));
+        // Readiness reports stored configuration facts only.
+        let ready = arena.get_lifecycle_readiness();
+        assert_eq!(ready.schema_version, 2);
+        assert!(ready.lifecycle_activated);
+        assert!(!ready.paused);
+        assert!(ready.observation_policy_configured);
+        let ready_json = near_sdk::serde_json::to_value(&ready).expect("JSON");
+        assert_eq!(ready_json["lifecycle_activated"], true);
+        assert!(ready_json["oracle"].is_null() || ready_json["oracle"].is_string());
         // v2 views are lossless (decimal-string ids/counts), versioned and agree with v1.
         let v2 = arena.get_lifecycle_battle_v2(U64(id)).expect("v2");
         assert_eq!(v2.battle, view);
