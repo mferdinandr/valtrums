@@ -6,7 +6,7 @@ Status: steps 1 to 4 of R1 are DONE (2026-11-10, evidence `docs/evidence/2026-11
 
 | Question | Source evidence | Answer |
 | --- | --- | --- |
-| Does a backing store the deposit contract address? | `contracts/backing/src/lib.rs`: the asset carries `custody_domain` (a free string, at most 256 characters) and `mapping_version`; no EVM address is stored. Claims must match both exactly (`registry_claim.rs`, line with `claim.custody_domain == asset.custody_domain` and `claim.mapping_version.0 == mapping_version`) | No |
+| Does a backing store the deposit contract address? | `contracts/backing/src/lib.rs`: the asset carries `custody_domain` (a string, at most 256 characters) and `mapping_version`; no EVM address field is stored. **But the six deployed backings were initialised with `custody_domain` = the OLD contract's lowercase address** (`docs/testnet-evidence.md`, backings), and it is immutable. Claims must match both exactly (`registry_claim.rs`, line with `claim.custody_domain == asset.custody_domain` and `claim.mapping_version.0 == mapping_version`) | No |
 | Does the receipt registry store it? | `contracts/receipt-registry/src/lib.rs`: a claim holds chain, transaction hash, log index, domain, mapping version, amounts; replay key is chain, hash, log index | No |
 | Where is the deposit contract address configured? | Only in the verifier's `AssetMapping.custody` and now `holder` (`agent/src/custody-verifier.ts`, `custody-verify-cli.ts`) | Operator tooling only |
 | Are `custody_domain` and `mapping_version` changeable on an existing backing? | Set in `Backing::new` and then immutable (`mapping_version` is a plain field, checked on every claim) | No: changing either needs a new backing instance |
@@ -18,7 +18,7 @@ The previously deployed deposit-only contract can still receive deposits and emi
 
 ## Two ways to go
 
-**R1: keep the domain label and mapping version (no new backings).**
+**R1: keep the domain and mapping version (no new backings).** The domain string of the deployed backings is the old contract's address, so the verifier mapping must set `custodyDomain` to exactly `0xb994dcab6ad9a042e7bbec3ba104ec5e6b797798` while `custody` is the new forwarder. This works, because a claim only has to match the string, but the name no longer identifies the live custody and it is the same string the retired contract's events would carry; R2 would give a domain that names the live contract.
 - Deploy the forwarder with `holder` = the payout signing account; point the verifier config at it.
 - Cost: one EVM deployment (gas, a few cents of testnet ETH). No NEAR transaction, no DAO proposal, no new backing, no new `set_dao_sink`.
 - Safeguard: written rule and a configured allow-list that the operator verifies receipts only from the forwarder address; the old contract's address is recorded as retired; a startup check refuses a mapping whose `custody` is on that list.
@@ -62,11 +62,11 @@ DAO or NEAR transactions (none needed for R1), mainnet, real tokens, and any cla
 | Read back | `holder()` = holder, `nextDepositId()` = 0, forwarder holds 0 tokens |
 | Retired | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` (deposit-only, 100 mCASHCAT locked, never attested) |
 
-Configuration to use from now on (no secrets):
+Configuration to use from now on (no secrets). The CLI's `--custody-domain` default is `robinhood-testnet`, which does NOT match the deployed backings and would make their claim check fail, so always pass it explicitly:
 
 ```
 custody-verify-cli --custody 0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C --holder 0x0b740E3E90491f57699fCCD8276400E65BC70c41 \
-  --payout-sender 0x0b740E3E90491f57699fCCD8276400E65BC70c41 --retired 0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798 ...
+  --payout-sender 0x0b740E3E90491f57699fCCD8276400E65BC70c41 --custody-domain 0xb994dcab6ad9a042e7bbec3ba104ec5e6b797798 --retired 0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798 ...
 ARENA_APPLICATION_CUSTODY_PATHS=[{"label":"forwarder-testnet","depositContract":"0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C","tokenHolder":"0x0b740E3E90491f57699fCCD8276400E65BC70c41","payoutSender":"0x0b740E3E90491f57699fCCD8276400E65BC70c41","holderCodeHash":null}]
 ```
 

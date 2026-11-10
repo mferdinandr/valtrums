@@ -112,7 +112,8 @@ Recorded in [testnet-evidence.md](testnet-evidence.md) section 3b and [`evidence
 
 | Contract | Address |
 | --- | --- |
-| `TestnetDepositCustody` | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` |
+| `TestnetDepositCustody` (old, **RETIRED**: deposit-only, keeps tokens, no withdrawal; never verify or attest its events) | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` |
+| `TestnetDepositCustody` (forwarder, holds nothing; holder `0x0b740E3E90491f57699fCCD8276400E65BC70c41`, deployed 2026-11-10, [evidence](evidence/2026-11-10-forwarder-deploy.json)) | `0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C` |
 | `mCASHCAT` (mock) | `0x5b2BA17e5be1B611c1299809Db89c5Fe21D9D0a6` |
 | `mWALLET` (mock) | `0x78e7621559bC0E3CC10F8bB61dc2a371afe66e27` |
 | `mGOOD` (mock) | `0xAED11A367b102f2da3ac2dFcF1De9cC97A47a850` |
