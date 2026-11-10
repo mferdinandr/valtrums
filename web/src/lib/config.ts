@@ -14,6 +14,8 @@ export const config = {
   arenaContractId: process.env.NEXT_PUBLIC_ARENA_CONTRACT_ID?.trim() ?? "",
   /** Id of the read deployment; it must match a deployment declared in the agent's manifest. */
   deployment: process.env.NEXT_PUBLIC_ARENA_READ_DEPLOYMENT?.trim() ?? "",
+  /** The player-policy contract that holds agent grants. Optional: without it the Agents page explains what to set. */
+  policyContract: process.env.NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID?.trim() ?? "",
   /** The only protocol this application speaks. */
   protocol: (process.env.NEXT_PUBLIC_ARENA_READ_PROTOCOL?.trim() || "lifecycle-v2") as string,
   explorerUrl: network === "mainnet" ? "https://nearblocks.io" : "https://testnet.nearblocks.io",

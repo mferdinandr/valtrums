@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
-import { Aperture, Swords, Layers3, Terminal, Plus } from "lucide-react";
+import { Aperture, Bot, Swords, Layers3, Terminal, Plus } from "lucide-react";
 import { arenaNavigationActive } from "@/lib/arena-read/routes";
 
 const LINKS = [
@@ -16,6 +16,7 @@ const LINKS = [
     icon: Plus,
   },
   { href: "/terminal", label: "Terminal", icon: Terminal },
+  { href: "/agents", label: "Agents", icon: Bot },
   { href: "/portfolio", label: "Portfolio", icon: Layers3 },
 ];
 
