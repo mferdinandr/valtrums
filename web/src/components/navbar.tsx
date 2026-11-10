@@ -6,15 +6,12 @@ import { cn } from "@/lib/utils";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
 import { Aperture, Swords, Layers3, Terminal, Plus } from "lucide-react";
-import {
-  arenaNavigationActive,
-  createBattlePath,
-} from "@/lib/arena-read/routes";
+import { arenaNavigationActive } from "@/lib/arena-read/routes";
 
 const LINKS = [
   { href: "/arena", label: "Arena", icon: Swords },
   {
-    href: createBattlePath(!!config.applicationDeployment),
+    href: "/arena/new",
     label: "Create",
     icon: Plus,
   },
@@ -34,7 +31,7 @@ export function Navbar() {
     >
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 lg:px-10">
         <Link
-          href={config.applicationDeployment ? "/arena" : "/"}
+          href="/"
           className="flex items-center gap-2.5 font-pixel text-xl font-bold tracking-[-.06em]"
         >
           <Aperture size={28} strokeWidth={1.5} className="text-neon-pink" />{" "}
@@ -42,19 +39,13 @@ export function Navbar() {
         </Link>
         <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-[9px] uppercase tracking-wider text-mute sm:inline-flex">
           <span className="status-dot" />
-          {config.applicationDeployment
-            ? config.network
-            : config.mock
-              ? "demo data"
-              : config.network}
+          {config.network}
         </span>
         <nav
           aria-label="Main navigation"
           className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto md:flex-1 md:justify-center"
         >
-          {LINKS.filter(
-            (l) => !config.applicationDeployment || l.href.startsWith("/arena"),
-          ).map((l) => {
+          {LINKS.map((l) => {
             const active =
               l.href === "/arena"
                 ? arenaNavigationActive(pathname)

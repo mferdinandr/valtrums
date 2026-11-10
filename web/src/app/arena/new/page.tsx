@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { useApplicationDeployment } from "@/components/providers";
 import { LifecycleCreateReview } from "@/components/lifecycle-create-review";
 
-/** Lifecycle creation review. The legacy A/B creation flow stays at /battles/new, separately labeled. */
+/** Lifecycle creation review. The former A/B creation flow is gone; /battles/new redirects here. */
 export default function NewLifecycleBattlePage() {
   const deployment = useApplicationDeployment();
   if (!deployment) {

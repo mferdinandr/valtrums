@@ -20,8 +20,6 @@ import {
   X,
   Info,
 } from "lucide-react";
-import { useApplicationDeployment } from "@/components/providers";
-import { createBattlePath } from "@/lib/arena-read/routes";
 import { Button } from "@/components/ui/button";
 import registry from "@/components/colosseum/characters.json";
 import {
@@ -104,7 +102,7 @@ function IllustratedWorld() {
 }
 
 export function LandingJourney() {
-  const createPath = createBattlePath(!!useApplicationDeployment());
+  const createPath = "/arena/new";
   const rail = useRef<HTMLElement>(null),
     chapters = useRef<HTMLElement>(null),
     details = useRef<HTMLDialogElement>(null),

@@ -359,3 +359,20 @@ test("the portfolio does not overflow horizontally on a narrow screen", async ({
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test("one application: every menu entry is present and the former A/B urls redirect into the arena", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  for (const name of ["Arena", "Create", "Terminal", "Portfolio"]) {
+    await expect(nav.getByRole("link", { name })).toBeVisible();
+  }
+  await page.goto("/battles/3");
+  await expect(page).toHaveURL(/\/arena\/3$/);
+  await page.goto("/battles/new");
+  await expect(page).toHaveURL(/\/arena\/new$/);
+  await page.goto("/arena/preview");
+  await expect(page).toHaveURL(/\/arena$/);
+  // No page of this app says "demo", "mock" or "legacy".
+  await page.goto("/arena");
+  await expect(page.getByText(/demo mode|simulated data/i)).toHaveCount(0);
+});

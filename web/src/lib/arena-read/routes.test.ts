@@ -1,47 +1,28 @@
 import { describe, expect, it } from "vitest";
-import {
-  arenaNavigationActive,
-  createBattlePath,
-  isApplicationRoute,
-} from "./routes";
+import { configProblems } from "@/lib/config";
+import { arenaNavigationActive } from "./routes";
 
-describe("application mode routes", () => {
-  it("links lifecycle Create into the allowed route and activates Arena on detail without activating it on creation", () => {
-    expect(isApplicationRoute(createBattlePath(true))).toBe(true);
-    expect(createBattlePath(false)).toBe("/battles/new");
+describe("arena navigation", () => {
+  it("is active on the list and on a lifecycle detail, not on creation or other pages", () => {
+    expect(arenaNavigationActive("/arena")).toBe(true);
     expect(arenaNavigationActive("/arena/42")).toBe(true);
-    expect(arenaNavigationActive("/battles/42")).toBe(true);
-    expect(arenaNavigationActive("/arena/new")).toBe(false);
-    expect(arenaNavigationActive("/battles/new")).toBe(false);
-  });
-  it("allows the landing page, the list, the lifecycle detail by decimal id and the review page", () => {
-    for (const p of [
-      "/",
-      "/arena",
-      "/arena/new",
-      "/terminal",
-      "/arena/1",
-      "/arena/18446744073709551615",
-      "/portfolio",
-    ])
-      expect(isApplicationRoute(p)).toBe(true);
-  });
-  it("refuses the legacy flow, other pages and malformed ids", () => {
-    for (const p of [
-      "/battles/1",
-      "/battles/new",
-      "/terminal/extra",
-      "/portfolio/extra",
-      "/arena/preview",
-      "/arena/0",
-      "/arena/01",
-      "/arena/1/extra",
-      "/arena/-1",
-      "/arena/1.5",
-      "/arena/",
-      null,
-    ]) {
-      expect(isApplicationRoute(p as string | null)).toBe(false);
+    for (const p of ["/arena/new", "/arena/0", "/arena/01", "/arena/1/extra", "/terminal", "/portfolio", "/"]) {
+      expect(arenaNavigationActive(p)).toBe(false);
     }
+  });
+});
+
+describe("required configuration", () => {
+  const ok = { arenaContractId: "arena.testnet", deployment: "valtrum-testnet", protocol: "lifecycle-v2" };
+  it("accepts a complete configuration", () => {
+    expect(configProblems(ok)).toEqual([]);
+  });
+  it("names every missing variable instead of falling back to another app", () => {
+    expect(configProblems({ ...ok, deployment: "" })).toEqual(["NEXT_PUBLIC_ARENA_READ_DEPLOYMENT"]);
+    expect(configProblems({ ...ok, arenaContractId: "" })).toEqual(["NEXT_PUBLIC_ARENA_CONTRACT_ID"]);
+    expect(configProblems({ arenaContractId: "", deployment: "", protocol: "lifecycle-v2" })).toHaveLength(2);
+  });
+  it("accepts only the lifecycle protocol", () => {
+    expect(configProblems({ ...ok, protocol: "legacy-v1" })).toEqual(["NEXT_PUBLIC_ARENA_READ_PROTOCOL (must be lifecycle-v2)"]);
   });
 });
