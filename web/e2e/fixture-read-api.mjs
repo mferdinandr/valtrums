@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { VersionedLifecycleReadSource } from "../../agent/dist/mcp/application-adapter.js";
 import { ApplicationReads } from "../../agent/dist/mcp/application.js";
 import { startReadServer } from "../../agent/dist/mcp/http.js";
+import { FixtureStateSource } from "../../agent/dist/mcp/account-state.js";
 import { FixtureArenaReadSource } from "../../agent/dist/mcp/read-source.js";
 import { ReadSessions } from "../../agent/dist/mcp/session.js";
 import { ObservationJournal, loadObservationState } from "../../agent/dist/observations/journal.js";
@@ -75,8 +76,8 @@ await sample(2, START_MS, 10000000); // no closing sample: a visible gap
 const cap = (reason) => ({ enabled: true, reasons: [reason] });
 const manifest = [{
   deploymentId: NS.deploymentId, network: NS.network, arenaContract: ARENA, protocol: NS.protocol, adapter: "fixture",
-  companions: { payout: null, registry: ARENA, backing: [] }, abi: { version: "lifecycle-application-v1", evidence: "browser test fixture", codeHash: null },
-  capabilities: { battles: cap("fixture"), detail: cap("fixture"), assets: cap("fixture"), audits: cap("fixture"), observations: cap("fixture") },
+  companions: { payout: "payout.testnet", registry: ARENA, backing: [] }, abi: { version: "lifecycle-application-v1", evidence: "browser test fixture", codeHash: null },
+  capabilities: { battles: cap("fixture"), detail: cap("fixture"), assets: cap("fixture"), audits: cap("fixture"), observations: cap("fixture"), custody: cap("fixture") },
 }];
 const source = new FixtureArenaReadSource("near-testnet", { battles, rounds });
 const registry = staticReferenceRegistry([
@@ -89,5 +90,7 @@ const application = new ApplicationReads(manifest, new Map([[NS.deploymentId, {
   observations: { namespace: NS, load: async () => (await loadObservationState(dir)).state, qualifiedModes: new Set(["PriceGain"]), coveragePolicy: { boundaryToleranceMs: 1000, maxGapMs: 40000 } },
 }]]));
 const sessions = new ReadSessions({ secret: new Uint8Array(32).fill(7), recipient: "valtrum-read.e2e", verify: async () => false });
-startReadServer(PORT, "127.0.0.1", { arena: source, sessions, now: Date.now, application });
+// FIXTURE state: backing c1 reports a ledger needing reconciliation, so the page shows a visible recovery alert.
+const state = new FixtureStateSource("near-testnet", { ledgers: new Map([["c1.rep.testnet", { accounting_balanced: false, reconciliation_required: true }]]) });
+startReadServer(PORT, "127.0.0.1", { arena: source, state, sessions, now: Date.now, application });
 console.log(`fixture read API listening on 127.0.0.1:${PORT}`);
