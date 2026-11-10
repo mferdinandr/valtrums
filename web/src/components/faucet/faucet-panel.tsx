@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { useFaucet } from "@/hooks/use-faucet";
 import { formatUnits } from "@/lib/amounts";
-import { FAUCET_DECIMALS, unavailableReason } from "@/lib/arena-read/faucet";
+import { FAUCET_DECIMALS, claimBatches, unavailableReason } from "@/lib/arena-read/faucet";
 
 export function FaucetPanel() {
   const { signIn } = useWallet();
@@ -45,7 +45,7 @@ export function FaucetPanel() {
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={() => void f.refresh()} disabled={f.loading || busy}>Refresh</Button>
             <Button type="button" onClick={() => void f.claim(claimable)} disabled={!f.connected || busy || claimable.length === 0}>
-              {busy ? `Claiming ${f.claiming}…` : claimable.length === 0 ? "Nothing to claim" : `Claim all (${claimable.length})`}
+              {busy ? `Claiming ${f.claiming}…` : claimable.length === 0 ? "Nothing to claim" : `Claim all (${claimable.length}) · ${claimBatches(claimable).length} approval${claimBatches(claimable).length === 1 ? "" : "s"}`}
             </Button>
           </div>
         </div>

@@ -8,7 +8,9 @@ type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /** Upper bound attached to `claim` for the claim record; the contract refunds what it does not use. */
 export const CLAIM_DEPOSIT_YOCTO = "10000000000000000000000";
-export const CLAIM_GAS_TGAS = "150";
+export const CLAIM_GAS_TGAS = "140";
+/** Claims per transaction: each carries 140 Tgas and a transaction holds at most 300, so two fit. */
+export const CLAIMS_PER_TRANSACTION = 2;
 /** The faucet's tokens have 18 decimals, like the mock tokens they are backed by. */
 export const FAUCET_DECIMALS = 18;
 
@@ -67,12 +69,27 @@ export async function readFaucet(rpcUrl: string, contract: string, account: stri
   return { paused: config.paused, cooldownSecs: Number(config.cooldown_secs), tokens: entries };
 }
 
-/** The reviewed call a wallet signs for one claim. The claimer is always the signer; no argument names a recipient. */
-export function buildClaimCall(contract: string, token: string) {
+/**
+ * The reviewed call a wallet signs for one or two claims. The claimer is always the signer; no argument names a
+ * recipient. Several claims in one transaction are atomic: all succeed or none does.
+ */
+export function buildClaimCall(contract: string, tokens: string | readonly string[]) {
+  const list = typeof tokens === "string" ? [tokens] : [...tokens];
+  if (list.length < 1 || list.length > CLAIMS_PER_TRANSACTION) throw new Error(`a transaction carries 1 to ${CLAIMS_PER_TRANSACTION} claims`);
   return {
     receiverId: contract,
-    actions: [{ type: "FunctionCall" as const, params: { methodName: "claim", args: { token }, gas: gasUnits(CLAIM_GAS_TGAS), deposit: CLAIM_DEPOSIT_YOCTO } }],
+    actions: list.map((token) => ({
+      type: "FunctionCall" as const,
+      params: { methodName: "claim", args: { token }, gas: gasUnits(CLAIM_GAS_TGAS), deposit: CLAIM_DEPOSIT_YOCTO },
+    })),
   };
+}
+
+/** Splits tokens into the groups that share one wallet approval. */
+export function claimBatches<T>(tokens: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < tokens.length; i += CLAIMS_PER_TRANSACTION) out.push(tokens.slice(i, i + CLAIMS_PER_TRANSACTION));
+  return out;
 }
 
 /** "23 h 59 min" for a cooldown, or "now" when it is over. */

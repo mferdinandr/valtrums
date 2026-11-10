@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: a fake RPC. Nothing here touches a chain.
 import { describe, expect, it } from "vitest";
-import { buildClaimCall, formatWait, readFaucet, unavailableReason, type FaucetEntry } from "./faucet";
+import { buildClaimCall, claimBatches, formatWait, readFaucet, unavailableReason, type FaucetEntry } from "./faucet";
 
 const NOW = 1_800_000_000_000;
 const E18 = 10n ** 18n;
@@ -69,8 +69,26 @@ describe("claim call", () => {
     expect(c.actions).toHaveLength(1);
     expect(c.actions[0]!.params.methodName).toBe("claim");
     expect(c.actions[0]!.params.args).toEqual({ token: "backing-cashcat.testnet" });
-    expect(BigInt(c.actions[0]!.params.gas)).toBe(150_000_000_000_000n);
+    expect(BigInt(c.actions[0]!.params.gas)).toBe(140_000_000_000_000n);
     expect(JSON.stringify(c)).not.toMatch(/receiver_id|account_id|recipient/);
+  });
+});
+
+describe("batched claims", () => {
+  it("puts two claims in one transaction and keeps the total gas under the 300 Tgas limit", () => {
+    const c = buildClaimCall("faucet.testnet", ["a.testnet", "b.testnet"]);
+    expect(c.actions.map((a) => a.params.args)).toEqual([{ token: "a.testnet" }, { token: "b.testnet" }]);
+    expect(c.actions.reduce((n, a) => n + BigInt(a.params.gas), 0n)).toBeLessThanOrEqual(300_000_000_000_000n);
+    expect(c.actions.every((a) => BigInt(a.params.gas) >= 100_000_000_000_000n)).toBe(true);
+  });
+  it("refuses an empty or oversized transaction", () => {
+    expect(() => buildClaimCall("faucet.testnet", [])).toThrow(/1 to 2 claims/);
+    expect(() => buildClaimCall("faucet.testnet", ["a", "b", "c"])).toThrow(/1 to 2 claims/);
+  });
+  it("splits six tokens into three approvals", () => {
+    expect(claimBatches([1, 2, 3, 4, 5, 6])).toEqual([[1, 2], [3, 4], [5, 6]]);
+    expect(claimBatches([1, 2, 3])).toEqual([[1, 2], [3]]);
+    expect(claimBatches([])).toEqual([]);
   });
 });
 

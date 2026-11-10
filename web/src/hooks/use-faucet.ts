@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
-import { buildClaimCall, readFaucet, type FaucetState } from "@/lib/arena-read/faucet";
+import { buildClaimCall, claimBatches, readFaucet, type FaucetState } from "@/lib/arena-read/faucet";
 import { config } from "@/lib/config";
 
 export type ClaimOutcome = { symbol: string; ok: boolean; message: string };
@@ -42,7 +42,7 @@ export function useFaucet() {
     void refresh();
   }, [refresh]);
 
-  /** Claims the given tokens one after another; each is its own wallet approval. */
+  /** Claims the given tokens, two per wallet approval; a pair is atomic (both or neither). */
   const claim = useCallback(
     async (tokens: ReadonlyArray<{ token: string; symbol: string }>) => {
       if (!contract || !getWallet) {
@@ -51,14 +51,15 @@ export function useFaucet() {
       }
       setError(null);
       const done: ClaimOutcome[] = [];
-      for (const t of tokens) {
-        setClaiming(t.symbol);
+      for (const batch of claimBatches(tokens)) {
+        setClaiming(batch.map((t) => t.symbol).join(" + "));
         try {
           const wallet = await getWallet();
-          await wallet.signAndSendTransaction(buildClaimCall(contract, t.token));
-          done.push({ symbol: t.symbol, ok: true, message: "Submitted. The tokens arrive once the transaction is final." });
+          await wallet.signAndSendTransaction(buildClaimCall(contract, batch.map((t) => t.token)));
+          for (const t of batch) done.push({ symbol: t.symbol, ok: true, message: "Submitted. The tokens arrive once the transaction is final." });
         } catch (e) {
-          done.push({ symbol: t.symbol, ok: false, message: e instanceof Error ? e.message : String(e) });
+          const message = e instanceof Error ? e.message : String(e);
+          for (const t of batch) done.push({ symbol: t.symbol, ok: false, message });
           break;
         }
       }
