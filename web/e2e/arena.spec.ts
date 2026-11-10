@@ -128,7 +128,7 @@ test("creation is review-only without a wallet and sends no action request", asy
   await expect(
     page.getByRole("heading", { name: /Bring your crews/ }),
   ).toBeVisible();
-  const pickers = page.getByPlaceholder("Search registered token address");
+  const pickers = page.getByPlaceholder("Search a token name (CASHCAT) or address");
   await expect(pickers.first()).toBeVisible();
   // Pick one registered asset per community from the backend-searched registry.
   for (const i of [0, 1]) {
@@ -297,7 +297,7 @@ test.describe("lifecycle intent terminal", () => {
     });
     await page.goto("/terminal");
     await ask(page, "create price gain battle with PEPE, DOGE");
-    await expect(page.getByRole("alert").filter({ hasText: /could not resolve "pepe"/ })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /could not find "pepe"/ })).toBeVisible();
     await ask(page, `create price gain battle with 0x${"7".repeat(40)}, 0x${"1".repeat(40)}`);
     await expect(page.getByRole("alert").filter({ hasText: /is not in the asset registry/ })).toBeVisible();
     await ask(page, `create price gain battle with 0x${"1".repeat(40)}, 0x${"2".repeat(40)}, 0x${"3".repeat(40)}`);
@@ -333,7 +333,7 @@ test("the portfolio is wallet-gated, labels fixture data, keeps alerts readable 
     if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) sessionCalls.push(r.url());
   });
   await page.goto("/portfolio");
-  await expect(page.getByRole("heading", { name: "Portfolio" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Your journey/ })).toBeVisible();
   await expect(page.getByText("unavailable for the selected application deployment")).toHaveCount(0);
   await expect(page.getByText(/Connect a wallet to read your positions/)).toBeVisible();
   // Account sections are not shown (and no demo/legacy data is invented) before a wallet session exists.
@@ -355,7 +355,7 @@ test("the portfolio is wallet-gated, labels fixture data, keeps alerts readable 
 test("the portfolio does not overflow horizontally on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto("/portfolio");
-  await expect(page.getByRole("heading", { name: "Portfolio" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Your journey/ })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
@@ -375,4 +375,22 @@ test("one application: every menu entry is present and the former A/B urls redir
   // No page of this app says "demo", "mock" or "legacy".
   await page.goto("/arena");
   await expect(page.getByText(/demo mode|simulated data/i)).toHaveCount(0);
+});
+
+test("token names resolve to registry addresses in the terminal and the create picker shows the name", async ({ page }) => {
+  const actionCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) actionCalls.push(r.url());
+  });
+  // Create picker: searching a name on the backend finds the labeled mock token.
+  await page.goto("/arena/new");
+  const picker = page.getByPlaceholder("Search a token name (CASHCAT) or address").first();
+  await picker.fill("cashcat");
+  await expect(page.getByText("mCASHCAT · Mock CASHCAT").first()).toBeVisible();
+  // Terminal: names resolve through the registry and the reviewed call carries the registry address.
+  await page.goto("/terminal");
+  await page.getByLabel("Terminal prompt").fill("create price gain battle with cashcat, wallet");
+  await page.getByRole("button", { name: "Read my request" }).click();
+  await expect(page.getByText(/registry asset 46630:0x5b2ba17e5be1b611c1299809db89c5fe21d9d0a6/i)).toBeVisible();
+  expect(actionCalls).toEqual([]);
 });
