@@ -103,7 +103,7 @@ Assumptions and limits of this mode:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `AUDIT_REPORT_ARCHIVE_ENABLED` | unset | `true` archives every lifecycle audit report to a durable append-only file; requires `AUDIT_ENABLED=true` (startup fails otherwise) |
-| `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file |
+| `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file. `AUDIT_ARCHIVE_PATH` (the read API / MCP name) is an alias for the same file; both may be set only if equal, otherwise startup fails |
 | `INDEXER_ENABLED` | unset | `true` runs the read-only event indexer on every pass. There is no live block source yet, so `INDEXER_RECORDED_CHAIN` is required and its blocks and finality are **fixture assertions**, not chain state |
 | `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`) |
 | `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the backing and payout contracts) |
@@ -163,3 +163,22 @@ NEAR Intents lists no testnet asset, so the testnet demo uses a local **fixture*
 - `INTENTS_FIXTURE=1` makes the action service accept `route: "intents-fixture"` on deposits (testnet only; the service refuses to start on any other network). Every preview, status, response and log line carries the fixture label.
 - Tests: `test/intents-fixture/` (golden and drift tests against `docs/evidence/2026-11-09-intents-routes.json`, solver, route, server and trace tests; no network). Mapping and migration: `docs/intents-asset-mapping.md`.
 
+
+## Audit archive: producer and consumer config
+
+The agent writes the archive; the read API / MCP (`pnpm -C agent read:serve` or `read:mcp`) reads it through `inspect_audit`. Point both at the same file (non-secret example values):
+
+```
+# agent
+AUDIT_ENABLED=true
+AUDIT_REPORT_ARCHIVE_ENABLED=true
+AUDIT_REPORT_ARCHIVE_PATH=/var/lib/valtrum/audit-reports/archive.json
+# read API / MCP (either name; AUDIT_REPORT_ARCHIVE_ENABLED=true alone selects the default path)
+AUDIT_ARCHIVE_PATH=/var/lib/valtrum/audit-reports/archive.json
+ARENA_CONTRACT_ID=arena.example.testnet
+```
+
+- The reader returns only observations attributed to its own `ARENA_CONTRACT_ID`.
+- The read source is always labeled `recorded`. Each observation carries its own `provenance` (`recorded` as written by the agent); no environment flag upgrades it to `live`.
+- `inspect_audit` keeps the historical `result`, the read-time `freshness` (`fresh`/`expired`/`not_applicable`) and `currentApproval: notEstablished` separate. An empty answer is labeled (archive missing, producer disabled or battle not audited yet); a corrupt archive is an error, not an empty history.
+- Retention: there is no pruning; capacity is finite and a full archive is a visible sink error. Retention policy is an open decision.
