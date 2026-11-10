@@ -44,6 +44,14 @@ Deliver bounded player agents and its acceptance scenarios without claiming unre
   - **Revocation:** a revoked or expired grant rejects actions that were not prepared; prepared or reserved ones stay attributable.
   - **Not covered:** calling a NEAR AI model and executing a reservation after `reserve` (the reviewed executor adapter) are still open.
 
+- Player agent program (`agent/src/player/`, run with `pnpm -C agent player:run --config <file> [--live] [--once]`). Defaults chosen by the implementer, each open to the owner:
+  - **Where it runs and who holds the key:** a separate Node process next to the read API; each agent's `ed25519:` key is read from an environment variable named in the config, never from the config file. Testnet only. A production host (container on a PaaS or VPS using `agent/Dockerfile`, a Cloudflare Worker after a compatibility check) is a separate decision.
+  - **Strategies:** `crowd` backs the community with the largest vault and `underdog` the smallest; ties go to the lowest battle id, then community. They decide from on-chain state only. Price-aware strategies need the observations feed and are future work. The strategy lives in the operator configuration (off chain) and carries no authority; the grant is the limit.
+  - **Optional model:** with `mode: "model"` the program asks NEAR AI Cloud for the deposit. The prompt holds only numbers and ids, never token text, and the answer goes through `proposalToRequest` like any proposal.
+  - **State:** no database. One versioned JSON file with atomic writes remembers what the agent already did and which communities the service refused; the chain stays the source of truth.
+  - **Safety limits (configurable):** a share of the remaining budget per action (default 25%) under the grant's per-action cap, at most 6 reservations per hour, stop after 3 consecutive failures, a refused community is not asked again for 10 minutes. The agent skips communities where the user has no registered position, because registering needs the user's own signature.
+  - **Not covered (open):** executing a reserved deposit, a live run on testnet, a host for production, and price-aware strategies.
+
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.

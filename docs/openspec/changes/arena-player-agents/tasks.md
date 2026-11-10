@@ -44,3 +44,12 @@ Check tasks only after implementation and verification. Player grants and infras
 - [x] Test multiple independently funded users and correct participant attribution.
   - [x] Two users with the same local grant id and reused request ids keep isolated identities, counters and reservations. Fixture funding is not a real funded-agent demo; funded arena positions remain follow-ups.
   - [x] #108: a sandbox test with two users sharing local grant and request ids checks separate budgets, delegates that cannot act for the other user, and cancelling one reservation leaving the other untouched. Synthetic amounts only; not a funded demo.
+
+## Player agent program
+
+- [x] Strategies, state file, optional model proposer, configuration and the dry-run and live runner (`agent/src/player/`), covered by unit and fixture tests including hostile model output, a transaction that already left, limits and restart.
+- [ ] Run the program live on testnet with a real grant and verify the `reserve` receipt (needs a funded delegate key and the owner's per-transaction approval).
+- [ ] Decide and implement execution of a reserved deposit (open owner decision; no executor role and no infrastructure spending authority).
+- [ ] Choose the production host and key custody.
+- [ ] Price-aware strategies from the observations feed.
+

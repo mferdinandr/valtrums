@@ -90,3 +90,27 @@ The user or delegate SHALL dispatch a battle-bound reservation. A dispatched obl
 #### Scenario: Permanent revocation and delegate rule
 - **WHEN** a revoked grant is replaced by a higher version, or a user names themselves delegate
 - **THEN** the call is rejected; a new local grant id is required, and asset identity remains immutable
+
+### Requirement: Player agent program
+A player agent program SHALL act only through the delegate account named in an operator-supplied configuration, choose a deposit with a declared strategy, and submit it only as a proposal through the action boundary. It SHALL hold only the delegate's own key, SHALL sign nothing except the contract's `reserve`, and SHALL NOT move tokens. A strategy SHALL carry no authority: the user's grant is the only limit.
+
+#### Scenario: Dry run by default
+- **WHEN** the program runs without the live flag
+- **THEN** it chooses, previews, applies the grant check and prepares the `reserve` transaction, and signs and sends nothing
+
+#### Scenario: A hostile model answer
+- **WHEN** a model answer names a recipient, another user, a second field or another action
+- **THEN** the proposal is rejected by the same validator as any proposal and nothing is signed
+
+#### Scenario: A transaction that already left
+- **WHEN** reporting or confirming a sent transaction fails
+- **THEN** the program records the send, reports it as unverified and does not send that community again
+
+#### Scenario: Limits and failure
+- **WHEN** a grant is missing, revoked or expired, the budget is empty, the hourly limit is reached or consecutive failures reach the configured limit
+- **THEN** the program takes no action for that agent and records why
+
+#### Scenario: Restart
+- **WHEN** the program restarts or loses its own state file
+- **THEN** budgets, reservations and grant state are read from the chain, and a repeated reservation of the same request is idempotent on the contract
+
