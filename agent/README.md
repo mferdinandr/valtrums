@@ -105,7 +105,8 @@ Assumptions and limits of this mode:
 | `AUDIT_REPORT_ARCHIVE_ENABLED` | unset | `true` archives every lifecycle audit report to a durable append-only file; requires `AUDIT_ENABLED=true` (startup fails otherwise) |
 | `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file. `AUDIT_ARCHIVE_PATH` (the read API / MCP name) is an alias for the same file; both may be set only if equal, otherwise startup fails |
 | `INDEXER_ENABLED` | unset | `true` runs the read-only event indexer on every pass. There is no live block source yet, so `INDEXER_RECORDED_CHAIN` is required and its blocks and finality are **fixture assertions**, not chain state |
-| `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`) |
+| `INDEXER_SOURCE` | `recorded` | `live` reads finalized blocks from the FastNEAR neardata API (provider-asserted finality, never a recorded file); needs `INDEXER_ANCHOR_HEIGHT` and `INDEXER_ANCHOR_HASH` (hash of the block before the anchor), uses `NEAR_NETWORK`, and optional `INDEXER_NEARDATA_URL` (https), `INDEXER_NEARDATA_API_KEY` (secret, Bearer, never logged) and `INDEXER_MAX_BLOCKS_PER_SYNC` (default 200) |
+| `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`), required for `recorded`, forbidden for `live` |
 | `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the backing and payout contracts) |
 | `INDEXER_STATE_DIR` | `./.agent-state/indexer` | indexer state directory (single writer) |
 | `INDEXER_RETENTION_DEPTH` | `10000` | finalized blocks kept behind the finalized head; older ones become a hashed summary checkpoint and are pruned (provisional blocks and dedup keys never are) |
