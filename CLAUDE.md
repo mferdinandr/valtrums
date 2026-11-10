@@ -42,6 +42,11 @@ pnpm install
 pnpm -C agent test
 pnpm -C web dev
 pnpm -C web build
+
+# local CI (same checks as .github/workflows/ci.yml; run before opening a PR)
+scripts/pre-commit.sh            # only the stages for your changed files
+scripts/pre-commit.sh --all      # contracts, sandbox, node, docker
+scripts/pre-commit.sh --install  # optional: run it as the git pre-commit hook
 ```
 
 ## Conventions
