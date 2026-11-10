@@ -616,6 +616,33 @@ impl Arena {
         }
     }
 
+    /// Lossless variant of `get_lifecycle_battle` (issue #144): the id is a decimal-string `U64`, and the
+    /// answer carries an explicit schema version. The v1 method is unchanged for deployed clients.
+    pub fn get_lifecycle_battle_v2(&self, battle_id: U64) -> Option<lifecycle::LifecycleBattleV2> {
+        self.lifecycle_battles
+            .get(&battle_id.0)
+            .map(|battle| lifecycle::LifecycleBattleV2 {
+                schema_version: lifecycle::LIFECYCLE_VIEW_SCHEMA_V2,
+                battle_id,
+                battle: lifecycle::Battle::view(battle),
+            })
+    }
+
+    /// Lossless variant of `get_lifecycle_battle_count`: a decimal-string `U64`.
+    pub fn get_lifecycle_battle_count_v2(&self) -> U64 {
+        U64(self.lifecycle_battle_count)
+    }
+
+    /// Lossless variant of `get_lifecycle_position` (battle id as `U64`). Same answer as v1.
+    pub fn get_lifecycle_position_v2(
+        &self,
+        battle_id: U64,
+        community: u32,
+        account: AccountId,
+    ) -> lifecycle::LifecyclePositionView {
+        self.get_lifecycle_position(battle_id.0, community, account)
+    }
+
     /// Reserve storage for one position. This is storage payment, not a stake.
     #[payable]
     pub fn register_lifecycle_position(&mut self, battle_id: u64, community: u32) {

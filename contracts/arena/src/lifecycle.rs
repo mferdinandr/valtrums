@@ -235,6 +235,18 @@ pub struct LifecycleView {
     pub principal_amount: Option<U128>,
 }
 
+/// Schema version of [`LifecycleBattleV2`]. Fields are only ever added within a version.
+pub const LIFECYCLE_VIEW_SCHEMA_V2: u32 = 2;
+
+/// Versioned, lossless wrapper of [`LifecycleView`]: the id is a decimal-string `U64`.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LifecycleBattleV2 {
+    pub schema_version: u32,
+    pub battle_id: U64,
+    pub battle: LifecycleView,
+}
+
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LifecyclePositionView {
@@ -1582,6 +1594,23 @@ mod tests {
                 .registered
         );
         assert_eq!(arena.lifecycle_lock(id, policy("changed")), Ok(frozen));
+        // v2 views are lossless (decimal-string ids/counts), versioned and agree with v1.
+        let v2 = arena.get_lifecycle_battle_v2(U64(id)).expect("v2");
+        assert_eq!(v2.battle, view);
+        let json = near_sdk::serde_json::to_value(&v2).expect("JSON");
+        assert_eq!(json["schema_version"], 2);
+        assert_eq!(json["battle_id"], id.to_string());
+        assert!(arena.get_lifecycle_battle_v2(U64(u64::MAX)).is_none());
+        assert_eq!(
+            arena.get_lifecycle_battle_count_v2(),
+            U64(arena.get_lifecycle_battle_count())
+        );
+        let big = near_sdk::serde_json::to_value(U64(u64::MAX)).expect("JSON");
+        assert_eq!(big, "18446744073709551615");
+        assert_eq!(
+            arena.get_lifecycle_position_v2(U64(id), 0, creator.clone()),
+            arena.get_lifecycle_position(id, 0, creator.clone())
+        );
     }
 
     #[test]
