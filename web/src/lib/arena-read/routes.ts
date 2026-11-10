@@ -1,7 +1,7 @@
 /**
  * Pages that exist in application read mode: the landing page (static content, no battle data), the battle
- * list, the lifecycle detail, the review-only creation page and the lifecycle portfolio. The legacy A/B flow
- * and the terminal are unavailable there and are never reached by a fallback.
+ * list, the lifecycle detail, the review-only creation page, the lifecycle intent terminal and the lifecycle
+ * portfolio. The former A/B flow is gone and is never reached by a fallback.
  */
 export function isApplicationRoute(path: string | null): boolean {
   if (!path) return false;
@@ -9,6 +9,7 @@ export function isApplicationRoute(path: string | null): boolean {
     path === "/" ||
     path === "/arena" ||
     path === "/arena/new" ||
+    path === "/terminal" ||
     path === "/portfolio" ||
     /^\/arena\/[1-9][0-9]{0,19}$/.test(path)
   );

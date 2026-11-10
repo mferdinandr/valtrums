@@ -19,6 +19,7 @@ describe("application mode routes", () => {
       "/",
       "/arena",
       "/arena/new",
+      "/terminal",
       "/arena/1",
       "/arena/18446744073709551615",
       "/portfolio",
@@ -29,7 +30,7 @@ describe("application mode routes", () => {
     for (const p of [
       "/battles/1",
       "/battles/new",
-      "/terminal",
+      "/terminal/extra",
       "/portfolio/extra",
       "/arena/preview",
       "/arena/0",
