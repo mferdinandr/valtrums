@@ -2,13 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { useApplicationSearch } from "@/hooks/use-application-search";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { useWallet } from "@/components/providers";
+import { TokenChip, TokenPicker, assetSymbol, type RegistryAsset } from "@/components/token-picker";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { applicationKey } from "@/lib/arena-read/application";
 import {
@@ -26,18 +25,6 @@ import {
 } from "@/lib/arena-read/create-review";
 import "@/components/lifecycle/lifecycle.css";
 
-interface RegistryAsset {
-  chainId: string;
-  token: string;
-  referenceChainId: string;
-  referenceToken: string;
-  assetKey: string;
-  registryVersion: string;
-  /** Curated display names (token and mainnet reference). Never identity or eligibility. */
-  label?: { symbol: string; name: string; kind: string } | null;
-  referenceLabel?: { symbol: string; name: string; kind: string } | null;
-}
-
 const empty = (): AssetDraft => ({
   chainId: "",
   tokenAddress: "",
@@ -47,74 +34,6 @@ const empty = (): AssetDraft => ({
   referenceAddress: "",
 });
 
-/** Backend-searched pick from the protocol's reference registry. Identity comes from the registry entry, never from typing. */
-function AssetPicker({
-  namespace,
-  onPick,
-}: {
-  namespace: Namespace;
-  onPick: (a: RegistryAsset) => void;
-}) {
-  const [q, setQ] = useState("");
-  const { result, loading, error } = useApplicationSearch<
-    ApplicationPage<RegistryAsset>
-  >(namespace, "assets", { q, limit: 8 });
-  return (
-    <div className="space-y-2">
-      <Label>
-        Find a community token
-        <Input
-          value={q}
-          maxLength={64}
-          placeholder="Search a token name (CASHCAT) or address"
-          onChange={(e) => setQ(e.target.value)}
-        />
-      </Label>
-      {loading && (
-        <p role="status" className="text-xs text-mute">
-          Searching…
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-xs text-neon-red">
-          Asset search unavailable: {error}
-        </p>
-      )}
-      {result && !loading && result.data.items.length === 0 && (
-        <p className="text-xs text-mute">
-          No registered asset matches. Registry membership is required.
-        </p>
-      )}
-      <ul className="space-y-1">
-        {result?.data.items.map((a) => (
-          <li key={a.assetKey}>
-            <Button
-              variant="ghost"
-              type="button"
-              onClick={() => onPick(a)}
-              className="lifecycle-asset-option text-xs"
-              title={`${a.chainId}:${a.token}`}
-            >
-              <span>
-                {a.label ? <strong>{a.label.symbol} · {a.label.name} · </strong> : null}
-                Token {shortAccount(a.token)}
-                <span className="mt-1 text-mute">
-                  Chain {a.chainId}
-                </span>
-              </span>
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {result && (
-        <p className="text-xs text-mute">
-          Registry membership is not audit, backing or deposit eligibility.
-        </p>
-      )}
-    </div>
-  );
-}
-
 /**
  * Review and, on a deployment that enables a wallet, signing of `create_lifecycle_battle`. The reviewed
  * arguments are compared with the service's canonical preview before any authorization is requested; the
@@ -122,7 +41,7 @@ function AssetPicker({
  */
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>("PriceGain");
-  const [assets, setAssets] = useState<AssetDraft[]>([empty(), empty()]);
+  const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [copied, setCopied] = useState(false);
   const review = buildCreateReview(namespace.arenaContract, assets, mode);
   const request = useMemo(() => toActionRequest(assets, mode), [assets, mode]);
@@ -135,6 +54,29 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const set = (i: number, patch: Partial<AssetDraft>) => {
     setCopied(false);
     setAssets((all) => all.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  };
+  const chosen = useMemo(() => new Set(assets.map((a) => `${a.chainId}:${a.tokenAddress.toLowerCase()}`)), [assets]);
+  const add = (p: RegistryAsset) => {
+    setCopied(false);
+    setAssets((all) =>
+      all.length >= MAX_COMMUNITIES || all.some((a) => a.chainId === p.chainId && a.tokenAddress.toLowerCase() === p.token.toLowerCase())
+        ? all
+        : [
+            ...all,
+            {
+              ...empty(),
+              chainId: p.chainId,
+              tokenAddress: p.token,
+              referenceChainId: p.referenceChainId,
+              referenceAddress: p.referenceToken,
+              label: assetSymbol(p),
+            },
+          ],
+    );
+  };
+  const remove = (i: number) => {
+    setCopied(false);
+    setAssets((all) => all.filter((_, j) => j !== i));
   };
   // Hide "nothing picked yet" noise until at least one field has been touched.
   const touched = assets.some(
@@ -207,81 +149,49 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           </p>
         </Card>
 
-        {assets.map((a, i) => (
-          <Card key={i} className="space-y-3">
-            <CardTitle>02 / Community {i + 1}</CardTitle>
-            <AssetPicker
-              namespace={namespace}
-              onPick={(p) =>
-                set(i, {
-                  chainId: p.chainId,
-                  tokenAddress: p.token,
-                  referenceChainId: p.referenceChainId,
-                  referenceAddress: p.referenceToken,
-                  label: p.label?.symbol ?? p.referenceLabel?.symbol ?? "",
-                  representation: "",
-                  custodyDomain: "",
-                })
-              }
-            />
-            <p className="break-all text-xs">
-              {a.tokenAddress
-                ? `${a.label ? `${a.label} · ` : ""}Asset ${a.chainId}:${a.tokenAddress}`
-                : "No asset picked yet."}
-            </p>
+        <Card className="space-y-4">
+          <CardTitle>02 / Choose your communities</CardTitle>
+          <p className="text-xs text-mute">
+            {assets.length} of {MAX_COMMUNITIES} chosen · at least {MIN_COMMUNITIES} are needed
+          </p>
+          <div className="token-chips" aria-label="Chosen communities">
+            {assets.map((a, i) => (
+              <TokenChip key={`${a.chainId}:${a.tokenAddress}`} symbol={a.label || shortAccount(a.tokenAddress)} onRemove={() => remove(i)} />
+            ))}
+            {assets.length === 0 && <span className="text-xs text-mute">Nothing chosen yet. Pick tokens below.</span>}
+          </div>
+          <TokenPicker
+            namespace={namespace}
+            chosen={chosen}
+            full={assets.length >= MAX_COMMUNITIES}
+            onPick={add}
+          />
+          {assets.map((a, i) => (
             <details
+              key={`${a.chainId}:${a.tokenAddress}`}
               className="lifecycle-tech"
               open={!a.representation || !a.custodyDomain}
             >
-              <summary>Required token setup · advanced</summary>
+              <summary>Required token setup for {a.label || shortAccount(a.tokenAddress)} · advanced</summary>
               <p className="mb-3">
-                The registry does not provide a trusted representation or
-                custody domain yet. Use values from your deployment operator;
-                they are never guessed from a token name.
+                The registry does not provide a trusted representation or custody domain yet. Use values from your
+                deployment operator; they are never guessed from a token name.
               </p>
               <Label>
                 Representation (NEAR account of the NEP-141 token)
                 <Input
                   value={a.representation}
                   maxLength={64}
-                  onChange={(e) =>
-                    set(i, {
-                      representation: e.target.value.trim().toLowerCase(),
-                    })
-                  }
+                  onChange={(e) => set(i, { representation: e.target.value.trim().toLowerCase() })}
                 />
               </Label>
               <Label>
                 Custody domain
-                <Input
-                  value={a.custodyDomain}
-                  maxLength={64}
-                  onChange={(e) => set(i, { custodyDomain: e.target.value })}
-                />
+                <Input value={a.custodyDomain} maxLength={64} onChange={(e) => set(i, { custodyDomain: e.target.value })} />
               </Label>
             </details>
-            {assets.length > MIN_COMMUNITIES && (
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() =>
-                  setAssets((all) => all.filter((_, j) => j !== i))
-                }
-              >
-                <Trash2 size={14} aria-hidden="true" /> Remove community {i + 1}
-              </Button>
-            )}
-          </Card>
-        ))}
-        {assets.length < MAX_COMMUNITIES && (
-          <Button
-            variant="ghost"
-            type="button"
-            onClick={() => setAssets((all) => [...all, empty()])}
-          >
-            <Plus size={14} aria-hidden="true" /> Add community
-          </Button>
-        )}
+          ))}
+        </Card>
       </fieldset>
 
       <Card aria-label="Transaction review">
