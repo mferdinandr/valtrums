@@ -98,3 +98,45 @@ export function buildCreateReview(arenaContract: string, assets: readonly AssetD
     ],
   };
 }
+
+/** The request body the action service expects for `create_battle` (same shape as the agent's `AssetRequest`). */
+export function toActionRequest(assets: readonly AssetDraft[], mode: string): Record<string, unknown> {
+  return {
+    kind: "create_battle",
+    assets: assets.map((a) => ({
+      chainId: a.chainId, tokenAddress: a.tokenAddress, representation: a.representation, custodyDomain: a.custodyDomain,
+      ...(a.referenceChainId.trim() ? { referenceChainId: a.referenceChainId } : {}),
+      ...(a.referenceAddress.trim() ? { referenceAddress: a.referenceAddress } : {}),
+    })),
+    mode,
+  };
+}
+
+/** The part of the server's canonical preview that must equal what the user reviewed. */
+export interface PreviewLike {
+  accountId?: unknown;
+  transaction?: { signerId?: unknown; receiverId?: unknown; actions?: Array<{ methodName?: unknown; args?: unknown; deposit?: unknown }> };
+}
+
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+
+/**
+ * Differences between the canonical preview the service built and the transaction the user reviewed.
+ * An empty list means the service will ask the wallet to sign exactly the reviewed call; anything else
+ * must stop the flow before any authorization is requested.
+ */
+export function previewMismatches(preview: PreviewLike, review: Extract<ReviewResult, { ok: true }>, account: string): string[] {
+  const out: string[] = [];
+  const tx = preview.transaction;
+  if (!tx) return ["the preview has no transaction"];
+  if (tx.signerId !== account || preview.accountId !== account) out.push("the preview is for another account");
+  if (tx.receiverId !== review.receiver) out.push("the preview targets another contract");
+  const actions = tx.actions ?? [];
+  if (actions.length !== 1) return [...out, "the preview does not contain exactly one call"];
+  const call = actions[0]!;
+  if (call.methodName !== review.method) out.push("the preview calls another method");
+  if (canonical(call.args) !== canonical(review.args)) out.push("the preview arguments differ from the reviewed arguments");
+  if (call.deposit !== review.depositYocto) out.push("the preview attaches another deposit");
+  return out;
+}
