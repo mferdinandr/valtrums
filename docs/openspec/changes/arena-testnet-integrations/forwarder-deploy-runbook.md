@@ -1,6 +1,6 @@
 # Forwarder deployment runbook (#148)
 
-Status: analysis from source only. Nothing in this document was executed, deployed, funded or read from a live chain. Each step that touches a chain needs the owner's explicit approval for that step.
+Status: steps 1 to 4 of R1 are DONE (2026-11-10, evidence `docs/evidence/2026-11-10-forwarder-deploy.json`): the forwarder is deployed at `0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C` with holder `0x0b740E3E90491f57699fCCD8276400E65BC70c41`, verified on chain, and the old contract `0xb994...7798` is recorded as retired. Steps 5 and 6 (verifier configuration and a live deposit plus payout) are NOT done. Each step that touches a chain needs the owner's explicit approval for that step.
 
 ## What a redeploy does and does not force (from source)
 
@@ -51,3 +51,23 @@ Limit: read through dRPC only because the official RPC refused connections; re-r
 ## Not covered
 
 DAO or NEAR transactions (none needed for R1), mainnet, real tokens, and any claim that the MPC signer is a trust-minimized bridge: the residual trust is the signer and the payout contract's reservation checks.
+
+## Deployed (2026-11-10)
+
+| Item | Value |
+| --- | --- |
+| Forwarder | `0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C` (transaction `0x320e...57ce`, block 151373581, gas 439662, cost about 4.4 microETH) |
+| Holder (payout signing account) | `0x0b740E3E90491f57699fCCD8276400E65BC70c41`, no code |
+| Runtime code keccak | `0x36b6...7c8a`, equal to the local build with the holder patched into its immutable slots |
+| Read back | `holder()` = holder, `nextDepositId()` = 0, forwarder holds 0 tokens |
+| Retired | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` (deposit-only, 100 mCASHCAT locked, never attested) |
+
+Configuration to use from now on (no secrets):
+
+```
+custody-verify-cli --custody 0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C --holder 0x0b740E3E90491f57699fCCD8276400E65BC70c41 \
+  --payout-sender 0x0b740E3E90491f57699fCCD8276400E65BC70c41 --retired 0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798 ...
+ARENA_APPLICATION_CUSTODY_PATHS=[{"label":"forwarder-testnet","depositContract":"0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C","tokenHolder":"0x0b740E3E90491f57699fCCD8276400E65BC70c41","payoutSender":"0x0b740E3E90491f57699fCCD8276400E65BC70c41","holderCodeHash":null}]
+```
+
+Reaching the official RPC from a network whose DNS blocks it: resolve it through DNS-over-HTTPS and connect to the real address with the correct TLS name (a local relay or `curl --resolve`); do not trust the system resolver's answer for that host.
