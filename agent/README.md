@@ -250,3 +250,16 @@ Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and 
 ## Custody gate in application health (#148)
 
 `ARENA_APPLICATION_CUSTODY_PATHS` (with `ARENA_APPLICATION_OBSERVATION_SCOPE` naming the deployment, and `capabilities.custody` declared in the manifest) is a JSON array of `{label, depositContract, tokenHolder, payoutSender, holderCodeHash}` (addresses are 20-byte hex, `holderCodeHash` is a 32-byte hex or null for an account without code). The health read's `custody` component runs `assessCustody` on each path: source-chain transfers and payouts are reported enabled only when at least one path exists and every path's token holder is the account the payout contract signs for. Unconfigured, deposit-only (holder is the deposit contract), unreviewed contract-code holders and malformed values all keep them disabled with the reason. The value is operator-asserted facts and the component is never `healthy`: a payout proof needs the live test in `forwarder-deploy-runbook.md`.
+
+## Player agent program
+
+`pnpm -C agent player:run --config <file> [--live] [--once]` runs the player agents described in a config file (see `player-agents.example.json`). It is a separate process from the read API and the settlement loop.
+
+- **Dry run by default.** It reads the chain, chooses a deposit with the agent's strategy, sends it through the action boundary (preview, grant check, revalidation) and prepares the delegate's `reserve` transaction, then stops. `--live` lets each agent sign its own `reserve` with the key named in its config.
+- **It never moves tokens and never holds a user key.** A reservation is a budget hold. Executing a reserved deposit is an open decision (see `docs/openspec/changes/arena-player-agents/design.md`).
+- **Keys** are read only from the environment variable named in each agent's `keyEnv` (for example `PLAYER_KEY_AGENT_A_TESTNET`); the config file never contains a key and errors never print one.
+- **Strategies** (off chain, no authority): `crowd` backs the largest vault, `underdog` the smallest. `mode: "model"` asks NEAR AI Cloud (`NEAR_AI_API_KEY`, `NEAR_AI_MODEL`) and validates the answer like any proposal.
+- **State**, no database: `PLAYER_STATE_PATH` (default `./.data/player-state.json`) and `PLAYER_ACTION_STORE_PATH` (default `./.data/player-actions.json`). The chain stays the source of truth, so losing them cannot double-spend.
+- **Safety limits** per agent: `fractionBps` (default 2500), `maxPerHour` (6), `maxFailures` (3), `intervalSecs` (60), `scanBattles` (20). It skips communities where the user has no registered position, because registering needs the user's own signature.
+- **Required environment:** `ARENA_CONTRACT_ID`, `PLAYER_POLICY_CONTRACT_ID`, optional `NEAR_RPC_URL`, `PLAYER_AGENTS_PATH`. Testnet only.
+

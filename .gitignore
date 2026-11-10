@@ -24,3 +24,6 @@ res/
 
 # Vercel project metadata and downloaded environment
 .vercel/
+
+# Player agent program state (local only)
+agent/.data/

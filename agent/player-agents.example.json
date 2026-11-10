@@ -1,0 +1,25 @@
+{
+  "agents": [
+    {
+      "delegate": "agent-a.testnet",
+      "user": "alice.testnet",
+      "localId": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mappingVersion": "1",
+      "strategy": "crowd",
+      "mode": "rule",
+      "keyEnv": "PLAYER_KEY_AGENT_A",
+      "fractionBps": 2500,
+      "maxPerHour": 6,
+      "maxFailures": 3,
+      "intervalSecs": 60,
+      "scanBattles": 20
+    },
+    {
+      "delegate": "agent-b.testnet",
+      "user": "bob.testnet",
+      "localId": "0000000000000000000000000000000000000000000000000000000000000001",
+      "strategy": "underdog",
+      "keyEnv": "PLAYER_KEY_AGENT_B"
+    }
+  ]
+}
