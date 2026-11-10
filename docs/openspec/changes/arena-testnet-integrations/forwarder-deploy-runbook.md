@@ -30,12 +30,14 @@ The previously deployed deposit-only contract can still receive deposits and emi
 
 Recommendation: R1 for this testnet, because the old contract holds only mock tokens, the operator is the owner, and the tooling now refuses the old path. Choose R2 only if you want on-chain separation or a clean audit trail.
 
-## Read-only checks needed before approval (not yet run, each needs approval)
+## Read-only checks (run 2026-11-10; evidence: `docs/evidence/2026-11-10-custody-readonly-checks.json`)
 
-1. The old deposit contract's address, runtime code hash and token balances; confirm it matches `TestnetDepositCustody` without a withdrawal path.
-2. Whether the one recorded deposit (mapping version 3) was ever attested to the registry, and whether any representation was minted from it.
-3. The payout contract's registered `sender` and `path` for each backing, and that `sender` has no contract code.
-4. The deployer account's balance on chain 46630 and the current gas price.
+1. **Old contract:** the runtime code hash is unchanged and equals the recorded deposit-only build; it still holds the 100 mCASHCAT of the one test deposit. Confirmed.
+2. **Recorded deposit:** `get_claim` on the registry for that transaction returns `null`: it was never attested, so nothing was minted from the locked tokens. Confirmed.
+3. **Holder:** `0x0b74...0c41` has no code, nonce 0, no tokens, 0.002 ETH of gas. Confirmed. The payout contract's registered `sender` per backing is **not readable** (no view exists), so it stays unconfirmed until the `register_backing` transaction or a real payout shows it.
+4. **Deployer:** 0.008064 ETH; gas price 0.01 gwei; the deployment should cost about 4 microETH. Confirmed.
+
+Limit: read through dRPC only because the official RPC refused connections; re-read through the official RPC before deploying.
 
 ## Steps for R1 (each needs your approval when reached)
 
