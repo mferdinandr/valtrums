@@ -60,6 +60,14 @@ Deliver testnet integrations and observability and its acceptance scenarios with
   - Pinning. Golden and drift tests compare discovery and dry quotes with `docs/evidence/2026-11-09-intents-routes.json`. The recording is a summary, so unrecorded fields are checked only against the OpenAPI list. Mapping and migration: [intents-asset-mapping.md](../../../intents-asset-mapping.md). Fixture asset ids and addresses are placeholders until #72.
   - Boundary. The fixture is not Intents verification. The real route, the live trace and Bitte stay open.
 
+- Testnet faucet (`agent/src/faucet/`, run with `pnpm -C agent faucet:serve`). Defaults chosen by the implementer, each open to the owner:
+  - **Why a NEAR-side faucet:** a representation can only be minted by `claim_representation` from finalized custody, so the faucet never mints. It distributes representation held by a dedicated faucet account whose supply is backed 1:1 by the operator's own EVM deposits (mock `mint`, deposit to custody, `claim_receipt`, `claim_representation` to the faucet account). Players need only a NEAR testnet account; the EVM path stays the operator's.
+  - **Funding the faucet is an operator action** on real testnet accounts and needs the owner's per-transaction approval. It is also the first live run of deposit, claim receipt and claim representation, which are not yet proven on testnet.
+  - **Per claim:** `storage_deposit(registration_only)` for the player (paid by the faucet) when not registered, then `ft_transfer` of the configured amount. Amounts are base units (the representations have 18 decimals).
+  - **Limits (configurable):** one claim per account and token per 24 hours, at most 120 transfers per hour overall, the sender is the faucet account only, and the claim account always comes from the verified read session.
+  - **Process and key:** a separate process with its own key (`FAUCET_PRIVATE_KEY`), so the read API keeps holding no key. The web app proxies to it server side. Dry run by default; `FAUCET_LIVE=1` sends.
+  - **State:** a versioned JSON ledger with atomic writes; a claim is reserved before the transfer and released if the transfer fails. NEAR for gas comes from the public testnet faucet.
+
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.

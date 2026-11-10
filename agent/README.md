@@ -263,3 +263,14 @@ Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and 
 - **Safety limits** per agent: `fractionBps` (default 2500), `maxPerHour` (6), `maxFailures` (3), `intervalSecs` (60), `scanBattles` (20). It skips communities where the user has no registered position, because registering needs the user's own signature.
 - **Required environment:** `ARENA_CONTRACT_ID`, `PLAYER_POLICY_CONTRACT_ID`, optional `NEAR_RPC_URL`, `PLAYER_AGENTS_PATH`. Testnet only.
 
+## Testnet faucet
+
+`pnpm -C agent faucet:serve` serves a faucet that gives a verified account small amounts of **already backed** NEP-141 representation tokens from a dedicated faucet account. It never mints: a representation can only be minted from finalized custody (`claim_representation`), so the faucet account must first be funded by the operator (mock `mint`, deposit to custody, `claim_receipt`, `claim_representation` to the faucet account). Funding is an operator action on real testnet accounts.
+
+- **Dry run by default.** Without `FAUCET_LIVE=1` it reports what it would send and sends nothing.
+- **Authentication.** `GET /faucet/status` and `POST /faucet/claim {tokens?: string[]}` require a read session (`Authorization: Bearer`, the same token the web app already holds). The claiming account is always the one the session is bound to.
+- **Limits.** One claim per account and token per `FAUCET_COOLDOWN_HOURS` (24) and at most `FAUCET_MAX_PER_HOUR` (120) transfers overall. A claim is reserved in the ledger before the transfer and released if the transfer fails.
+- **Per claim.** `storage_deposit(registration_only)` for the player (paid by the faucet) when not registered, then `ft_transfer`.
+- **Key.** `FAUCET_PRIVATE_KEY` (or `FAUCET_PRIVATE_KEY_FILE`) controls only the faucet account's own balance. It is separate from the read API, which holds no key.
+- **Environment:** `FAUCET_ACCOUNT_ID`, `FAUCET_TOKENS` (JSON list of `{symbol, representation, amount}`, amounts in base units, 18 decimals), `READ_SESSION_SECRET` and `READ_SESSION_RECIPIENT` (same values as the read API), optional `FAUCET_PORT` (8792), `FAUCET_HOST`, `FAUCET_LEDGER_PATH`, `FAUCET_LIVE`. The web app reaches it through `FAUCET_API_URL` (server side only).
+

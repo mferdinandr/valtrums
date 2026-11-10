@@ -148,3 +148,27 @@ A local fixture of the 1Click API with a fake solver SHALL provide the testnet f
 #### Scenario: Fixture labelling
 - **WHEN** a quote, status, preview, action status or terminal result concerns the fixture
 - **THEN** it carries the fixture label and is never presented as a verified Intents integration
+
+### Requirement: Testnet token faucet
+A testnet faucet SHALL give a verified account small amounts of already backed NEP-141 representation tokens from a dedicated faucet account, and SHALL NOT mint any representation. It SHALL authenticate the requesting account with a read session, limit each account and token to one claim per cooldown and bound the total sent per hour, and SHALL send nothing unless it was started live. Its key SHALL control only the faucet's own balance and never a player's funds.
+
+#### Scenario: First claim
+- **WHEN** an authenticated account without storage on a representation token claims it
+- **THEN** the faucet pays that account's minimum storage registration and transfers the configured amount, and records the claim
+
+#### Scenario: Claim again too soon
+- **WHEN** the same account claims the same token inside the cooldown
+- **THEN** the faucet sends nothing and reports how long remains
+
+#### Scenario: Empty faucet
+- **WHEN** the faucet account holds less than the configured amount
+- **THEN** the faucet sends nothing and reports that the token is unavailable, never a partial amount
+
+#### Scenario: Dry run
+- **WHEN** the faucet is not live
+- **THEN** it reports what it would send, records nothing and sends nothing
+
+#### Scenario: Unauthenticated or forged request
+- **WHEN** a request has no valid read session for the account
+- **THEN** it is rejected and the claim account is never taken from the request body
+
