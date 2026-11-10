@@ -1,5 +1,10 @@
 # Application integration master plan
 
+**Post-merge reading:** [Main reconciliation](main-reconciliation.md) supersedes
+historical absence/OPEN claims below. Main now includes MCP/action services,
+archive/indexer wiring and decided DAO governance; reuse these before applying
+snapshot tasks. The source inventory remains attributed to its original revision.
+
 Status: coordination/research plan, not an executable OpenSpec change. The former
 `arena-frontend-agent-integration` umbrella has been split before implementation.
 Do not apply or archive this plan as completed software. Canonical implementation

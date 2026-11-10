@@ -17,7 +17,7 @@ The selected [NEAR Hackathon tracks](https://nearhackathon.com/#tracks) are:
 
 All target demonstrations are planned. Track selection does not assert award eligibility or completed functionality. Demonstrate AI Swarms with at least two independently user-funded player agents interacting with the shared arena through MCP under their own budgets and permissions. Strategy can differ; infrastructure workers are not counted as player agents.
 
-Technical workstreams (chain abstraction, scoring/settlement, player AI, and intent terminal/MCP) are implementation groupings supporting these tracks. Social Money does not resolve the OPEN DAO membership, voting or execution rules.
+Technical workstreams (chain abstraction, scoring/settlement, player AI, and intent terminal/MCP) are implementation groupings supporting these tracks. The DAO rules are decided separately (D22, [DAO governance](dao-governance.md)).
 
 ## Actors and authority
 
@@ -29,7 +29,7 @@ Technical workstreams (chain abstraction, scoring/settlement, player AI, and int
 | Player agent | Acts for one user using explicitly delegated funds, methods, destinations, time and spending limits |
 | Infrastructure workers | Audit, collect observations, schedule rounds, index events and relay authorized payouts; cannot spend a player's wallet or delegated player budget |
 | Asset custody / representation contracts | Verify receipts, mint only backed amounts, reserve and consume backing once |
-| DAO | Determines burn or return of winning principal; its governance mechanism remains OPEN |
+| DAO | The final winning community's participants vote, weighted by principal, to burn (to a verified sink) or return winning principal; see [DAO governance](dao-governance.md) |
 | Operator | Maintains services, gas and observability under documented privileges; cannot silently change a locked battle's rules |
 
 Permissionless creation does not mean permissionless oracle submissions or unrestricted foreign-chain signing. Those are authenticated infrastructure responsibilities with the trust assumptions in [security-review.md](security-review.md).
@@ -84,8 +84,8 @@ Approval requires GoPlus checks that reject critical risks, plus an independent 
 
 | ID | Question / gate | Consequence until decided |
 | --- | --- | --- |
-| OQ-DAO | DAO membership, voting weight, quorum, decision options, deadlines, execution and fallback | No invented voting rule or timeout; winning principal remains escrowed; any demo decision must be labeled a fixture |
-| OQ-AUDIT | Behavior after a live token-policy change and minimum executable liquidity depth. Decided 2026-11-07 (audit policy v1): tax at most 5% each, admin privileges only with renounced and unrecoverable ownership, evidence lifetime 10 minutes and configurable; field mapping is defined in [GoPlus audit policy](goplus-audit.md) | No invented live-change refund or recovery rule; unresolved required checks remain Pending |
+| OQ-DAO | Decided 2026-11-08 (D22, [DAO governance](dao-governance.md)): winners vote, weighted by principal; pro-rata burn/return split of votes cast applied to the whole escrow; no quorum or delegation; window opens at the final winner, length protocol-adjustable and snapshotted; no votes means it stays escrowed; contract tally, anyone executes; burn = verified sink transfer. Open: default window value, per-token sink address | Until implemented, winning principal remains escrowed; any demo decision must be labeled a fixture |
+| OQ-AUDIT | Behavior after a live token-policy change and minimum executable liquidity depth. Decided 2026-11-07 (audit policy v1): tax at most 5% each, admin privileges only with renounced and unrecoverable ownership, evidence lifetime 10 minutes and configurable; field mapping is defined in [GoPlus audit policy](goplus-audit.md). Minimum executable liquidity depth decided 2026-11-09 (D32): the headline policy is kept for the hackathon and the limit is documented | No invented live-change refund or recovery rule; unresolved required checks remain Pending |
 | OQ-DATA | Providers for price, circulating supply, 30-second volume, sampling cadence, boundary tolerance and anti-manipulation checks. LP valuation is decided as an on-chain headline quote-side balance on the mainnet reference token (see the [decision log](findings-and-decisions.md)); scoring data for mock tokens is expected to use the reference token too and is not yet specified | Freeze a reproducible policy before locking; missing data cannot determine a winner |
 | OQ-CUSTODY | Receipt verifier, custody contracts, confirmations/finality, reorg recovery, payout gas and tax handling, burn proof | No trusted bridge or Robinhood support may be assumed from signing compatibility alone |
 | OQ-LIFECYCLE | Gathering deadline, cancellation/refunds before lock, outage recovery and emergency authority | Do not auto-refund a live tie or release a vault on elapsed time |

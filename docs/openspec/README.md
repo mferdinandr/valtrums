@@ -10,7 +10,7 @@ These ten changes (arena-scoring is archived) supersede `redesign-permissionless
 | 4 | [Scoring and overtime](changes/archive/2026-11-07-arena-scoring/proposal.md) (archived; requirements in [specs/arena-scoring](specs/arena-scoring/spec.md)) | Coordinate frozen policy and round interface with lifecycle |
 | 5 | [Settlement and adjustable fees](changes/arena-settlement/proposal.md) | Requires lifecycle snapshot, scoring result and backing entitlement interfaces |
 | 6 | [Reservation-bound signing and payout](changes/arena-chain-signatures/proposal.md) | Requires backing reservations and settlement entitlements |
-| 7 | [DAO escrow and disposition](changes/arena-dao-escrow/proposal.md) | Requires lifecycle escrow and backing reservations; governance remains OPEN |
+| 7 | [DAO escrow and disposition](changes/arena-dao-escrow/proposal.md) | Requires lifecycle escrow and backing reservations; governance decided (D22, [design](../dao-governance.md)) |
 | 8 | [Bounded player agents](changes/arena-player-agents/proposal.md) | Coordinate player identity and deposit interface with lifecycle and backing |
 | 9 | [MCP and terminal](changes/arena-mcp-terminal/proposal.md) | Requires player authorization and stable read/preview interfaces |
 | 10 | [Testnet integrations and observability](changes/arena-testnet-integrations/proposal.md) | End-to-end acceptance depends on all implementation changes; research may run in parallel |
@@ -44,11 +44,11 @@ wait for their verified prerequisites. No application behavior changes in this s
 ## Coordination and integration
 
 - Backing, lifecycle interfaces, audit/provider research and scoring design can proceed in parallel. Merge dependent work only after prerequisite interfaces are reviewed; use draft or stacked PRs as needed.
-- Lifecycle owns battle state and freeze; backing owns custody and reservations; audit supplies approval evidence; scoring supplies results; settlement owns snapshotted fee arithmetic and entitlements; signing owns payout identity and reconciliation. DAO governance remains OPEN. Agent authorization, MCP and testnet acceptance are separate boundaries.
+- Lifecycle owns battle state and freeze; backing owns custody and reservations; audit supplies approval evidence; scoring supplies results; settlement owns snapshotted fee arithmetic and entitlements; signing owns payout identity and reconciliation. DAO governance is decided (D22); its execution is not implemented. Agent authorization, MCP and testnet acceptance are separate boundaries.
 - Shared interfaces: token identity binds chain/token/representation/custody; lifecycle exposes immutable snapshots; audit binds token and policy; scoring binds interval and source; settlement hands durable asset-bound entitlements to payout. Coordinate changes across dependent PRs.
 - Original requirements and scenarios remain in their corresponding capability specs; cross-cutting acceptance is in integration tasks. The prior implementation needs independent verification.
 - Default fee is 10 bps of each losing vault and creator share is 5000 bps of fee. Protocol may adjust total fee within 0–1000 bps (a 10% ceiling) and creator share within 0–10000 bps for future battles; protocol-created battles pay the whole fee to protocol. Snapshot fee and recipient at creation.
-- Winning principal remains escrowed until DAO governance is designed; no owner-only decision or confirmation. Rewards are independent. Fixtures are not proof of live integration.
+- Winning principal remains escrowed until the winners' vote (D22) is finalized and executed; no owner-only decision or confirmation. Rewards are independent. Fixtures are not proof of live integration.
 
 Run from `docs/`:
 

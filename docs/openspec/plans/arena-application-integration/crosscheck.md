@@ -1,5 +1,9 @@
 # Source crosscheck and apply gates
 
+**Historical review:** read the [main reconciliation](main-reconciliation.md)
+before applying this verdict. The merged source contains additional existing
+implementations and DAO decisions absent from the original inspection snapshot.
+
 Reviewed 2026-11-10 against HEAD `4881fd76570a060659cafa7a4275e8740a5cdaf4`
 plus the current working tree on `feat/living-toy-world`. This is a source/proposal
 consistency review, not a security audit, deployment verification or live-funds

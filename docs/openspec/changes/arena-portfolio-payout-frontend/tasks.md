@@ -1,5 +1,7 @@
 ## 1. Account reads
 
+First read the [main reconciliation](../../plans/arena-application-integration/main-reconciliation.md). Reuse existing account-state/alert/gateway implementations and current DAO specs; verify remaining gaps before implementing snapshot tasks.
+
 - [ ] 1.1 Extend shared read schemas/adapters and gateway with account positions, settlement progress, entitlements, reservations and payout status using exported views/events only.
 - [ ] 1.2 Implement backend account/asset/status queries with bounded cursors, completeness/watermarks and explicit missing historical coverage.
 - [ ] 1.3 Build lifecycle portfolio presentation separating eligible, reserved, delivered, late-fund and principal-held amounts by original asset; preserve a separate legacy adapter.

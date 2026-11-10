@@ -4,7 +4,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 ## GoPlus evidence and field mapping
 
-- [ ] Verify the optional credential scheme (`GOPLUS_ACCESS_TOKEN`) against the live API. The endpoint works without a credential (rate limited); the client sends an `Authorization` header only when a token is set, and that scheme is an unverified assumption.
+- [x] Verify that the Token Security endpoint works without a credential and send an optional `GOPLUS_ACCESS_TOKEN` in the documented scheme. Verified 2026-11-08: 26 unauthenticated requests for chain `4663` returned HTTP 200 (25 with code 1, one rate-limited with code `4029`, held Pending). The client now sends `Authorization: Bearer <token>` as the GoPlus reference documents; that scheme was not exercised live with a real token.
 - [x] Retry a rate-limited response (HTTP 429 or provider rate-limit code) with bounded backoff and hold it Pending, never pass or reject.
 - [x] Bind evidence to chain, token, representation, custody domain, mapping version, reference pair and policy.
 - [x] Retain raw response, digest, provider/API version and query time for reproducible inspection.
@@ -17,7 +17,7 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 ## Reference-token audit
 
-- [x] Accept a reference mapping (`reference_chain_id` 4663, `reference_address`) only from a protocol-controlled registry in configuration; a self-declared, conflicting or unregistered mapping stays Pending.
+- [x] Accept a reference mapping (`reference_chain_id` 4663, `reference_address`) only from the protocol-controlled registry (originally agent configuration, now the arena's on-chain registry); a self-declared, conflicting or unregistered mapping stays Pending.
 - [x] Query GoPlus and read liquidity for the mainnet reference pair; bind both the testnet asset and the reference pair, and label the record, `policyHash` and `evidenceHash` as a reference-token audit that did not audit the testnet mock itself.
 - [x] Keep the direct rule for unmapped tokens: evidence for another chain or token cannot approve.
 - [x] Test registry validation, held mappings, mapping change invalidation, wrong-subject GoPlus and liquidity evidence, and evidence-hash commitment to the subject.
@@ -34,11 +34,11 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 - [x] Read pools on-chain for the reference token through a separate read-only mainnet RPC with shared retries, all reads pinned to one block; value v2 and v3 pools by quote-side balance only (`headline_quote_balance`), never the token side; observation time is the block timestamp. Fixture-only.
 - [x] Value quotes only in an explicitly configured stablecoin (decimals re-read on-chain) or the configured WETH priced from one configured v3 WETH/stablecoin pool via `slot0` with a configured stable-side floor; unset or mismatched config leaves the pool unpriced and Pending (`quote_asset_unpriced`, `price_pool_floor_unset`, `price_pool_floor_not_met`, `price_pool_invalid`). No code defaults.
 - [x] Label the valuation source `headline_quote_balance` in evidence, `evidenceHash`, `policyHash` and the user report as an approximation, not executable depth.
-- [x] Deduplicate eligible pools; tick-based executable depth is not computed and its policy stays OPEN (not invented).
+- [x] Deduplicate eligible pools; tick-based executable depth is not computed and its policy was decided 2026-11-09 (D32): keep the headline policy for the hackathon.
 - [x] Evaluate independent exact USD valuation strictly above 10000; hold missing or unreliable evidence Pending.
 - [x] Test 9999, 10000 and 10001 USD, absent LP evidence, duplicate pools and mismatched asset identity.
-- [ ] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity (OPEN).
-- [ ] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain; they come from DexScreener and are unverified by us.
+- [x] Decide the minimum executable-depth policy and eligible pool aggregation for concentrated liquidity. Decided 2026-11-09 (D32, issue #112): keep the headline quote-balance policy, no pool aggregation, no Uniswap v4 reading for the hackathon; the executable-depth limit is documented, not fixed.
+- [x] Verify the example WETH, USDG and price-pool addresses and the price pool's liquidity on-chain. Verified 2026-11-08 with two independent RPC providers at the same block (not a finalized block): WETH (18 decimals), USDG "Global Dollar" (6 decimals, an upgradeable EIP-1967 proxy), the v3 pool (token0 WETH, token1 USDG, fee 100, returned by its factory's `getPool`) with about USD 2.29M on the USDG side, above the USD 1,000,000 floor. See `docs/evidence/2026-11-08-arena-audit-verification.json`.
 
 ## User-facing report
 
@@ -48,12 +48,12 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 
 - [x] Schedule audit refresh in the agent pass (every pass, ahead of expiry, locked battles skipped, failures isolated) via a new `get_lifecycle_battle_count` view and `submit_lifecycle_audit`.
 - [x] Refuse lock on expired or changed evidence end to end: audit approvals carry an expiry set only by `submit_lifecycle_audit`, `lock_lifecycle_battle` refuses an expired, missing, changed-asset or policy-mismatched approval, and the agent lock step (`lifecycle-lock.ts`, `AUDIT_LOCK_ENABLED`) sends the lock after a fresh refresh. Fixture and sandbox verified only; recovery after a live token-policy change stays OPEN.
-- [ ] Integrate consistent field reasons with lifecycle logs and future clients (reports exist; no log or client wiring yet).
+- [x] Integrate consistent field reasons with lifecycle logs and clients. The lifecycle log line, the archived report and the MCP/terminal/HTTP read for the same decision carry the same reason codes and fields; the web UI rendering stays with the web issues.
   - [x] Persist report observations durably with validated identity, domain/battle/community association and same-evidence history semantics (`agent/src/audit/report-archive.ts`): same-evidence time-only retries are idempotent, changed decision/evidence is preserved, conflicting ids are rejected, and atomic writes use a cross-writer lock that is never stolen based on age. Corrupt/unsupported state fails explicitly; manual lock recovery and finite capacity are documented.
   - [x] Add an optional async archive sink to `createLifecycleAuditPass` with consistent bounded structured logs (evidence/policy ids, arena/battle/community, result, reason codes, expiry, reference-token label, archive outcome), backward compatible when disabled; a sink failure is surfaced and isolated and is retryable without a provider refresh.
   - [x] Expose a passive read-only report API and runnable service (`report-query.ts`, `report-server.ts`, `report-cli.ts`): evidence lookup, backend filters, bounded stable pagination, and safe errors. JSON, HTTP text and CLI text preserve provenance, observation/attribution and historical-only limitations; freshness remains distinct from historical result and current approval is not established. No write endpoint.
-  - [ ] Wire the report reasons into MCP/terminal and UI clients (deferred to #70/#76/#79).
-- [ ] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations.
+  - [x] Wire the report reasons into the lifecycle log and the MCP/terminal/HTTP read model (`reason-summary.ts`): one bounded `{code, field, known}` summary shared by the pass log (`reasons`, `reasonCodes`, `unknownReasonCodes`, `reasonsTruncated`) and `reasonSummary` on each observation view; an unknown code is flagged, never dropped; messages are not logged. Approval logic is unchanged. Fixture tests only (#111). Web UI rendering is deferred to #70/#76/#79.
+- [x] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations. Recorded 2026-11-08 by running the agent's own GoPlus client, LP fetcher and decision code for the 13 candidate tokens (see `docs/goplus-audit.md`, "Live coverage"): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, ten stay Pending.
 - [x] Label fixtures as adapter verification and retain Pending for unsupported or unmapped coverage; mainnet `4663` evidence is accepted only through the registry reference mapping.
 - [x] Test pre-lock expiry and changed mapping, idempotent refresh and post-lock snapshot protection.
 

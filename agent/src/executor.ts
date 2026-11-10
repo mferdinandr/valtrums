@@ -9,7 +9,10 @@ export interface StepExecutor {
   execute(step: SettlementStep, battle: BattleView): Promise<bigint>;
 }
 
-/** Mock-execution mode: no foreign chain involved, the step is "realized" as planned. */
+/**
+ * Mock-execution mode: no foreign chain involved, the step is "realized" as planned.
+ * FIXTURE: a demonstration adapter, not evidence of any source-chain transfer.
+ */
 export class MockStepExecutor implements StepExecutor {
   constructor(
     private readonly realize: (step: SettlementStep, battle: BattleView) => bigint = (s) =>

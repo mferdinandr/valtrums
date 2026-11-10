@@ -12,6 +12,9 @@ pub struct Ledger {
     pub payouts: u128,
     pub disposal: u128,
     pub unallocated: u128,
+    /// Winning principal held for DAO governance (D22). Units leave it only
+    /// through the arena's DAO releases (`dao`): to entitlements or disposal.
+    pub escrow: u128,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +32,7 @@ pub enum Bucket {
     Payouts,
     Disposal,
     Unallocated,
+    Escrow,
 }
 
 impl Ledger {
@@ -38,6 +42,7 @@ impl Ledger {
             .and_then(|v| v.checked_add(self.payouts))
             .and_then(|v| v.checked_add(self.disposal))
             .and_then(|v| v.checked_add(self.unallocated))
+            .and_then(|v| v.checked_add(self.escrow))
             == Some(self.custody)
     }
 
@@ -48,6 +53,7 @@ impl Ledger {
             Bucket::Payouts => &mut self.payouts,
             Bucket::Disposal => &mut self.disposal,
             Bucket::Unallocated => &mut self.unallocated,
+            Bucket::Escrow => &mut self.escrow,
         }
     }
 
@@ -201,5 +207,34 @@ mod tests {
             .expect("disposal confirmation");
         assert_eq!((ledger.custody, ledger.disposal), (775, 0));
         assert!(ledger.is_balanced());
+    }
+
+    #[test]
+    fn escrow_is_an_exclusive_liability_that_cannot_be_debited() {
+        let mut ledger = Ledger::default();
+        ledger.add_receipt(100).expect("receipt");
+        ledger
+            .move_liability(Bucket::Unallocated, Bucket::Minted, 100)
+            .expect("mint");
+        ledger
+            .move_liability(Bucket::Minted, Bucket::Escrow, 70)
+            .expect("escrow");
+        assert!(ledger.is_balanced());
+        // The same backing cannot also be reserved for a payout or disposal.
+        assert_eq!(
+            ledger.move_liability(Bucket::Minted, Bucket::Payouts, 31),
+            Err(LedgerError::InsufficientLiability)
+        );
+        // Escrow is never consumed by a debit confirmation.
+        let before = ledger.clone();
+        assert_eq!(
+            ledger.confirm_debit(Bucket::Escrow, 1),
+            Err(LedgerError::InvariantViolation)
+        );
+        assert_eq!(ledger, before);
+        assert_eq!(
+            (ledger.custody, ledger.minted, ledger.escrow),
+            (100, 30, 70)
+        );
     }
 }

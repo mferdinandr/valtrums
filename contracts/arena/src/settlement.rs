@@ -64,7 +64,7 @@ fn narrow(value: U256) -> Result<u128, SettlementError> {
     }
 }
 
-fn part(out: &mut Vec<u8>, bytes: &[u8]) {
+pub(crate) fn part(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     out.extend_from_slice(bytes);
 }

@@ -899,6 +899,8 @@ impl crate::Arena {
             .ok_or(LifecycleError::UnknownBattle)?;
         let hold = battle.hold_principal(winner)?.clone();
         self.lifecycle_battles.insert(id, battle);
+        self.lifecycle_winner_at
+            .insert(id, near_sdk::env::block_timestamp());
         Ok(hold)
     }
 

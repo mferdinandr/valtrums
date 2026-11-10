@@ -291,6 +291,12 @@ trait BackingPayouts {
         amount: U128,
         destination: [u8; 20],
     ) -> ReservedPayout;
+    fn reserve_dao_burn(
+        &mut self,
+        holder: AccountId,
+        request_id: Hash,
+        destination: [u8; 20],
+    ) -> ReservedPayout;
 }
 
 #[near(contract_state)]
@@ -478,6 +484,56 @@ impl PayoutContract {
             )
     }
 
+    /// Starts the transfer of a decided DAO burn to the backing's frozen sink
+    /// (decision D22). Permissionless: the operator attaches exactly one yocto
+    /// (the contract's reserve pays the record) and anyone else attaches the
+    /// request storage deposit. Nothing here chooses the amount or destination:
+    /// the backing hands out only an existing burn reservation held by its arena
+    /// (`holder`) under `request_id`, and only when `destination` is its sink.
+    /// The burn then follows the signing and confirmation path of a payout; it
+    /// counts as burned only after a finalized debit to the sink is confirmed,
+    /// and it is never released back (a failed attempt is retried instead).
+    #[payable]
+    pub fn request_dao_burn(
+        &mut self,
+        backing: AccountId,
+        holder: AccountId,
+        request_id: Hash,
+        destination: [u8; 20],
+    ) -> Promise {
+        require!(
+            self.backings.get(&backing).is_some(),
+            "Backing not registered"
+        );
+        let caller = env::predecessor_account_id();
+        if caller == self.operator {
+            near_sdk::assert_one_yocto();
+        } else {
+            require!(
+                env::attached_deposit() >= REQUEST_DEPOSIT,
+                "Insufficient storage deposit"
+            );
+        }
+        require!(
+            destination != [0; 20] && request_id != [0; 32],
+            "Invalid burn request"
+        );
+        let sponsored = caller == self.operator;
+        ext_backing::ext(backing.clone())
+            .with_static_gas(BACKING_GAS)
+            .reserve_dao_burn(holder.clone(), request_id, destination)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .with_attached_deposit(if sponsored {
+                        NearToken::from_yoctonear(0)
+                    } else {
+                        env::attached_deposit()
+                    })
+                    .on_dao_burn_reserved(holder, backing, request_id, destination, caller),
+            )
+    }
+
     /// Callback of `request_late_refund`. A deposit attached by the beneficiary
     /// is refunded to the caller on failure; the operator path attaches none.
     #[private]
@@ -499,6 +555,32 @@ impl PayoutContract {
             destination,
             reserved,
             sponsored,
+            payer,
+        )
+    }
+
+    /// Callback of `request_dao_burn`. The holder is the arena (the DAO burn's
+    /// reservation holder); a deposit is refunded to the caller who paid it.
+    #[private]
+    #[payable]
+    pub fn on_dao_burn_reserved(
+        &mut self,
+        holder: AccountId,
+        backing: AccountId,
+        request_id: Hash,
+        destination: [u8; 20],
+        payer: AccountId,
+        #[callback_result] reserved: Result<ReservedPayout, PromiseError>,
+    ) -> bool {
+        let sponsored = payer == self.operator;
+        self.finish_reservation(
+            holder,
+            backing,
+            request_id,
+            destination,
+            reserved,
+            sponsored,
+            payer,
         )
     }
 
@@ -514,9 +596,20 @@ impl PayoutContract {
         destination: [u8; 20],
         #[callback_result] reserved: Result<ReservedPayout, PromiseError>,
     ) -> bool {
-        self.finish_reservation(holder, backing, request_id, destination, reserved, false)
+        let payer = holder.clone();
+        self.finish_reservation(
+            holder,
+            backing,
+            request_id,
+            destination,
+            reserved,
+            false,
+            payer,
+        )
     }
 
+    /// `payer` attached the deposit and receives every refund of it.
+    #[allow(clippy::too_many_arguments)]
     fn finish_reservation(
         &mut self,
         holder: AccountId,
@@ -525,11 +618,12 @@ impl PayoutContract {
         destination: [u8; 20],
         reserved: Result<ReservedPayout, PromiseError>,
         sponsored: bool,
+        payer: AccountId,
     ) -> bool {
         let attached = env::attached_deposit();
         let refund = |amount: NearToken| {
             if !amount.is_zero() {
-                Promise::new(holder.clone()).transfer(amount).detach();
+                Promise::new(payer.clone()).transfer(amount).detach();
             }
         };
         let Ok(reserved) = reserved else {

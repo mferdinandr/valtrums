@@ -145,6 +145,29 @@ async fn world(communities: usize) -> anyhow::Result<World> {
     )
     .await?
     .into_result()?;
+    // The protocol (here the owner) sets the DAO vote window, which battles
+    // created afterwards snapshot. 29 seconds is below the 30-second bound.
+    assert!(owner_call(
+        "set_lifecycle_dao_window",
+        json!({"window_secs": "29"}),
+        yocto(),
+    )
+    .await?
+    .is_failure());
+    owner_call(
+        "set_lifecycle_dao_window",
+        json!({"window_secs": "30"}),
+        yocto(),
+    )
+    .await?
+    .into_result()?;
+    owner_call(
+        "set_lifecycle_dao_window",
+        json!({"window_secs": "60"}),
+        yocto(),
+    )
+    .await?
+    .into_result()?;
     owner_call(
         "set_lifecycle_observation_policy",
         json!({"policy": {"version": "1", "policy_hash": terms_digest()}}),
@@ -695,7 +718,275 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
     let done = w.view(id).await?;
     assert_eq!(done["principal_community"], 1);
     assert_eq!(done["principal_amount"], "650");
+
+    // DAO escrow: anyone moves the winning principal into the winning backing's
+    // exclusive escrow bucket. No governance decision exists, so it stays there.
+    let winner_rep = w.reps[1].clone();
+    let ledger_before: Value = winner_rep.view("get_ledger").await?.json()?;
+    let arena_before: Value = winner_rep
+        .view("ft_balance_of")
+        .args_json(json!({"account_id": w.arena.id()}))
+        .await?
+        .json()?;
+    let escrow = |caller: &Account| {
+        caller
+            .call(w.arena.id(), "reserve_lifecycle_escrow")
+            .args_json(json!({"battle_id": id.to_string()}))
+            .deposit(NearToken::from_millinear(10))
+            .max_gas()
+            .transact()
+    };
+    assert!(escrow(&player).await?.into_result()?.json::<bool>()?);
+    let ledger_after: Value = winner_rep.view("get_ledger").await?.json()?;
+    let units = |v: &Value, key: &str| v[key].as_str().unwrap_or("x").parse::<u128>();
+    assert_eq!(ledger_after["escrow"], "650");
+    assert_eq!(
+        units(&ledger_before, "minted")? - units(&ledger_after, "minted")?,
+        650
+    );
+    assert_eq!(ledger_after["custody"], ledger_before["custody"]);
+    assert_eq!(ledger_after["accounting_balanced"], true);
+    let arena_after: Value = winner_rep
+        .view("ft_balance_of")
+        .args_json(json!({"account_id": w.arena.id()}))
+        .await?
+        .json()?;
+    assert_eq!(
+        arena_before.as_str().unwrap_or("x").parse::<u128>()?
+            - arena_after.as_str().unwrap_or("x").parse::<u128>()?,
+        650
+    );
+    let view: Value = w
+        .arena
+        .view("get_lifecycle_escrow")
+        .args_json(json!({"battle_id": id.to_string()}))
+        .await?
+        .json()?;
+    assert_eq!(view["reserved"], true);
+    assert_eq!(view["amount"], "650");
+    assert_eq!(view["representation"], json!(winner_rep.id()));
+    let recorded: Value = winner_rep
+        .view("get_principal_escrow")
+        .args_json(json!({"escrow_id": hex_bytes(view["escrow_id"].as_str().unwrap_or(""))}))
+        .await?
+        .json()?;
+    assert_eq!(
+        recorded,
+        json!({"battle_id": id.to_string(), "community": 1, "amount": "650"})
+    );
+    // A repeat changes nothing, and no one but the arena can escrow directly.
+    assert!(escrow(&w.creator).await?.into_result()?.json::<bool>()?);
+    let repeat: Value = winner_rep.view("get_ledger").await?.json()?;
+    assert_eq!(repeat["escrow"], "650");
+    assert_eq!(repeat["minted"], ledger_after["minted"]);
+    for caller in [&w.owner, &w.agent, &w.oracle, &player] {
+        assert!(
+            !ok(async {
+                Ok(caller
+                    .call(winner_rep.id(), "reserve_principal_escrow")
+                    .args_json(
+                        json!({"escrow_id": vec![1u8; 32], "battle_id": id.to_string(),
+                                      "community": 1, "amount": "1"}),
+                    )
+                    .deposit(NearToken::from_millinear(10))
+                    .transact()
+                    .await?)
+            })
+            .await
+        );
+    }
+    assert_eq!(
+        winner_rep.view("get_ledger").await?.json::<Value>()?["escrow"],
+        "650"
+    );
+
+    // DAO vote (D22): the winning community's participants vote with their
+    // position as weight. The player (600) votes burn, the creator (50) return.
+    let disposition = || async {
+        let value: Value = w
+            .arena
+            .view("get_lifecycle_disposition")
+            .args_json(json!({"battle_id": id.to_string()}))
+            .await?
+            .json()?;
+        anyhow::Ok(value)
+    };
+    assert_eq!(disposition().await?["status"], "voting");
+    let vote = |voter: &Account, burn: bool| {
+        voter
+            .call(w.arena.id(), "vote_lifecycle_disposition")
+            .args_json(json!({"battle_id": id.to_string(), "burn": burn}))
+            .deposit(NearToken::from_millinear(10))
+            .max_gas()
+            .transact()
+    };
+    // A losing-side-only account, the owner and the oracle hold no winning weight.
+    for outsider in [&w.owner, &w.oracle, &w.agent] {
+        assert!(!ok(async { Ok(vote(outsider, true).await?) }).await);
+    }
+    vote(&player, true).await?.into_result()?;
+    vote(&creator, false).await?.into_result()?;
+    assert!(
+        !ok(async { Ok(vote(&player, false).await?) }).await,
+        "votes once"
+    );
+    let execute = |caller: &Account| {
+        caller
+            .call(w.arena.id(), "execute_lifecycle_disposition")
+            .args_json(json!({"battle_id": id.to_string(), "max_releases": 10}))
+            .deposit(NearToken::from_millinear(30))
+            .max_gas()
+            .transact()
+    };
+    // Nothing executes while the vote is open.
+    assert!(!ok(async { Ok(execute(&w.agent).await?) }).await);
+    for _ in 0..20 {
+        if disposition().await?["status"] == "decided" {
+            break;
+        }
+        w.worker.fast_forward(20).await?;
+    }
+    let decided = disposition().await?;
+    assert_eq!(decided["status"], "decided");
+    // B = 600, R = 50: burn floor(p * 600 / 650), rounded towards return.
+    assert_eq!(
+        (
+            decided["burn_total"].clone(),
+            decided["return_total"].clone()
+        ),
+        (json!("599"), json!("51"))
+    );
+    // The sink is set once by the backing owner; the burn needs it.
+    let sink = vec![0xdeu8; 20];
+    w.owner
+        .call(winner_rep.id(), "set_dao_sink")
+        .args_json(json!({"sink": sink}))
+        .deposit(yocto())
+        .transact()
+        .await?
+        .into_result()?;
+    // Anyone executes; a repeat after completion changes nothing.
+    assert_eq!(execute(&w.agent).await?.into_result()?.json::<u32>()?, 3);
+    assert_eq!(execute(&w.creator).await?.into_result()?.json::<u32>()?, 3);
+    let releases: Value = w
+        .arena
+        .view("get_lifecycle_disposition_releases")
+        .args_json(json!({"battle_id": id.to_string()}))
+        .await?
+        .json()?;
+    let summary: Vec<(String, Value, String, bool)> = releases
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|r| {
+            (
+                r["kind"].as_str().unwrap_or("").to_string(),
+                r["beneficiary"].clone(),
+                r["amount"].as_str().unwrap_or("").to_string(),
+                r["recorded"].as_bool().unwrap_or(false),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            // Participants are indexed at their first credited deposit.
+            ("return".into(), json!(player.id()), "47".into(), true),
+            ("return".into(), json!(creator.id()), "4".into(), true),
+            ("burn".into(), Value::Null, "599".into(), true),
+        ]
+    );
+    let entitlement = |who: &Account| {
+        let rep = winner_rep.clone();
+        let account = who.id().clone();
+        async move {
+            let value: Value = rep
+                .view("entitlement_of")
+                .args_json(json!({"account": account}))
+                .await?
+                .json()?;
+            anyhow::Ok(value)
+        }
+    };
+    assert_eq!(entitlement(&player).await?, "47");
+    assert_eq!(entitlement(&creator).await?, "4");
+    let escrow_view = |rep: Contract| {
+        let escrow_id = hex_bytes(view["escrow_id"].as_str().unwrap_or(""));
+        async move {
+            let value: Value = rep
+                .view("get_escrow_disposition")
+                .args_json(json!({"escrow_id": escrow_id}))
+                .await?
+                .json()?;
+            anyhow::Ok(value)
+        }
+    };
+    let pending = escrow_view(winner_rep.clone()).await?;
+    assert_eq!(
+        (
+            pending["returned"].clone(),
+            pending["burn_pending"].clone(),
+            pending["burn_confirmed"].clone(),
+            pending["still_escrowed"].clone()
+        ),
+        (json!("51"), json!("599"), json!("0"), json!("0"))
+    );
+    let ledger: Value = winner_rep.view("get_ledger").await?.json()?;
+    assert_eq!(
+        (ledger["escrow"].clone(), ledger["disposal"].clone()),
+        (json!("0"), json!("599"))
+    );
+    assert_eq!(ledger["accounting_balanced"], true);
+    // The burn is confirmed only by a finalized debit to the sink, through the
+    // payout authority; a debit to any other address is rejected.
+    let burn_id = hex_bytes(releases[2]["id"].as_str().unwrap_or(""));
+    let debit = |destination: Vec<u8>| {
+        json!({"beneficiary": w.arena.id(), "request_id": burn_id.clone(), "evidence": {
+            "chain_id": CHAIN, "token_address": token(1), "custody_domain": DOMAIN,
+            "destination": destination, "source_amount": "599", "recipient_received": "599",
+            "transaction_hash": vec![0x55u8; 32], "log_index": 0, "block_hash": vec![0x66u8; 32]}})
+    };
+    let confirm = |args: Value| {
+        w.payout
+            .call(winner_rep.id(), "confirm_payout")
+            .args_json(args)
+            .max_gas()
+            .transact()
+    };
+    assert!(!ok(async { Ok(confirm(debit(vec![3u8; 20])).await?) }).await);
+    assert!(
+        !ok(async {
+            Ok(player
+                .call(winner_rep.id(), "confirm_payout")
+                .args_json(debit(sink.clone()))
+                .max_gas()
+                .transact()
+                .await?)
+        })
+        .await
+    );
+    assert!(confirm(debit(sink.clone()))
+        .await?
+        .into_result()?
+        .json::<bool>()?);
+    let burned = escrow_view(winner_rep.clone()).await?;
+    assert_eq!(
+        (
+            burned["burn_pending"].clone(),
+            burned["burn_confirmed"].clone()
+        ),
+        (json!("0"), json!("599"))
+    );
+    let ledger: Value = winner_rep.view("get_ledger").await?.json()?;
+    assert_eq!(ledger["disposal"], "0");
+    assert_eq!(ledger["accounting_balanced"], true);
     Ok(())
+}
+
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len() / 2)
+        .filter_map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok())
+        .collect()
 }
 
 #[tokio::test]

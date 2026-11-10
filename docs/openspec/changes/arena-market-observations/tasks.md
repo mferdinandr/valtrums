@@ -1,5 +1,7 @@
 ## 1. Collector and journal
 
+First read the [main reconciliation](../../plans/arena-application-integration/main-reconciliation.md) and current provider/evidence documents; extend existing sources instead of repeating already delivered qualification work.
+
 - [ ] 1.1 Define namespace/round/mapping/policy-bound observation schema, exact inputs, nullable source times and evidence identities using shared read DTOs.
 - [ ] 1.2 Implement explicitly configured chain/reference aliases with chain-aware address normalization; reject ambiguous/default mappings.
 - [ ] 1.3 Implement durable append-before-publication journal, atomic manifest, deduplication, replay and explicit corruption/capacity handling without adding a database migration.

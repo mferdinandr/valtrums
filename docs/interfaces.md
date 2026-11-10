@@ -79,7 +79,7 @@ Replay must reproduce the same projection without minting, allocating or paying 
 
 ## Planned player-agent and MCP boundary
 
-A player policy binds user, contracts/methods, chain/asset/community filters, per-action/cumulative token budgets, gas, expiry, destinations and revocation. Unused funds remain attributable/recoverable. Model output cannot widen a grant. Enforce token limits and expiry outside the browser; legacy session keys only provide narrower method/receiver/gas restrictions.
+A player policy binds user, contracts/methods, chain/asset/community filters, per-action/cumulative token budgets, gas, expiry, destinations and revocation. Unused funds remain attributable/recoverable: the user or delegate may cancel an undispatched reservation, undispatched reservations expire (default 1 hour, configurable), a dispatched obligation is never released by timeout or revocation alone, a delegate differs from the user and revocation is permanent per grant id. Model output cannot widen a grant. Enforce token limits and expiry outside the browser; legacy session keys only provide narrower method/receiver/gas restrictions.
 
 | Planned MCP tool | Permission | Result |
 | --- | --- | --- |
@@ -90,6 +90,6 @@ A player policy binds user, contracts/methods, chain/asset/community filters, pe
 | get_action_status(action_id) | Authorized read | Pending/confirmed/reconciliation status and transaction evidence |
 | revoke_delegation(policy_id) | User | Revocation receipt and in-flight obligations |
 
-MCP endpoint, transport and deployment remain planned; there is no implemented MCP command here. Bind previews to a canonical hash and recheck balances, audit, round openness and limits before signing. Changed/expired previews require fresh authorization unless an existing grant explicitly covers the new action. Treat provider/metadata prompt text as untrusted. Reject infrastructure credentials at player-spending APIs.
+The read tools are implemented in `agent/src/mcp/` (MCP over stdio: `pnpm -C agent read:mcp`; HTTP read API for the web terminal: `pnpm -C agent read:serve`, proxied by `web/src/app/api/arena/*`). Account-scoped reads require a read session opened with a NEP-413 signature from a full-access key; the session selects whose data is read and grants no signing or spending authority. Preview, submit, action status and revocation tools remain planned. Bind previews to a canonical hash and recheck balances, audit, round openness and limits before signing. Changed/expired previews require fresh authorization unless an existing grant explicitly covers the new action. Treat provider/metadata prompt text as untrusted. Reject infrastructure credentials at player-spending APIs.
 
 Existing terminal funding code does not prove Intents supports Robinhood testnet; unsupported routes must fail explicitly. See [ecosystem.md](ecosystem.md).

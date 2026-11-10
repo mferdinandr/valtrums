@@ -1,5 +1,8 @@
 # Frontend, contracts and agent integration map
 
+This is the pre-merge inventory. [Main reconciliation](main-reconciliation.md)
+identifies newer archive/MCP/indexer/governance implementations to reuse.
+
 ## Evidence scope
 
 Inspected 2026-11-10 on `feat/living-toy-world`, HEAD

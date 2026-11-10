@@ -1,7 +1,9 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import {
-  SUPPORTED_EVENTS,
+  BACKING_STANDARD,
+  COMPANION_STANDARDS,
+  PAYOUT_STANDARD,
   type AcceptedEvent,
   type DiagnosticRecord,
   type EventProvenance,
@@ -110,10 +112,68 @@ function optIntString(obj: Record<string, JsonValue>, key: string): string | nul
   return reqIntString(obj, key);
 }
 
-type AcceptedEventPayload =
-  | { name: "lifecycle_battle_created"; battleId: string; creator: string }
-  | { name: "audit_updated"; battleId: string; community: string; result: "pass" | "reject" | "pending"; evidenceHash: string; expiresAtMs: string | null }
-  | { name: "lifecycle_deposit"; battleId: string; community: string; accountId: string; amount: string };
+type AcceptedEventPayload = DistributiveOmit<AcceptedEvent, "dedupKey" | "provenance" | "payloadDigest">;
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
+
+function reqBool(obj: Record<string, JsonValue>, key: string): boolean {
+  const v = obj[key];
+  if (typeof v !== "boolean") throw new PayloadError("malformed_payload", `${key} must be a boolean`);
+  return v;
+}
+
+function optString(obj: Record<string, JsonValue>, key: string, max = STRING_MAX): string | null {
+  const v = obj[key];
+  if (v === null || v === undefined) return null;
+  return reqString(obj, key, max);
+}
+
+/** A 32-byte id emitted either as a JSON byte array (`[u8; 32]`) or as a hex string; returned as lowercase hex. */
+function reqBytes32Hex(obj: Record<string, JsonValue>, key: string): string {
+  const v = obj[key];
+  if (Array.isArray(v)) {
+    if (v.length !== 32 || !v.every((b) => typeof b === "bigint" && b >= 0n && b <= 255n)) {
+      throw new PayloadError("malformed_payload", `${key} must be 32 bytes`);
+    }
+    return v.map((b) => (b as bigint).toString(16).padStart(2, "0")).join("");
+  }
+  const h = reqString(obj, key, 66);
+  const body = h.startsWith("0x") ? h.slice(2) : h;
+  if (!/^[0-9a-fA-F]{64}$/.test(body)) throw new PayloadError("malformed_payload", `${key} must be 32 bytes`);
+  return body.toLowerCase();
+}
+
+/** Wire event name per standard slot -> accepted event name. Anything absent is unsupported. */
+const ARENA_EVENTS: Record<string, SupportedEventName> = {
+  lifecycle_battle_created: "lifecycle_battle_created",
+  audit_updated: "audit_updated",
+  lifecycle_deposit: "lifecycle_deposit",
+  backing_updated: "backing_updated",
+  lifecycle_representation_trust_changed: "lifecycle_representation_trust_changed",
+};
+const BACKING_EVENTS: Record<string, SupportedEventName> = {
+  late_deposit_recorded: "late_deposit_recorded",
+  asset_suspended: "asset_suspended",
+  asset_resumed: "asset_resumed",
+  custody_attested: "custody_attested",
+  reconciliation_unresolved: "reconciliation_unresolved",
+  operator_changed: "operator_changed",
+  resume_policy_changed: "resume_policy_changed",
+};
+const PAYOUT_EVENTS: Record<string, SupportedEventName> = {
+  signature_requested: "payout_signature_requested",
+  signature_received: "payout_signature_received",
+  signature_failed: "payout_signature_failed",
+  payout_state_changed: "payout_state_changed",
+};
+
+function modelledEvent(standard: string, event: string, config: IndexerConfig): SupportedEventName | null {
+  const own = (table: Record<string, SupportedEventName>): SupportedEventName | null =>
+    Object.prototype.hasOwnProperty.call(table, event) ? table[event]! : null;
+  if (standard === config.standard) return own(ARENA_EVENTS);
+  if (standard === BACKING_STANDARD) return own(BACKING_EVENTS);
+  if (standard === PAYOUT_STANDARD) return own(PAYOUT_EVENTS);
+  return null;
+}
 
 function normalize(name: SupportedEventName, data: Record<string, JsonValue>): AcceptedEventPayload {
   switch (name) {
@@ -141,10 +201,89 @@ function normalize(name: SupportedEventName, data: Record<string, JsonValue>): A
         accountId: reqString(data, "account_id", ACCOUNT_MAX),
         amount: reqIntString(data, "amount"),
       };
+    case "backing_updated":
+      return {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        community: reqIntString(data, "community"),
+        approved: reqBool(data, "approved"),
+        evidenceHash: optString(data, "evidence_hash"),
+        expiresAtMs: optIntString(data, "expires_at_ms"),
+      };
+    case "lifecycle_representation_trust_changed":
+      return { name, representation: reqString(data, "representation", ACCOUNT_MAX), trusted: reqBool(data, "trusted") };
+    case "late_deposit_recorded":
+      return {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        beneficiary: reqString(data, "beneficiary", ACCOUNT_MAX),
+        refundAddress: reqString(data, "refund_address", 66),
+        units: reqIntString(data, "units"),
+      };
+    case "asset_suspended":
+      return { name, reason: reqString(data, "reason", 64) };
+    case "asset_resumed":
+      return {
+        name,
+        by: reqString(data, "by", ACCOUNT_MAX),
+        reorg: reqBool(data, "reorg"),
+        deficit: reqBool(data, "deficit"),
+        stillSuspended: reqBool(data, "still_suspended"),
+      };
+    case "custody_attested":
+      return {
+        name,
+        sequence: reqIntString(data, "sequence"),
+        sourceBlockNumber: reqIntString(data, "source_block_number"),
+        balance: reqIntString(data, "balance"),
+        required: data.required === null || data.required === undefined ? null : reqIntString(data, "required"),
+        covered: reqBool(data, "covered"),
+      };
+    case "reconciliation_unresolved":
+      return { name, holder: reqString(data, "holder", ACCOUNT_MAX), requestId: reqBytes32Hex(data, "request_id") };
+    case "operator_changed":
+      return { name, previous: optString(data, "old", ACCOUNT_MAX), next: optString(data, "new", ACCOUNT_MAX), by: reqString(data, "by", ACCOUNT_MAX) };
+    case "resume_policy_changed":
+      return { name, previous: reqString(data, "old", 64), next: reqString(data, "new", 64), by: reqString(data, "by", ACCOUNT_MAX) };
+    case "payout_signature_requested":
+      return {
+        name,
+        backing: reqString(data, "backing", ACCOUNT_MAX),
+        holder: reqString(data, "holder", ACCOUNT_MAX),
+        requestId: reqBytes32Hex(data, "request_id"),
+        payloadHash: reqBytes32Hex(data, "payload_hash"),
+        maxFeePerGas: reqIntString(data, "max_fee_per_gas"),
+        nonce: reqIntString(data, "nonce"),
+      };
+    case "payout_signature_received":
+      return {
+        name,
+        backing: reqString(data, "backing", ACCOUNT_MAX),
+        holder: reqString(data, "holder", ACCOUNT_MAX),
+        requestId: reqBytes32Hex(data, "request_id"),
+        txHash: reqBytes32Hex(data, "tx_hash"),
+        maxFeePerGas: reqIntString(data, "max_fee_per_gas"),
+      };
+    case "payout_signature_failed":
+      return {
+        name,
+        backing: reqString(data, "backing", ACCOUNT_MAX),
+        holder: reqString(data, "holder", ACCOUNT_MAX),
+        requestId: reqBytes32Hex(data, "request_id"),
+        maxFeePerGas: reqIntString(data, "max_fee_per_gas"),
+      };
+    case "payout_state_changed":
+      return {
+        name,
+        backing: reqString(data, "backing", ACCOUNT_MAX),
+        holder: reqString(data, "holder", ACCOUNT_MAX),
+        requestId: reqBytes32Hex(data, "request_id"),
+        from: optString(data, "from", 64),
+        to: reqString(data, "to", 64),
+        reason: optString(data, "reason", 64),
+      };
   }
 }
-
-const isSupported = (name: string): name is SupportedEventName => (SUPPORTED_EVENTS as readonly string[]).includes(name);
 
 /** Parse one recorded block into accepted events and quarantined diagnostics. */
 export function parseBlock(block: RecordedBlock, config: IndexerConfig): ParsedBlock {
@@ -199,22 +338,28 @@ export function parseBlock(block: RecordedBlock, config: IndexerConfig): ParsedB
       const standard = env.standard;
       const version = env.version;
       const event = env.event;
-      if (standard !== config.standard) return; // a different standard's event: ignored, not ours
+      // A different standard's event is ignored (not ours), except the Valtrum companion standards
+      // (backing, payout, player policy): from an allowlisted emitter those are state we either model
+      // or report as unsupported, never silently drop.
+      if (typeof standard !== "string" || (standard !== config.standard && !COMPANION_STANDARDS.includes(standard))) return;
       if (typeof version !== "string" || !config.supportedVersions.includes(version)) {
         return quarantine("unsupported_version", { standard: String(standard), version: typeof version === "string" ? version : undefined });
       }
-      if (typeof event !== "string") return quarantine("malformed_envelope", { standard: config.standard, version });
+      if (typeof event !== "string") return quarantine("malformed_envelope", { standard, version });
       // An unknown event from an allowlisted emitter is a coverage gap (the contract emits something we
       // do not model), so it degrades health rather than being silently dropped.
-      if (!isSupported(event)) return quarantine("unknown_event", { standard: config.standard, version, event });
-      const dataArr = env.data;
-      if (!Array.isArray(dataArr)) return quarantine("malformed_envelope", { standard: config.standard, version, event });
+      const modelled = modelledEvent(standard, event, config);
+      if (modelled === null) return quarantine("unknown_event", { standard, version, event });
+      // The arena emitter wraps data in an array; the backing and payout emitters emit one object. Both
+      // are valid NEP-297 `data`; a single object is one item at index 0.
+      const dataArr = Array.isArray(env.data) ? env.data : standard !== config.standard && env.data && typeof env.data === "object" ? [env.data] : null;
+      if (!dataArr) return quarantine("malformed_envelope", { standard, version, event });
 
       dataArr.forEach((item, itemIndex) => {
-        const tag = { standard: config.standard, version, event };
+        const tag = { standard, version, event };
         if (!item || typeof item !== "object" || Array.isArray(item)) return quarantine("malformed_payload", tag, itemIndex);
         try {
-          const normalized = normalize(event, item as Record<string, JsonValue>);
+          const normalized = normalize(modelled, item as Record<string, JsonValue>);
           const prov: EventProvenance = { ...provenance, itemIndex };
           accepted.push({
             ...normalized,

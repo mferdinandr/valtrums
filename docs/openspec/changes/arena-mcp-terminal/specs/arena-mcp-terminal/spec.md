@@ -11,6 +11,18 @@ MCP and terminal clients SHALL expose source/freshness-aware reads, canonical pr
 - **WHEN** a model calls inspect_battle
 - **THEN** no signing or spending authority is granted
 
+#### Scenario: Account-scoped read
+- **WHEN** a read session for one account asks for another account's positions, payouts or escrow
+- **THEN** the read is refused and no other account's data is returned
+
+#### Scenario: Read envelope
+- **WHEN** any read tool answers
+- **THEN** the answer carries network, source kind, observation time, freshness and limitations, and fixture data is labeled as fixture
+
+#### Scenario: Backend search
+- **WHEN** the user types into a searchable list or changes a filter
+- **THEN** text is debounced, filters are sent to the backend, the previous request is cancelled and a stale response is ignored
+
 #### Scenario: Payment status
 - **WHEN** only a transaction hash exists
 - **THEN** the tool reports broadcast/pending rather than confirmed receipt

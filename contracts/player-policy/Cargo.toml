@@ -1,0 +1,19 @@
+[package]
+name = "valtrum-player-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Fixture-only execution/evidence adapter methods. Never enable for a deployed build:
+# the normal contract must not expose a fabricated confirmation or unlock bypass.
+sandbox-fixtures = []
+
+[dependencies]
+near-sdk = { workspace = true }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }

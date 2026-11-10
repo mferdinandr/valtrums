@@ -4,7 +4,9 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { AccountStatePanel } from "@/components/account-state-panel";
 import { CreditPanel } from "@/components/credit-panel";
+import { RecoveryAlerts } from "@/components/recovery-alerts";
 import { LiquidBalances, type LiquidRow } from "@/components/liquid-balances";
 import { FundBalance } from "@/components/fund-balance";
 import { useArena, useTerminalEnv, useWallet } from "@/components/providers";
@@ -373,6 +375,8 @@ export default function PortfolioPage() {
           </section>
         </>
       )}
+      <AccountStatePanel />
+      <RecoveryAlerts />
     </div>
   );
 }

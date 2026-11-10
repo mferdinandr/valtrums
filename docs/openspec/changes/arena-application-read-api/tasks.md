@@ -1,5 +1,7 @@
 ## 1. Shared read boundary
 
+Before implementation, apply the [main reconciliation](../../plans/arena-application-integration/main-reconciliation.md): reuse existing MCP HTTP/search/session and Next gateway modules, verifying and refining tasks for remaining gaps instead of duplicating them.
+
 - [ ] 1.1 Define deployment manifest, protocol namespace, exact integer codecs and capability/provenance/error DTOs; verify unsafe u64 and fixture-isolation cases.
 - [ ] 1.2 Implement validated manifest loading and explicit legacy/lifecycle/fixture adapter selection without fallback on errors.
 - [ ] 1.3 Implement exported-ABI read adapters for supported battle/detail/readiness fields; report missing views rather than inventing them.

@@ -1,12 +1,14 @@
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde_json::{self, json};
-use near_sdk::store::{IterableSet, LookupMap};
+use near_sdk::store::{IterableMap, IterableSet, LookupMap};
 use near_sdk::{
     env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault,
     Promise, PromiseError, PromiseOrValue,
 };
 
 pub mod credit;
+pub mod dao_api;
+pub mod escrow_api;
 pub mod events;
 pub mod lifecycle;
 pub mod lifecycle_backing;
@@ -14,6 +16,7 @@ pub mod lifecycle_backing;
 mod lifecycle_guards;
 pub mod math;
 pub mod mpc;
+pub mod reference_registry;
 pub mod rounds;
 pub mod rounds_api;
 pub mod scoring;
@@ -71,6 +74,13 @@ enum StorageKey {
     LifecycleParticipantCounts,
     LifecycleSettlement,
     LifecycleTrustedRepresentations,
+    LifecycleReferenceRegistry,
+    LifecycleEscrow,
+    LifecycleDaoWindows,
+    LifecycleWinnerAt,
+    LifecycleDaoVotes,
+    LifecycleDaoTally,
+    LifecycleDaoProgress,
 }
 
 #[ext_contract(ext_ft)]
@@ -193,6 +203,26 @@ pub struct Arena {
     /// Representation contracts the owner accepts as backing sources; only these
     /// can produce a backing approval (see `lifecycle_backing`).
     lifecycle_trusted_representations: LookupMap<AccountId, bool>,
+    /// Owner-controlled mainnet reference token per testnet token, keyed by
+    /// (chain id, lowercase address); see `reference_registry`.
+    lifecycle_reference_registry: IterableMap<(u64, String), reference_registry::ReferenceEntry>,
+    /// Bumped on every registry change.
+    lifecycle_reference_registry_version: u64,
+    /// Battles whose winning principal the backing has recorded in its exclusive
+    /// escrow bucket (see `escrow_api`).
+    lifecycle_escrow: LookupMap<u64, bool>,
+    /// DAO vote window (ns) the next battle snapshots; unset means no vote (see `dao_api`).
+    lifecycle_dao_window_ns: Option<u64>,
+    /// Vote window snapshotted per battle at creation.
+    lifecycle_dao_windows: LookupMap<u64, u64>,
+    /// Block time at which the final winner was recorded; the vote opens then.
+    lifecycle_winner_at: LookupMap<u64, u64>,
+    /// One vote per (battle, winning participant): true = burn, false = return.
+    lifecycle_dao_votes: LookupMap<(u64, AccountId), bool>,
+    /// Weight cast per battle as (burn, return).
+    lifecycle_dao_tally: LookupMap<u64, (u128, u128)>,
+    /// Disposition releases already handed to the backing, per battle.
+    lifecycle_dao_progress: LookupMap<u64, u32>,
 }
 
 /// Total fee on a losing vault can never be set above 10%.
@@ -249,6 +279,15 @@ impl Arena {
             lifecycle_trusted_representations: LookupMap::new(
                 StorageKey::LifecycleTrustedRepresentations,
             ),
+            lifecycle_reference_registry: IterableMap::new(StorageKey::LifecycleReferenceRegistry),
+            lifecycle_reference_registry_version: 0,
+            lifecycle_escrow: LookupMap::new(StorageKey::LifecycleEscrow),
+            lifecycle_dao_window_ns: None,
+            lifecycle_dao_windows: LookupMap::new(StorageKey::LifecycleDaoWindows),
+            lifecycle_winner_at: LookupMap::new(StorageKey::LifecycleWinnerAt),
+            lifecycle_dao_votes: LookupMap::new(StorageKey::LifecycleDaoVotes),
+            lifecycle_dao_tally: LookupMap::new(StorageKey::LifecycleDaoTally),
+            lifecycle_dao_progress: LookupMap::new(StorageKey::LifecycleDaoProgress),
         }
     }
 
@@ -511,13 +550,21 @@ impl Arena {
             creator: creator.clone(),
             protocol,
         };
-        let assets = assets.into_iter().map(Into::into).collect();
+        let assets: Vec<lifecycle::AssetIdentity> = assets.into_iter().map(Into::into).collect();
+        // A reference pair is accepted only when it equals the protocol registry entry.
+        self.assert_registered_references(&assets);
         let battle = lifecycle::Battle::new(assets, mode, fee)
             .unwrap_or_else(|_| env::panic_str("Invalid lifecycle battle"));
         let before = env::storage_usage();
         let id = self
             .lifecycle_insert(battle)
             .unwrap_or_else(|_| env::panic_str("Battle count overflow"));
+        // The DAO vote window is frozen with the battle; a later change applies
+        // only to battles created afterwards. Unset means no vote (stays escrowed).
+        if let Some(window) = self.lifecycle_dao_window_ns {
+            self.lifecycle_dao_windows.insert(id, window);
+            self.lifecycle_dao_windows.flush();
+        }
         self.lifecycle_battles.flush();
         let bytes = env::storage_usage()
             .checked_sub(before)

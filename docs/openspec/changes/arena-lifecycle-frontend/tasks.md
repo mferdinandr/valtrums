@@ -1,5 +1,7 @@
 ## 1. Protocol and creation UI
 
+First read the [main reconciliation](../../plans/arena-application-integration/main-reconciliation.md). Reuse current action/grant/gateway code and honor current DAO decisions; original snapshot absence/OPEN claims are historical.
+
 - [ ] 1.1 Add explicit lifecycle client adapter using shared read DTOs and capability gates; preserve legacy route/ID/economics isolation.
 - [ ] 1.2 Implement backend-searched asset selection for 2+ communities within verified limits, binding source/representation/custody/reference identity and actual mode values.
 - [ ] 1.3 Implement reviewed creation wallet intent with correct storage/activation requirements and no legacy bond or duration fields.

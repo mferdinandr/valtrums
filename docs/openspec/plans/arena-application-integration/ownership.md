@@ -1,5 +1,8 @@
 # Integration ownership and handoffs
 
+Apply the [main reconciliation](main-reconciliation.md) first: this ownership map
+retains historical scope, while newer main already implements several listed gaps.
+
 This plan has no executable task list. Each implementation belongs to one canonical
 change; prerequisite links are handoffs, not duplicate checkboxes. Existing completed
 tasks retain their historical status. Newly discovered runtime gaps are explicit
