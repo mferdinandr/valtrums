@@ -5,7 +5,8 @@ import Link from "next/link";
 import { BattleCard } from "@/components/battle-card";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useArena } from "@/components/providers";
+import { useArena, useApplicationDeployment } from "@/components/providers";
+import { ApplicationBattleList } from "@/components/application-battle-list";
 import { useAsync } from "@/hooks/use-async";
 import { useTokenMetas } from "@/hooks/use-token-metas";
 import { STATUS_FILTERS } from "@/lib/arena/status";
@@ -17,6 +18,11 @@ import { CarnivalScene } from "@/components/carnival/scene";
 const PAGE = 100;
 
 export default function ArenaPage() {
+  const deployment = useApplicationDeployment();
+  return deployment ? <ApplicationBattleList namespace={deployment} /> : <LegacyArenaPage />;
+}
+
+function LegacyArenaPage() {
   const api = useArena();
   const [filter, setFilter] = useState<BattleStatus | "All">("All");
   const [view, setView] = useState<"battles" | "dao">("battles");

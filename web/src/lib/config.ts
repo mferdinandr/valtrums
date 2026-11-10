@@ -14,6 +14,8 @@ export const config = {
   network,
   rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC_URL?.trim() || DEFAULT_RPC[network],
   arenaContractId,
+  applicationDeployment: process.env.NEXT_PUBLIC_ARENA_READ_DEPLOYMENT?.trim() || null,
+  applicationProtocol: process.env.NEXT_PUBLIC_ARENA_READ_PROTOCOL?.trim() || "lifecycle-v2",
   /** Without a contract id the app runs entirely on the deterministic in-memory mock. */
   mock: arenaContractId === "",
   /** Cross-chain funding backend for the terminal: the deterministic mock, or NEAR Intents (1Click). */

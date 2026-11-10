@@ -7,6 +7,7 @@ import { createMockArenaApi, MOCK_ACCOUNT } from "@/lib/arena/mock";
 import { createNearArenaApi } from "@/lib/arena/near";
 import type { ArenaApi } from "@/lib/arena/types";
 import { createMockEnv, createNearEnv, type TerminalEnv } from "@/lib/terminal/env";
+import type { Namespace } from "@/lib/arena-read/application";
 
 export interface WalletState {
   /** Connected account id, or null when signed out. */
@@ -19,6 +20,8 @@ export interface WalletState {
 const WalletContext = createContext<WalletState | null>(null);
 const ArenaContext = createContext<ArenaApi | null>(null);
 const TerminalEnvContext = createContext<TerminalEnv | null>(null);
+const ApplicationContext = createContext<Namespace | null>(null);
+export const useApplicationDeployment = () => useContext(ApplicationContext);
 
 export function useWallet(): WalletState {
   const ctx = useContext(WalletContext);
@@ -113,6 +116,18 @@ function NearBridge({ children }: { children: ReactNode }) {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
+  if (config.applicationDeployment) {
+    const protocol = config.applicationProtocol;
+    if (protocol !== "legacy-v1" && protocol !== "lifecycle-v2") return <p role="alert">Unsupported arena read protocol.</p>;
+    const namespace: Namespace = { deploymentId: config.applicationDeployment, network: `near-${config.network}`,
+      arenaContract: config.arenaContractId, protocol };
+    const unavailable = async () => { throw new Error("Wallet actions are unavailable in application read mode"); };
+    return <ApplicationContext.Provider value={namespace}>
+      <WalletContext.Provider value={{ accountId: null, loading: false, signIn: unavailable, signOut: unavailable }}>
+        {children}
+      </WalletContext.Provider>
+    </ApplicationContext.Provider>;
+  }
   if (config.mock) return <MockProviders>{children}</MockProviders>;
   return (
     <NearProvider config={{ network: config.network }}>

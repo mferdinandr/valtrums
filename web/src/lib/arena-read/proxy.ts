@@ -26,14 +26,45 @@ function baseUrl(env: Record<string, string | undefined>): string | null {
   }
 }
 
-async function forward(url: string, init: RequestInit, doFetch: FetchLike): Promise<ProxyResult> {
+async function forward(url: string, init: RequestInit, doFetch: FetchLike, signal?: AbortSignal): Promise<ProxyResult> {
   try {
-    const res = await doFetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    const timeout = AbortSignal.timeout(10_000);
+    const res = await doFetch(url, { ...init, cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     const body = await res.json().catch(() => ({ error: "read API returned an invalid response" }));
     return { status: res.status, body };
   } catch {
     return { status: 503, body: { error: "read API unavailable" } };
   }
+}
+
+/** Versioned public reads only. Private sessions/actions retain their existing gateway. */
+export async function proxyApplicationRead(
+  path: string, search: URLSearchParams, env: Record<string, string | undefined>,
+  doFetch: FetchLike = (u, i) => fetch(u, i), signal?: AbortSignal,
+): Promise<ProxyResult> {
+  const fail = (status: number, code: string, message: string): ProxyResult => ({ status,
+    body: { schemaVersion: "arena-application-v1", error: { code, message, retryable: status === 503 } } });
+  if (!/^(capabilities|health|assets|battles|battles\/[1-9][0-9]{0,19}(?:\/audits)?)$/.test(path)) return fail(404, "not_found", "unknown application read route");
+  const keys = new Set<string>();
+  const allowed = path === "capabilities" ? [] : ["deployment", "protocol", ...(path === "battles" ? ["q", "mode", "status", "community", "limit", "cursor"]
+    : path === "assets" ? ["q", "limit", "cursor"] : path.endsWith("/audits") ? ["community", "limit", "cursor"] : [])];
+  for (const [k, v] of search) {
+    if (keys.has(k) || !allowed.includes(k) || v.length > 1024) return fail(400, "invalid_query", "invalid query parameters");
+    keys.add(k);
+  }
+  if (path !== "capabilities" && (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(search.get("deployment") ?? "") ||
+    !["legacy-v1", "lifecycle-v2"].includes(search.get("protocol") ?? ""))) return fail(400, "invalid_query", "deployment/protocol required");
+  if (search.has("limit") && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(search.get("limit")!)) return fail(400, "invalid_query", "limit must be 1 to 50");
+  if ((search.get("q") ?? "").trim().length > 64) return fail(400, "invalid_query", "query too long");
+  if (search.has("mode") && !["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"].includes(search.get("mode")!)) return fail(400, "invalid_query", "unknown scoring mode");
+  if (search.has("status") && !["open", "locked", "decided"].includes(search.get("status")!)) return fail(400, "invalid_query", "unknown battle status");
+  if (search.has("cursor") && !/^[A-Za-z0-9_-]{1,1024}$/.test(search.get("cursor")!)) return fail(400, "invalid_query", "malformed cursor");
+  if (search.has("community") && !(path.endsWith("/audits") ? /^(0|[1-9][0-9]{0,2})$/.test(search.get("community")!) && Number(search.get("community")) <= 255 : /^[a-z0-9._-]{2,64}$/.test(search.get("community")!))) return fail(400, "invalid_query", "invalid community");
+  const base = baseUrl(env);
+  if (!base) return fail(503, "upstream_unavailable", "read API is not configured");
+  const out = await forward(`${base}/api/arena/v1/${path}${search.size ? `?${search}` : ""}`, { method: "GET" }, doFetch, signal);
+  if ((out.body as { schemaVersion?: string })?.schemaVersion !== "arena-application-v1") return fail(503, "upstream_unavailable", "application read API unavailable");
+  return out;
 }
 
 export async function proxyReadTool(
