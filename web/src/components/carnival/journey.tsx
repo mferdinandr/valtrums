@@ -38,7 +38,8 @@ class JourneyBoundary extends Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
+  componentDidCatch(error: Error) {
+    console.error("Valtrum 3D journey failed", error);
     this.props.onFailure();
   }
   render() {
@@ -152,11 +153,8 @@ export function LandingJourney() {
     const observer = new ResizeObserver(schedule);
     if (rail.current) observer.observe(rail.current);
     measure();
-    const gl = document.createElement("canvas").getContext("webgl2");
-    if (gl) {
-      gl.getExtension("WEBGL_lose_context")?.loseContext();
-      setSupported(true);
-    } else setFailed(true);
+    // Canvas owns context creation and reports failures through the boundary.
+    setSupported(true);
     return () => {
       media.removeEventListener("change", motion);
       shortScreen.removeEventListener("change", motion);
@@ -601,7 +599,7 @@ export function LandingJourney() {
         </div>
         <p className="journey-render-note">
           {failed
-            ? "Illustrated view · all destinations remain available"
+            ? <button type="button" onClick={() => { setLoaded(false); setFailed(false); }}>3D could not load · Try again</button>
             : loaded
               ? reduced || compact
                 ? "Original 3D world · simplified still view"
