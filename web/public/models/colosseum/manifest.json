@@ -5,9 +5,9 @@
   "models": [
     {
       "name": "cashcat",
-      "bytes": 422272,
-      "triangles": 15020,
-      "meshes": 21,
+      "bytes": 506436,
+      "triangles": 18216,
+      "meshes": 25,
       "animations": [
         "Idle",
         "Attack",
@@ -20,8 +20,8 @@
     },
     {
       "name": "btcethusdt",
-      "bytes": 360340,
-      "triangles": 12632,
+      "bytes": 777112,
+      "triangles": 26116,
       "meshes": 24,
       "animations": [
         "Idle",
@@ -35,8 +35,8 @@
     },
     {
       "name": "oak",
-      "bytes": 329040,
-      "triangles": 11604,
+      "bytes": 376464,
+      "triangles": 13448,
       "meshes": 19,
       "animations": [
         "Idle",
@@ -50,9 +50,9 @@
     },
     {
       "name": "rebate",
-      "bytes": 391548,
-      "triangles": 13432,
-      "meshes": 19,
+      "bytes": 369888,
+      "triangles": 9144,
+      "meshes": 18,
       "animations": [
         "Idle",
         "Attack",
@@ -65,7 +65,7 @@
     },
     {
       "name": "wif",
-      "bytes": 626292,
+      "bytes": 626456,
       "triangles": 22976,
       "meshes": 21,
       "animations": [

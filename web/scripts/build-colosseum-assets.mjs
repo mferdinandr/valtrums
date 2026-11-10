@@ -30,15 +30,18 @@ for (const [index, character] of registry.characters.entries()) {
   root.userData = {
     author: "Valtrum",
     tokenIdentity: character,
-    provenance: "Original Token Carnival toy mascot",
+    provenance:
+      character.visualReference?.status === "listing-reviewed"
+        ? "Original 3D adaptation informed by contract-matched listing artwork; not official artwork"
+        : "Original unverified cosmetic interpretation",
     generator: "web/scripts/build-colosseum-assets.mjs",
     license: "Project-owned original geometry",
   };
   const palette = [
-    ["#f6ca78", "#fff0cb"],
-    ["#b8a3f1", "#e9e0ff"],
-    ["#b47c58", "#f3c99b"],
-    ["#ffac95", "#ffe6bf"],
+    ["#c9c9c4", "#f5f1e9"],
+    ["#efb635", "#fff3cd"],
+    ["#94633b", "#d8ad59"],
+    ["#f0edf6", "#ffffff"],
     ["#d5a56f", "#fff0d9"],
   ][index];
   const material = (color, roughness = 0.6) =>
@@ -51,11 +54,28 @@ for (const [index, character] of registry.characters.entries()) {
     pink: material("#f48fa2"),
     gold: material("#f8c94e"),
     mint: material("#86d4b4"),
-    leaf: material("#7ab963"),
-    leafLight: material("#b7df88"),
+    leaf: material("#1b6542"),
+    leafLight: material("#509947"),
     accent: material(character.color),
     hat: material("#ee90ac"),
+    stripe: material("#858b88"),
+    eyeBrown: material("#554742", 0.23),
+    tear: material("#b5d7e0", 0.12),
+    red: material("#e55242"),
+    violet: material("#a829ed", 0.32),
   };
+  if (index === 1) {
+    mat.gold.metalness = 0.65;
+    mat.gold.roughness = 0.3;
+  }
+  if (index === 2) {
+    mat.gold.emissive.set("#a1781b");
+    mat.gold.emissiveIntensity = 0.25;
+  }
+  if (index === 3) {
+    mat.violet.emissive.set("#6912a0");
+    mat.violet.emissiveIntensity = 0.35;
+  }
   Object.entries(mat).forEach(
     ([name, m]) => (m.name = `${character.asset}_${name}`),
   );
@@ -151,7 +171,7 @@ for (const [index, character] of registry.characters.entries()) {
   function leg(at) {
     const g = group(body, `Leg${legs.length}`, at);
     box(g, [0, -0.18, 0.05], [0.32, 0.5, 0.38], "body");
-    ball(g, [0, -0.45, 0.18], [0.38, 0.2, 0.47], "cream");
+    if (index !== 1) ball(g, [0, -0.45, 0.18], [0.38, 0.2, 0.47], "cream");
     legs.push(g);
     return g;
   }
@@ -199,7 +219,42 @@ for (const [index, character] of registry.characters.entries()) {
           "pink",
         );
     }
-    face(head, 0.08, 0.61, 0.27);
+    if (index === 0) {
+      const eyes = group(head, "Eyes", [0, 0.08, 0.61]);
+      for (const s of [-1, 1]) {
+        ball(eyes, [s * 0.27, 0, 0], [0.23, 0.25, 0.07], "cream");
+        ball(eyes, [s * 0.27, 0, 0.055], [0.19, 0.215, 0.065], "eyeBrown");
+        ball(eyes, [s * 0.27, -0.01, 0.105], [0.14, 0.17, 0.025], "ink");
+        ball(
+          eyes,
+          [s * 0.27 - 0.055, 0.085, 0.13],
+          [0.055, 0.065, 0.02],
+          "white",
+        );
+        ball(eyes, [s * 0.27 + 0.06, -0.06, 0.13], 0.025, "white");
+        ball(eyes, [s * 0.4, -0.17, 0.09], [0.045, 0.065, 0.025], "tear");
+        tube(
+          head,
+          [
+            [s * 0.12, 0.31, 0.57],
+            [s * 0.27, 0.36, 0.56],
+            [s * 0.44, 0.29, 0.53],
+          ],
+          0.025,
+          "stripe",
+        );
+      }
+      tube(
+        head,
+        [
+          [-0.12, -0.3, 0.68],
+          [0, -0.27, 0.71],
+          [0.12, -0.3, 0.68],
+        ],
+        0.018,
+        "eyeBrown",
+      );
+    } else face(head, 0.08, 0.61, 0.27);
     ball(
       head,
       [0, -0.13, index === 4 ? 0.85 : 0.73],
@@ -239,34 +294,97 @@ for (const [index, character] of registry.characters.entries()) {
       }
       ball(head, [0, 1.16, -0.02], 0.14, "cream");
     } else {
-      const badge = cylinder(body, [0, 1.15, 0.76], 0.17, 0.06, "gold");
-      badge.rotation.x = Math.PI / 2;
-      box(body, [0, 1.15, 0.8], [0.035, 0.2, 0.02], "cream");
+      ball(head, [-0.42, 0.34, -0.03], [0.37, 0.2, 0.58], "stripe");
+      for (const s of [-1, 1])
+        ball(body, [s * 0.5, 0.62, -0.08], [0.36, 0.48, 0.4], "body");
     }
   } else if (index === 1) {
-    box(body, [0, 1.1, 0], [1.35, 0.9, 1.25], "body", 0.3);
-    head.position.set(0, 1.7, 0.3);
-    box(head, [0, 0, 0], [1.2, 0.64, 0.8], "cream", 0.25);
-    face(head, 0.04, 0.42, 0.27);
-    for (const s of [-1, 1])
-      for (const z of [-1, 1]) leg([s * 0.67, 0.65, z * 0.43]);
-    for (let k = 0; k < 3; k++) {
-      const capsule = group(body, `Capsule${k}`, [(k - 1) * 0.48, 2.08, -0.28]);
-      ball(
-        capsule,
-        [0, 0, 0],
-        [0.22, 0.44, 0.24],
-        ["gold", "mint", "accent"][k],
+    head.position.set(0, 1.7, 0);
+    const coin = group(head, "GoldenCoin");
+    cylinder(coin, [0, 0, 0], 1.02, 0.38, "gold").rotation.x = Math.PI / 2;
+    cylinder(coin, [0, 0, 0.21], 0.91, 0.045, "body").rotation.x = Math.PI / 2;
+    ring(coin, [0, 0, 0.25], 0.97, 0.055, "cream");
+    ring(coin, [0, 0, -0.22], 0.97, 0.055, "gold");
+    for (let i = 0; i < 32; i++) {
+      const a = (i * Math.PI) / 16;
+      const ridge = box(
+        coin,
+        [Math.cos(a) * 1.02, Math.sin(a) * 1.02, 0],
+        [0.055, 0.055, 0.34],
+        "cream",
+        0.012,
       );
-      ring(capsule, [0, 0, 0.22], 0.12, 0.025, "white");
+      ridge.rotation.z = a;
     }
-    const tool = group(body, "Weapon", [0.66, 1.1, 0.5]);
-    cylinder(tool, [0, 0, 0.45], 0.09, 0.8, "cream").rotation.x = Math.PI / 2;
-    ball(tool, [0, 0, 0.92], [0.28, 0.28, 0.35], "accent");
-    ring(tool, [0, 0, 0.92], 0.31, 0.055, "white");
-    for (const s of [-1, 1]) ball(body, [s * 0.75, 1.28, -0.1], 0.17, "gold");
+    const glasses = group(head, "Sunglasses", [0, 0.34, 0.31]);
+    for (const s of [-1, 1]) {
+      box(glasses, [s * 0.4, 0, 0], [0.7, 0.39, 0.16], "ink", 0.11);
+      const shine = box(
+        glasses,
+        [s * 0.4 - 0.12, 0.075, 0.09],
+        [0.23, 0.035, 0.02],
+        "white",
+        0.01,
+      );
+      shine.rotation.z = 0.7;
+      box(glasses, [s * 0.75, 0, -0.17], [0.1, 0.12, 0.38], "ink", 0.03);
+    }
+    box(glasses, [0, 0.04, 0], [0.19, 0.09, 0.12], "ink", 0.03);
+    for (const s of [-1, 1])
+      ball(head, [s * 0.46, 0.91, -0.03], [0.28, 0.12, 0.14], "ink");
+    const mouthShape = new T.Shape();
+    mouthShape.moveTo(-0.59, -0.16);
+    mouthShape.quadraticCurveTo(0, -0.89, 0.59, -0.16);
+    mouthShape.quadraticCurveTo(0, -0.24, -0.59, -0.16);
+    mesh(
+      head,
+      new T.ExtrudeGeometry(mouthShape, {
+        depth: 0.035,
+        bevelEnabled: true,
+        bevelSize: 0.025,
+        bevelThickness: 0.015,
+        bevelSegments: 2,
+        steps: 1,
+      }),
+      "ink",
+      [0, 0, 0.29],
+    );
+    for (let i = 0; i < 7; i++)
+      box(
+        head,
+        [(i - 3) * 0.139, -0.27, 0.36],
+        [0.124, 0.15, 0.045],
+        "white",
+        0.035,
+      );
+    ball(head, [0, -0.56, 0.35], [0.27, 0.09, 0.035], "red");
+    for (const s of [-1, 1]) {
+      const bicep = arm(s, [s * 1.08, 1.82, 0]);
+      ball(bicep, [s * 0.1, -0.16, 0], [0.29, 0.35, 0.28], "gold");
+      box(bicep, [0, -0.49, 0.14], [0.42, 0.12, 0.4], "white", 0.05);
+      for (let j = 0; j < 3; j++)
+        box(
+          bicep,
+          [(j - 1) * 0.1, -0.56, 0.39],
+          [0.035, 0.13, 0.015],
+          "gold",
+          0.008,
+        );
+      const foot = leg([s * 0.44, 0.66, 0]);
+      box(foot, [0, -0.58, 0.18], [0.76, 0.13, 0.96], "red", 0.06);
+      box(foot, [0, -0.4, 0.04], [0.6, 0.35, 0.55], "red", 0.09);
+      box(foot, [0, -0.45, 0.39], [0.58, 0.19, 0.43], "white", 0.08);
+      for (let j = 0; j < 3; j++)
+        box(
+          foot,
+          [0, -0.25 - j * 0.055, 0.3 + j * 0.06],
+          [0.33, 0.035, 0.035],
+          "ink",
+          0.009,
+        );
+    }
   } else if (index === 2) {
-    box(body, [0, 1.12, 0], [1.15, 1.55, 0.9], "body", 0.3);
+    cylinder(body, [0, 1.15, 0], 0.46, 1.55, "body");
     head.position.set(0, 1.9, 0);
     for (const [x, y, z, s] of [
       [0, 0.6, 0, 0.7],
@@ -278,6 +396,48 @@ for (const [index, character] of registry.characters.entries()) {
       ball(head, [x, y, z], s, x < 0 ? "leaf" : "leafLight");
     face(body, 1.5, 0.49, 0.25);
     for (const s of [-1, 1]) {
+      tube(
+        body,
+        [
+          [s * 0.1, 0.55, 0.05],
+          [s * 0.18, 1.3, 0],
+          [s * 0.65, 1.85, 0],
+          [s * 0.88, 2.3, 0],
+        ],
+        0.12,
+        "body",
+      );
+      tube(
+        body,
+        [
+          [s * 0.05, 0.45, 0.43],
+          [s * 0.16, 1.1, 0.45],
+          [s * 0.42, 1.65, 0.3],
+          [s * 0.75, 2, 0.23],
+        ],
+        0.038,
+        "gold",
+      );
+      tube(
+        body,
+        [
+          [s * 0.1, 0.75, 0.1],
+          [s * 0.4, 0.26, 0.4],
+          [s * 0.75, 0.15, 0.55],
+        ],
+        0.14,
+        "body",
+      );
+      tube(
+        body,
+        [
+          [s * 0.1, 0.75, 0.25],
+          [s * 0.4, 0.35, 0.5],
+          [s * 0.75, 0.23, 0.58],
+        ],
+        0.03,
+        "gold",
+      );
       arm(s, [s * 0.7, 1.4, 0]);
       ball(arms.at(-1), [0, -0.55, 0.14], [0.37, 0.28, 0.22], "leaf");
       leg([s * 0.4, 0.65, 0]);
@@ -291,45 +451,101 @@ for (const [index, character] of registry.characters.entries()) {
           [0.1 * (k - 1), 1.18, 0.49],
         ],
         0.018,
-        "cream",
+        "gold",
       );
     ball(body, [0.38, 0.9, 0.49], [0.12, 0.17, 0.05], "leafLight");
   } else {
-    box(body, [0, 1.24, 0], [1.5, 1.2, 1.05], "body", 0.25);
-    box(body, [0, 1.65, 0.56], [1.16, 0.48, 0.1], "cream");
-    head.position.set(0, 1.65, 0.64);
-    face(head, 0.01, 0.01, 0.27);
-    box(body, [0, 0.92, 0.56], [1.05, 0.19, 0.16], "cream");
-    for (let k = 0; k < 5; k++)
-      ball(body, [(k - 2) * 0.17, 0.94, 0.67], 0.055, k % 2 ? "mint" : "gold");
-    const scarf = group(body, "Receipt");
-    box(scarf, [0.48, 0.7, 0.62], [0.36, 0.8, 0.05], "white", 0.02);
-    for (let k = 0; k < 5; k++)
-      box(
-        scarf,
-        [0.48, 0.45 + k * 0.12, 0.66],
-        [0.23, 0.018, 0.02],
-        "accent",
-        0.003,
-      );
+    head.position.set(0, 1.75, 0);
+    const shape = new T.Shape();
+    shape.moveTo(-0.75, -0.8);
+    shape.lineTo(-0.75, 0.95);
+    shape.lineTo(0.12, 0.95);
+    shape.quadraticCurveTo(0.9, 0.95, 0.9, 0.35);
+    shape.quadraticCurveTo(0.9, -0.1, 0.4, -0.22);
+    shape.lineTo(0.95, -0.9);
+    shape.lineTo(0.32, -0.9);
+    shape.lineTo(-0.15, -0.25);
+    shape.lineTo(-0.25, -0.25);
+    shape.lineTo(-0.25, -0.8);
+    shape.closePath();
+    const hole = new T.Path();
+    hole.moveTo(-0.25, 0.3);
+    hole.lineTo(0.1, 0.3);
+    hole.quadraticCurveTo(0.4, 0.3, 0.4, 0.5);
+    hole.quadraticCurveTo(0.4, 0.7, 0.1, 0.7);
+    hole.lineTo(-0.25, 0.7);
+    hole.closePath();
+    shape.holes.push(hole);
+    const glyph = group(head, "RebateGlyph");
+    const glyphGeometry = new T.ExtrudeGeometry(shape, {
+      depth: 0.38,
+      bevelEnabled: true,
+      bevelSize: 0.055,
+      bevelThickness: 0.055,
+      bevelSegments: 3,
+      steps: 1,
+      curveSegments: 16,
+    });
+    mesh(glyph, glyphGeometry, "white");
+    mesh(
+      glyph,
+      glyphGeometry.clone(),
+      "accent",
+      [0, 0, -0.1],
+      [1.035, 1.035, 1],
+    );
+    const arrow = group(head, "ReturnArrow");
+    tube(
+      arrow,
+      [
+        [0.38, -0.02, 0.28],
+        [0.89, 0.25, 0.3],
+        [0.79, 0.87, 0.38],
+        [0.27, 1.1, 0.45],
+        [-0.5, 1.1, 0.45],
+      ],
+      0.13,
+      "violet",
+    );
+    const arrowhead = new T.Shape();
+    arrowhead.moveTo(-0.43, 1.43);
+    arrowhead.lineTo(-0.98, 1.1);
+    arrowhead.lineTo(-0.43, 0.77);
+    arrowhead.closePath();
+    mesh(
+      arrow,
+      new T.ExtrudeGeometry(arrowhead, {
+        depth: 0.24,
+        bevelEnabled: true,
+        bevelSize: 0.035,
+        bevelThickness: 0.025,
+        bevelSegments: 2,
+        steps: 1,
+      }),
+      "violet",
+      [0, 0, 0.33],
+    );
+    const eyes = group(head, "Eyes", [-0.49, -0.05, 0.46]);
     for (const s of [-1, 1]) {
-      arm(s);
-      leg([s * 0.42, 0.65, 0]);
+      ball(eyes, [s * 0.095, 0, 0], [0.064, 0.085, 0.025], "ink");
+      ball(eyes, [s * 0.095 - 0.014, 0.025, 0.023], 0.018, "white");
     }
-    const orbit = group(body, "Orbit", [0, 1.6, -0.6]);
-    ring(orbit, [0, 0, 0], 0.78, 0.07, "gold");
-    for (let k = 0; k < 6; k++) {
-      const a = (k * Math.PI) / 3;
-      const coin = cylinder(
-        orbit,
-        [Math.cos(a) * 0.82, Math.sin(a) * 0.82, 0],
-        0.14,
-        0.08,
-        "gold",
-      );
-      coin.rotation.x = Math.PI / 2;
+    tube(
+      head,
+      [
+        [-0.58, -0.2, 0.47],
+        [-0.49, -0.25, 0.48],
+        [-0.4, -0.2, 0.47],
+      ],
+      0.014,
+      "accent",
+    );
+    for (const s of [-1, 1]) {
+      const hand = arm(s, [s * 0.96, 1.6, 0.08]);
+      box(hand, [0, -0.54, 0.13], [0.4, 0.14, 0.4], "violet", 0.04);
+      const foot = leg([s * 0.43, 0.65, 0]);
+      box(foot, [0, -0.48, 0.18], [0.7, 0.11, 0.85], "accent", 0.04);
     }
-    box(body, [0, 1.95, -0.15], [0.8, 0.4, 0.7], "cream");
   }
   function rotation(node, frames) {
     return new T.QuaternionKeyframeTrack(

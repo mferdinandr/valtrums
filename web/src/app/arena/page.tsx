@@ -99,8 +99,8 @@ export default function ArenaPage() {
             </h1>
             <p>
               Browse the current battles, inspect each community and find out
-              what is open. Prefer to explore first? The 3D carnival runs
-              without a wallet.
+              what is open. Open a battle to follow its 3D arena, chart and
+              recorded status. You can watch without connecting a wallet.
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Button asChild variant="cyan">
@@ -109,7 +109,7 @@ export default function ArenaPage() {
                 </Link>
               </Button>
               <Button asChild variant="ghost">
-                <Link href="/arena/preview">Try the 3D carnival</Link>
+                <Link href="/battles/new">Create a battle</Link>
               </Button>
             </div>
           </div>

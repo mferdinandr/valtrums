@@ -6,23 +6,25 @@ mechanical illustrations. The existing Next/React/R3F/GSAP stack is preserved.
 
 ## Route and scene matrix
 
-| Route             | Goal and layout                                                                                                 | Local 3D subject                                                         | Interaction / alternative                                                  |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| `/`               | One full-screen journey from arrival to the final town vista; no subsequent landing sections or separate footer | Connected plaza, animated Create Battle machine, arena and cutaway Vault | Chapter controls, skip to final vista, HTML links and in-world field notes |
-| `/arena`          | Fairground introduction, lineup toolbar, existing status/search controls and ticket-like cards                  | Arch, schedule board, toy hosts                                          | Normal battle links; illustration conveys no eligibility                   |
-| `/battles/new`    | Form workspace beside assembly host; token/duration inputs and bond review remain intact                        | Workbench, capsule docks, assembly arm, wrench                           | Existing proposal flow and wallet confirmation                             |
-| `/battles/[id]`   | Community booth beside deposit/review controls, status and actual vault data below                              | Two hinged toy vaults, identity-specific mascot or generic token emblem  | Existing side lock and deposit phases; HTML selector alternatives          |
-| Demo multi-battle | View-only community/vault cards with decorative fairground                                                      | Toy stage                                                                | Existing simulated timing; no invented result or new financial action      |
-| `/terminal`       | Main command/review area with a separate help kiosk and session settings                                        | Smiling monitor, keyboard, joystick and speech bubble                    | Existing terminal parser, funding review and explicit confirmation         |
-| `/portfolio`      | Cabinet introduction, separate credit/liquid columns, funding and position cards                                | Hinged keepsake cabinet and shelves                                      | Existing claim/refund/withdraw and wallet checks                           |
-| `/arena/preview`  | Existing standalone carnival exhibition                                                                         | Toy mascots, personal spring targets, festival stage                     | Isolated scripted fixture; no actual battle integration                    |
+| Route             | Goal and layout                                                                                                 | Local 3D subject                                                         | Interaction / alternative                                                     |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `/`               | One full-screen journey from arrival to the final town vista; no subsequent landing sections or separate footer | Connected plaza, animated Create Battle machine, arena and cutaway Vault | Chapter controls, skip to final vista, HTML links and in-world field notes    |
+| `/arena`          | Fairground introduction, lineup toolbar, existing status/search controls and ticket-like cards                  | Arch, schedule board, toy hosts                                          | Normal battle links; illustration conveys no eligibility                      |
+| `/battles/new`    | Form workspace beside assembly host; token/duration inputs and bond review remain intact                        | Workbench, capsule docks, assembly arm, wrench                           | Existing proposal flow and wallet confirmation                                |
+| `/battles/[id]`   | Gathering vaults transition to the integrated character arena and chart when the battle starts                  | Personal reactors, contract-matched mascots or generic token emblems     | Existing deposit locks, recorded status/results and read-only scene selection |
+| Demo multi-battle | Same integrated arena and chart, explicitly simulated and view-only                                             | Its exact participating character roster and personal reactors           | Recorded demo clock, pending result; no invented winner or financial action   |
+| `/terminal`       | Main command/review area with a separate help kiosk and session settings                                        | Smiling monitor, keyboard, joystick and speech bubble                    | Existing terminal parser, funding review and explicit confirmation            |
+| `/portfolio`      | Cabinet introduction, separate credit/liquid columns, funding and position cards                                | Hinged keepsake cabinet and shelves                                      | Existing claim/refund/withdraw and wallet checks                              |
+| `/arena/preview`  | Compatibility redirect to `/arena`                                                                              | No separate renderer                                                     | Old bookmarks enter the same battle flow                                      |
 
 ## Data boundaries
 
-The current wallet arena still uses its existing two-community proposal, audit,
+The 3D battle experience is integrated into `/battles/[id]`; the former Play 3D
+menu is removed and `/arena/preview` redirects to the battle list. The current
+wallet arena still uses its existing two-community proposal, audit,
 deposit, bond, settlement, claim, credit and withdrawal contracts. The landing
-separates that experience from the wallet-free multi-community exhibition and
-the planned Robinhood/DAO flow. Decorative hosts are not selected communities;
+links into this same battle flow, with simulated data and the planned Robinhood/DAO
+flow explicitly distinguished. Decorative hosts are not selected communities;
 cabinet coins are not account amounts. Actor identity in actual battle booths
 requires an exact known demo-token ID; unknown IDs receive a generic emblem with
 the actual symbol rather than a falsely assigned mascot. Source-chain production
@@ -69,8 +71,8 @@ Gates open
 before the camera passes them. CASHCAT and WIF accompany the middle section,
 then follow curved footpaths to separate spring reactors in the overlook. Each
 demonstration is cosmetic and affects no other community. BTCETHUSDT walks to
-the Create Battle machine and gently animates its three modules; REBATE takes
-a curved route behind the booths to the Vault, with receipt/halo motion. OAK
+the Create Battle machine with a gentle sunglasses tilt; REBATE takes
+a curved route behind the booths to the Vault, with return-arrow motion. OAK
 remains in the plaza. Their existing GLBs are reused,
 while the environment is a new original GLB, generated without Blender.
 
@@ -102,12 +104,12 @@ the world. Escape/close restores access to the scene, body overflow is restored,
 and ambient rendering pauses while the notes are open. Existing `#product-flow`
 and `#mechanics` links open their corresponding notes; `#welcome-details` moves
 to the final vista. The current two-community/bond/credit wallet flow remains
-distinct from the scripted preview and planned multi-community Robinhood/DAO flow.
+distinct from simulated demo data and planned multi-community Robinhood/DAO flow.
 
 | Trigger                            | Visible response                                                              | Keyboard / touch alternative                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Native scroll                      | Camera follows the path, gates open before entry, hosts move between stations | Chapter buttons select the same destinations; native touch scroll remains available |
-| Plaza / overlook section           | Camera holds a vista while ambient activity continues                         | Pause stops the ambient activity; preview link is ordinary HTML                     |
+| Plaza / overlook section           | Camera holds a vista while ambient activity continues                         | Pause stops ambient activity; Arena link enters the battle list                     |
 | Mascot selection                   | Selected mascot greets the visitor and its description updates                | Matching HTML buttons expose pressed state and a text description                   |
 | Skip / route link                  | Moves to the final vista or opens the selected app route                      | Always available without completing the journey                                     |
 | Reduced motion / rendering failure | One fixed vista or illustration with all chapters stacked                     | All copy and links remain available in document order                               |

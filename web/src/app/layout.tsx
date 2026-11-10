@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
           <nav aria-label="Footer navigation">
             <Link href="/arena">Battles</Link>
-            <Link href="/arena/preview">3D playground</Link>
+            <Link href="/battles/new">Create Battle</Link>
             <Link href="/portfolio">Portfolio</Link>
           </nav>
           <p>Built on NEAR · Testnet experience</p>

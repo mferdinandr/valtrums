@@ -11,7 +11,12 @@ import {
   SRGBColorSpace,
 } from "three";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
-import { beatAt, fighterPose, type PreviewRuntime } from "./choreography";
+import {
+  CHARACTER_ASSET_VERSION,
+  beatAt,
+  fighterPose,
+  type PreviewRuntime,
+} from "./choreography";
 
 export function Armor({
   size,
@@ -70,15 +75,36 @@ export function Nameplate({
 }) {
   const texture = useMemo(() => {
     const canvas = document.createElement("canvas");
-    canvas.width = 512;
-    canvas.height = 128;
+    canvas.width = 1024;
+    canvas.height = 256;
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.fillStyle = color;
-      ctx.font = "bold 74px monospace";
+      const padding = 48;
+      const baseSize = 148;
+      ctx.font = `bold ${baseSize}px monospace`;
+      const measured = ctx.measureText(text);
+      const inkWidth = Math.max(
+        measured.width,
+        measured.actualBoundingBoxLeft + measured.actualBoundingBoxRight,
+      );
+      const fontSize = Math.max(
+        1,
+        Math.floor(
+          baseSize *
+            Math.min(1, (canvas.width - padding * 2) / Math.max(1, inkWidth)),
+        ),
+      );
+      ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(text, 256, 68);
+      ctx.textBaseline = "alphabetic";
+      const fitted = ctx.measureText(text);
+      const baseline =
+        (canvas.height +
+          fitted.actualBoundingBoxAscent -
+          fitted.actualBoundingBoxDescent) /
+        2;
+      ctx.fillText(text, canvas.width / 2, baseline);
     }
     const map = new CanvasTexture(canvas);
     map.colorSpace = SRGBColorSpace;
@@ -101,8 +127,94 @@ export function Fighter({
   runtime: RefObject<PreviewRuntime>;
   onSelect: (index: number) => void;
 }) {
+  return runtime.current.roster[index]!.generic ? (
+    <GenericFighter index={index} runtime={runtime} onSelect={onSelect} />
+  ) : (
+    <ModelFighter index={index} runtime={runtime} onSelect={onSelect} />
+  );
+}
+
+function GenericFighter({
+  index,
+  runtime,
+  onSelect,
+}: {
+  index: number;
+  runtime: RefObject<PreviewRuntime>;
+  onSelect: (index: number) => void;
+}) {
+  const root = useRef<Group>(null),
+    body = useRef<Group>(null);
   const contender = runtime.current.roster[index]!;
-  const gltf = useGLTF(`/models/colosseum/${contender.asset}.glb?v=toybox-1`);
+  useFrame(() => {
+    const state = runtime.current,
+      p = fighterPose(index, state);
+    root.current?.position.set(p.x, 0, p.z);
+    if (root.current) root.current.rotation.y = p.yaw;
+    if (body.current)
+      body.current.position.y = state.reduced
+        ? 0
+        : Math.sin(state.time * 3 + index) * 0.035 + p.strike * 0.12;
+  });
+  return (
+    <group
+      ref={root}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(index);
+      }}
+    >
+      <group ref={body}>
+        <mesh position={[0, 1.4, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <cylinderGeometry args={[0.85, 0.85, 0.35, 32]} />
+          <meshStandardMaterial
+            color={contender.color}
+            roughness={0.45}
+            metalness={0.2}
+          />
+        </mesh>
+        <mesh position={[0, 1.4, 0.2]}>
+          <torusGeometry args={[0.72, 0.055, 8, 40]} />
+          <meshStandardMaterial color="#fff3db" />
+        </mesh>
+        <Nameplate
+          text={contender.name}
+          color="#fffdf3"
+          position={[0, 1.4, 0.24]}
+          scale={0.85}
+        />
+        {[-1, 1].map((s) => (
+          <group key={s}>
+            <Armor
+              at={[s * 0.4, 0.25, 0.1]}
+              size={[0.4, 0.45, 0.6]}
+              color={contender.color}
+            />
+            <Armor
+              at={[s * 0.95, 1.3, 0]}
+              size={[0.3, 0.6, 0.35]}
+              color="#fff3db"
+            />
+          </group>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+function ModelFighter({
+  index,
+  runtime,
+  onSelect,
+}: {
+  index: number;
+  runtime: RefObject<PreviewRuntime>;
+  onSelect: (index: number) => void;
+}) {
+  const contender = runtime.current.roster[index]!;
+  const gltf = useGLTF(
+    `/models/colosseum/${contender.asset}.glb?v=${CHARACTER_ASSET_VERSION}`,
+  );
   const scene = useMemo(() => {
     const result = clone(gltf.scene);
     result.traverse((node) => {
@@ -202,9 +314,12 @@ export function Fighter({
       tail.rotation.y = state.reduced
         ? 0
         : Math.sin(ambience.current * 3) * 0.18;
-    const orbit = scene.getObjectByName("Orbit");
-    if (orbit) orbit.rotation.z = state.reduced ? 0 : ambience.current * 0.22;
-    for (let i = 0; i < (contender.asset === "btcethusdt" ? 4 : 2); i++) {
+    const arrow = scene.getObjectByName("ReturnArrow");
+    if (arrow)
+      arrow.rotation.z = state.reduced
+        ? 0
+        : Math.sin(ambience.current * 1.5) * 0.06;
+    for (let i = 0; i < 2; i++) {
       const leg = scene.getObjectByName(`Leg${i}`);
       if (leg)
         leg.rotation.x = p.eliminated

@@ -12,7 +12,10 @@ import {
   Vector3,
 } from "three";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
-import { CONTENDERS } from "@/components/colosseum/choreography";
+import {
+  CHARACTER_ASSET_VERSION,
+  CONTENDERS,
+} from "@/components/colosseum/choreography";
 import { Nameplate } from "@/components/colosseum/fighters";
 import type { WorldProps } from "./scene";
 function prepareScene(source: Group) {
@@ -41,7 +44,9 @@ function Mascot({
   frozen: boolean;
   onClick?: () => void;
 }) {
-  const gltf = useGLTF(`/models/colosseum/${asset}.glb?v=toybox-1`);
+  const gltf = useGLTF(
+    `/models/colosseum/${asset}.glb?v=${CHARACTER_ASSET_VERSION}`,
+  );
   const scene = useMemo(() => prepareScene(gltf.scene), [gltf.scene]),
     mixer = useMemo(() => new AnimationMixer(scene), [scene]);
   const actions = useMemo(
@@ -121,7 +126,9 @@ function Installation(props: WorldProps) {
   useEffect(() => {
     if (mode === "welcome" || mode === "arena")
       CONTENDERS.forEach((c) =>
-        useGLTF.preload(`/models/colosseum/${c.asset}.glb?v=toybox-1`),
+        useGLTF.preload(
+          `/models/colosseum/${c.asset}.glb?v=${CHARACTER_ASSET_VERSION}`,
+        ),
       );
   }, [mode]);
   const { camera, size } = useThree();

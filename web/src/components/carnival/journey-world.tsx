@@ -20,7 +20,10 @@ import {
 } from "three";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { Nameplate } from "@/components/colosseum/fighters";
-import { CONTENDERS } from "@/components/colosseum/choreography";
+import {
+  CHARACTER_ASSET_VERSION,
+  CONTENDERS,
+} from "@/components/colosseum/choreography";
 import {
   ease,
   hostPosition,
@@ -70,7 +73,7 @@ function Welcomer({
   onSelect: () => void;
 }) {
   const gltf = useGLTF(
-      `/models/colosseum/${CONTENDERS[index]!.asset}.glb?v=toybox-1`,
+      `/models/colosseum/${CONTENDERS[index]!.asset}.glb?v=${CHARACTER_ASSET_VERSION}`,
     ),
     scene = useMemo(() => prepare(gltf.scene), [gltf.scene]);
   const mixer = useMemo(() => new AnimationMixer(scene), [scene]);
@@ -168,17 +171,13 @@ function Welcomer({
     initialized.current = true;
     const tail = scene.getObjectByName("Tail");
     if (tail) tail.rotation.y = Math.sin(elapsed.current * 2.8) * 0.13;
-    if (index === 1)
-      for (let i = 0; i < 3; i++) {
-        const module = scene.getObjectByName(`Capsule${i}`);
-        if (module)
-          module.rotation.z = Math.sin(elapsed.current * 2 + i * 1.3) * 0.12;
-      }
+    if (index === 1) {
+      const glasses = scene.getObjectByName("Sunglasses");
+      if (glasses) glasses.rotation.z = Math.sin(elapsed.current * 1.5) * 0.025;
+    }
     if (index === 3) {
-      const receipt = scene.getObjectByName("Receipt");
-      if (receipt) receipt.rotation.z = Math.sin(elapsed.current * 1.6) * 0.09;
-      const halo = scene.getObjectByName("Orbit");
-      if (halo) halo.rotation.y = Math.sin(elapsed.current * 0.7) * 0.16;
+      const arrow = scene.getObjectByName("ReturnArrow");
+      if (arrow) arrow.rotation.z = Math.sin(elapsed.current * 1.5) * 0.06;
     }
   });
   return (

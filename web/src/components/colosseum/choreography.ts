@@ -1,9 +1,11 @@
 /** Isolated deterministic exhibition fixtures. No market observations or financial authority. */
 import registry from "./characters.json";
+export const CHARACTER_ASSET_VERSION = "logo-toys-2";
 export const CONTENDERS = registry.characters.map((c, index) => ({
   ...c,
   number: String(index + 1).padStart(2, "0"),
   synthetic: false,
+  generic: false,
 }));
 export type Contender = (typeof CONTENDERS)[number];
 export const MODES = {
@@ -27,6 +29,10 @@ export interface PreviewRuntime {
   mode: ScoreMode;
   scenario: Scenario;
   evidenceReady: boolean;
+  /** Display-only provisional leader, never read by scoring or resolution. */
+  chartLeader?: number | null;
+  /** Recorded battle state overrides every exhibition outcome. */
+  externalRound?: RoundSnapshot;
 }
 export function makeRuntime(
   roster: readonly Contender[] = CONTENDERS,
@@ -122,7 +128,7 @@ export interface RoundSnapshot {
   scores: Score[];
   history: RoundRecord[];
 }
-function fixtureScores(
+export function fixtureScores(
   candidates: number[],
   round: number,
   state: PreviewRuntime,
@@ -159,6 +165,7 @@ function fixtureScores(
   });
 }
 export function roundAt(state: PreviewRuntime): RoundSnapshot {
+  if (state.externalRound) return state.externalRound;
   const all = state.roster.map((_, i) => i);
   let candidates = [...all],
     start = 0,
@@ -243,8 +250,9 @@ export function challengeAt(owner: number, count: number) {
 }
 export function beatAt(state: PreviewRuntime) {
   const round = roundAt(state);
-  const index = Math.floor(round.elapsed / BEAT),
-    local = round.elapsed % BEAT;
+  const actionTime = state.externalRound ? state.time : round.elapsed;
+  const index = Math.floor(actionTime / BEAT),
+    local = actionTime % BEAT;
   const attacker = round.candidates[index % round.candidates.length] ?? 0;
   return {
     index,

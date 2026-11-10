@@ -8,15 +8,15 @@ final overlay. No wallet, backend, settlement or schema behavior is changed.
 
 ## Delivered sequence
 
-| Scroll interval | Place           | Camera / object response                                               | Existing destination                                           |
-| --------------- | --------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 0–12%           | Arrival         | Elevated town view, hero in the sky, camera approaches entrance        | Arena and standalone 3D preview                                |
-| 12–25%          | Gateway         | Hinged gates open before crossing; CASHCAT/WIF walk into the plaza     | Direct navigation remains available                            |
-| 25–40%          | Community plaza | Fixed vista, original five mascots, selectable descriptions            | Mascot selection is decorative; not a token eligibility check  |
-| 40–54%          | Create Battle   | Two capsules approach, assembly arm moves, gear turns, receipt extends | Existing two-contract/duration/bond proposal form              |
-| 54–73%          | Arena overlook  | Two hosts act on separate personal spring reactors                     | Existing Arena / scripted preview                              |
-| 73–89%          | Your Vault      | Door unlocks/opens, then claim and withdraw drawers extend separately  | Portfolio and Terminal                                         |
-| 89–100%         | Final vista     | Wide town composition; ambient life continues at the end               | Arena, preview, Create Battle, Portfolio, Terminal and roadmap |
+| Scroll interval | Place           | Camera / object response                                               | Existing destination                                          |
+| --------------- | --------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 0–12%           | Arrival         | Elevated town view, hero in the sky, camera approaches entrance        | Arena and Create Battle                                       |
+| 12–25%          | Gateway         | Hinged gates open before crossing; CASHCAT/WIF walk into the plaza     | Direct navigation remains available                           |
+| 25–40%          | Community plaza | Fixed vista, original five mascots, selectable descriptions            | Mascot selection is decorative; not a token eligibility check |
+| 40–54%          | Create Battle   | Two capsules approach, assembly arm moves, gear turns, receipt extends | Existing two-contract/duration/bond proposal form             |
+| 54–73%          | Arena overlook  | Two hosts act on separate personal spring reactors                     | Arena list → battle → integrated 3D scene and chart           |
+| 73–89%          | Your Vault      | Door unlocks/opens, then claim and withdraw drawers extend separately  | Portfolio and Terminal                                        |
+| 89–100%         | Final vista     | Wide town composition; ambient life continues at the end               | Arena, Create Battle, Portfolio, Terminal and roadmap         |
 
 Chapter navigation and Skip journey use native window scrolling. No wheel handler,
 body lock or forced completion controls the main journey. Body overflow is locked
@@ -34,7 +34,7 @@ only while the field-notes modal is open, then restored on close or route unmoun
 - Five existing mascot GLBs and embedded animation clips are reused. Host position
   is a pure function of scroll, allowing forward/backward travel. Walking responds
   to actual displacement; heading uses the shortest angular path.
-- BTCETHUSDT has three alternating modules, REBATE has receipt/halo motion,
+- BTCETHUSDT is a grinning gold coin with sunglasses, REBATE has return-arrow motion,
   CASHCAT has tail motion, WIF uses its existing toy animation and OAK its idle/greeting.
 
 Generate with `node web/scripts/build-landing-world.mjs` from the repository root.

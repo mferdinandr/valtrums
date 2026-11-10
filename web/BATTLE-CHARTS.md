@@ -1,0 +1,64 @@
+# Battle charts
+
+The integrated 3D battle arena, view-only multi-community demo and wallet battle page
+share a lightweight SVG chart. It supports community selection, sample inspection
+by pointer or keyboard slider, an accessible legend, and an expanded native dialog.
+Selecting a chart never changes a deposit amount, deposit side, score or winner.
+
+## Scripted sample fixtures
+
+`colosseum/score-series.ts` produces explicitly scripted visual sample series from
+the same fixture endpoint scores used by the existing round resolver. Gain/growth
+series can change provisional leaders; volume is cumulative, and maximum drawdown
+is nondecreasing. Every complete endpoint matches the fixture score. Volume is
+displayed as 100 × round quote volume / initial market cap, and lower drawdown is
+better. No random values, market feed or financial authority are introduced.
+
+The plot reveals only samples up to the exhibition clock, uses a fixed per-mode
+vertical domain and resets baselines each overtime round. Eliminated participants
+have no new-round observations. Missing close evidence is a null endpoint, which
+breaks the line and suppresses a result. Verified scores and outcomes still come
+from `roundAt` and its integer/rational resolver, never the floating-point chart.
+
+The chart legend uses the same selected community as the integrated 3D arena. A display-only
+leader field highlights that participant's reactor with a colored ring, without
+changing character targeting or resolution. Reduced motion removes ring pulsation
+and leader-change animation. Pausing the exhibition freezes the chart clock.
+
+The chart appears beneath the 3D viewport in the battle detail page on desktop
+and mobile. Expand provides a larger native modal view. There is no separate
+exhibition route or start button; the former `/arena/preview` route redirects
+to the battle list. Pure fixture overtime helpers remain test/demo utilities,
+not an authority for recorded battle outcomes.
+
+## Current wallet battle
+
+The legacy API has initial/final contract prices and an optional spot-price method,
+not observation history. The NEAR adapter currently returns null for spot prices.
+The page therefore plots disconnected start/available-snapshot markers, without
+inventing timestamps or intermediate price movement. Missing observations remain
+missing. Mock adapter snapshots are labeled simulated, and spot snapshots disclose
+that provider timestamps are unavailable. The existing spot call is refreshed every
+ten seconds during Live; superseded requests use the existing useAsync cancellation
+guard. No new endpoint, history cache or database migration is added.
+
+After deposits close, chart selection highlights the corresponding scene vault.
+While deposits are open, the transaction form and scene retain their existing
+selected/locked side. Chart inspection cannot switch the user's deposit side.
+Recorded winner/status takes precedence over provisional chart comparisons.
+
+## View-only multi-community demo
+
+Its chart is a separately labeled fixture aligned to the demo's elapsed clock.
+It stops at thirty seconds and does not calculate or submit the demo battle's
+result. Communities are matched by exact demo-token ID. If the roster cannot be
+matched completely, the chart shows missing observations rather than inventing
+mascots/scores. All deposit/payout limitations of this page remain intact.
+
+## Verification
+
+Unit checks cover missing-data line gaps, negative/tied and lower-is-better display
+comparisons, snapshot-only behavior, final-price precedence, all four fixture
+endpoints, monotonic volume/drawdown, fresh overtime baselines and missing close
+evidence. Production build checks TypeScript and routes. No Playwright/browser QA
+was run; overlay composition, touch and expanded-dialog runtime need visual review.

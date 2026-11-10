@@ -230,6 +230,7 @@ function Carnival({ runtime }: Runtime) {
 function ReactorTarget({ index, runtime }: Runtime & { index: number }) {
   const top = useRef<Group>(null),
     ring = useRef<Group>(null),
+    leader = useRef<Mesh>(null),
     sign = useRef<Group>(null);
   const color = PARTY[index % PARTY.length]!;
   const target = challengeAt(index, runtime.current.roster.length);
@@ -237,6 +238,16 @@ function ReactorTarget({ index, runtime }: Runtime & { index: number }) {
     const state = runtime.current,
       beat = beatAt(state);
     const age = beat.local - 1.15;
+    if (leader.current) {
+      leader.current.visible =
+        state.chartLeader === index &&
+        state.phase === "battle" &&
+        beat.round.candidates.includes(index) &&
+        beat.round.stage === "fighting";
+      leader.current.scale.setScalar(
+        state.reduced ? 1 : 1 + Math.sin(state.time * 3) * 0.06,
+      );
+    }
     const active = beat.fighting && beat.attacker === index && !state.reduced;
     const bounce =
       active && age >= 0 && age < 0.8
@@ -257,6 +268,15 @@ function ReactorTarget({ index, runtime }: Runtime & { index: number }) {
   });
   return (
     <group position={[target.x, 0, target.z]}>
+      <mesh
+        ref={leader}
+        visible={false}
+        position={[0, 0.07, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <torusGeometry args={[0.88, 0.065, 8, 48]} />
+        <meshBasicMaterial color={runtime.current.roster[index]!.color} />
+      </mesh>
       <mesh position={[0, 0.18, 0]} receiveShadow castShadow>
         <cylinderGeometry args={[0.48, 0.6, 0.3, 24]} />
         <meshStandardMaterial color="#fff9ed" roughness={0.6} />
