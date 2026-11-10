@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TokenLabel } from "../token-labels.js";
 
 export const APPLICATION_SCHEMA = "arena-application-v1" as const;
 
@@ -79,6 +80,6 @@ export interface ApplicationBattleSummary {
   mode: string;
   status: "open" | "locked" | "decided";
   winner: number | null;
-  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string }>;
+  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string; /** Display name only; identity is chainId + tokenAddress. */ label: TokenLabel | null }>;
 }
 export interface ApplicationPage<T> { items: T[]; nextCursor: string | null; truncated: boolean }

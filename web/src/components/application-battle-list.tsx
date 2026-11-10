@@ -156,6 +156,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                   {battle.communities.map((c) => (
                     <span key={c.index} title={c.representation}>
                       {communityName(c.index)}
+                      {c.label ? ` · ${c.label.symbol}` : ""}
                     </span>
                   ))}
                 </div>
@@ -176,6 +177,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                   <p>Creator: {shortAccount(battle.creator)}</p>
                   {battle.communities.map((c) => (
                     <p key={c.index}>
+                      {c.label ? `${c.label.symbol} (${c.label.name}) · ` : ""}
                       {c.representation}
                       <br />
                       {c.chainId}:{c.tokenAddress}

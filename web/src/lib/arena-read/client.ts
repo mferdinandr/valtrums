@@ -34,7 +34,7 @@ export interface BattleSummary {
   protocolCreated: boolean;
   status: "open" | "locked" | "decided";
   winner: number | null;
-  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string }>;
+  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string; label?: { symbol: string; name: string; kind: "testnet-mock" | "mainnet-reference" } | null }>;
 }
 
 export interface BattlePage {

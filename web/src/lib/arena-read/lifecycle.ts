@@ -71,12 +71,21 @@ export interface StoredRound {
   complete: false;
   reason: string;
 }
+/** A curated display name for a token. Identity is always chainId + address; a label never implies eligibility. */
+export interface TokenLabel {
+  symbol: string;
+  name: string;
+  kind: "testnet-mock" | "mainnet-reference";
+}
+
 export interface LifecycleDetail {
   battleId: string;
   battle: LifecycleBattle;
   round: LifecycleRound | null;
   readiness: LifecycleReadiness | null;
   history: { items: StoredRound[]; next_round: string | null } | null;
+  /** Display labels aligned with `battle.communities`; absent from older services. */
+  labels?: Array<TokenLabel | null>;
 }
 export type LifecycleEnvelope = ApplicationEnvelope<LifecycleDetail>;
 
@@ -119,6 +128,7 @@ export interface CommunityRow {
   asset: string;
   vault: string;
   reference: string | null;
+  label: TokenLabel | null;
   audit: { evidenceHash: string | null; expiresAtMs: string | null; state: "none" | "valid" | "expired" };
   backing: { known: boolean; trusted: boolean; assetMatches: boolean; fresh: boolean; expiresAtMs: string | null; evidenceHash: string | null };
   /** Specific reasons this community is not ready, or an empty list. Never inferred from a symbol or model. */
@@ -152,6 +162,7 @@ export function communityRows(detail: LifecycleDetail, nowMs: number): Community
     return {
       index, representation: c.representation, asset: `${c.chain_id}:${c.token_address}`, vault: c.vault,
       reference: c.reference_chain_id !== null && c.reference_address !== null ? `${c.reference_chain_id}:${c.reference_address}` : null,
+      label: detail.labels?.[index] ?? null,
       audit, backing, blockers,
       eliminated: candidates !== null && !candidates.has(index),
       recordedWinner: detail.round?.winner === index,

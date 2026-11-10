@@ -1,5 +1,6 @@
 // FIXTURE-ONLY read service for browser tests. It runs the REAL application read code from agent/dist over
 // in-memory fixtures and a temporary observation journal. Nothing here was observed on a live network.
+import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -80,10 +81,15 @@ const manifest = [{
   capabilities: { battles: cap("fixture"), detail: cap("fixture"), assets: cap("fixture"), audits: cap("fixture"), observations: cap("fixture"), custody: cap("fixture") },
 }];
 const source = new FixtureArenaReadSource("near-testnet", { battles, rounds });
+// Real mock-token addresses from the deploy evidence, so the curated display labels resolve in the browser tests.
+const MOCKS = JSON.parse(readFileSync(new URL("../../docs/evidence/2026-11-09-evm-testnet-deploy.json", import.meta.url), "utf8")).mockTokens;
+const mock = (symbol) => MOCKS.find((t) => t.symbol === symbol);
 const registry = staticReferenceRegistry([
   { chainId: "46630", token: addr(1), referenceChainId: "4663", referenceToken: addr("b") },
   { chainId: "46630", token: addr(2), referenceChainId: "4663", referenceToken: addr("c") },
   { chainId: "46630", token: addr(3), referenceChainId: "4663", referenceToken: addr("d") },
+  { chainId: "46630", token: mock("mCASHCAT").address.toLowerCase(), referenceChainId: "4663", referenceToken: mock("mCASHCAT").referenceMainnetToken.toLowerCase() },
+  { chainId: "46630", token: mock("mWALLET").address.toLowerCase(), referenceChainId: "4663", referenceToken: mock("mWALLET").referenceMainnetToken.toLowerCase() },
 ]);
 const application = new ApplicationReads(manifest, new Map([[NS.deploymentId, {
   source, versioned: new VersionedLifecycleReadSource(ARENA, view), registry,
