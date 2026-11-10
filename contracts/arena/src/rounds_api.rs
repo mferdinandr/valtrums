@@ -756,6 +756,24 @@ pub(crate) mod tests {
         );
     }
 
+    /// Cross-language vector: the indexer (`agent/test/indexer/round-commitment.test.ts`) and an
+    /// independent Python encoding produce the same digest for the same detail.
+    #[test]
+    fn the_commitment_matches_the_cross_language_vector() {
+        use crate::rounds::round_commitment;
+        let gain = crate::scoring::tests_support_price_gain(100, 110);
+        let loss = crate::scoring::tests_support_price_gain(100, 95);
+        assert_eq!(gain.parts(), (false, "10".into(), "100".into()));
+        assert_eq!(loss.parts(), (true, "5".into(), "100".into()));
+        let scores = vec![(0u32, "h0".to_string(), gain), (2, "h2".into(), loss)];
+        let digest = round_commitment(1, 2, 1000, 2000, "pol", &scores);
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex,
+            "4f93bb7b193a54cb56f5ab4301ddf3e76bd12593c8f4026d4c92a1e40779a1fc"
+        );
+    }
+
     #[test]
     fn the_commitment_binds_window_policy_and_every_score() {
         use crate::rounds::round_commitment;

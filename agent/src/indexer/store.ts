@@ -383,6 +383,7 @@ function validateState(state: StoreState): void {
     else if (name === "audit_updated") check(decimal(e.battleId) && decimal(e.community) && ["pass", "reject", "pending"].includes(String(e.result)) && text(e.evidenceHash) && optDec(e.expiresAtMs), "invalid audit");
     else if (name === "backing_updated") check(decimal(e.battleId) && decimal(e.community) && typeof e.approved === "boolean" && (e.evidenceHash === null || text(e.evidenceHash)) && optDec(e.expiresAtMs), "invalid backing update");
     else if (name === "lifecycle_representation_trust_changed") check(acct(e.representation) && typeof e.trusted === "boolean", "invalid trust change");
+    else if (name === "round_finalized") check(decimal(e.battleId) && decimal(e.roundId) && (e.outcome === "winner" || e.outcome === "overtime") && (e.winner === null || decimal(e.winner)) && Array.isArray(e.nextCandidates) && e.nextCandidates.every(decimal) && decimal(e.startNs) && decimal(e.endNs) && text(e.policyHash) && hex64(e.commitment) && Array.isArray(e.scores) && e.scores.length > 0 && e.scores.length <= 64, "invalid round finalization");
     else if (name === "late_deposit_recorded") check(decimal(e.battleId) && acct(e.beneficiary) && text(e.refundAddress) && decimal(e.units), "invalid late deposit");
     else if (name === "asset_suspended") check(text(e.reason), "invalid suspension");
     else if (name === "asset_resumed") check(acct(e.by) && typeof e.reorg === "boolean" && typeof e.deficit === "boolean" && typeof e.stillSuspended === "boolean", "invalid resume");

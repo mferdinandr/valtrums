@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { roundCommitmentHex } from "./round-commitment.js";
 import {
   BACKING_STANDARD,
   COMPANION_STANDARDS,
@@ -149,6 +150,7 @@ const ARENA_EVENTS: Record<string, SupportedEventName> = {
   lifecycle_deposit: "lifecycle_deposit",
   backing_updated: "backing_updated",
   lifecycle_representation_trust_changed: "lifecycle_representation_trust_changed",
+  round_finalized: "round_finalized",
 };
 const BACKING_EVENTS: Record<string, SupportedEventName> = {
   late_deposit_recorded: "late_deposit_recorded",
@@ -212,6 +214,57 @@ function normalize(name: SupportedEventName, data: Record<string, JsonValue>): A
       };
     case "lifecycle_representation_trust_changed":
       return { name, representation: reqString(data, "representation", ACCOUNT_MAX), trusted: reqBool(data, "trusted") };
+    case "round_finalized": {
+      if (data.schema !== "round-finalized-v1") throw new PayloadError("malformed_payload", "unsupported round_finalized schema");
+      const outcome = reqString(data, "outcome", 16);
+      if (outcome !== "winner" && outcome !== "overtime") throw new PayloadError("malformed_payload", "outcome must be winner or overtime");
+      const rawScores = data.scores;
+      if (!Array.isArray(rawScores) || rawScores.length === 0 || rawScores.length > 64) {
+        throw new PayloadError("malformed_payload", "scores must be a non-empty bounded array");
+      }
+      const scores = rawScores.map((raw) => {
+        if (typeof raw !== "object" || raw === null || Array.isArray(raw) || isUnsafeNumber(raw)) {
+          throw new PayloadError("malformed_payload", "score must be an object");
+        }
+        const o = raw as Record<string, JsonValue>;
+        return {
+          community: reqIntString(o, "community"),
+          evidenceHash: reqString(o, "evidence_hash"),
+          negative: reqBool(o, "negative"),
+          numerator: reqIntString(o, "numerator"),
+          denominator: reqIntString(o, "denominator"),
+        };
+      });
+      const next = data.next_candidates;
+      if (!Array.isArray(next)) throw new PayloadError("malformed_payload", "next_candidates must be an array");
+      const nextCandidates = next.map((_, i) => reqIntString({ v: next[i]! }, "v"));
+      const winner = data.winner === null || data.winner === undefined ? null : reqIntString(data, "winner");
+      if (outcome === "winner" ? winner === null || nextCandidates.length > 0 : winner !== null || nextCandidates.length < 2) {
+        throw new PayloadError("malformed_payload", "outcome does not match winner/next_candidates");
+      }
+      const event = {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        roundId: reqIntString(data, "round_id"),
+        outcome,
+        winner,
+        nextCandidates,
+        startNs: reqIntString(data, "start_ns"),
+        endNs: reqIntString(data, "end_ns"),
+        policyHash: reqString(data, "policy_hash"),
+        commitment: reqBytes32Hex(data, "commitment"),
+        scores,
+      } as const;
+      let recomputed: string;
+      try {
+        recomputed = roundCommitmentHex({ ...event, scores: [...scores] });
+      } catch {
+        throw new PayloadError("malformed_payload", "round detail is out of range");
+      }
+      // The event carries the full detail only so it can be checked against the committed hash.
+      if (recomputed !== event.commitment) throw new PayloadError("malformed_payload", "round detail does not match its commitment");
+      return event;
+    }
     case "late_deposit_recorded":
       return {
         name,

@@ -52,6 +52,20 @@ export interface LateDepositEntry {
   ref: EventRef;
 }
 
+/** One finalized round as the arena committed it. Exact scores are decimal strings; nothing is inferred. */
+export interface RoundEntry {
+  roundId: string;
+  outcome: "winner" | "overtime";
+  winner: string | null;
+  nextCandidates: string[];
+  startNs: string;
+  endNs: string;
+  policyHash: string;
+  commitment: string;
+  scores: { community: string; evidenceHash: string; negative: boolean; numerator: string; denominator: string }[];
+  ref: EventRef;
+}
+
 export interface BattleActivity {
   namespace: string;
   battleId: string;
@@ -67,6 +81,13 @@ export interface BattleActivity {
   backings: Record<string, BackingEntry>;
   /** Late deposits recorded by a backing contract for this battle id. */
   lateDeposits: LateDepositEntry[];
+  /**
+   * Finalized rounds recorded by `round_finalized` events (commitment-checked), in canonical order.
+   * Absent until the first such event, so a journal without them projects exactly as before. A round
+   * finalized before the contract emitted this event is simply missing: history is incomplete, never
+   * reconstructed.
+   */
+  rounds?: RoundEntry[];
   /** Every event reference for this battle, in canonical order. */
   activity: EventRef[];
 }
@@ -208,6 +229,19 @@ export function buildProjection(events: AcceptedEvent[], opts: BuildOptions): Pr
         b.creditedByCommunity[e.community] = ((prev ? BigInt(prev) : 0n) + BigInt(e.amount)).toString();
       } else if (e.name === "backing_updated") {
         b.backings[e.community] = { approved: e.approved, evidenceHash: e.evidenceHash, expiresAtMs: e.expiresAtMs, ref };
+      } else if (e.name === "round_finalized") {
+        (b.rounds ??= []).push({
+          roundId: e.roundId,
+          outcome: e.outcome,
+          winner: e.winner,
+          nextCandidates: e.nextCandidates,
+          startNs: e.startNs,
+          endNs: e.endNs,
+          policyHash: e.policyHash,
+          commitment: e.commitment,
+          scores: e.scores,
+          ref,
+        });
       } else if (e.name === "late_deposit_recorded") {
         b.lateDeposits.push({ beneficiary: e.beneficiary, refundAddress: e.refundAddress, units: e.units, ref });
       }

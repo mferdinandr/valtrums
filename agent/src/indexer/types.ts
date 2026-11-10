@@ -105,6 +105,7 @@ export type SupportedEventName =
   | "lifecycle_deposit"
   | "backing_updated"
   | "lifecycle_representation_trust_changed"
+  | "round_finalized"
   | "late_deposit_recorded"
   | "asset_suspended"
   | "asset_resumed"
@@ -123,6 +124,7 @@ export const SUPPORTED_EVENTS: readonly SupportedEventName[] = [
   "lifecycle_deposit",
   "backing_updated",
   "lifecycle_representation_trust_changed",
+  "round_finalized",
   "late_deposit_recorded",
   "asset_suspended",
   "asset_resumed",
@@ -192,6 +194,21 @@ export type AcceptedEvent =
       expiresAtMs: string | null;
     })
   | (EventCommon & { name: "lifecycle_representation_trust_changed"; representation: string; trusted: boolean })
+  | (EventCommon & {
+      name: "round_finalized";
+      battleId: string;
+      roundId: string;
+      /** `pending` is never emitted: a round that records nothing emits nothing. */
+      outcome: "winner" | "overtime";
+      winner: string | null;
+      nextCandidates: string[];
+      startNs: string;
+      endNs: string;
+      policyHash: string;
+      /** sha256 commitment, verified against the exact scores below before the event is accepted. */
+      commitment: string;
+      scores: { community: string; evidenceHash: string; negative: boolean; numerator: string; denominator: string }[];
+    })
   | (EventCommon & { name: "late_deposit_recorded"; battleId: string; beneficiary: string; refundAddress: string; units: string })
   | (EventCommon & { name: "asset_suspended"; reason: string })
   | (EventCommon & { name: "asset_resumed"; by: string; reorg: boolean; deficit: boolean; stillSuspended: boolean })
