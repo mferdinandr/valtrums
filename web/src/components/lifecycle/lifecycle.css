@@ -357,3 +357,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.token-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.token-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}

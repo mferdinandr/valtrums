@@ -13,6 +13,8 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { CarnivalScene } from "@/components/carnival/scene";
+import { TokenIcon } from "@/components/token-icon";
+import { displaySymbol } from "@/lib/arena-read/token-style";
 import {
   communityName,
   modeName,
@@ -154,15 +156,24 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                 </p>
                 <div className="lifecycle-facts">
                   {battle.communities.map((c) => (
-                    <span key={c.index} title={c.representation}>
-                      {communityName(c.index)}
-                      {c.label ? ` · ${c.label.symbol}` : ""}
+                    <span key={c.index} title={c.representation} className="token-pill">
+                      {c.label ? (
+                        <>
+                          <TokenIcon symbol={displaySymbol(c.label, "")} size={22} />
+                          {displaySymbol(c.label, "")}
+                        </>
+                      ) : (
+                        communityName(c.index)
+                      )}
                     </span>
                   ))}
                 </div>
                 {battle.winner !== null && (
                   <p className="mt-3 text-xs">
-                    Recorded winner: {communityName(battle.winner)}
+                    Recorded winner:{" "}
+                    {battle.communities[battle.winner]?.label
+                      ? displaySymbol(battle.communities[battle.winner]!.label, "")
+                      : communityName(battle.winner)}
                   </p>
                 )}
                 <div className="lifecycle-actions">
@@ -177,7 +188,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                   <p>Creator: {shortAccount(battle.creator)}</p>
                   {battle.communities.map((c) => (
                     <p key={c.index}>
-                      {c.label ? `${c.label.symbol} (${c.label.name}) · ` : ""}
+                      {c.label ? `${displaySymbol(c.label, "")} (${c.label.name}) · ` : ""}
                       {c.representation}
                       <br />
                       {c.chainId}:{c.tokenAddress}

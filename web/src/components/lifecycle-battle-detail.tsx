@@ -25,6 +25,8 @@ import {
   shortAccount,
 } from "@/lib/arena-read/lifecycle-presentation";
 import { formatCountdown } from "@/lib/amounts";
+import { TokenIcon } from "@/components/token-icon";
+import { displaySymbol } from "@/lib/arena-read/token-style";
 import "@/components/lifecycle/lifecycle.css";
 
 const when = (ms: number) =>
@@ -74,7 +76,7 @@ export function LifecycleBattleDetail({
   const fixture = data.provenance.kind === "fixture";
   const name = (i: number) =>
     roster[i]?.generic
-      ? (rows[i]?.label?.symbol ?? communityName(i))
+      ? (rows[i]?.label ? displaySymbol(rows[i]!.label, communityName(i)) : communityName(i))
       : (roster[i]?.name ?? communityName(i));
   const safeBattleId =
     BigInt(detail.battleId) <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -203,7 +205,10 @@ export function LifecycleBattleDetail({
                     <p className="eyebrow text-mute">
                       {communityName(r.index)}
                     </p>
-                    <h3>{name(r.index)}</h3>
+                    <h3 className="token-title">
+                      {r.label && <TokenIcon symbol={displaySymbol(r.label, "")} size={28} />}
+                      {name(r.index)}
+                    </h3>
                   </div>
                 </div>
                 <p className="lifecycle-amount">{exactUnits(r.vault)}</p>
@@ -250,7 +255,7 @@ export function LifecycleBattleDetail({
                   <summary>Asset identity &amp; evidence</summary>
                   {r.label && (
                     <p>
-                      Token label: {r.label.symbol} ({r.label.name}). A display name only; the identity is the chain
+                      Token label: {displaySymbol(r.label, "")} ({r.label.name}). A display name only; the identity is the chain
                       and address below.
                     </p>
                   )}

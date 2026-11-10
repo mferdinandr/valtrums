@@ -27,6 +27,8 @@ import {
 } from "@/lib/terminal/lifecycle-intent";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
 import { resolveAssetRefs, type RegistryAsset, type ResolveResult } from "@/lib/terminal/lifecycle-resolve";
+import { TokenIcon } from "@/components/token-icon";
+import { displaySymbol } from "@/lib/arena-read/token-style";
 
 const EXAMPLES = [
   "daftar di battle 7 komunitas 2",
@@ -283,7 +285,14 @@ function CreatePlan({ namespace, intent }: { namespace: Namespace; intent: Extra
       <ul className="space-y-1 text-xs">
         {resolved.assets.map((r, i) => (
           <li key={r.asset.assetKey} className="break-all">
-            Community {i + 1}: registry asset {r.asset.chainId}:{r.asset.token} (from &quot;{r.ref}&quot;)
+            <span className="token-title">
+              {(r.asset.label ?? r.asset.referenceLabel) && (
+                <TokenIcon symbol={displaySymbol(r.asset.label ?? r.asset.referenceLabel, "")} size={22} />
+              )}
+              Community {i + 1}:{" "}
+              {(r.asset.label ?? r.asset.referenceLabel) && <strong>{displaySymbol(r.asset.label ?? r.asset.referenceLabel, "")} · </strong>}
+              registry asset {r.asset.chainId}:{r.asset.token} (from &quot;{r.ref}&quot;)
+            </span>
           </li>
         ))}
       </ul>
