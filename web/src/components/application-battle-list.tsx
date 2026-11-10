@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button";
 import { useApplicationSearch } from "@/hooks/use-application-search";
 import type { Namespace, ApplicationBattlePage } from "@/lib/arena-read/application";
 import { cn } from "@/lib/utils";
+import { ObservationChart } from "@/components/battle-chart/observation-chart";
 
 /** Lifecycle reads retain their own DTO; never reinterpret them as legacy A/B economics. */
 export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
+  const [chartFor, setChartFor] = useState<string | null>(null);
   const [q, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [cursor, setCursor] = useState<string | undefined>();
@@ -37,6 +39,11 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         <p className="mt-2 break-all text-xs text-mute">Creator: {battle.creator}</p>
         {battle.communities.map((c) => <p key={c.index} className="mt-3 break-all text-xs">{c.representation}<br />{c.chainId}:{c.tokenAddress}</p>)}
         {battle.winner !== null && <p className="mt-3 text-xs">Recorded winner: community {battle.winner}</p>}
+        {battle.status !== "open" && <>
+          <Button variant="ghost" aria-expanded={chartFor === battle.battleId} onClick={() => setChartFor(chartFor === battle.battleId ? null : battle.battleId)}>
+            {chartFor === battle.battleId ? "Hide observations" : "Show observations"}</Button>
+          {chartFor === battle.battleId && <ObservationChart namespace={namespace} battleId={battle.battleId} />}
+        </>}
       </Card>)}</div>
       {result.data.nextCursor && <Button variant="ghost" disabled={loading} onClick={() => setCursor(result.data.nextCursor!)}>Next page</Button>}
     </>}

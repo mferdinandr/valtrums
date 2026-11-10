@@ -44,10 +44,11 @@ export async function proxyApplicationRead(
 ): Promise<ProxyResult> {
   const fail = (status: number, code: string, message: string): ProxyResult => ({ status,
     body: { schemaVersion: "arena-application-v1", error: { code, message, retryable: status === 503 } } });
-  if (!/^(capabilities|health|assets|battles|battles\/[1-9][0-9]{0,19}(?:\/audits)?)$/.test(path)) return fail(404, "not_found", "unknown application read route");
+  if (!/^(capabilities|health|assets|battles|battles\/[1-9][0-9]{0,19}(?:\/(?:audits|observations))?)$/.test(path)) return fail(404, "not_found", "unknown application read route");
   const keys = new Set<string>();
   const allowed = path === "capabilities" ? [] : ["deployment", "protocol", ...(path === "battles" ? ["q", "mode", "status", "community", "limit", "cursor"]
-    : path === "assets" ? ["q", "limit", "cursor"] : path.endsWith("/audits") ? ["community", "limit", "cursor"] : [])];
+    : path === "assets" ? ["q", "limit", "cursor"] : path.endsWith("/audits") ? ["community", "limit", "cursor"]
+      : path.endsWith("/observations") ? ["round", "community", "after", "limit", "observedFrom", "observedTo"] : [])];
   for (const [k, v] of search) {
     if (keys.has(k) || !allowed.includes(k) || v.length > 1024) return fail(400, "invalid_query", "invalid query parameters");
     keys.add(k);
@@ -59,7 +60,11 @@ export async function proxyApplicationRead(
   if (search.has("mode") && !["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"].includes(search.get("mode")!)) return fail(400, "invalid_query", "unknown scoring mode");
   if (search.has("status") && !["open", "locked", "decided"].includes(search.get("status")!)) return fail(400, "invalid_query", "unknown battle status");
   if (search.has("cursor") && !/^[A-Za-z0-9_-]{1,1024}$/.test(search.get("cursor")!)) return fail(400, "invalid_query", "malformed cursor");
-  if (search.has("community") && !(path.endsWith("/audits") ? /^(0|[1-9][0-9]{0,2})$/.test(search.get("community")!) && Number(search.get("community")) <= 255 : /^[a-z0-9._-]{2,64}$/.test(search.get("community")!))) return fail(400, "invalid_query", "invalid community");
+  if (path.endsWith("/observations")) {
+    const ok = (k: string, re: RegExp) => !search.has(k) || re.test(search.get(k)!);
+    if (!ok("round", /^(0|[1-9][0-9]{0,19})$/) || !ok("after", /^(0|[1-9][0-9]{0,15})$/) || !ok("observedFrom", /^(0|[1-9][0-9]{0,19})$/) || !ok("observedTo", /^(0|[1-9][0-9]{0,19})$/) ||
+      !ok("community", /^(?:[0-9]|1[0-5])$/)) return fail(400, "invalid_query", "invalid observation query");
+  } else if (search.has("community") && !(path.endsWith("/audits") ? /^(0|[1-9][0-9]{0,2})$/.test(search.get("community")!) && Number(search.get("community")) <= 255 : /^[a-z0-9._-]{2,64}$/.test(search.get("community")!))) return fail(400, "invalid_query", "invalid community");
   const base = baseUrl(env);
   if (!base) return fail(503, "upstream_unavailable", "read API is not configured");
   const out = await forward(`${base}/api/arena/v1/${path}${search.size ? `?${search}` : ""}`, { method: "GET" }, doFetch, signal);

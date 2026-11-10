@@ -62,3 +62,18 @@ comparisons, snapshot-only behavior, final-price precedence, all four fixture
 endpoints, monotonic volume/drawdown, fresh overtime baselines and missing close
 evidence. Production build checks TypeScript and routes. No Playwright/browser QA
 was run; overlay composition, touch and expanded-dialog runtime need visual review.
+
+## Lifecycle observation chart (issue #146)
+
+`battle-chart/observation-chart.tsx` charts persisted observation evidence served by
+`GET /api/arena/v1/battles/{id}/observations` and is shown from the application battle list
+for locked and decided battles. It draws only what the backend returned: plotted points sit at
+the provider's observation time; a missing start sample means no baseline (no values), a missing
+close sample or a reported coverage gap is a null point that breaks the line, and samples without a
+provider time are counted but not plotted. Exact provisional scores are listed as fractions from the
+backend; float chart coordinates are display geometry only. The contract's recorded winner is a
+separate line and a provisional leader never changes it. The source label (fixture, recorded or
+live) is taken from the samples. If the observation service is unavailable the component shows that
+and no sample data; it never falls back to the scripted demo series. Polling is cancel-safe delta
+polling (default two seconds, a display choice and not the provider's cadence); a revision change
+reloads the evidence, and hiding the tab pauses only these refreshes.

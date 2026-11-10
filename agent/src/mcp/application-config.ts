@@ -6,6 +6,8 @@ import { manifestSchema, namespaceKey, namespaceOf, safeId } from "./application
 import { ApplicationReads, type ApplicationBinding } from "./application.js";
 import { NearReferenceRegistrySource, staticReferenceRegistry } from "../reference-registry.js";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
+import { loadObservationState } from "../observations/journal.js";
+import { loadObservationConfig } from "../observations/config.js";
 import { z } from "zod";
 
 const fixtureSchema = z.object({
@@ -46,6 +48,15 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
         const path = env.AUDIT_ARCHIVE_PATH;
         const archive = new JsonFileReportArchive(path);
         binding.audits = { archive: { snapshot: async () => { await access(path); return archive.snapshot(); } }, namespace: namespaceOf(d) };
+      }
+    }
+    const observationConfig = loadObservationConfig(env);
+    if (observationConfig && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
+      const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
+      if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
+        // Read-only replay on every request: a missing or corrupt journal is an explicit 503, never an empty chart.
+        binding.observations = { namespace: namespaceOf(d), load: async () => (await loadObservationState(observationConfig.dir)).state,
+          qualifiedModes: observationConfig.qualifiedModes, coveragePolicy: observationConfig.coveragePolicy };
       }
     }
     bindings.set(d.deploymentId, binding);

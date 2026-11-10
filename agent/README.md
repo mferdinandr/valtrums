@@ -206,3 +206,22 @@ Run: `pnpm -C agent build`, then `pnpm -C agent payout:relayer` and `pnpm -C age
 - **Status references** (for the read API and portfolio): structured log lines `payout relayer pass` (`requested`, `skipped[]`, `errors`), `payout operator pass` (`results[]` with `submitted|dry_run|refused|failed`, `unresolved`, `errors`), `payout reconciled` (per payout `kind`) and the contract's `get_payout` / `list_open_payouts` state. A signature, a pending transaction or a timeout is never delivered or restored funds; only `confirmed` and `restored` are terminal.
 - **Restart/recovery:** just restart the process. No in-memory state is required for safety. After an operator `failed` result, check `get_payout` and let the next pass re-read the chain.
 - **Not live proof:** everything above is fixture-tested. Live release stays gated by #148 (custody spendability) and #80 (end-to-end acceptance).
+
+## Market observations (journal, reads and collector)
+
+Read-only observation evidence for the round chart (`arena-market-observations`, issue #146). Off unless `OBSERVATION_JOURNAL_DIR` is set on the read service; the collector runtime that supplies frozen rounds belongs to the lifecycle scheduler (#147), and no live provider source is enabled (it fails with the missing-qualification reason).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OBSERVATION_JOURNAL_DIR` | unset | directory of the observation journal (`journal.jsonl`, `manifest.json`, `journal.lock`); the read service replays it read-only |
+| `ARENA_APPLICATION_OBSERVATION_SCOPE` | unset | JSON `{deploymentId, network, arenaContract, protocol}` of the deployment this journal belongs to; a mismatch binds nothing |
+| `OBSERVATION_QUALIFIED_MODES` | empty | comma list from `PriceGain`, `LowestDrawdown`, taken from provider qualification; market-cap and volume modes are rejected because they need exact supply or interval-trade evidence |
+| `OBSERVATION_BOUNDARY_TOLERANCE_MS`, `OBSERVATION_MAX_GAP_MS` | unset | approved coverage policy, set together; without it coverage and scores stay withheld |
+
+Route: `GET /api/arena/v1/battles/{id}/observations?deployment=&protocol=&round=&community=&after=&limit=` (limit 1 to 50). The fixture, recorded or live label comes from the samples themselves, not from configuration.
+
+- **Capacity:** at most 200000 records or 256 MiB; nothing is pruned. Reaching it is a visible `capacity_*` error from the writer; the retention policy is an open decision.
+- **Corruption:** an edited, reordered or damaged record, or a manifest ahead of the journal, makes the reader answer 503 and the writer refuse to open. Do not reset it: stop every writer, back up the directory, inspect `journal.jsonl` and `manifest.json`, restore from backup or repair the damaged tail deliberately, and only then remove an abandoned `journal.lock`.
+- **Torn tail:** a crash mid-append leaves a partial last line that was never acknowledged; the next writer discards exactly those bytes and reports `torn_tail_discarded`. A manifest that lags the journal by one record is rebuilt from the journal.
+- **Conflicts:** the same source evidence with different content is refused, the first record is kept and health shows `conflicting_source_evidence`.
+- **Retractions:** a retraction record hides a sample without erasing it and raises `revision`; clients reload on a revision change.
