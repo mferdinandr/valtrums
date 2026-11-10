@@ -1,12 +1,16 @@
 import type { NextConfig } from "next";
 
-// LOCAL_CI_JOBS (set by scripts/pre-commit.sh) caps the build worker count so a local check does not
-// saturate the machine. Unset, Next.js keeps its own default.
-const jobs = Number(process.env.LOCAL_CI_JOBS);
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  ...(Number.isInteger(jobs) && jobs > 0 ? { experimental: { cpus: jobs } } : {}),
+  // Old bookmarks of the former A/B app enter the single lifecycle application.
+  async redirects() {
+    return [
+      { source: "/battles", destination: "/arena", permanent: true },
+      { source: "/battles/new", destination: "/arena/new", permanent: true },
+      { source: "/battles/:id(\\d+)", destination: "/arena/:id", permanent: true },
+      { source: "/arena/preview", destination: "/arena", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -7,9 +7,8 @@ import { useApplicationDeployment } from "@/components/providers";
 import { LifecycleBattleDetail } from "@/components/lifecycle-battle-detail";
 
 /**
- * Lifecycle battle detail for an application deployment. Without a configured deployment there is
- * nothing to read: the page says so and does not fall back to the legacy A/B pages or to demo data.
- * The legacy flow stays at /battles/*.
+ * Lifecycle battle detail. Without a configured deployment there is nothing to read: the page says so and
+ * never falls back to demo data. /battles/<id> redirects here.
  */
 export default function LifecycleBattlePage({ params }: { params: Promise<{ battleId: string }> }) {
   const { battleId } = use(params);
