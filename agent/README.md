@@ -225,3 +225,24 @@ Route: `GET /api/arena/v1/battles/{id}/observations?deployment=&protocol=&round=
 - **Torn tail:** a crash mid-append leaves a partial last line that was never acknowledged; the next writer discards exactly those bytes and reports `torn_tail_discarded`. A manifest that lags the journal by one record is rebuilt from the journal.
 - **Conflicts:** the same source evidence with different content is refused, the first record is kept and health shows `conflicting_source_evidence`.
 - **Retractions:** a retraction record hides a sample without erasing it and raises `revision`; clients reload on a revision change.
+
+## Lifecycle oracle (rounds)
+
+A dedicated process (`pnpm -C agent build && pnpm -C agent lifecycle:oracle`, issue #147) that opens and resolves recorded rounds from PERSISTED observation evidence. It holds only the dedicated oracle account key; it refuses to start when `AGENT_PRIVATE_KEY[_FILE]` or a payout relayer/operator key is in its environment. It never samples providers, never signs for custody, players or payouts, and starts in dry run.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ORACLE_ACCOUNT_ID`, `ORACLE_PRIVATE_KEY` or `_FILE` | required | the arena's configured oracle account; the oracle holds (hold, not write) when the contract names another account |
+| `ARENA_CONTRACT_ID`, `NEAR_NETWORK`, `NEAR_RPC_URL` | testnet | arena and network |
+| `ARENA_APPLICATION_OBSERVATION_SCOPE` | required | the deployment namespace JSON (must match the arena and a lifecycle-v2 namespace of the network) |
+| `OBSERVATION_JOURNAL_DIR` | required | the observation journal it reads (read-only) |
+| `OBSERVATION_QUALIFIED_MODES` | empty | `PriceGain`, `LowestDrawdown` only; market-cap and volume are refused live |
+| `ORACLE_EVIDENCE_KINDS` | `live` | source kinds that may resolve a round; sandbox deployments may add `fixture`/`recorded` (never on mainnet) |
+| `ORACLE_TERMS_PATH` | unset | JSON `{ "<frozen policy hash>": { source, quote_currency, eligible_pools, finality, price_decimals, supply_decimals, volume_decimals, boundary_tolerance_ns, max_gap_ns } }`; a battle whose hash is absent is held |
+| `ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO` | unset | storage deposit for `start_lifecycle_rounds`; unset means the oracle never spends it and reports `needs_rounds_started` |
+| `ORACLE_WRITES_ENABLED` | `false` | `true` sends transactions; otherwise it only reports what it would send |
+| `ORACLE_INTERVAL_SECS`, `ORACLE_STATE_DIR` | 5, required | pass interval (1 to 20) and the directory of `status.json` and a single-process `oracle.lock` |
+
+Behavior per pass, re-derived from the contract so a restart or a second process repeats nothing: not locked, blocked (wrong oracle, paused, not activated, no terms), needs rounds started, needs open (first round and each overtime), window open (waits for the recorded end), resolve (builds the submission from evidence, else `pending_evidence` with the reason), done. Missing, gapped or wrong-kind evidence holds pending; the clock alone never resolves a round and never moves the recorded end; there is no default winner. A failed or unconfirmed write is logged and the next pass reads the chain again. A failing battle backs off (up to 8 passes) without blocking the others. Only the newest 200 battles are scanned.
+
+Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and the `oracle` component of the application health read (set `ORACLE_STATE_DIR` and the observation scope on the read service and declare `capabilities.oracle` in the manifest). Recovery: stop the process, inspect `status.json` and the contract's round view, then restart; remove `oracle.lock` only after confirming no oracle process runs. Live round proof is not claimed: the oracle account, terms, provider qualification and a funded deployment are owner gates (#80).
