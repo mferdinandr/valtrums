@@ -34,7 +34,7 @@ export function Navbar() {
         </Link>
         <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-[9px] uppercase tracking-wider text-mute sm:inline-flex">
           <span className="status-dot" />
-          {config.mock ? "demo data" : config.network}
+          {config.applicationDeployment ? config.network : config.mock ? "demo data" : config.network}
         </span>
         <nav
           aria-label="Main navigation"

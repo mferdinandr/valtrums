@@ -12,6 +12,7 @@ use crate::rounds::{
 use crate::scoring::{ObservationEvidence, RoundTrade};
 use crate::{Arena, ArenaExt};
 use near_sdk::json_types::{U128, U64};
+use near_sdk::serde_json::json;
 use near_sdk::{env, near, require, NearToken, Promise};
 
 /// How far a round's start may lie from the block time, in either direction.
@@ -156,6 +157,46 @@ pub struct RoundView {
     pub winner: Option<u32>,
 }
 
+#[near(serializers = [json])]
+pub struct StoredRoundViewV1 {
+    pub round_id: U64,
+    pub outcome: RoundOutcome,
+    pub complete: bool,
+    pub candidates: Option<Vec<u32>>,
+    pub start_ns: Option<U64>,
+    pub end_ns: Option<U64>,
+    pub scores: Option<Vec<ExactScoreV1>>,
+    pub reason: String,
+}
+#[near(serializers = [json])]
+pub struct ExactScoreV1 {
+    pub community: u32,
+    pub numerator: String,
+    pub denominator: String,
+    pub evidence_hash: String,
+}
+#[near(serializers = [json])]
+pub struct RoundHistoryPageV1 {
+    pub items: Vec<StoredRoundViewV1>,
+    pub next_round: Option<U64>,
+}
+
+impl From<&Resolution> for RoundOutcome {
+    fn from(value: &Resolution) -> Self {
+        match value {
+            Resolution::Pending(reason) => Self::Pending {
+                reason: describe(reason),
+            },
+            Resolution::Overtime { next_candidates } => Self::Overtime {
+                next_candidates: next_candidates.clone(),
+            },
+            Resolution::Winner(community) => Self::Winner {
+                community: *community,
+            },
+        }
+    }
+}
+
 fn describe(reason: &PendingReason) -> String {
     match reason {
         PendingReason::CandidateMismatch => "candidate_mismatch".into(),
@@ -217,9 +258,20 @@ impl Arena {
             .lifecycle_rounds
             .get_mut(&battle_id.0)
             .unwrap_or_else(|| env::panic_str("Rounds not started"));
-        rounds
+        let already_open = rounds.window().is_some();
+        let (start, end) = rounds
             .open_round(round_id.0, start_ns.0)
             .unwrap_or_else(|error| env::panic_str(&format!("Round rejected: {error:?}")));
+        if !already_open {
+            crate::events::emit(
+                "lifecycle_round_opened_v1",
+                json!({
+                    "battle_id": battle_id, "round_id": round_id, "protocol": "lifecycle-v2",
+                    "candidates": rounds.candidates(), "start_ns": U64(start), "end_ns": U64(end),
+                    "policy_hash": rounds.policy_hash()
+                }),
+            );
+        }
     }
 
     /// Oracle only, and only after the round's recorded end. A unique winner is
@@ -240,6 +292,9 @@ impl Arena {
             .get(&battle_id.0)
             .cloned()
             .unwrap_or_else(|| env::panic_str("Rounds not started"));
+        if let Some(outcome) = rounds.recorded_outcome(round_id.0) {
+            return outcome.into();
+        }
         if let Some((_, end_ns)) = rounds.window() {
             require!(env::block_timestamp() >= end_ns, "Round has not ended");
         }
@@ -273,6 +328,36 @@ impl Arena {
             winner: rounds.winner(),
         })
     }
+
+    /// Stored outcomes only. Full evidence requires versioned event backfill; never invent it.
+    pub fn get_lifecycle_round_history_v1(
+        &self,
+        battle_id: U64,
+        from_round: U64,
+        limit: u32,
+    ) -> Option<RoundHistoryPageV1> {
+        require!((1..=50).contains(&limit), "History limit must be 1 to 50");
+        let rounds = self.lifecycle_rounds.get(&battle_id.0)?;
+        let history = rounds.recorded_history(from_round.0, limit as usize + 1);
+        let next_round = history.get(limit as usize).map(|(id, _)| U64(*id));
+        let items = history
+            .into_iter()
+            .take(limit as usize)
+            .map(|(id, outcome)| StoredRoundViewV1 {
+                round_id: U64(id),
+                outcome: (&outcome).into(),
+                complete: false,
+                candidates: None,
+                start_ns: None,
+                end_ns: None,
+                scores: None,
+                reason:
+                    "Stored outcome only; window/scores/evidence require versioned event backfill"
+                        .into(),
+            })
+            .collect();
+        Some(RoundHistoryPageV1 { items, next_round })
+    }
 }
 
 impl Arena {
@@ -290,9 +375,51 @@ impl Arena {
         round_id: u64,
         candidates: &[CandidateObservation],
     ) -> RoundOutcome {
-        let resolution = rounds
-            .resolve_round(round_id, candidates)
+        if let Some(outcome) = rounds.recorded_outcome(round_id) {
+            return outcome.into();
+        }
+        let window = rounds.window();
+        let previous_candidates = rounds.candidates().to_vec();
+        let policy_hash = rounds.policy_hash().to_string();
+        let (resolution, scored) = rounds
+            .resolve_round_with_scores(round_id, candidates)
             .unwrap_or_else(|error| env::panic_str(&format!("Round rejected: {error:?}")));
+        let scores = if matches!(resolution, Resolution::Pending(_)) {
+            None
+        } else {
+            let mut scores: Vec<ExactScoreV1> = scored
+                .unwrap_or_else(|| env::panic_str("Validated scores unavailable"))
+                .into_iter()
+                .map(|(community, score)| {
+                    let (numerator, denominator) = score.decimal_parts();
+                    ExactScoreV1 {
+                        community,
+                        numerator,
+                        denominator,
+                        evidence_hash: candidates
+                            .iter()
+                            .find(|o| o.community == community)
+                            .map(|o| o.evidence.evidence_hash.clone())
+                            .unwrap_or_default(),
+                    }
+                })
+                .collect();
+            scores.sort_by_key(|s| s.community);
+            Some(scores)
+        };
+        let wire_outcome: RoundOutcome = (&resolution).into();
+        crate::events::emit(
+            if scores.is_some() {
+                "lifecycle_round_resolved_v1"
+            } else {
+                "lifecycle_round_pending_v1"
+            },
+            json!({
+                "battle_id": battle_id, "round_id": U64(round_id), "protocol": "lifecycle-v2",
+            "candidates": previous_candidates, "start_ns": window.map(|w| U64(w.0)), "end_ns": window.map(|w| U64(w.1)),
+            "policy_hash": policy_hash, "outcome": wire_outcome, "scores": scores
+            }),
+        );
         let outcome = match resolution {
             Resolution::Pending(reason) => {
                 return RoundOutcome::Pending {
@@ -474,6 +601,67 @@ pub(crate) mod tests {
                 end: U128(end_price),
             },
         }
+    }
+
+    #[test]
+    fn versioned_events_record_exact_negative_scores_and_replays_do_not_replace_them() {
+        let mut arena = locked_arena();
+        context("anyone.testnet", NearToken::from_near(1), 0);
+        arena.start_lifecycle_rounds(U64(1), terms());
+        context("oracle.testnet", NearToken::from_yoctonear(1), START);
+        arena.open_lifecycle_round(U64(1), U64(1), U64(START));
+        let logs = near_sdk::test_utils::get_logs();
+        assert!(logs[0].contains("lifecycle_round_opened_v1"));
+        assert!(logs[0].contains(&format!("\"start_ns\":\"{START}\"")));
+        context(
+            "oracle.testnet",
+            NearToken::from_yoctonear(1),
+            START + ROUND,
+        );
+        let result = arena.submit_lifecycle_observations(
+            U64(1),
+            U64(1),
+            vec![
+                observation(0, 95, START),
+                observation(1, 90, START),
+                observation(2, 80, START),
+            ],
+        );
+        assert_eq!(result, RoundOutcome::Winner { community: 0 });
+        let logs = near_sdk::test_utils::get_logs();
+        let event: near_sdk::serde_json::Value =
+            near_sdk::serde_json::from_str(logs[0].trim_start_matches("EVENT_JSON:"))
+                .expect("event");
+        assert_eq!(event["event"], "lifecycle_round_resolved_v1");
+        assert_eq!(event["data"][0]["scores"][0]["numerator"], "-5");
+        assert_eq!(event["data"][0]["scores"][0]["denominator"], "100");
+        let history = arena
+            .get_lifecycle_round_history_v1(U64(1), U64(1), 20)
+            .expect("history");
+        assert_eq!(history.items.len(), 1);
+        assert!(!history.items[0].complete && history.items[0].scores.is_none());
+        assert_eq!(history.items[0].outcome, result);
+        context(
+            "oracle.testnet",
+            NearToken::from_yoctonear(1),
+            START + ROUND,
+        );
+        assert_eq!(
+            arena.submit_lifecycle_observations(U64(1), U64(1), vec![]),
+            result
+        );
+        assert!(near_sdk::test_utils::get_logs().is_empty());
+    }
+
+    #[test]
+    fn readiness_retains_stored_backing_expiry_without_claiming_live_custody() {
+        let arena = locked_arena();
+        let ready = arena.get_lifecycle_readiness_v1(Some(U64(1)));
+        let backings = ready.backings.expect("stored evidence");
+        assert_eq!(backings.len(), 3);
+        assert!(backings[0].asset_matches && backings[0].fresh);
+        assert_eq!(backings[0].expires_at_ms, Some(U64(1_000_000_000_000)));
+        assert!(!backings[0].trusted);
     }
 
     fn panics<F: FnOnce()>(f: F) -> bool {

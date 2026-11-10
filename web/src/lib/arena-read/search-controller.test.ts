@@ -69,6 +69,20 @@ describe("backend search controller", () => {
     expect(h.errors).toEqual([]);
   });
 
+  it("invalidates an old response immediately while the newer text is still debouncing", async () => {
+    const h = harness();
+    h.c.update({ q: "" });
+    h.c.update({ q: "new" });
+    expect(h.calls[0]!.signal.aborted).toBe(true);
+    h.calls[0]!.resolve("old response during debounce");
+    await tick();
+    expect(h.results).toEqual([]);
+    h.flushTimers();
+    h.calls[1]!.resolve("new result");
+    await tick();
+    expect(h.results).toEqual(["new result"]);
+  });
+
   it("reports an error of the latest request", async () => {
     const h = harness();
     h.c.update({ q: "", status: "open" });

@@ -56,7 +56,7 @@ function parseArgs(args: string[]): Parsed {
   return { command: positional[0], flags };
 }
 
-export function deriveConfig(chain: ReturnType<typeof validateRecordedChain>, flags: Map<string, string>): IndexerConfig {
+export function deriveConfig(chain: Pick<ReturnType<typeof validateRecordedChain>, "identity" | "blocks">, flags: Map<string, string>): IndexerConfig {
   const contracts = flags.has("contract")
     ? flags.get("contract")!.split(",").map((c) => c.trim()).filter(Boolean)
     : [...new Set(chain.blocks.map((b) => b.contract))].sort();

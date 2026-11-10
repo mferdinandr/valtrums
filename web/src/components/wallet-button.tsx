@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useWallet } from "@/components/providers";
+import { useWallet, useApplicationDeployment } from "@/components/providers";
 
 function shorten(id: string): string {
   return id.length > 22 ? `${id.slice(0, 10)}...${id.slice(-8)}` : id;
@@ -9,6 +9,8 @@ function shorten(id: string): string {
 
 export function WalletButton() {
   const { accountId, loading, signIn, signOut } = useWallet();
+  const deployment = useApplicationDeployment();
+  if (deployment) return <span className="text-xs text-mute">Read only</span>;
 
   if (loading) {
     return (

@@ -109,6 +109,7 @@ export class IndexerEngine {
       if (id.network !== this.config.network) {
         throw new Error("source network does not match the configured network");
       }
+      if (id.sourceType === "live" && !this.config.sourceFingerprint) throw new Error("live source requires a persisted source fingerprint");
       this.state = await this.store.open(this.config);
       this.rebuildDedup();
       this.checkpointVerified = false;
@@ -187,6 +188,21 @@ export class IndexerEngine {
   async sync(): Promise<IndexerHealth> {
     if (!this.opened || this.closing) throw new Error("indexer engine is not open for sync");
     const operation = this.operations.then(() => this.syncOnce());
+    this.operations = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  /** Persist source failure promptly; previously committed finalized evidence remains intact. */
+  async sourceUnavailable(): Promise<IndexerHealth> {
+    if (!this.opened || this.closing) throw new Error("indexer engine is not open");
+    const operation = this.operations.then(async () => {
+      if (this.state.health.status !== "reconciliation_required") {
+        this.state.health = { status: "degraded", reason: "live source unavailable or invalid; canonical freshness not established" };
+      }
+      this.lastSyncMs = null;
+      await this.store.commit(this.state);
+      return this.health();
+    });
     this.operations = operation.then(() => undefined, () => undefined);
     return operation;
   }

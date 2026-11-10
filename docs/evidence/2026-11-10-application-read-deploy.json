@@ -1,0 +1,60 @@
+{
+  "label": "Live NEAR testnet deployment/read evidence only; no lifecycle activation, battle, custody or financial acceptance claim",
+  "network": "near-testnet",
+  "account": "valtrum-read144-261110.testnet",
+  "owner": "valtrum-owner-b694.testnet",
+  "funding": "New account created through the testnet faucet; existing owner balance was not used",
+  "init": {
+    "owner": "valtrum-owner-b694.testnet",
+    "usdc": "usdc.fixture.testnet",
+    "treasury": "valtrum-owner-b694.testnet",
+    "bond": "0",
+    "deposit_window_secs": "60"
+  },
+  "fixtureNote": "usdc.fixture.testnet is the pre-existing deployment's placeholder configuration, not verified token/custody evidence",
+  "transactionHash": "6kF9f8R5BfUDXHFcDctK1ekdnGuGAJDumb4ihnobYgbq",
+  "codeHash": "52Nb2KFgkSTh5xBfkH2Gsv1iXjajwW6wgBAQsgrSDE6D",
+  "sha256": "3bc8bc8f1644262c652698a898c00cf5d8c3c1521bcd09f219c445eecdb9b1d2",
+  "wasmBytes": 686637,
+  "build": "cargo near build non-reproducible-wasm --no-abi --out-dir /tmp/valtrum-144-wasm (contracts/arena)",
+  "toolVersions": { "cargoNear": "0.21.1", "rustc": "1.96.1", "nearSdk": "5.30.0" },
+  "finalExecutionStatus": "FINAL",
+  "transactionBlockHash": "2RiaTjVS78L2odVqEFBFrTWUS6T3wJbBKJh7YiTsmrzK",
+  "recordedAt": "2026-11-10T06:01:33.027Z",
+  "verification": {
+    "codeHashMatches": true,
+    "count": "0",
+    "missingMaxU64Battle": null,
+    "readiness": {
+      "schema_version": "lifecycle-application-v1",
+      "block_height": "277027995",
+      "observed_at_ms": "1794290491184",
+      "activated": false,
+      "paused": false,
+      "legacy_battle_count": "0",
+      "activation_blocked_by_legacy": false,
+      "protocol": null,
+      "oracle": null,
+      "observation_policy": null,
+      "audit_policy_hash": null,
+      "battle_found": null,
+      "backings": null
+    }
+  },
+  "storageUsage": 687156,
+  "amountYocto": "9994841529029925600000000",
+  "liveSourceProbe": {
+    "scope": "Read-only three-block adapter/schema/header/shard probe, not exhaustive archive or deployment-event coverage",
+    "rpc": "https://archival-rpc.testnet.near.org",
+    "data": "https://testnet.neardata.xyz",
+    "genesisHeight": "42376888",
+    "genesisHash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
+    "blocks": [
+      { "height": "277027549", "hash": "CM9oApa9RBMNUwe1bvSuZEwLDe4BBitMtcVS3nW756am", "kind": "block", "allowlistedArenaOutcomes": 0 },
+      { "height": "277027548", "hash": "GsCeJK2CivsTMf5FvY7L1gzEf1MphcQrF4DNE35Zaj35", "kind": "block", "allowlistedArenaOutcomes": 0 },
+      { "height": "277027547", "hash": "HGegfGafg4nerk7XvtMpUPfLCid8932fUCieYoaDqpCt", "kind": "block", "allowlistedArenaOutcomes": 0 }
+    ],
+    "independentHeaderProbe": { "height": "277027519", "hash": "6F7VfKESBtNzndbDkXjP9amES4Hy5N2bcRzNRduetgiJ", "dataHttpStatus": 200, "dataShardCount": 10, "rpcShardCount": 10, "hashesAgree": true },
+    "limitations": ["Provider-declared outcome completeness; no receipt-root Merkle verification", "No relevant arena events in these sampled blocks", "Canonical application discovery remains disabled pending complete deployment coverage and #80 acceptance"]
+  }
+}

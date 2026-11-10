@@ -85,6 +85,8 @@ export interface ArenaReadSource {
 /** A NEAR `view` call. Nothing else is reachable from this source. */
 export type ViewFn = (contractId: string, method: string, args: Record<string, unknown>) => Promise<unknown>;
 
+export class UnsafeReadBoundaryError extends Error {}
+
 export class NearArenaReadSource implements ArenaReadSource {
   constructor(
     readonly info: SourceInfo,
@@ -93,8 +95,12 @@ export class NearArenaReadSource implements ArenaReadSource {
   ) {}
 
   async battleCount(): Promise<number> {
-    const n = Number(await this.view(this.contracts.arena, "get_lifecycle_battle_count", {}));
-    if (!Number.isSafeInteger(n) || n < 0) throw new Error("bad lifecycle battle count");
+    const raw = await this.view(this.contracts.arena, "get_lifecycle_battle_count", {});
+    if ((typeof raw !== "number" && typeof raw !== "string") || (typeof raw === "string" && !/^(0|[1-9][0-9]*)$/.test(raw))) {
+      throw new UnsafeReadBoundaryError("bad lifecycle battle count");
+    }
+    const n = Number(raw);
+    if (!Number.isSafeInteger(n) || n < 0) throw new UnsafeReadBoundaryError("bad lifecycle battle count");
     return n;
   }
 

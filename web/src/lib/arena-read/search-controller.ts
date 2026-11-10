@@ -71,6 +71,11 @@ export function createSearchController<T>(opts: SearchControllerOptions<T>): Sea
       if (last !== null && textOnly && last.q === normalized.q) return; // nothing changed
       last = normalized;
       if (timer !== null) clearTimer(timer);
+      // Invalidate immediately, including the debounce window before the next request starts.
+      seq++;
+      inflight?.abort();
+      inflight = null;
+      opts.onLoading?.(true);
       if (textOnly) timer = setTimer(() => run(normalized), debounceMs);
       else run(normalized);
     },

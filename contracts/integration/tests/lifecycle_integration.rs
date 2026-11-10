@@ -715,6 +715,38 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
     .into_result()?
     .json::<Value>()?;
     assert_eq!(outcome, json!({"Winner": {"community": 1}}));
+    let count_v1: String = w
+        .arena
+        .view("get_lifecycle_battle_count_v1")
+        .await?
+        .json()?;
+    assert_eq!(count_v1, id.to_string());
+    let detail_v1: Value = w
+        .arena
+        .view("get_lifecycle_battle_v1")
+        .args_json(json!({"battle_id": id.to_string()}))
+        .await?
+        .json()?;
+    assert_eq!(detail_v1, w.view(id).await?);
+    let history: Value = w
+        .arena
+        .view("get_lifecycle_round_history_v1")
+        .args_json(json!({"battle_id": id.to_string(), "from_round": "1", "limit": 20}))
+        .await?
+        .json()?;
+    assert_eq!(history["items"][0]["round_id"], "1");
+    assert_eq!(history["items"][0]["complete"], false);
+    assert_eq!(history["items"][0]["outcome"], outcome);
+    assert!(history["items"][0]["scores"].is_null());
+    let readiness: Value = w
+        .arena
+        .view("get_lifecycle_readiness_v1")
+        .args_json(json!({"battle_id": id.to_string()}))
+        .await?
+        .json()?;
+    assert_eq!(readiness["activated"], true);
+    assert_eq!(readiness["backings"][0]["asset_matches"], true);
+    assert!(readiness["block_height"].is_string());
     let done = w.view(id).await?;
     assert_eq!(done["principal_community"], 1);
     assert_eq!(done["principal_amount"], "650");

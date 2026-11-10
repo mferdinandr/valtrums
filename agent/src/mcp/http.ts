@@ -2,6 +2,7 @@ import { type Server, createServer } from "node:http";
 import { type ActionToolDeps, callActionTool } from "./actions/tools.js";
 import { SessionError, type ReadSessions } from "./session.js";
 import { AccessDeniedError, READ_TOOLS, ToolInputError, callReadTool } from "./tools.js";
+import { handleApplicationRead, type ApplicationReads } from "./application.js";
 
 /**
  * HTTP surface for the web terminal. `GET /tools/:name` runs a read tool, `POST /session`
@@ -26,6 +27,7 @@ export interface ReadHttpResponse {
 
 export interface ReadHttpDeps extends ActionToolDeps {
   sessions: ReadSessions;
+  application?: ApplicationReads;
 }
 
 const MAX_URL_LENGTH = 2048;
@@ -60,6 +62,10 @@ export async function handleReadRequest(req: ReadHttpRequest, deps: ReadHttpDeps
     return reply(400, { error: "malformed request target" });
   }
   const segments = url.pathname.split("/").filter(Boolean);
+
+  if (url.pathname.startsWith("/api/arena/v1/")) {
+    return handleApplicationRead(req.method, url.pathname.slice("/api/arena/v1/".length), url.searchParams, deps.application);
+  }
 
   if (segments.length === 1 && segments[0] === "session") {
     if (req.method !== "POST") return reply(405, { error: "method not allowed" });

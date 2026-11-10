@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { normalizeRoundEvent } from "./round-events.js";
 import {
   BACKING_STANDARD,
   COMPANION_STANDARDS,
@@ -144,6 +145,9 @@ function reqBytes32Hex(obj: Record<string, JsonValue>, key: string): string {
 
 /** Wire event name per standard slot -> accepted event name. Anything absent is unsupported. */
 const ARENA_EVENTS: Record<string, SupportedEventName> = {
+  lifecycle_round_opened_v1: "lifecycle_round_opened_v1",
+  lifecycle_round_pending_v1: "lifecycle_round_pending_v1",
+  lifecycle_round_resolved_v1: "lifecycle_round_resolved_v1",
   lifecycle_battle_created: "lifecycle_battle_created",
   audit_updated: "audit_updated",
   lifecycle_deposit: "lifecycle_deposit",
@@ -177,6 +181,10 @@ function modelledEvent(standard: string, event: string, config: IndexerConfig): 
 
 function normalize(name: SupportedEventName, data: Record<string, JsonValue>): AcceptedEventPayload {
   switch (name) {
+    case "lifecycle_round_opened_v1":
+    case "lifecycle_round_pending_v1":
+    case "lifecycle_round_resolved_v1":
+      return { name, battleId: reqIntString(data, "battle_id"), round: normalizeRoundEvent(name, data) };
     case "lifecycle_battle_created":
       return { name, battleId: reqIntString(data, "battle_id"), creator: reqString(data, "creator", ACCOUNT_MAX) };
     case "audit_updated": {

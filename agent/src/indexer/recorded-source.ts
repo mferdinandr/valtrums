@@ -52,7 +52,7 @@ export class RecordedBlockSource implements BlockSource {
   }
 
   identity(): SourceIdentity {
-    return this.file.identity;
+    return { ...this.file.identity, sourceType: "recorded" };
   }
 
   async head(): Promise<{ latest: BlockRef | null; finalized: BlockRef | null }> {
@@ -136,7 +136,7 @@ export function validateRecordedChain(raw: unknown): RecordedChainFile {
   if (f.schema !== RECORDED_SCHEMA) throw new RecordedChainError(`unsupported schema ${String(f.schema)}`);
   const id = f.identity as Record<string, unknown> | undefined;
   if (!id || typeof id !== "object") throw new RecordedChainError("identity must be an object");
-  if (id.sourceType !== "recorded" && id.sourceType !== "live") throw new RecordedChainError("identity.sourceType must be recorded or live");
+  if (id.sourceType !== "recorded") throw new RecordedChainError("recorded files cannot assert live source identity");
   const identity: SourceIdentity = {
     network: reqString(id.network, "identity.network"),
     sourceType: id.sourceType,

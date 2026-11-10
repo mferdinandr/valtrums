@@ -70,3 +70,17 @@ Reviewed application views SHALL expose lossless identifiers and activation/read
 #### Scenario: Old round lacks stored evidence
 - **WHEN** a historical round predates versioned score/window storage
 - **THEN** reads identify incomplete fields instead of reconstructing a fabricated exact score or window
+
+### Requirement: Additive lossless application views
+Versioned battle count, battle and position views SHALL accept/return U64 decimal strings without changing existing bare-u64 methods. Readiness SHALL expose actual activation/paused/configuration and stored backing identity/trust/expiry, without implying current custody proof or executing activation.
+
+#### Scenario: Exact identifier exceeds JavaScript safe range
+- **WHEN** a client reads a valid u64 identifier through the v1 ABI
+- **THEN** the full decimal-string identifier reaches lookup without numeric rounding
+
+### Requirement: Recorded round evidence handoff
+New opened, pending and resolved v1 events SHALL bind battle/round/protocol, frozen policy, actual candidates/window and available validated exact scores/evidence hashes. Replaying an already resolved round SHALL NOT emit replacement evidence. Stored history lacking these fields SHALL remain explicitly incomplete; full evidence MAY be delivered through the durable event journal without duplicating market samples in contract state.
+
+#### Scenario: A recorded negative winner is read
+- **WHEN** a completed round's best validated score is negative
+- **THEN** the event retains its exact signed numerator and positive denominator rather than rounding, clamping or reconstructing the score

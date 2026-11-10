@@ -53,6 +53,11 @@ const key = (chainId: string, token: string) => `${chainId}:${token.toLowerCase(
  */
 export function buildSnapshot(version: string, views: readonly EntryView[]): ReferenceRegistrySnapshot {
   if (!/^(0|[1-9][0-9]*)$/.test(version)) throw new Error("reference registry version is malformed");
+  for (const v of views) {
+    for (const id of [v.chain_id, v.reference_chain_id]) {
+      if (typeof id === "number" && (!Number.isSafeInteger(id) || id < 0)) throw new Error("unsafe registry chain ID");
+    }
+  }
   const entries = views.map(
     (v): ReferenceEntry => ({
       chainId: String(v.chain_id),
@@ -95,6 +100,8 @@ export class NearReferenceRegistrySource implements ReferenceRegistrySource {
         throw new Error("reference registry view returned a malformed page");
       }
       const pageVersion = String(page.version);
+      if (typeof page.version === "number" && (!Number.isSafeInteger(page.version) || page.version < 0)) throw new Error("unsafe registry version");
+      if (page.total < 0 || page.entries.length > REFERENCE_REGISTRY_PAGE) throw new Error("malformed registry bounds");
       if (version !== undefined && (pageVersion !== version || page.total !== total)) {
         throw new Error("reference registry changed while it was being read; retry on the next pass");
       }

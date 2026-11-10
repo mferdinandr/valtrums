@@ -5,6 +5,7 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { Providers } from "@/components/providers";
 import { RouteFrame } from "@/components/kinetic/route-frame";
+import { ApplicationReadBoundary } from "@/components/application-read-boundary";
 
 export const metadata: Metadata = {
   title: "Valtrum | A little rivalry. Big community energy.",
@@ -28,7 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             id="main-content"
             className="site-main mx-auto min-h-[75vh] max-w-[1360px] px-5 py-7 lg:px-10 lg:py-9"
           >
-            <RouteFrame>{children}</RouteFrame>
+            <ApplicationReadBoundary><RouteFrame>{children}</RouteFrame></ApplicationReadBoundary>
           </main>
         </Providers>
         <footer className="site-footer">

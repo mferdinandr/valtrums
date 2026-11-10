@@ -20,8 +20,13 @@ describe("indexer runtime config (off by default)", () => {
     expect(loadIndexerRuntimeConfig({ INDEXER_ENABLED: "false", INDEXER_RECORDED_CHAIN: "x.json" }, "arena.testnet")).toBeNull();
   });
 
-  it("fails closed without a recorded chain, because no live source exists", () => {
+  it("requires explicit source selection and evidence rather than silently enabling live reads", () => {
     expect(() => loadIndexerRuntimeConfig({ INDEXER_ENABLED: "true" }, "arena.testnet")).toThrow(/INDEXER_RECORDED_CHAIN/);
+    expect(() => loadIndexerRuntimeConfig({ INDEXER_ENABLED: "true", INDEXER_SOURCE: "near-data" }, "arena.testnet")).toThrow(/PROVIDER_EVIDENCE/);
+    const live = { INDEXER_ENABLED: "true", INDEXER_SOURCE: "near-data", INDEXER_ANCHOR_HEIGHT: "1", INDEXER_ANCHOR_HASH: "parent",
+      INDEXER_GENESIS_HEIGHT: "0", INDEXER_GENESIS_HASH: "genesis", INDEXER_PROVIDER_EVIDENCE: "fixture-only" };
+    expect(loadIndexerRuntimeConfig(live, "arena.testnet")?.live?.network).toBe("near-testnet");
+    expect(() => loadIndexerRuntimeConfig({ ...live, INDEXER_RECORDED_CHAIN: "fixture.json" }, "arena.testnet")).toThrow(/cannot be combined/);
   });
 
   it("reads contracts, state dir, anchor and retention, and rejects bad values", () => {
