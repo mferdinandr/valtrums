@@ -244,3 +244,84 @@ test("the landing page renders in application mode with its 3D canvas and no una
   // Create links point at the lifecycle review page, not the blocked legacy one.
   await expect(page.locator('a[href="/battles/new"]')).toHaveCount(0);
 });
+
+test.describe("lifecycle intent terminal", () => {
+  const watchActions = (page: Page) => {
+    const calls: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) calls.push(r.url());
+    });
+    return calls;
+  };
+  const ask = async (page: Page, prompt: string) => {
+    await page.getByLabel("Terminal prompt").fill(prompt);
+    await page.getByRole("button", { name: "Read my request" }).click();
+  };
+
+  test("a Bahasa Indonesia deposit prompt shows the exact reviewed call and sends no action request", async ({ page }) => {
+    const problems = watch(page);
+    const calls = watchActions(page);
+    await page.goto("/terminal");
+    await expect(page.getByRole("heading", { name: /A little help/ })).toBeVisible();
+    await ask(page, "deposit 250 ke battle 1 komunitas 2");
+    await expect(page.getByTestId("intent-summary")).toContainText("Deposit 250 base units into battle #1, community 2");
+    const review = page.getByLabel("Reviewed call");
+    // The receiving token is the battle's recorded community representation, not prompt text.
+    await expect(review.getByText("c2.rep.testnet").first()).toBeVisible();
+    await expect(review.getByText("ft_transfer_call", { exact: true })).toBeVisible();
+    await expect(review.getByText("250 base units")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect wallet to sign" })).toBeVisible();
+    expect(calls).toEqual([]);
+    expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+  });
+
+  test("register, an inexact amount and a locked battle are handled before any request", async ({ page }) => {
+    const calls = watchActions(page);
+    await page.goto("/terminal");
+    await ask(page, "daftar di battle 1 komunitas 3");
+    await expect(page.getByLabel("Reviewed call").getByText("register_lifecycle_position").first()).toBeVisible();
+    await ask(page, "deposit 1.5 to battle 1 community 2");
+    await expect(page.getByLabel("Clarification")).toContainText(/whole number/);
+    await ask(page, "register in battle 2 community 1");
+    await expect(page.getByText(/Battle #2 is locked/)).toBeVisible();
+    await ask(page, "daftar di battle 1 komunitas 9");
+    await expect(page.getByText(/community 9 does not exist/)).toBeVisible();
+    expect(calls).toEqual([]);
+  });
+
+  test("create resolves registry tokens, asks about an unknown one and never invents an address", async ({ page }) => {
+    const calls = watchActions(page);
+    const registryQueries: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/arena/v1/assets")) registryQueries.push(r.url());
+    });
+    await page.goto("/terminal");
+    await ask(page, "create price gain battle with PEPE, DOGE");
+    await expect(page.getByRole("alert").filter({ hasText: /could not resolve "pepe"/ })).toBeVisible();
+    await ask(page, `create price gain battle with 0x${"7".repeat(40)}, 0x${"1".repeat(40)}`);
+    await expect(page.getByRole("alert").filter({ hasText: /is not in the asset registry/ })).toBeVisible();
+    await ask(page, `create price gain battle with 0x${"1".repeat(40)}, 0x${"2".repeat(40)}, 0x${"3".repeat(40)}`);
+    await expect(page.getByText(/registry asset 46630:0x1{40}/)).toBeVisible();
+    for (const n of [1, 2, 3]) {
+      await page.getByLabel(`Community ${n} representation (NEP-141 account)`).fill(`c${n}.rep.testnet`);
+      await page.getByLabel(`Community ${n} custody domain`).fill("custody-e2e");
+    }
+    await expect(page.getByLabel("Reviewed call").getByText("create_lifecycle_battle").first()).toBeVisible();
+    expect(registryQueries.length).toBeGreaterThan(0);
+    expect(calls).toEqual([]);
+  });
+
+  test("a payout is reviewed but cannot be submitted, with the specific reason", async ({ page }) => {
+    const calls = watchActions(page);
+    await page.goto("/terminal");
+    await ask(page, `payout 500 to 0x${"a".repeat(40)} from token.testnet`);
+    await expect(page.getByRole("button", { name: "Payout cannot be submitted yet" })).toBeDisabled();
+    await expect(page.getByText(/spendable custody \(#148\) is not proven/)).toBeVisible();
+    expect(calls).toEqual([]);
+  });
+
+  test("the terminal has no legacy USDC or side A/B flow", async ({ page }) => {
+    await page.goto("/terminal");
+    await expect(page.getByText(/USDC|side A|session key/i)).toHaveCount(0);
+  });
+});
