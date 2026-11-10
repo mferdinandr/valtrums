@@ -8,6 +8,7 @@ import { NearReferenceRegistrySource, staticReferenceRegistry } from "../referen
 import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { loadObservationState } from "../observations/journal.js";
 import { loadObservationConfig } from "../observations/config.js";
+import { loadOracleStatus } from "../lifecycle-oracle/status.js";
 import { z } from "zod";
 
 const fixtureSchema = z.object({
@@ -57,6 +58,13 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
         // Read-only replay on every request: a missing or corrupt journal is an explicit 503, never an empty chart.
         binding.observations = { namespace: namespaceOf(d), load: async () => (await loadObservationState(observationConfig.dir)).state,
           qualifiedModes: observationConfig.qualifiedModes, coveragePolicy: observationConfig.coveragePolicy };
+      }
+    }
+    if (env.ORACLE_STATE_DIR?.trim() && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
+      const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
+      if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
+        const dir = env.ORACLE_STATE_DIR.trim();
+        binding.oracle = { namespace: namespaceOf(d), load: () => loadOracleStatus(dir), staleAfterMs: 60_000 };
       }
     }
     bindings.set(d.deploymentId, binding);
