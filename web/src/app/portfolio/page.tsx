@@ -12,6 +12,8 @@ import {
 } from "@/components/portfolio-sections";
 import { useApplicationDeployment, useWallet } from "@/components/providers";
 import { RecoveryAlerts } from "@/components/recovery-alerts";
+import { CarnivalScene } from "@/components/carnival/scene";
+import "@/components/lifecycle/lifecycle.css";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useNow } from "@/hooks/use-now";
@@ -51,12 +53,18 @@ export default function PortfolioPage() {
 
   const busy = portfolio.state.step === "opening-session" || portfolio.state.step === "reading";
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-4">
-      <header className="space-y-1">
-        <h1 className="text-xl text-neon-green">Portfolio</h1>
-        <p className="text-sm text-mute">
-          Deployment {namespace.deploymentId} · {namespace.network} · {namespace.arenaContract}
-        </p>
+    <div className="lifecycle-page">
+      <header className="lifecycle-hero">
+        <div>
+          <span className="lifecycle-pill">YOUR COMMUNITY KEEPSAKES</span>
+          <h1>Your journey.<br />Every receipt.</h1>
+          <p>Follow your positions, review your entitlements and keep track of every transfer. Your wallet holds the keys.</p>
+          <details className="lifecycle-tech">
+            <summary>Connected arena</summary>
+            {namespace.deploymentId} · {namespace.network} · {namespace.arenaContract}
+          </details>
+        </div>
+        <CarnivalScene mode="portfolio" caption="Your keepsake cabinet · decoration, not wallet balances" />
       </header>
 
       {!portfolio.accountId ? (
@@ -104,6 +112,6 @@ export default function PortfolioPage() {
         payouts={payoutRows}
         onChanged={() => void portfolio.load()}
       />
-    </main>
+    </div>
   );
 }
