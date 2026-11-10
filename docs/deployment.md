@@ -66,6 +66,14 @@ The agent needs ARENA_CONTRACT_ID, AGENT_ACCOUNT_ID and exactly one private-key 
 
 ## Target contracts on NEAR testnet (deployed 2026-11-09)
 
+An additional **read ABI staging arena** was deployed on 2026-11-10 at the user's
+request for #144: `valtrum-read144-261110.testnet`, owner
+`valtrum-owner-b694.testnet`. It is a new faucet-funded deployment; the existing
+arena below was not upgraded. Lifecycle is **not activated**, protocol/oracle/policy
+are unset, and its USDC configuration is a fixture placeholder. Public transaction,
+code hash and finalized view results are in
+[the deployment record](evidence/2026-11-10-application-read-deploy.json).
+
 Live testnet deployment from the owner's accounts; details, code hashes and transactions in [testnet-evidence.md](testnet-evidence.md) and [evidence/2026-11-09-near-testnet-deploy.json](evidence/2026-11-09-near-testnet-deploy.json).
 
 | Role | Account |

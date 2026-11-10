@@ -1,5 +1,15 @@
 # Application read v1 handoff (#143)
 
+**#144 update:** the additive string-ID ABI and versioned readiness/stored-history
+views below are now implemented and consumed when `abi.version` is explicitly
+`lifecycle-application-v1`; no method-error fallback is used. See the
+[lifecycle handoff](../arena-lifecycle/application-handoff.md) and
+[live-source handoff](../arena-testnet-integrations/live-source-handoff.md) for actual
+new testnet deployment/read evidence, reducer verification and remaining live gates.
+The original #143 inventory/verification below is retained as its source snapshot.
+Canonical application discovery and task 3.3 remain gated on complete deployment
+coverage and cross-service acceptance, rather than the limited public probe alone.
+
 This is source/fixture verification, not deployment verification. The implementation
 extends `agent/src/mcp/{cli,http}.ts` and `web/src/lib/arena-read/{proxy,search-controller}.ts`.
 There is one HTTP process, not a parallel read service. Existing `/tools`, `/session`

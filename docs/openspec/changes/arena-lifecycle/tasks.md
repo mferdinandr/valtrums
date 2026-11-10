@@ -32,6 +32,11 @@ Check tasks only after implementation and verification. Coordinate audit and bac
 
 New application requirements discovered during integration mapping; completed contract work above is preserved. The [read API](../arena-application-read-api/tasks.md) consumes views; [testnet integrations](../arena-testnet-integrations/tasks.md) owns live indexing. Review corresponding capability deltas before implementing new ABI/state requirements.
 
-- [ ] Define and implement reviewed versioned activation/readiness and lossless u64 discovery boundaries needed by application reads; reuse the already exported `audit_expires_at_ms`, add only missing configuration/backing fields and expose missing capabilities explicitly.
-- [ ] Define and implement round-history, frozen-window, exact-score/evidence and pending-resolution views/events consistent with the [scoring spec](../../specs/arena-scoring/spec.md); distinguish existing stored fields from genuinely new state.
-- [ ] Document deployment/upgrade/storage implications and historical backfill limits, coordinate event schema with indexer consumers, and verify serialization/compatibility; never fabricate missing past scores or evidence.
+- [x] Define and implement reviewed versioned activation/readiness and lossless u64 discovery boundaries needed by application reads; reuse the already exported `audit_expires_at_ms`, add only missing configuration/backing fields and expose missing capabilities explicitly.
+- [x] Define and implement round-history, frozen-window, exact-score/evidence and pending-resolution views/events consistent with the [scoring spec](../../specs/arena-scoring/spec.md); distinguish existing stored fields from genuinely new state.
+- [x] Document deployment/upgrade/storage implications and historical backfill limits, coordinate event schema with indexer consumers, and verify serialization/compatibility; never fabricate missing past scores or evidence.
+
+Verified #144 scope and the subsequent authorized new testnet deployment are recorded
+in [application-handoff.md](application-handoff.md). Full evidence is event-backed;
+stored outcome history remains explicitly incomplete. No layout migration or lifecycle
+activation was performed; no financial/live end-to-end acceptance is implied.

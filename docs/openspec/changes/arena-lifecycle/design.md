@@ -19,3 +19,35 @@ Deliver permissionless arena lifecycle and its acceptance scenarios without clai
 ## Risks / Migration
 
 Cross-chain operations must be idempotent, reconciled before retry and fail closed on missing evidence. Use isolated testnet deployments; legacy migration is out of scope.
+
+## Application view/event contract (#144)
+
+Additive ABI, preserving every old method: `get_lifecycle_battle_count_v1() -> U64`,
+`get_lifecycle_battle_v1(battle_id:U64) -> Option<LifecycleView>`,
+`get_lifecycle_position_v1(battle_id:U64,community:u32,account:AccountId) -> LifecyclePositionView`,
+`get_lifecycle_readiness_v1(battle_id:Option<U64>) -> ApplicationReadinessV1`, and
+`get_lifecycle_round_history_v1(battle_id:U64,from_round:U64,limit:u32) -> Option<RoundHistoryPageV1>`
+(default supplied explicitly, limit 1..50, round IDs ordered ascending).
+
+Readiness exposes actual exclusive activation, paused state, legacy count/activation
+blocker, protocol/oracle/current policy, trusted representations and stored backing
+approval asset match/expiry per requested battle. It is a read of stored evidence,
+never proof of current foreign backing or authority to activate/lock.
+
+Minimum history uses the existing stored `(round_id,outcome)` records plus additive
+NEP-297 `valtrum`/`1.0.0` events: `lifecycle_round_opened_v1` binds string battle/round
+IDs, candidates, start/end ns and frozen policy hash; `lifecycle_round_resolved_v1`
+adds outcome, exact signed numerator/positive denominator per community and evidence
+hashes; `lifecycle_round_pending_v1` records the failed-resolution reason and window.
+Only successful validated resolution emits exact scores; replay of an already recorded
+round emits no new resolution. The indexer durably retains these commitments in its
+existing event journal with network/emitter/block/receipt/log identity. It never stores
+all market samples in contract state (market persistence remains #146).
+
+No Borsh state layout change or additional contract storage is introduced: full new
+evidence is event-backed. Existing history views expose only actually stored outcomes;
+missing candidates/window/scores/evidence remain null and incomplete, even for newer
+records unless enriched from indexed events. Logs require source backfill/retention;
+they are not a guarantee of eternal provider availability. Existing round storage/gas
+funding and oracle authority remain unchanged. A fresh authorized deployment/release
+is required before advertising this ABI; this issue does not deploy or upgrade it.

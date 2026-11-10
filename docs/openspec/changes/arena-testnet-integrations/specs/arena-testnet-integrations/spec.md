@@ -118,6 +118,18 @@ Source deposits SHALL remain disabled until evidence proves the deployed custody
 #### Scenario: Signer cannot spend held tokens
 - **WHEN** a signer EOA exists but deposited tokens are held in a contract with no authorized withdrawal path
 - **THEN** deposit/payout readiness remains false and integration does not request additional deposits into that path
+
+### Requirement: Separately qualified finalized live source
+Live indexing SHALL be separately configured from recorded replay, pin network/genesis/source identity, validate canonical headers and shard/receipt identity, bound retries and response size, and preserve finalized state on failure/regression. Missing source documents SHALL remain incomplete unless a canonical successor proves a skipped height. Provider-declared completeness SHALL NOT be described as cryptographic outcome verification or complete deployment coverage.
+
+#### Scenario: Source mode changes after restart
+- **WHEN** a live provider configuration tries to reuse a store created under recorded or conflicting source identity
+- **THEN** opening fails rather than relabelling persisted fixture data as live evidence
+
+#### Scenario: Hydrated block omits a shard
+- **WHEN** a live document lacks a canonical shard or has a mismatched header/receipt
+- **THEN** the source fails closed and the indexer cannot report current healthy canonical coverage from it
+
 ### Requirement: Labelled testnet Intents fixture
 A local fixture of the 1Click API with a fake solver SHALL provide the testnet funding path through the route `intents-fixture`. It SHALL be accepted only in a testnet configuration, labelled in logs, responses, previews, statuses and UI, and pinned to the recorded mainnet responses. It SHALL NOT count as Intents verification; the real route stays a gap and other routes stay refused.
 

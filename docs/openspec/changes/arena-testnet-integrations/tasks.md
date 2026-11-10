@@ -71,6 +71,14 @@ Check tasks only after implementation and verification. Research can proceed ind
 
 The existing provider qualification, live BlockSource, reorg and cross-service acceptance tasks above remain canonical. These additions cover missing process wiring, not a second copy of those tasks. See [integration ownership](../../plans/arena-application-integration/ownership.md).
 
+- [x] #144: Add a separately configured finalized live BlockSource with pinned network/genesis/anchor, qualified provider evidence, bounded reads, receipt/shard/header checks, recorded-mode isolation and source-bound restart configuration; verify injected failure/replay cases and label the limited public read probe.
+- [x] #144: Integrate reviewed lifecycle round opened/pending/resolved v1 events with exact score/evidence validation and durable projection/retraction, preserving previous streams and degraded health for other relevant unknown events. See [live-source-handoff.md](live-source-handoff.md).
+
+These scoped handoffs supersede earlier "no live adapter exists" inventory statements.
+They do not complete the broader scheduler, future event schemas or cross-service
+acceptance tasks below. Public probe coverage is limited; canonical application
+discovery stays disabled until full deployment coverage and #80 acceptance.
+
 - [ ] Implement a separately configured lifecycle scheduler/oracle runtime that reads frozen candidates/policy/windows, consumes the market-owner persisted evidence interface and reconciles contract state after restart before opening/submitting rounds; preserve pending evidence and fresh overtime boundaries.
 - [ ] Integrate newly reviewed lifecycle/round/settlement/backing/payout event schemas into read-model reducers and backfill/version handling; retain degraded health for unmodelled relevant events and do not invent unavailable history.
 - [ ] Wire live custody-verifier transport and protocol-controlled mapping/registry attestation with the backing owner, separating source receipt verification from the trusted operator assertion and recording actual-received/finality evidence.

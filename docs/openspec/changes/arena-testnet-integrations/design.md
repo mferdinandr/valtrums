@@ -8,6 +8,19 @@ Deliver testnet integrations and observability and its acceptance scenarios with
 
 ## Decisions
 
+- #144 adds an opt-in finalized NEAR Data BlockSource, cross-checking every served
+  header/shard set against the configured archival RPC, checking network/genesis
+  identity and refusing missing coverage. It uses the provider's documented hydrated
+  `block + shards[].receipt_execution_outcomes` interface, not transaction hashes as
+  receipt identity. Provider completeness remains a declared trust boundary; a
+  matching header is not a Merkle proof that every outcome was delivered. Require
+  explicit provider-qualification evidence, keep default recorded mode, and retain
+  application canonical discovery disabled pending deployment/coverage acceptance.
+  Requests have bounded retries, deadlines and response sizes; missing blocks are
+  incomplete unless a canonical successor proves a skipped height by `prev_height`.
+  Add only the reviewed round v1 event reducers, keeping other relevant unknown
+  events degraded. Existing replay/finality/retraction/storage contracts still apply.
+
 - Contract: [capability requirements](specs/arena-testnet-integrations/spec.md).
 - Integration boundary: End-to-end acceptance depends on all implementation changes; research may run in parallel.
 - Asset identity binds source chain/token, NEAR representation and custody domain.
