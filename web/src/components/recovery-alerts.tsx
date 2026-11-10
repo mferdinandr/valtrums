@@ -14,21 +14,26 @@ export function RecoveryAlerts() {
 
   useEffect(() => {
     let alive = true;
+    // One request at a time: a newer poll aborts an older one so a late response cannot overwrite a newer one.
+    let controller: AbortController | null = null;
     const load = async () => {
+      controller?.abort();
+      const mine = (controller = new AbortController());
       try {
-        const env = await fetchReadTool<{ alerts: RecoveryAlert[] }>("list_recovery_alerts", new URLSearchParams());
-        if (!alive) return;
+        const env = await fetchReadTool<{ alerts: RecoveryAlert[] }>("list_recovery_alerts", new URLSearchParams(), { signal: mine.signal });
+        if (!alive || mine.signal.aborted) return;
         setAlerts(orderAlerts(env.data.alerts));
         setMeta({ source: env.source, observedAt: env.observedAt ?? "" });
         setError(null);
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : "alerts unavailable");
+        if (alive && !mine.signal.aborted) setError(e instanceof Error ? e.message : "alerts unavailable");
       }
     };
     void load();
     const timer = setInterval(load, 30_000);
     return () => {
       alive = false;
+      controller?.abort();
       clearInterval(timer);
     };
   }, []);
@@ -36,7 +41,11 @@ export function RecoveryAlerts() {
   return (
     <Card className="space-y-3 p-4">
       <h2 className="text-lg text-neon-green">Recovery alerts</h2>
-      {error && <p className="text-base text-mute">Alerts unavailable: {error}</p>}
+      {error && (
+        <p role="alert" className="text-base text-neon-amber">
+          Alerts unavailable: {error}. This is not &quot;no alerts&quot;.
+        </p>
+      )}
       {alerts && alerts.length === 0 && <p className="text-base text-mute">No active alerts.</p>}
       <ul className="space-y-2">
         {alerts?.map((a) => (

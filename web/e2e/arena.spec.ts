@@ -325,3 +325,37 @@ test.describe("lifecycle intent terminal", () => {
     await expect(page.getByText(/USDC|side A|session key/i)).toHaveCount(0);
   });
 });
+
+test("the portfolio is wallet-gated, labels fixture data, keeps alerts readable and disables payouts with specific reasons", async ({ page }) => {
+  const problems = watch(page);
+  const sessionCalls: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) sessionCalls.push(r.url());
+  });
+  await page.goto("/portfolio");
+  await expect(page.getByRole("heading", { name: "Portfolio" })).toBeVisible();
+  await expect(page.getByText("unavailable for the selected application deployment")).toHaveCount(0);
+  await expect(page.getByText(/Connect a wallet to read your positions/)).toBeVisible();
+  // Account sections are not shown (and no demo/legacy data is invented) before a wallet session exists.
+  await expect(page.getByText("Positions (deposits by original asset)")).toHaveCount(0);
+  // Recovery alerts need no session: the FIXTURE ledger condition is visible and labeled.
+  await expect(page.getByText("the backing ledger needs reconciliation")).toBeVisible();
+  await expect(page.getByText(/FIXTURE \(not live\)/).first()).toBeVisible();
+  // Payout requests are disabled with the specific unmet requirements; status reads stay available.
+  const disabled = page.getByTestId("payout-disabled");
+  await expect(disabled).toContainText("payout requests disabled");
+  await expect(disabled).toContainText("connect a wallet");
+  await expect(disabled).toContainText("#148");
+  await expect(disabled).toContainText("your entitlements have not been read yet");
+  await expect(page.getByRole("button", { name: "Connect wallet to request" })).toBeVisible();
+  expect(sessionCalls).toEqual([]);
+  expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+});
+
+test("the portfolio does not overflow horizontally on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/portfolio");
+  await expect(page.getByRole("heading", { name: "Portfolio" })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});

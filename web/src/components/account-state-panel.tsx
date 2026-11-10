@@ -1,15 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { type AccountStateData, type Row, describeAccountState } from "@/lib/arena-read/account-state";
-import { fetchReadTool } from "@/lib/arena-read/client";
+import type { Part } from "@/hooks/use-portfolio";
+import { envelopeLabel } from "@/lib/arena-read/portfolio";
 
-const STORAGE_KEY = "valtrum.read-session";
-
-function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: string }) {
+export function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: string }) {
   return (
     <div className="space-y-2">
       <h3 className="text-base text-neon-cyan">{title}</h3>
@@ -19,7 +15,7 @@ function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: st
         <ul className="space-y-2">
           {rows.map((r) => (
             <li key={r.key} className="text-base">
-              <div>
+              <div className="break-all">
                 {r.title}: <span className="text-neon-green">{r.status}</span>
               </div>
               <div className="text-mute">{r.detail}</div>
@@ -33,55 +29,36 @@ function Section({ title, rows, empty }: { title: string; rows: Row[]; empty: st
 }
 
 /**
- * Entitlements, transfers and DAO principal for one account, each section separate and every row
- * with its source and freshness. Reads need a read session (`open_read_session`, NEP-413); the
- * token stays in this tab's session storage and grants no signing or spending authority.
+ * Backing entitlements and DAO principal for the connected account. The data arrives through the wallet session
+ * (see `usePortfolio`); this panel holds no token and reads nothing itself. The D22/D24/D28 disposition state is
+ * shown as the read service reports it; nothing here votes or releases.
  */
-export function AccountStatePanel() {
-  const [token, setToken] = useState("");
-  const [data, setData] = useState<AccountStateData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      setToken(sessionStorage.getItem(STORAGE_KEY) ?? "");
-    } catch {
-      // Storage can be unavailable; the panel still works for this render.
-    }
-  }, []);
-
-  const load = async () => {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, token);
-    } catch {
-      // Ignore unavailable storage.
-    }
-    try {
-      const env = await fetchReadTool<AccountStateData>("inspect_account_state", new URLSearchParams(), { session: token.trim() });
-      setData(env.data);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "account state unavailable");
-    }
-  };
-
-  const view = data ? describeAccountState(data, Date.now()) : null;
+export function AccountStatePanel({ part, nowMs }: { part: Part<AccountStateData>; nowMs: number }) {
+  if (part.state === "error") {
+    return (
+      <Card role="alert" className="space-y-2 p-4">
+        <h2 className="text-lg text-neon-green">Entitlements and DAO principal</h2>
+        <p className="text-base text-neon-amber">Could not be read: {part.message}. Nothing is assumed about your entitlements or principal.</p>
+      </Card>
+    );
+  }
+  const view = describeAccountState(part.env.data, nowMs);
   return (
     <Card className="space-y-4 p-4">
-      <h2 className="text-lg text-neon-green">Entitlements, transfers and DAO principal</h2>
-      <div className="flex gap-2">
-        <Input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Read session token (open_read_session)" />
-        <Button onClick={() => void load()} disabled={!token.trim()}>
-          Load
-        </Button>
-      </div>
-      {error && <p className="text-base text-mute">{error}</p>}
-      {view && (
-        <>
-          <Section title="Entitlements (claimable, not transferred)" rows={view.entitlements} empty="No available entitlement." />
-          <Section title="Transfers (paid only when confirmed)" rows={view.transfers} empty="No open payout transfer." />
-          <Section title="DAO principal (escrowed winning deposit)" rows={view.dao} empty="No winning principal in escrow." />
-        </>
+      <h2 className="text-lg text-neon-green">Entitlements and DAO principal</h2>
+      <p className="text-sm text-mute">{envelopeLabel(part.env, nowMs)}</p>
+      <Section
+        title="Entitlements reported by each backing (claimable, not transferred)"
+        rows={view.entitlements}
+        empty="No positive entitlement was reported for the inspected battles. This is not a confirmed zero for every asset."
+      />
+      <Section title="DAO principal (escrowed winning deposit)" rows={view.dao} empty="No winning principal in escrow was found in the inspected battles." />
+      {part.env.limitations.length > 0 && (
+        <ul className="list-disc pl-4 text-sm text-mute">
+          {part.env.limitations.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
       )}
     </Card>
   );
