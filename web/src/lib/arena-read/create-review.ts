@@ -24,6 +24,8 @@ export interface AssetDraft {
   /** Both set, or both empty. Taken from the protocol's reference registry, never typed free-form. */
   referenceChainId: string;
   referenceAddress: string;
+  /** Display name from the registry label; never part of the request. */
+  label?: string;
 }
 
 export interface CreateArgs {

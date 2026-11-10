@@ -74,7 +74,7 @@ export function LifecycleBattleDetail({
   const fixture = data.provenance.kind === "fixture";
   const name = (i: number) =>
     roster[i]?.generic
-      ? communityName(i)
+      ? (rows[i]?.label?.symbol ?? communityName(i))
       : (roster[i]?.name ?? communityName(i));
   const safeBattleId =
     BigInt(detail.battleId) <= BigInt(Number.MAX_SAFE_INTEGER)
@@ -248,6 +248,13 @@ export function LifecycleBattleDetail({
                 )}
                 <details className="lifecycle-tech">
                   <summary>Asset identity &amp; evidence</summary>
+                  {r.label && (
+                    <p>
+                      Token label: {r.label.symbol} ({r.label.name},{" "}
+                      {r.label.kind === "testnet-mock" ? "testnet mock" : "mainnet reference"}). A display name only; the
+                      identity is the chain and address below.
+                    </p>
+                  )}
                   <p>Representation: {r.representation}</p>
                   <p>Source asset: {r.asset}</p>
                   <p>

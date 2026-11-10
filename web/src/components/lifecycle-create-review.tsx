@@ -33,6 +33,9 @@ interface RegistryAsset {
   referenceToken: string;
   assetKey: string;
   registryVersion: string;
+  /** Curated display names (token and mainnet reference). Never identity or eligibility. */
+  label?: { symbol: string; name: string; kind: string } | null;
+  referenceLabel?: { symbol: string; name: string; kind: string } | null;
 }
 
 const empty = (): AssetDraft => ({
@@ -63,7 +66,7 @@ function AssetPicker({
         <Input
           value={q}
           maxLength={64}
-          placeholder="Search registered token address"
+          placeholder="Search a token name (CASHCAT) or address"
           onChange={(e) => setQ(e.target.value)}
         />
       </Label>
@@ -93,6 +96,7 @@ function AssetPicker({
               title={`${a.chainId}:${a.token} → ${a.referenceChainId}:${a.referenceToken}`}
             >
               <span>
+                {a.label ? <strong>{a.label.symbol} · {a.label.name} · </strong> : null}
                 Token {shortAccount(a.token)}
                 <span className="mt-1 text-mute">
                   Chain {a.chainId} · reference {shortAccount(a.referenceToken)}
@@ -214,6 +218,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                   tokenAddress: p.token,
                   referenceChainId: p.referenceChainId,
                   referenceAddress: p.referenceToken,
+                  label: p.label?.symbol ?? p.referenceLabel?.symbol ?? "",
                   representation: "",
                   custodyDomain: "",
                 })
@@ -221,7 +226,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             />
             <p className="break-all text-xs">
               {a.tokenAddress
-                ? `Asset ${a.chainId}:${a.tokenAddress} · reference ${a.referenceChainId || "none"}:${a.referenceAddress || "none"}`
+                ? `${a.label ? `${a.label} · ` : ""}Asset ${a.chainId}:${a.tokenAddress} · reference ${a.referenceChainId || "none"}:${a.referenceAddress || "none"}`
                 : "No asset picked yet."}
             </p>
             <details
