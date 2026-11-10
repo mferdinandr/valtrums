@@ -130,20 +130,19 @@ test("creation is review-only without a wallet and sends no action request", asy
   ).toBeVisible();
   const pickers = page.getByPlaceholder("Search a token name (CASHCAT) or address");
   await expect(pickers.first()).toBeVisible();
-  // Pick one registered asset per community from the backend-searched registry.
-  for (const i of [0, 1]) {
-    const card = page.locator("div.pixel-frame", {
-      has: page.getByRole("heading", {
-        name: `02 / Community ${i + 1}`,
-        exact: true,
-      }),
-    });
-    await card
-      .getByRole("button", { name: /Token 0x/ })
-      .nth(i)
-      .click();
-    await card.getByLabel(/Representation/).fill(`c${i + 1}.rep.testnet`);
-    await card.getByLabel("Custody domain").fill("custody-e2e");
+  // Pick registered tokens from the backend-searched grid; each becomes a chip with its plain name (no mock prefix).
+  await page.getByRole("button", { name: "Add CASHCAT" }).click();
+  await page.getByRole("button", { name: "Add WALLET" }).click();
+  const chips = page.getByLabel("Chosen communities");
+  await expect(chips.getByText("CASHCAT", { exact: true })).toBeVisible();
+  await expect(chips.getByText("WALLET", { exact: true })).toBeVisible();
+  await expect(page.getByText("mCASHCAT")).toHaveCount(0);
+  // A chosen token cannot be chosen twice.
+  await expect(page.getByRole("button", { name: "CASHCAT already chosen" })).toBeDisabled();
+  for (const [i, name] of ["CASHCAT", "WALLET"].entries()) {
+    const setup = page.locator("details", { hasText: `Required token setup for ${name}` });
+    await setup.getByLabel(/Representation/).fill(`c${i + 1}.rep.testnet`);
+    await setup.getByLabel("Custody domain").fill("custody-e2e");
   }
   const review = page.getByLabel("Transaction review");
   await expect(
@@ -386,11 +385,32 @@ test("token names resolve to registry addresses in the terminal and the create p
   await page.goto("/arena/new");
   const picker = page.getByPlaceholder("Search a token name (CASHCAT) or address").first();
   await picker.fill("cashcat");
-  await expect(page.getByText("mCASHCAT · Mock CASHCAT").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add CASHCAT" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add WALLET" })).toHaveCount(0);
   // Terminal: names resolve through the registry and the reviewed call carries the registry address.
   await page.goto("/terminal");
   await page.getByLabel("Terminal prompt").fill("create price gain battle with cashcat, wallet");
   await page.getByRole("button", { name: "Read my request" }).click();
   await expect(page.getByText(/registry asset 46630:0x5b2ba17e5be1b611c1299809db89c5fe21d9d0a6/i)).toBeVisible();
   expect(actionCalls).toEqual([]);
+});
+
+test("the create picker is a compact grid with logos, removable chips and no reference wording", async ({ page }) => {
+  await page.goto("/arena/new");
+  const grid = page.locator(".token-grid");
+  await expect(grid.getByRole("button", { name: "Add CASHCAT" })).toBeVisible();
+  // Reads like a name, not an address row: no "reference" text and no mock prefix in the picker.
+  await expect(grid.getByText(/reference/i)).toHaveCount(0);
+  await expect(grid.getByText(/^m[A-Z]/)).toHaveCount(0);
+  // Each token has an icon frame (logo or monogram) and the grid has several columns on a desktop width.
+  await expect(grid.locator(".token-icon").first()).toBeVisible();
+  const columns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+  expect(columns).toBeGreaterThanOrEqual(3);
+  await page.getByRole("button", { name: "Add CASHCAT" }).click();
+  await page.getByRole("button", { name: "Remove CASHCAT" }).click();
+  await expect(page.getByRole("button", { name: "Add CASHCAT" })).toBeEnabled();
+  // Narrow screens keep the grid inside the page.
+  await page.setViewportSize({ width: 360, height: 740 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
