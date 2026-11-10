@@ -21,6 +21,7 @@ describe("application mode routes", () => {
       "/arena/new",
       "/arena/1",
       "/arena/18446744073709551615",
+      "/portfolio",
     ])
       expect(isApplicationRoute(p)).toBe(true);
   });
@@ -29,7 +30,7 @@ describe("application mode routes", () => {
       "/battles/1",
       "/battles/new",
       "/terminal",
-      "/portfolio",
+      "/portfolio/extra",
       "/arena/preview",
       "/arena/0",
       "/arena/01",
