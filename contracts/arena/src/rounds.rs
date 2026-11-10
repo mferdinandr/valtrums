@@ -78,6 +78,8 @@ pub enum Resolution {
     Winner(u32),
 }
 
+pub type ScoredResolution = (Resolution, Option<Vec<(u32, Score)>>);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoundError {
     InvalidConfiguration,
@@ -292,6 +294,25 @@ impl Rounds {
         self.winner
     }
 
+    pub fn recorded_outcome(&self, round_id: u64) -> Option<&Resolution> {
+        self.history
+            .iter()
+            .find(|r| r.round_id == round_id)
+            .map(|r| &r.outcome)
+    }
+    pub fn policy_hash(&self) -> &str {
+        &self.policy_hash
+    }
+
+    pub fn recorded_history(&self, from: u64, limit: usize) -> Vec<(u64, Resolution)> {
+        self.history
+            .iter()
+            .filter(|r| r.round_id >= from)
+            .take(limit)
+            .map(|r| (r.round_id, r.outcome.clone()))
+            .collect()
+    }
+
     /// Record the next round's immutable 30-second window. Repeating the same
     /// request is harmless; a different start for the open round is rejected.
     pub fn open_round(&mut self, round_id: u64, start_ns: u64) -> Result<(u64, u64), RoundError> {
@@ -326,8 +347,19 @@ impl Rounds {
         round_id: u64,
         observations: &[CandidateObservation],
     ) -> Result<Resolution, RoundError> {
+        self.resolve_round_with_scores(round_id, observations)
+            .map(|(outcome, _)| outcome)
+    }
+
+    /// Return only the exact scores actually used in this successful resolution.
+    /// No new stored state and no second scoring pass for event serialization.
+    pub fn resolve_round_with_scores(
+        &mut self,
+        round_id: u64,
+        observations: &[CandidateObservation],
+    ) -> Result<ScoredResolution, RoundError> {
         if let Some(done) = self.history.iter().find(|r| r.round_id == round_id) {
-            return Ok(done.outcome.clone());
+            return Ok((done.outcome.clone(), None));
         }
         if self.winner.is_some() {
             return Err(RoundError::Finished);
@@ -339,7 +371,7 @@ impl Rounds {
         let mut seen: Vec<u32> = observations.iter().map(|o| o.community).collect();
         seen.sort_unstable();
         if seen != self.candidates {
-            return Ok(Resolution::Pending(PendingReason::CandidateMismatch));
+            return Ok((Resolution::Pending(PendingReason::CandidateMismatch), None));
         }
         let mut scored: Vec<(u32, Score)> = Vec::with_capacity(observations.len());
         for observation in observations {
@@ -354,13 +386,19 @@ impl Rounds {
                 end_ns,
             };
             if !self.evidence_is_valid(&context, observation) {
-                return Ok(Resolution::Pending(PendingReason::InvalidEvidence(
-                    community,
-                )));
+                return Ok((
+                    Resolution::Pending(PendingReason::InvalidEvidence(community)),
+                    None,
+                ));
             }
             match self.score(&context, &observation.data) {
                 Some(score) => scored.push((community, score)),
-                None => return Ok(Resolution::Pending(PendingReason::Unscorable(community))),
+                None => {
+                    return Ok((
+                        Resolution::Pending(PendingReason::Unscorable(community)),
+                        None,
+                    ))
+                }
             }
         }
         let lowest_wins = self.mode == ScoringMode::LowestDrawdown;
@@ -390,7 +428,10 @@ impl Rounds {
             Resolution::Winner(leaders[0])
         } else {
             self.candidates = leaders.clone();
-            self.round_id += 1;
+            self.round_id = self
+                .round_id
+                .checked_add(1)
+                .ok_or(RoundError::InvalidConfiguration)?;
             self.window = None;
             self.last_end_ns = end_ns;
             Resolution::Overtime {
@@ -401,7 +442,7 @@ impl Rounds {
             round_id,
             outcome: outcome.clone(),
         });
-        Ok(outcome)
+        Ok((outcome, Some(scored)))
     }
 
     fn evidence_is_valid(&self, context: &ObservationContext, o: &CandidateObservation) -> bool {

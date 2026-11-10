@@ -6,6 +6,7 @@ use near_sdk::{
     Promise, PromiseError, PromiseOrValue,
 };
 
+pub mod application_views;
 pub mod credit;
 pub mod dao_api;
 pub mod escrow_api;

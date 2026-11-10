@@ -115,6 +115,15 @@ fn widen(value: U256) -> U512 {
 }
 
 impl Score {
+    /// Exact signed rational wire representation; no float conversion or rounding.
+    pub fn decimal_parts(&self) -> (String, String) {
+        let sign = if self.negative { "-" } else { "" };
+        (
+            format!("{sign}{}", self.numerator),
+            self.denominator.to_string(),
+        )
+    }
+
     fn new(negative: bool, numerator: U256, denominator: U256) -> Option<Self> {
         if denominator.is_zero() {
             return None;
