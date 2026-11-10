@@ -7,6 +7,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { useWallet } from "@/components/providers";
+import { pickerCapacity, pickerSummary } from "@/lib/arena-read/picker-summary";
 import { TokenChip, TokenPicker, assetSymbol, type RegistryAsset } from "@/components/token-picker";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { applicationKey } from "@/lib/arena-read/application";
@@ -43,6 +44,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>("PriceGain");
   const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [copied, setCopied] = useState(false);
+  const [available, setAvailable] = useState<number | null>(null);
   const review = buildCreateReview(namespace.arenaContract, assets, mode);
   const request = useMemo(() => toActionRequest(assets, mode), [assets, mode]);
   const { signIn } = useWallet();
@@ -152,7 +154,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
         <Card className="space-y-4">
           <CardTitle>02 / Choose your communities</CardTitle>
           <p className="text-xs text-mute">
-            {assets.length} of {MAX_COMMUNITIES} chosen · at least {MIN_COMMUNITIES} are needed
+            {pickerSummary(assets.length, available, MIN_COMMUNITIES, MAX_COMMUNITIES)}
           </p>
           <div className="token-chips" aria-label="Chosen communities">
             {assets.map((a, i) => (
@@ -163,8 +165,9 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           <TokenPicker
             namespace={namespace}
             chosen={chosen}
-            full={assets.length >= MAX_COMMUNITIES}
+            full={assets.length >= pickerCapacity(available, MAX_COMMUNITIES)}
             onPick={add}
+            onAvailable={setAvailable}
           />
           {assets.map((a, i) => (
             <details

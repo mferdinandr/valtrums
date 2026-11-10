@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { TokenIcon } from "@/components/token-icon";
 import { Input, Label } from "@/components/ui/input";
@@ -47,16 +47,23 @@ export function TokenPicker({
   chosen,
   full,
   onPick,
+  onAvailable,
 }: {
   namespace: Namespace;
   /** `chainId:token` keys already chosen. */
   chosen: ReadonlySet<string>;
   full: boolean;
   onPick: (a: RegistryAsset) => void;
+  /** Reports how many tokens are registered, or null when the list is cut off or not loaded yet. */
+  onAvailable?: (count: number | null) => void;
 }) {
   const [q, setQ] = useState("");
   const { result, loading, error } = useApplicationSearch<ApplicationPage<RegistryAsset>>(namespace, "assets", { q, limit: 24 });
   const items = result?.data.items ?? [];
+  // The total is only known from an unfiltered, complete list; a search narrows the list and must not change it.
+  useEffect(() => {
+    if (q === "" && result && !loading) onAvailable?.(result.data.nextCursor ? null : result.data.items.length);
+  }, [q, result, loading, onAvailable]);
   return (
     <div className="space-y-3">
       <Label>

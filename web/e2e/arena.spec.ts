@@ -399,6 +399,8 @@ test("the create picker is a compact grid with logos, removable chips and no ref
   await page.goto("/arena/new");
   const grid = page.locator(".token-grid");
   await expect(grid.getByRole("button", { name: "Add CASHCAT" })).toBeVisible();
+  // The summary says how many tokens exist, not the contract limit of 16.
+  await expect(page.getByText(/0 chosen · \d+ available · at least 2 needed/)).toBeVisible();
   // Reads like a name, not an address row: no "reference" text and no mock prefix in the picker.
   await expect(grid.getByText(/reference/i)).toHaveCount(0);
   await expect(grid.getByText(/^m[A-Z]/)).toHaveCount(0);
