@@ -47,6 +47,10 @@ Conclusion: A fits the payout code that exists and has the smallest attack surfa
 
 `agent/src/custody-compat.ts` `assessCustody(facts)` returns `spendable: false` with specific reasons unless the token holder equals the payout sender, refuses a holder with contract code that has not been reviewed as spendable, refuses known deposit-only code hashes, and refuses malformed addresses. The reviewed-code and known-deposit-only hash sets are empty on purpose until real code hashes are read from chain. Wiring this into the application health and the deposit action preview is the next step once the option is chosen.
 
-## Decision needed
+## Decision and what was built
+
+Owner decision: option A. Built in code and tests, not deployed: the forwarder contract (`evm/src/TestnetDepositCustody.sol`, constructor `holder`, 12 Foundry tests), the verifier's separate `holder` checks (3 new tests), the CLI's `--holder` and required `--payout-sender` gate, and the amended design paragraph. Still open: deploying the new contract and the mapping version bump (separate approval), reading the holder's code hash and the payout `sender` from chain, and wiring `assessCustody` into the deposit action preview and application health.
+
+## Original decision request (answered)
 
 Which option to build (A, B or C). Everything else above follows from it. This issue is not permission to deploy or fund a replacement contract: any deployment or funding is a separate approval.

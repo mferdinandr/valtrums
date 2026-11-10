@@ -3,6 +3,8 @@ import { receiptKey, verifyDeposit, type AssetMapping, type FinalitySource, type
 import { TRANSFER_TOPIC, keccakHex } from "../src/evm-abi.js";
 
 const custody = "0x0000000000000000000000000000000000000123";
+// The account the payout contract signs for: it holds the tokens, the deposit contract holds none.
+const holder = "0x00000000000000000000000000000000000000a0";
 const token = "0x00000000000000000000000000000000000000ab";
 const other = "0x00000000000000000000000000000000000000ee";
 const refund = "0x000000000000000000000000000000000000beef";
@@ -11,7 +13,7 @@ const tx = `0x${"11".repeat(32)}`;
 const hashOf = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const word = (v: bigint) => v.toString(16).padStart(64, "0");
 const topicAddr = (a: string) => `0x${a.slice(2).padStart(64, "0")}`;
-const mapping: AssetMapping = { chainId: 46630n, token, custody, custodyDomain: "robinhood-testnet", representation: "rep.testnet", mappingVersion: 3n };
+const mapping: AssetMapping = { chainId: 46630n, token, custody, holder, custodyDomain: "robinhood-testnet", representation: "rep.testnet", mappingVersion: 3n };
 const DEPOSIT = keccakHex("Deposited(uint256,address,address,uint64,uint64,address,string,uint256,uint256)");
 
 function depositLog(opts: { token?: string; received?: bigint; version?: bigint; beneficiary?: string; logIndex?: number; refund?: bigint } = {}): SourceLog {
@@ -22,9 +24,9 @@ function depositLog(opts: { token?: string; received?: bigint; version?: bigint;
     data: `0x${word(7n)}${word(opts.version ?? 3n)}${word(opts.refund ?? BigInt(refund))}${word(192n)}${word(100n)}${word(opts.received ?? 98n)}${word(BigInt(ben.length))}${ben.toString("hex").padEnd(64, "0")}`,
   };
 }
-const transferLog = (amount: bigint, t = token): SourceLog => ({
+const transferLog = (amount: bigint, t = token, to = holder): SourceLog => ({
   address: t, logIndex: 0, blockHash: hashOf(5), transactionHash: tx,
-  topics: [TRANSFER_TOPIC, topicAddr(sender), topicAddr(custody)], data: `0x${word(amount)}`,
+  topics: [TRANSFER_TOPIC, topicAddr(sender), topicAddr(to)], data: `0x${word(amount)}`,
 });
 
 function chain(over: Partial<{ finalized: number | null; logs: SourceLog[]; status: boolean; receiptBlock: string; forkAt: number; before: bigint; after: bigint; chain: bigint }> = {}) {
@@ -50,6 +52,25 @@ describe("finalized custody deposit verifier", () => {
     if (v.status !== "verified") return;
     expect(v.attestation).toMatchObject({ actualReceived: 98n, beneficiary: "alice.testnet", refundAddress: refund, blockNumber: 5n, finalizedHeadNumber: 8n, mappingVersion: 3n, representation: "rep.testnet" });
     expect(v.attestation.evidenceHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("checks the transfer and balance at the holder, not at the deposit contract", async () => {
+    const seen: string[] = [];
+    const source = { ...chain(), balanceOfAt: async (_t: string, account: string, n: bigint) => { seen.push(account.toLowerCase()); return n === 4n ? 1000n : 1098n; } };
+    expect((await run(source, {}, 7n)).status).toBe("verified");
+    expect(new Set(seen)).toEqual(new Set([holder]));
+  });
+
+  it("rejects tokens sent to the deposit contract instead of the holder (deposit-only custody)", async () => {
+    const v = await run(chain({ logs: [transferLog(98n, token, custody), depositLog()] }), {}, 7n);
+    expect(v).toMatchObject({ status: "rejected", reason: "measured amount differs from token transfers" });
+  });
+
+  it("rejects a mapping whose holder is the deposit contract or is missing or malformed", async () => {
+    const run2 = (m: Partial<AssetMapping>) => verifyDeposit(chain(), { ...mapping, ...m } as AssetMapping, { transactionHash: tx, logIndex: 1, battleId: 7n });
+    expect(await run2({ holder: custody })).toMatchObject({ status: "rejected", reason: expect.stringMatching(/cannot be paid out/) });
+    expect(await run2({ holder: "0x1234" })).toMatchObject({ status: "rejected", reason: "mapping has no valid token holder address" });
+    expect(await run2({ holder: undefined })).toMatchObject({ status: "rejected" });
   });
 
   it("keeps unfinalized, unavailable or non-canonical evidence Pending", async () => {

@@ -17,6 +17,7 @@
 #   sandbox    fetch the pinned SputnikDAO wasm (network), then cargo test -p valtrum-integration   [slow]
 #   node       pnpm install --frozen-lockfile, typecheck, agent tests, web tests, build
 #   docker     build agent/Dockerfile and smoke-test /healthz offline with a throwaway key          [slow, needs docker]
+#   evm        forge fmt --check and forge test for evm/ (not in CI; runs only when forge is installed)
 #   docs       openspec validate --all --strict (docs-only changes are ignored by CI; kept here because the repo requires it)
 #
 # By default only the stages whose files changed run, and sandbox and docker are left out (use --all).
@@ -38,7 +39,7 @@ while [ $# -gt 0 ]; do
     --only)
       shift
       ONLY="${1:-}"
-      case "$ONLY" in contracts | sandbox | node | docker | docs) ;; *) echo "--only needs one of: contracts sandbox node docker docs" >&2; exit 2 ;; esac
+      case "$ONLY" in contracts | sandbox | node | docker | docs | evm) ;; *) echo "--only needs one of: contracts sandbox node docker docs evm" >&2; exit 2 ;; esac
       ;;
     -h | --help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
@@ -114,7 +115,7 @@ declare -a STAGES=()
 if [ -n "$ONLY" ]; then
   STAGES=("$ONLY")
 elif [ "$ALL" = 1 ]; then
-  STAGES=(contracts sandbox node docker)
+  STAGES=(contracts sandbox node docker evm)
 else
   FILES="$(changed_files)"
   has() { printf '%s\n' "$FILES" | grep -Eq "$1"; }
@@ -124,6 +125,7 @@ else
     printf '%s\n' "$CODE" | grep -Eq '^(contracts/|scripts/fetch-sputnikdao-wasm\.py)' && STAGES+=(contracts)
     printf '%s\n' "$CODE" | grep -Eq '^(agent/|web/|evm/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)' && STAGES+=(node)
   fi
+  has '^evm/' && STAGES+=(evm)
   has '^docs/' && STAGES+=(docs)
 fi
 
@@ -188,6 +190,12 @@ stage_docker() {
   done
   docker logs "$name" >&2 || true
   return 1
+}
+stage_evm() {
+  cd "$ROOT/evm"
+  if ! command -v forge >/dev/null 2>&1; then echo "forge is not installed; skipping the evm stage"; return 0; fi
+  run forge fmt --check
+  run forge test
 }
 stage_docs() {
   cd "$ROOT/docs"

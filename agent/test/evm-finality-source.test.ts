@@ -6,6 +6,7 @@ import { verifyDeposit, type AssetMapping } from "../src/custody-verifier.js";
 import { TRANSFER_TOPIC, keccakHex } from "../src/evm-abi.js";
 
 const custody = "0x00000000000000000000000000000000000000c1";
+const holder = "0x00000000000000000000000000000000000000b1"; // the payout signing account; the deposit contract keeps nothing
 const token = "0x00000000000000000000000000000000000000a1";
 const sender = "0x00000000000000000000000000000000000000d1";
 const tx = `0x${"22".repeat(32)}`;
@@ -13,12 +14,12 @@ const h = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const word = (v: bigint) => v.toString(16).padStart(64, "0");
 const topicAddr = (a: string) => `0x${a.slice(2).padStart(64, "0")}`;
 const DEPOSIT = keccakHex("Deposited(uint256,address,address,uint64,uint64,address,string,uint256,uint256)");
-const mapping: AssetMapping = { chainId: 46630n, token, custody, custodyDomain: "robinhood-testnet", representation: "rep.testnet", mappingVersion: 3n };
+const mapping: AssetMapping = { chainId: 46630n, token, custody, holder, custodyDomain: "robinhood-testnet", representation: "rep.testnet", mappingVersion: 3n };
 const ben = Buffer.from("alice.testnet");
 
 function fakeNode(state: { finalized: number; historical: boolean; calls?: string[] }) {
   const logs = [
-    { address: token, topics: [TRANSFER_TOPIC, topicAddr(sender), topicAddr(custody)], data: `0x${word(100n)}`, logIndex: "0x0", blockHash: h(5), transactionHash: tx, removed: false },
+    { address: token, topics: [TRANSFER_TOPIC, topicAddr(sender), topicAddr(holder)], data: `0x${word(100n)}`, logIndex: "0x0", blockHash: h(5), transactionHash: tx, removed: false },
     {
       address: custody, topics: [DEPOSIT, `0x${word(1n)}`, topicAddr(token), topicAddr(sender)], logIndex: "0x1", blockHash: h(5), transactionHash: tx, removed: false,
       data: `0x${word(1n)}${word(3n)}${word(BigInt(sender))}${word(192n)}${word(100n)}${word(100n)}${word(BigInt(ben.length))}${ben.toString("hex").padEnd(64, "0")}`,
