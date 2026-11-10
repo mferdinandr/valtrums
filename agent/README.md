@@ -274,3 +274,9 @@ Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and 
 - **Key.** `FAUCET_PRIVATE_KEY` (or `FAUCET_PRIVATE_KEY_FILE`) controls only the faucet account's own balance. It is separate from the read API, which holds no key.
 - **Environment:** `FAUCET_ACCOUNT_ID`, `FAUCET_TOKENS` (JSON list of `{symbol, representation, amount}`, amounts in base units, 18 decimals), `READ_SESSION_SECRET` and `READ_SESSION_RECIPIENT` (same values as the read API), optional `FAUCET_PORT` (8792), `FAUCET_HOST`, `FAUCET_LEDGER_PATH`, `FAUCET_LIVE`. The web app reaches it through `FAUCET_API_URL` (server side only).
 
+### Funding the faucet (operator)
+
+`pnpm -C agent faucet:plan plan --faucet <near account> --battle <open lifecycle battle id> --depositor <0x address> [--tokens 1000000] [--symbols CASHCAT,WALLET]` prints the ordered steps and exact commands to put backed representation on the faucet account for all six tokens (default stock 1,000,000 per token, which serves 10,000 claims of 100). It prints text only: it sends nothing, reads no key and makes no network call. Every step that sends a transaction is marked, names its signer and refers to keys by environment variable name; you review and run each one yourself. `faucet:plan attest --file <verify output>` turns a verified custody verdict into the registry `attest` call for the verifier account.
+
+Prerequisites it checks for you: an open lifecycle battle that includes the backings (`claim_receipt` fails closed without one; one battle can hold all six tokens), a separate faucet account, and a reachable Robinhood RPC. Wait for the finalized block once for all deposits, then verify, attest, claim the receipt and claim the representation per token. This is the first live run of that path on testnet.
+
