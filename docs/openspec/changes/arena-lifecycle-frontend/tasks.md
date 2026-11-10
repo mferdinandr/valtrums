@@ -2,19 +2,19 @@
 
 First read the [main reconciliation](../../plans/arena-application-integration/main-reconciliation.md). Reuse current action/grant/gateway code and honor current DAO decisions; original snapshot absence/OPEN claims are historical.
 
-- [ ] 1.1 Add explicit lifecycle client adapter using shared read DTOs and capability gates; preserve legacy route/ID/economics isolation.
-- [ ] 1.2 Implement backend-searched asset selection for 2+ communities within verified limits, binding source/representation/custody/reference identity and actual mode values.
-- [ ] 1.3 Implement reviewed creation wallet intent with correct storage/activation requirements and no legacy bond or duration fields.
+- [x] 1.1 Add explicit lifecycle client adapter using shared read DTOs and capability gates; preserve legacy route/ID/economics isolation. Delivered (#149, read side): `web/src/lib/arena-read/lifecycle.ts` reads `GET battles/{id}` through the versioned gateway with decimal-string ids, its own types (nothing is mapped onto the legacy `BattleView`), and no mock or legacy fallback on a read error (it shows the error). Routes: `/arena/[battleId]` (detail) and `/arena/new` (review); the legacy flow stays at `/battles/*`.
+- [ ] 1.2 Implement backend-searched asset selection for 2+ communities within verified limits, binding source/representation/custody/reference identity and actual mode values. Partly delivered: the review page picks assets from the backend-searched reference registry (chain, token and reference identity come from the registry entry), 2 to 16 communities, the four actual mode values. Still open: the registry has no trusted representation or custody domain, so those two fields are typed and only validated for shape; a backend read of trusted representations would close this.
+- [ ] 1.3 Implement reviewed creation wallet intent with correct storage/activation requirements and no legacy bond or duration fields. Partly delivered: `buildCreateReview` produces the exact `create_lifecycle_battle` arguments (same wire shape as the agent preview), the storage-deposit upper bound and notes (no bond, no duration, storage is not stake). Still open: signing. The wallet action flow (`runTerminalAction`) needs a NEP-413 action session that the web client does not provide, so the button is disabled with that reason and nothing is sent.
 - [ ] 1.4 Implement position storage readiness/registration separately from actual deposits, including exact integer and wallet rejection handling.
 
 ## 2. Backed deposits and arena
 
 - [ ] 2.1 Implement supported receipt/representation wallet steps and lifecycle FT transfer-call message with beneficiary/asset/amount review.
 - [ ] 2.2 Add custody transfer preparation and pending verification UX only for verified mappings/transport; consume testnet-owner receipt attestations without implementing a verifier in the client.
-- [ ] 2.3 Integrate audit, backing, creator participation and readiness reads; block unsupported actions and preserve specific pending/rejection reasons.
-- [ ] 2.4 Adapt detail/3D runtime for confirmed multi-community candidates, intervals and outcomes, including unknown history, pending resolution and recorded overtime.
+- [ ] 2.3 Integrate audit, backing, creator participation and readiness reads; block unsupported actions and preserve specific pending/rejection reasons. Partly delivered: the detail page lists audit state, backing readiness (trusted, asset match, freshness) and arena readiness (activation, legacy blocker, pause) with specific blockers per community. Creator participation is not shown.
+- [ ] 2.4 Adapt detail/3D runtime for confirmed multi-community candidates, intervals and outcomes, including unknown history, pending resolution and recorded overtime. Partly delivered: the detail page shows recorded candidates, window, eliminated communities, recorded winner, `awaiting resolution` after the recorded end (the clock never picks a winner), incomplete history and the observation chart (#146). Still open: the 3D scene is not driven by recorded lifecycle rounds yet.
 - [ ] 2.5 Keep transaction/status controls usable with reduced motion, failed WebGL and narrow layouts; preserve selections/request identity on retry.
-- [ ] 2.6 Extend the read service/gateway with lifecycle current-round/history enrichment against lifecycle-owner views/events, returning explicit unsupported/unknown sections until prerequisites exist.
+- [x] 2.6 Extend the read service/gateway with lifecycle current-round/history enrichment against lifecycle-owner views/events, returning explicit unsupported/unknown sections until prerequisites exist. Delivered by #143/#144 (`battles/{id}` returns round, readiness and stored history, with reasons when a section is unavailable); the web client now consumes it.
 
 ## 3. Verification and release
 

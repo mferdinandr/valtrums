@@ -1,0 +1,100 @@
+import type { ScoringMode } from "./lifecycle";
+
+/**
+ * Review of a `create_lifecycle_battle` call (issue #149). The arguments are exactly the wire shape the
+ * agent's action preview builds (`agent/src/mcp/actions/preview.ts`), so the page shows what a wallet
+ * would be asked to sign. There is no legacy bond, no USDC and no round duration: a lifecycle round is
+ * 30 seconds and set by the contract. Eligibility is NOT decided here: the arena validates the assets
+ * and the reference registry at creation, and a cosmetic symbol or model never makes a token eligible.
+ */
+
+export const MIN_COMMUNITIES = 2;
+/** Mirrors `MAX_COMMUNITIES` in contracts/arena/src/lifecycle.rs. */
+export const MAX_COMMUNITIES = 16;
+export const SCORING_MODES: readonly ScoringMode[] = ["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"];
+/** Upper bound of the storage deposit the agent previews; the arena keeps actual storage and refunds the rest. */
+export const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
+export const CREATE_GAS_TGAS = "100";
+
+export interface AssetDraft {
+  chainId: string;
+  tokenAddress: string;
+  representation: string;
+  custodyDomain: string;
+  /** Both set, or both empty. Taken from the protocol's reference registry, never typed free-form. */
+  referenceChainId: string;
+  referenceAddress: string;
+}
+
+export interface CreateArgs {
+  assets: Array<{
+    chain_id: string;
+    token_address: string;
+    representation: string;
+    custody_domain: string;
+    reference_chain_id: string | null;
+    reference_address: string | null;
+  }>;
+  mode: ScoringMode;
+}
+
+export type ReviewResult =
+  | { ok: true; args: CreateArgs; method: "create_lifecycle_battle"; receiver: string; depositYocto: string; gasTgas: string; lines: Array<{ label: string; value: string }>; notes: string[] }
+  | { ok: false; problems: string[] };
+
+const ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+const validAccount = (s: string): boolean => s.length >= 2 && s.length <= 64 && ACCOUNT_RE.test(s);
+const U64 = /^(0|[1-9][0-9]*)$/;
+const EVM = /^0x[0-9a-fA-F]{40}$/;
+
+export function buildCreateReview(arenaContract: string, assets: readonly AssetDraft[], mode: string): ReviewResult {
+  const problems: string[] = [];
+  if (!(SCORING_MODES as readonly string[]).includes(mode)) problems.push("choose a scoring mode");
+  if (assets.length < MIN_COMMUNITIES) problems.push(`a battle needs at least ${MIN_COMMUNITIES} communities`);
+  if (assets.length > MAX_COMMUNITIES) problems.push(`a battle has at most ${MAX_COMMUNITIES} communities`);
+  const seen = new Set<string>();
+  const seenReps = new Set<string>();
+  assets.forEach((a, i) => {
+    const n = i + 1;
+    if (!U64.test(a.chainId) || BigInt(a.chainId) >= 2n ** 64n) problems.push(`community ${n}: chain id must be a decimal integer`);
+    if (!EVM.test(a.tokenAddress)) problems.push(`community ${n}: token address must be a 20-byte hex address`);
+    if (!validAccount(a.representation)) problems.push(`community ${n}: representation must be a valid NEAR account id`);
+    if (!a.custodyDomain.trim() || a.custodyDomain.length > 64) problems.push(`community ${n}: custody domain is required (at most 64 characters)`);
+    const hasRefChain = a.referenceChainId.trim() !== "";
+    const hasRefAddr = a.referenceAddress.trim() !== "";
+    if (hasRefChain !== hasRefAddr) problems.push(`community ${n}: a reference needs both its chain id and its address`);
+    if (hasRefChain && (!U64.test(a.referenceChainId) || BigInt(a.referenceChainId) >= 2n ** 64n)) problems.push(`community ${n}: reference chain id must be a decimal integer`);
+    if (hasRefAddr && !EVM.test(a.referenceAddress)) problems.push(`community ${n}: reference address must be a 20-byte hex address`);
+    const key = `${a.chainId}:${a.tokenAddress.toLowerCase()}`;
+    if (seen.has(key)) problems.push(`community ${n}: the same asset is listed twice`);
+    seen.add(key);
+    if (seenReps.has(a.representation)) problems.push(`community ${n}: the same representation is listed twice`);
+    seenReps.add(a.representation);
+  });
+  if (!validAccount(arenaContract)) problems.push("the arena contract id is not configured");
+  if (problems.length > 0) return { ok: false, problems };
+  const args: CreateArgs = {
+    assets: assets.map((a) => ({
+      chain_id: a.chainId, token_address: a.tokenAddress, representation: a.representation, custody_domain: a.custodyDomain,
+      reference_chain_id: a.referenceChainId.trim() ? a.referenceChainId : null, reference_address: a.referenceAddress.trim() ? a.referenceAddress : null,
+    })),
+    mode: mode as ScoringMode,
+  };
+  return {
+    ok: true, args, method: "create_lifecycle_battle", receiver: arenaContract, depositYocto: CREATE_DEPOSIT_YOCTO, gasTgas: CREATE_GAS_TGAS,
+    lines: [
+      { label: "Contract", value: arenaContract },
+      { label: "Method", value: "create_lifecycle_battle" },
+      { label: "Mode", value: mode },
+      { label: "Communities", value: String(assets.length) },
+      ...args.assets.map((a, i) => ({ label: `Community ${i + 1}`, value: `${a.chain_id}:${a.token_address} · ${a.representation} · custody ${a.custody_domain}${a.reference_chain_id ? ` · reference ${a.reference_chain_id}:${a.reference_address}` : " · no reference"}` })),
+      { label: "Storage deposit (upper bound)", value: `${CREATE_DEPOSIT_YOCTO} yoctoNEAR` },
+      { label: "Gas", value: `${CREATE_GAS_TGAS} Tgas` },
+    ],
+    notes: [
+      "The deposit is storage payment, not a stake: the arena keeps the actual storage cost and refunds the rest.",
+      "There is no bond and no round duration: rounds are 30 seconds and set by the contract.",
+      "The arena validates these assets and the protocol's reference registry when the transaction runs; this review does not prove eligibility.",
+    ],
+  };
+}
