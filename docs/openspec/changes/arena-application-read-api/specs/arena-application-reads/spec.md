@@ -55,3 +55,17 @@ The application archive adapter SHALL require an explicit deployment namespace b
 #### Scenario: Archive configuration lacks namespace evidence
 - **WHEN** an archive path is configured without an explicit namespace binding
 - **THEN** application audit reads remain unsupported with a reason, and recorded observations cannot become live evidence
+
+### Requirement: Server-owned signing parameters
+The read service SHALL publish the NEP-413 read message and the session and action recipients through a read-only, non-secret endpoint, and the gateway SHALL forward only those known fields, so a browser signs exactly what the service expects.
+
+#### Scenario: The upstream answers with extra or malformed fields
+- **WHEN** the upstream configuration response has an unknown field or a malformed value
+- **THEN** the gateway drops the unknown field or answers unavailable, and never forwards the malformed value
+
+### Requirement: Assertion-labeled process and custody health
+Health components that report another process or operator-configured facts (oracle status, custody spendability) SHALL be labeled as that report, SHALL never be reported healthy, and SHALL report unavailable when their source is missing or unreadable.
+
+#### Scenario: A deposit-only custody path is configured
+- **WHEN** a configured custody path keeps tokens in a contract the payout signer does not control
+- **THEN** source transfers are reported disabled with the specific reason
