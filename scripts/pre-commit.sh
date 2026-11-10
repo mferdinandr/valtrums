@@ -6,7 +6,8 @@
 #   scripts/pre-commit.sh --only node     one stage: contracts | sandbox | node | docker | docs
 #   scripts/pre-commit.sh --dry-run       print what would run, run nothing
 #   scripts/pre-commit.sh --keep-going    do not stop at the first failing stage
-#   scripts/pre-commit.sh --install       link this script as .git/hooks/pre-commit (asks before replacing a hook)
+#   scripts/pre-commit.sh --install       install a git pre-push hook that runs this before every push
+#   scripts/pre-commit.sh --uninstall     remove that hook (only if this script installed it)
 #
 # Stages (same commands as CI):
 #   contracts  cargo fmt --check, cargo clippy --all-targets -D warnings, cargo test (excluding valtrum-integration)
@@ -22,19 +23,21 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-ALL=0 DRY=0 KEEP=0 INSTALL=0 ONLY=""
+ALL=0 DRY=0 KEEP=0 INSTALL=0 UNINSTALL=0 PUSH_HOOK=0 ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) ALL=1 ;;
     --dry-run) DRY=1 ;;
     --keep-going) KEEP=1 ;;
     --install) INSTALL=1 ;;
+    --uninstall) UNINSTALL=1 ;;
+    --hook) shift; [ "${1:-}" = pre-push ] || { echo "--hook only supports pre-push" >&2; exit 2; }; PUSH_HOOK=1; shift; break ;;
     --only)
       shift
       ONLY="${1:-}"
       case "$ONLY" in contracts | sandbox | node | docker | docs) ;; *) echo "--only needs one of: contracts sandbox node docker docs" >&2; exit 2 ;; esac
       ;;
-    -h | --help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -42,24 +45,48 @@ done
 
 if [ -t 1 ]; then BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; DIM=$'\033[2m'; RESET=$'\033[0m'; else BOLD="" RED="" GREEN="" DIM="" RESET=""; fi
 
+HOOK_MARK="# installed by scripts/pre-commit.sh"
+hook_path() { git rev-parse --git-path hooks/pre-push; }
+
 if [ "$INSTALL" = 1 ]; then
-  hook="$(git rev-parse --git-path hooks/pre-commit)"
-  if [ -e "$hook" ] && [ ! -L "$hook" ]; then
-    echo "$hook already exists and is not a link. Move it away first, nothing was changed." >&2
+  hook="$(hook_path)"
+  if [ -e "$hook" ] && ! grep -q "$HOOK_MARK" "$hook" 2>/dev/null; then
+    echo "$hook already exists and was not installed by this script. Move it away first, nothing was changed." >&2
     exit 1
   fi
   mkdir -p "$(dirname "$hook")"
-  ln -sf "$ROOT/scripts/pre-commit.sh" "$hook"
-  echo "installed: $hook -> scripts/pre-commit.sh (skip once with: git commit --no-verify)"
+  # A small wrapper, not a link: it runs the script of whichever checkout or worktree is pushing, and
+  # skips quietly when that checkout does not have it yet.
+  cat > "$hook" <<'HOOK'
+#!/usr/bin/env bash
+# installed by scripts/pre-commit.sh
+[ -n "${SKIP_LOCAL_CI:-}" ] && { echo "SKIP_LOCAL_CI is set: local CI skipped"; exit 0; }
+root="$(git rev-parse --show-toplevel)"
+if [ ! -x "$root/scripts/pre-commit.sh" ]; then
+  echo "pre-push: no scripts/pre-commit.sh in this checkout, local CI skipped"
+  exit 0
+fi
+exec "$root/scripts/pre-commit.sh" --hook pre-push
+HOOK
+  chmod +x "$hook"
+  echo "installed: $hook (runs before every git push; skip once with: git push --no-verify, or SKIP_LOCAL_CI=1)"
+  exit 0
+fi
+
+if [ "$UNINSTALL" = 1 ]; then
+  hook="$(hook_path)"
+  if [ -e "$hook" ] && grep -q "$HOOK_MARK" "$hook" 2>/dev/null; then rm "$hook"; echo "removed: $hook"; else echo "no hook installed by this script"; fi
   exit 0
 fi
 
 # ---- which stages ---------------------------------------------------------------------------
 changed_files() {
-  if [ -n "$(git diff --cached --name-only)" ]; then
+  # Before a push the commits being pushed are what matters, not whatever happens to be staged.
+  if [ "$PUSH_HOOK" = 0 ] && [ -n "$(git diff --cached --name-only)" ]; then
     git diff --cached --name-only
   elif git rev-parse --verify -q origin/main >/dev/null; then
-    { git diff --name-only origin/main...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u
+    if [ "$PUSH_HOOK" = 1 ]; then git diff --name-only origin/main...HEAD
+    else { git diff --name-only origin/main...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u; fi
   else
     git ls-files
   fi
@@ -76,7 +103,7 @@ else
   # CI ignores **/*.md and docs/** ; everything else triggers it.
   CODE="$(printf '%s\n' "$FILES" | grep -Ev '(^docs/|\.md$)' || true)"
   if [ -n "$CODE" ]; then
-    printf '%s\n' "$CODE" | grep -Eq '^(contracts/|scripts/)' && STAGES+=(contracts)
+    printf '%s\n' "$CODE" | grep -Eq '^(contracts/|scripts/fetch-sputnikdao-wasm\.py)' && STAGES+=(contracts)
     printf '%s\n' "$CODE" | grep -Eq '^(agent/|web/|evm/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)' && STAGES+=(node)
   fi
   has '^docs/' && STAGES+=(docs)
