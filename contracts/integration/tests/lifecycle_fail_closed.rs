@@ -108,6 +108,8 @@ fn fixture_arena_wasm() -> anyhow::Result<Vec<u8>> {
     let target = workspace.join("target/lifecycle-fixtures");
     let status = std::process::Command::new("cargo")
         .current_dir(&workspace)
+        // Match the other fixture builds and keep the deploy request within sandbox's RPC limit.
+        .env("CARGO_PROFILE_RELEASE_STRIP", "symbols")
         .args([
             "build",
             "--release",
