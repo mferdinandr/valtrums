@@ -1,0 +1,17 @@
+[
+  {
+    "deploymentId": "arena-testnet-read-v1",
+    "network": "near-testnet",
+    "arenaContract": "configured-arena.testnet",
+    "protocol": "lifecycle-v2",
+    "adapter": "rpc",
+    "companions": { "payout": null, "registry": "configured-arena.testnet", "backing": [] },
+    "abi": { "version": "source-lifecycle-v1", "evidence": "source inspection only; deployed ABI not verified (#144)", "codeHash": null },
+    "capabilities": {
+      "battles": { "enabled": true, "reasons": ["bounded noncanonical RPC projection; safe numeric range only"] },
+      "detail": { "enabled": true, "reasons": ["exported lifecycle ABI; optional sections remain unavailable"] },
+      "assets": { "enabled": true, "reasons": ["reference-registry membership only; current eligibility not established"] },
+      "audits": { "enabled": false, "reasons": ["requires explicit producer archive namespace handoff (#145)"] }
+    }
+  }
+]

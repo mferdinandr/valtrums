@@ -12,7 +12,11 @@ settlement and account extensions. The read API foundation is not required to
 implement these downstream routes to complete its own scope. Private action
 journal reads belong to the MCP/player authorization workstream.
 
-**All `/api/arena/v1/*` routes and DTOs in this file are proposed, not implemented.**
+**This is the cross-change target, not a list of implemented endpoints.** #143
+implements the read-only capabilities/health/battle/asset/audit subset described in
+the [versioned read handoff](../../changes/arena-application-read-api/handoff.md),
+including its actual `q/limit` query names, 20/50 bounds and explicit live gates.
+The remaining routes and illustrative records below remain proposed.
 Existing HTTP routes remain the terminal parse/funding routes, agent health routes,
 and separate `/audit-reports` reader listed in [integration-map.md](integration-map.md).
 New routes are same-origin Next gateway routes backed by a read-only application
@@ -99,7 +103,8 @@ inside its adapter and translate them to this public envelope.
 | `GET /api/arena/v1/actions/:actionId` | Wallet-scoped preview/submission/credit/receipt status | Non-secret action journal + contract/receipt revalidation; authenticate private records |
 | `GET /api/arena/v1/health` | Per-component capabilities, lag, source/finality and pending reasons | Separate health adapters; no secret settings or claim of financial correctness |
 
-Reuse report pagination defaults: 20 items, capped at 100. Invalid/nonpositive page
+The reference ceiling is 100; the current v1 facade preserves existing search
+defaults of 20 items, capped at 50. Invalid/nonpositive page
 sizes fail validation. Observation queries are equally bounded and paginated; multiple
 communities may return aligned pages but cannot require downloading all stored data.
 Opaque cursors bind namespace, normalized filter/sort digest, snapshot version and

@@ -15,7 +15,7 @@ The service SHALL preserve integer amounts, timestamps and identifiers without J
 - **THEN** the adapter reports an unsupported boundary and does not stringify the rounded value as a valid ID
 
 ### Requirement: Bounded backend search and discovery
-Battle lists and asset selectors SHALL send filters/search to the backend and render bounded cursor results, with default page size 20 and maximum 100. Text clients SHALL debounce normally 300 ms, cancel superseded requests and prevent stale responses replacing newer results.
+Battle lists and asset selectors SHALL send filters/search to the backend and render bounded cursor results, with default page size 20 and maximum 50, preserving the existing search contract within the reference ceiling of 100. Text clients SHALL debounce normally 300 ms, immediately invalidate and cancel superseded requests and prevent stale responses replacing newer results, including during debounce.
 
 #### Scenario: Search responses arrive out of order
 - **WHEN** a response for an older asset query arrives after the current query
@@ -41,3 +41,17 @@ The service SHALL expose capability-specific dependency health and disable unsup
 #### Scenario: Only recorded indexer data is available
 - **WHEN** the server reads a recorded fixture without a verified live source
 - **THEN** it labels recorded provenance and does not advertise live discovery readiness
+
+### Requirement: Namespace-bound snapshot pagination
+The versioned facade SHALL bind cursors to the full deployment namespace, resource, normalized filters, ABI evidence and bounded projection snapshot. It SHALL reject foreign cursors and return snapshot_changed when that projection changes. RPC scans SHALL NOT claim atomic canonical coverage, finality or source observation timestamps. Search truncation at 200 recent IDs SHALL be explicit.
+
+#### Scenario: A projection changes between pages
+- **WHEN** a client presents a cursor for an older bounded projection
+- **THEN** the service returns snapshot_changed and instructs the client to restart without that cursor
+
+### Requirement: Explicit audit archive handoff
+The application archive adapter SHALL require an explicit deployment namespace binding for archive v1, filter observations by arena and exact safe battle identity, retain individual source labels and historical TTL semantics, and disclose that network/protocol attribution is an operator handoff. Registry membership SHALL NOT establish current asset eligibility.
+
+#### Scenario: Archive configuration lacks namespace evidence
+- **WHEN** an archive path is configured without an explicit namespace binding
+- **THEN** application audit reads remain unsupported with a reason, and recorded observations cannot become live evidence
