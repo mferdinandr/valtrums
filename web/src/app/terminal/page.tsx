@@ -1,46 +1,33 @@
 "use client";
 
-import { SessionPanel } from "@/components/terminal/session-panel";
-import { TerminalPanel } from "@/components/terminal/terminal-panel";
-import { CarnivalScene } from "@/components/carnival/scene";
+import Link from "next/link";
+import { Card } from "@/components/ui/card";
+import { useApplicationDeployment } from "@/components/providers";
+import { LifecycleTerminal } from "@/components/terminal/lifecycle-terminal";
 
+/** Intent terminal for the lifecycle contracts: create a battle, register, deposit or request a payout. */
 export default function TerminalPage() {
+  const deployment = useApplicationDeployment();
   return (
     <div className="space-y-6">
       <div className="page-heading">
         <p className="eyebrow">THE HELP KIOSK / INTENT TERMINAL</p>
         <h1>A little help with your next move.</h1>
         <p>
-          Say what you want in plain English or Bahasa Indonesia. You always see
-          a summary first, and nothing is sent until you confirm.
+          Say what you want in plain English or Bahasa Indonesia. You always see the exact call first; nothing is sent to the action service until you ask for
+          a preview, and only your wallet signs.
         </p>
       </div>
-      <div className="carnival-workspace">
-        <div className="space-y-6">
-          <TerminalPanel />
-          <p className="carnival-note">
-            Approvals: funding your arena balance takes one wallet approval.
-            Deposits paid from that balance need none while a valid session key
-            exists; without one, each deposit asks your wallet once.
-          </p>
-        </div>
-        <aside className="space-y-5">
-          <div className="carnival-workspace-aside !static">
-            <CarnivalScene mode="terminal" className="!h-[280px]" />
-            <div className="carnival-aside-copy">
-              <span className="eyebrow text-neon-pink">
-                YOUR WORDS. YOUR APPROVAL.
-              </span>
-              <h2 className="mt-3">Ask. Review. Confirm.</h2>
-              <p>
-                The kiosk mascot is decorative. The summary, funding route and
-                wallet permissions below determine what gets sent.
-              </p>
-            </div>
-          </div>
-          <SessionPanel />
-        </aside>
-      </div>
+      {deployment ? (
+        <LifecycleTerminal namespace={deployment} />
+      ) : (
+        <Card role="alert">
+          Lifecycle reads are not configured for this deployment, so the terminal cannot review a request.{" "}
+          <Link href="/arena" className="underline">
+            Back to the battle list
+          </Link>
+        </Card>
+      )}
     </div>
   );
 }
