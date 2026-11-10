@@ -241,11 +241,15 @@ export function homeAt(
   return [Math.sin(angle) * radius, Math.cos(angle) * radius];
 }
 export function arenaScale(count: number) {
-  return count > 3 ? 1.15 : 1;
+  return count > 6 ? Math.max(1.15, count * 0.17) : count > 3 ? 1.15 : 1;
 }
 /** A personal arena station, never another participant. */
 export function challengeAt(owner: number, count: number) {
-  const [x, z] = homeAt(owner, count, count > 3 ? 2.65 : 2.15);
+  const [x, z] = homeAt(
+    owner,
+    count,
+    (count > 3 ? 2.65 : 2.15) * (count > 6 ? arenaScale(count) : 1),
+  );
   return { owner, x, z };
 }
 export function beatAt(state: PreviewRuntime) {
@@ -270,7 +274,11 @@ export function fighterPose(index: number, state: PreviewRuntime) {
   const [hx, hz] = homeAt(
     index,
     state.roster.length,
-    eliminated ? 6.8 * arenaScale(state.roster.length) : undefined,
+    eliminated
+      ? 6.8 * arenaScale(state.roster.length)
+      : state.roster.length > 6
+        ? 5.1 * arenaScale(state.roster.length)
+        : undefined,
   );
   const { x: tx, z: tz } = challengeAt(index, state.roster.length);
   const distance = Math.max(0.001, Math.hypot(tx - hx, tz - hz));

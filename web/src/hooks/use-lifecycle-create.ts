@@ -2,11 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
-import { ActionSession, createActionWallet } from "@/lib/arena-read/action-session";
+import {
+  ActionSession,
+  createActionWallet,
+} from "@/lib/arena-read/action-session";
 import { previewCreate } from "@/lib/arena-read/create-flow";
 import { readCredit } from "@/lib/arena-read/deposit-flow";
+import {
+  ReviewScope,
+  reviewScopeKey,
+  scopeWallet,
+} from "@/lib/arena-read/review-scope";
 import type { CallReview } from "@/lib/arena-read/create-review";
-import { executeTerminalAction, type ActionRunResult, type PreviewedAction } from "@/lib/terminal/actions";
+import {
+  executeTerminalAction,
+  type ActionRunResult,
+  type PreviewedAction,
+} from "@/lib/terminal/actions";
 
 export type CreateFlow =
   | { step: "idle" }
@@ -24,59 +36,128 @@ export type CreateFlow =
  * a wallet rejection or an error leaves the review untouched so the user can retry. Nothing here retries a
  * broadcast on its own.
  */
-export function useLifecycleCreate(request: Record<string, unknown>, review: CallReview | null) {
+export function useLifecycleCreate(
+  request: Record<string, unknown>,
+  review: CallReview | null,
+  namespace = "",
+) {
   const { accountId } = useWallet();
   const getWallet = useActionWallet();
-  const [flow, setFlow] = useState<CreateFlow>({ step: "idle" });
-  const session = useRef<{ account: string; value: ActionSession } | null>(null);
+  const scope = useRef(new ReviewScope());
+  const key = reviewScopeKey(accountId, namespace, request, review);
+  scope.current.select(key);
+  const [stored, setStored] = useState<{
+    token: number;
+    flow: CreateFlow;
+  } | null>(null);
+  const flow: CreateFlow =
+    stored && scope.current.current(stored.token)
+      ? stored.flow
+      : { step: "idle" };
+  const commit = useCallback((token: number, next: CreateFlow) => {
+    if (scope.current.current(token)) setStored({ token, flow: next });
+  }, []);
+  useEffect(() => () => scope.current.invalidate(), []);
+  const session = useRef<{ account: string; value: ActionSession } | null>(
+    null,
+  );
 
   // A different account or a sign-out discards the session and any pending preview.
   useEffect(() => {
     session.current = null;
-    setFlow({ step: "idle" });
   }, [accountId]);
 
   const deps = useCallback(async () => {
     if (!accountId || !getWallet) throw new Error("connect a wallet first");
     const wallet = await getWallet();
-    if (session.current?.account !== accountId) session.current = { account: accountId, value: new ActionSession({ accountId, wallet }) };
+    if (session.current?.account !== accountId)
+      session.current = {
+        account: accountId,
+        value: new ActionSession({ accountId, wallet }),
+      };
     const active = session.current.value;
-    return { token: await active.ensure(), wallet: createActionWallet(active, { accountId, wallet }) };
+    return {
+      token: await active.ensure(),
+      wallet: createActionWallet(active, { accountId, wallet }),
+    };
   }, [accountId, getWallet]);
 
   const preview = useCallback(async () => {
     if (!review || !accountId) return;
-    setFlow({ step: "previewing" });
+    const tokenId = scope.current.begin();
+    commit(tokenId, { step: "previewing" });
     try {
       const { token, wallet } = await deps();
-      const outcome = await previewCreate(request, review, accountId, { session: token, wallet });
-      setFlow(outcome.step === "blocked" ? { step: "blocked", reasons: outcome.reasons } : { step: "previewed", previewed: outcome.previewed });
+      if (!scope.current.current(tokenId)) return;
+      const outcome = await previewCreate(request, review, accountId, {
+        session: token,
+        wallet,
+      });
+      commit(
+        tokenId,
+        outcome.step === "blocked"
+          ? { step: "blocked", reasons: outcome.reasons }
+          : { step: "previewed", previewed: outcome.previewed },
+      );
     } catch (err) {
-      setFlow({ step: "error", message: err instanceof Error ? err.message : String(err) });
+      commit(tokenId, {
+        step: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
-  }, [deps, request, review, accountId]);
+  }, [deps, request, review, accountId, commit]);
 
   const execute = useCallback(async () => {
-    if (flow.step !== "previewed") return;
+    if (
+      flow.step !== "previewed" ||
+      !stored ||
+      !scope.current.current(stored.token)
+    )
+      return;
+    const tokenId = stored.token;
     const { previewed } = flow;
-    setFlow({ step: "signing" });
+    commit(tokenId, { step: "signing" });
     try {
       const { token, wallet } = await deps();
-      setFlow({ step: "done", result: await executeTerminalAction(previewed, { session: token, wallet }) });
+      if (!scope.current.current(tokenId)) return;
+      const guarded = scopeWallet(wallet, () => scope.current.current(tokenId));
+      commit(tokenId, {
+        step: "done",
+        result: await executeTerminalAction(previewed, {
+          session: token,
+          wallet: guarded,
+        }),
+      });
     } catch (err) {
-      setFlow({ step: "error", message: err instanceof Error ? err.message : String(err) });
+      commit(tokenId, {
+        step: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
-  }, [flow, deps]);
+  }, [flow, stored, deps, commit]);
 
-  const reset = useCallback(() => setFlow({ step: "idle" }), []);
+  const reset = useCallback(() => {
+    scope.current.invalidate();
+    setStored(null);
+  }, []);
   /** The account's position as the arena reports it, read through the action status. Null when unavailable. */
-  const readPosition = useCallback(async (actionId: string) => {
-    try {
-      const { token, wallet } = await deps();
-      return await readCredit(actionId, { session: token, wallet });
-    } catch {
-      return null;
-    }
-  }, [deps]);
-  return { flow, preview, execute, reset, readPosition, connected: !!accountId && !!getWallet };
+  const readPosition = useCallback(
+    async (actionId: string) => {
+      try {
+        const { token, wallet } = await deps();
+        return await readCredit(actionId, { session: token, wallet });
+      } catch {
+        return null;
+      }
+    },
+    [deps],
+  );
+  return {
+    flow,
+    preview,
+    execute,
+    reset,
+    readPosition,
+    connected: !!accountId && !!getWallet,
+  };
 }

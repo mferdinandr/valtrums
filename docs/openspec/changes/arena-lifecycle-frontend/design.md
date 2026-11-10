@@ -18,9 +18,42 @@ The frontend currently uses legacy financial calls. Target contracts accept mult
 6. Reuse existing transaction review for direct wallet actions. Canonical preview tokens, MCP and delegated-player authorization are separate owners; the read-only foundation is not an action backend. Oracle, signer and confirmation-operator roles remain outside the browser.
 
 7. Consume existing `communities[].audit_expires_at_ms`; do not propose a duplicate expiry view. Activation is a deployment prerequisite: `activate_lifecycle` rejects contracts with existing legacy battles. Switching the web adapter cannot activate or migrate such a contract. The existing EVM `TestnetDepositCustody` has no withdrawal/recovery method; block fund-moving custody UX until the backing/testnet owners demonstrate a compatible payout custody path.
-7. Wallet signing in application read mode is opt-in (`NEXT_PUBLIC_APPLICATION_WALLET=true`). Without it application mode keeps no wallet, exactly as before. With it the wallet is mounted for signing only: the legacy `ArenaApi` is still not provided, so no legacy A/B action can run there, and reads work with no wallet.
-8. The NEP-413 session token is held in memory only (never localStorage, sessionStorage, a cookie or a URL); a reload asks the wallet again. The message to sign and both recipients come from the read service (`GET /session/config`), never from the client bundle, so a mismatched copy cannot ship. The token carries no signing or spending authority.
-9. A create action never reaches authorization until the service's canonical preview equals the call the user reviewed (account, contract, method, arguments, deposit, exactly one call). A mismatch stops the flow before the wallet is asked for anything. A submitted transaction is not a created battle until the service reports a verified receipt; a wallet rejection leaves the review intact for a retry.
+8. Wallet signing in application read mode is opt-in (`NEXT_PUBLIC_APPLICATION_WALLET=true`). Without it application mode keeps no wallet, exactly as before. With it the wallet is mounted for signing only: the legacy `ArenaApi` is still not provided, so no legacy A/B action can run there, and reads work with no wallet.
+9. The NEP-413 session token is held in memory only (never localStorage, sessionStorage, a cookie or a URL); a reload asks the wallet again. The message to sign and both recipients come from the read service (`GET /session/config`), never from the client bundle, so a mismatched copy cannot ship. The token carries no signing or spending authority.
+10. A create action never reaches authorization until the service's canonical preview equals the call the user reviewed (account, contract, method, arguments, deposit, exactly one call). A mismatch stops the flow before the wallet is asked for anything. A submitted transaction is not a created battle until the service reports a verified receipt; a wallet rejection leaves the review intact for a retry.
+
+## Lifecycle toy-world UX slice (issue 149)
+
+The lifecycle list, creation and detail pages share the existing light carnival
+palette/components. Detail uses the same lazy-loaded `RecordedArena` renderer as
+legacy battles, through a separate `lifecycleRuntime` adapter that consumes only
+lifecycle candidates/windows/winner. No lifecycle record is converted into a
+legacy A/B `BattleView`. Timer expiry remains pending, recorded overtime changes
+the candidate set, and missing scores/history are not reconstructed. Fixture
+labels remain visible. Sixteen communities use distinct generic/contract-bound
+rosters and an expanded ring/camera layout; no new model or library is needed.
+
+Scene selection highlights a crew without selecting its deposit. Camera follow,
+overview and pause are cosmetic; tab/offscreen visibility pauses rendering rather
+than backend state. Reduced motion and WebGL failure keep crew controls, status,
+readiness, participation and evidence in the DOM. Precise visual framing/touch
+behavior still requires browser review, which was unavailable during this slice.
+
+Create navigation and footer adapt to application mode, so they no longer lead
+into a blocked legacy form. Unsupported legacy Terminal/Portfolio destinations
+are not offered in that mode. Technical identities, evidence and JSON remain
+available through expandable details. User-facing modes use descriptive labels
+without changing wire variants. Registry results lack trusted representation,
+custody and decimal metadata: advanced manual setup/base-unit input remain
+explicit instead of inferring values or adding contract/backend scope.
+
+Every preview binds account, deployment, request and reviewed transaction to a
+monotonic scope epoch. Editing a draft, resetting, changing account/deployment or
+unmounting a step invalidates late responses and prevents old wallet prompts,
+including A-to-B-to-A edits. Each wallet operation rechecks the epoch after async
+session preparation. Creation fields are disabled during signing. Deposit waits
+for its baseline position read before enabling authorization, and credit responses
+are bound to the selected draft epoch/action ID rather than the latest receipt.
 
 ## Risks / Trade-offs
 

@@ -438,7 +438,7 @@ function CameraRig({ runtime }: Runtime) {
     }
     if (state.phase === "intro")
       target.current.multiplyScalar(1 + (1 - smooth(state.time / 3)) * 0.4);
-    if (state.reduced) {
+    if (state.reduced || state.paused) {
       camera.position.copy(target.current);
       gaze.current.copy(look.current);
     } else {
@@ -457,17 +457,24 @@ function Ready({ onReady }: { onReady: () => void }) {
   }, []);
   return null;
 }
+function FrameRevision({ revision }: { revision: string }) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => invalidate(), [invalidate, revision]);
+  return null;
+}
 export default function CarnivalScene({
   runtime,
   frozen,
   onSelect,
   onReady,
   onFailure,
+  revision = "",
 }: Runtime & {
   frozen: boolean;
   onSelect: (index: number) => void;
   onReady: () => void;
   onFailure: () => void;
+  revision?: string;
 }) {
   return (
     <Canvas
@@ -528,6 +535,7 @@ export default function CarnivalScene({
       <FestivalEffects runtime={runtime} />
       <CameraRig runtime={runtime} />
       <Ready onReady={onReady} />
+      <FrameRevision revision={revision} />
     </Canvas>
   );
 }
