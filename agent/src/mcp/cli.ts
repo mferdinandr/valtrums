@@ -13,6 +13,7 @@ import { startReadServer } from "./http.js";
 import { NearArenaReadSource } from "./read-source.js";
 import { buildMcpServer } from "./server.js";
 import { ReadSessions } from "./session.js";
+import { loadApplicationReads } from "./application-config.js";
 
 /**
  * Entry point: `node dist/mcp/cli.js mcp` serves MCP over stdio, `node dist/mcp/cli.js http`
@@ -106,7 +107,11 @@ export async function runCli(args: string[], env: NodeJS.ProcessEnv = process.en
     const host = env.READ_API_HOST?.trim() || "127.0.0.1";
     const port = Number(env.READ_API_PORT ?? 8790);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("READ_API_PORT must be a valid port");
-    startReadServer(port, host, { ...deps, sessions: deps.sessions });
+    const application = await loadApplicationReads(env, (network) => {
+      const near = new Near({ network, ...(network === (env.NEAR_NETWORK?.trim() || "testnet") && env.NEAR_RPC_URL?.trim() ? { rpcUrl: env.NEAR_RPC_URL.trim() } : {}) });
+      return (contract, method, args) => near.view(contract, method, args);
+    });
+    startReadServer(port, host, { ...deps, sessions: deps.sessions, ...(application ? { application } : {}) });
     console.error(`read API listening on ${host}:${port}`);
     return;
   }

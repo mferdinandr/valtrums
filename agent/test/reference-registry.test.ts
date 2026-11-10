@@ -132,6 +132,14 @@ describe("reference registry", () => {
     await expect(new NearReferenceRegistrySource("arena.testnet", malformed.t).load()).rejects.toThrow(/malformed/);
   });
 
+  it("rejects rounded registry identifiers before coercion and invalid page bounds", async () => {
+    expect(() => buildSnapshot("1", [{ ...view(entry), chain_id: 9007199254740992 }])).toThrow(/unsafe/);
+    const unsafe = transport(() => ({ version: 9007199254740992, total: 0, entries: [] }));
+    await expect(new NearReferenceRegistrySource("arena.testnet", unsafe.t).load()).rejects.toThrow(/unsafe/);
+    const negative = transport(() => ({ version: "1", total: -1, entries: [] }));
+    await expect(new NearReferenceRegistrySource("arena.testnet", negative.t).load()).rejects.toThrow(/bounds/);
+  });
+
   it("the audit pass reads the same source once per pass and fails closed when it cannot", async () => {
     const battle: LifecycleBattleView = {
       locked: false,
