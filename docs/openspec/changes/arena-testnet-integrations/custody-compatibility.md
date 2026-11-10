@@ -49,7 +49,7 @@ Conclusion: A fits the payout code that exists and has the smallest attack surfa
 
 ## Decision and what was built
 
-Owner decision: option A. Built in code and tests, not deployed: the forwarder contract (`evm/src/TestnetDepositCustody.sol`, constructor `holder`, 12 Foundry tests), the verifier's separate `holder` checks (3 new tests), the CLI's `--holder` and required `--payout-sender` gate, and the amended design paragraph. Still open: deploying the new contract and the mapping version bump (separate approval), reading the holder's code hash and the payout `sender` from chain, and wiring `assessCustody` into the deposit action preview and application health.
+Owner decision: option A. Built in code and tests, not deployed: the forwarder contract (`evm/src/TestnetDepositCustody.sol`, constructor `holder`, 12 Foundry tests), the verifier's separate `holder` checks (3 new tests), the CLI's `--holder` and required `--payout-sender` gate, and the amended design paragraph. The gate is now in the application health read (`custody` component, `ARENA_APPLICATION_CUSTODY_PATHS`): source transfers stay disabled unless every configured path is spendable. Redeployment impact and the steps are in [forwarder-deploy-runbook.md](forwarder-deploy-runbook.md): from source, a redeploy under the same custody domain and mapping version needs no new backing (neither the backing nor the registry stores the contract address), but nothing on chain separates the old contract's events, so the operator must never attest them. Still open: the deployment itself (separate approval), the read-only chain checks listed there, and a live payout from the holder.
 
 ## Original decision request (answered)
 

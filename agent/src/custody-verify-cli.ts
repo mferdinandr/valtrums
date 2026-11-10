@@ -4,9 +4,9 @@
  * It signs and sends nothing and holds no secrets. The RPC URL is never printed.
  *
  *   node dist/custody-verify-cli.js --rpc <url> --tx <hash> --log-index <n> --token <addr> --custody <addr> --holder <addr>
- *     --payout-sender <addr> --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30] [--max-depth 256] [--state-rpc <url>]
+ *     --payout-sender <addr> [--retired <addr,addr>] --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30] [--max-depth 256] [--state-rpc <url>]
  */
-import { assessCustody } from "./custody-compat.js";
+import { assessCustody, retiredCustodyReason } from "./custody-compat.js";
 import { verifyDeposit, type AssetMapping, type Verdict } from "./custody-verifier.js";
 import { RpcFinalitySource } from "./evm-finality-source.js";
 
@@ -54,6 +54,12 @@ async function main(): Promise<void> {
     mappingVersion: BigInt(arg("mapping-version")),
   };
   // Hard gate before any RPC call: never verify a receipt for a path whose tokens the payout signer cannot spend.
+  const retired = process.argv.includes("--retired") ? arg("retired").split(",").map((a) => a.trim()).filter(Boolean) : [];
+  const retiredReason = retiredCustodyReason(mapping.custody, retired);
+  if (retiredReason) {
+    console.error(retiredReason);
+    process.exit(2);
+  }
   const gate = assessCustody({ depositContract: mapping.custody, tokenHolder: mapping.holder, payoutSender: arg("payout-sender"), holderCodeHash: null });
   if (!gate.spendable) {
     console.error(`custody path is not spendable: ${gate.reasons.join("; ")}`);

@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: synthetic addresses and code hashes. Not a statement about any deployed contract.
 import { describe, expect, it } from "vitest";
-import { assessCustody, type CustodyFacts } from "../src/custody-compat.js";
+import { assessCustody, retiredCustodyReason, type CustodyFacts } from "../src/custody-compat.js";
 
 const A = (n: string) => `0x${n.repeat(40)}`;
 const facts = (over: Partial<CustodyFacts> = {}): CustodyFacts => ({
@@ -31,5 +31,12 @@ describe("custody compatibility gate", () => {
 
   it("refuses malformed addresses instead of normalizing them away", () => {
     expect(assessCustody(facts({ tokenHolder: "0x1234" }))).toEqual({ spendable: false, reasons: ["custody addresses are not valid 20-byte hex addresses"] });
+  });
+
+  it("refuses a retired deposit contract by address, case-insensitively, and accepts others", () => {
+    expect(retiredCustodyReason(A("C"), [A("c")])).toMatch(/is retired: its deposits can never be paid out/);
+    expect(retiredCustodyReason(A("d"), [A("c")])).toBeNull();
+    expect(retiredCustodyReason(A("d"), [])).toBeNull();
+    expect(() => retiredCustodyReason(A("d"), ["0x12"])).toThrow();
   });
 });

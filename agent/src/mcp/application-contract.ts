@@ -35,7 +35,9 @@ export const deploymentSchema = z.object({
     /** Optional: a manifest written before market observations existed stays valid and reports it as not declared. */
     observations: capability.optional(),
     /** Optional: lifecycle oracle status in health. Absent means not declared. */
-    oracle: capability.optional() }).strict(),
+    oracle: capability.optional(),
+    /** Optional: source-chain custody spendability gate in health (#148). Absent means not declared. */
+    custody: capability.optional() }).strict(),
 }).strict();
 export const manifestSchema = z.array(deploymentSchema).max(32).superRefine((items, ctx) => {
   const ids = new Set<string>();

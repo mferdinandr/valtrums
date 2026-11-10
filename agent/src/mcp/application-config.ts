@@ -9,6 +9,7 @@ import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { loadObservationState } from "../observations/journal.js";
 import { loadObservationConfig } from "../observations/config.js";
 import { loadOracleStatus } from "../lifecycle-oracle/status.js";
+import { loadCustodyPaths } from "./custody-config.js";
 import { z } from "zod";
 
 const fixtureSchema = z.object({
@@ -66,6 +67,10 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
         const dir = env.ORACLE_STATE_DIR.trim();
         binding.oracle = { namespace: namespaceOf(d), load: () => loadOracleStatus(dir), staleAfterMs: 60_000 };
       }
+    }
+    if (env.ARENA_APPLICATION_CUSTODY_PATHS?.trim() && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
+      const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
+      if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) binding.custody = { namespace: namespaceOf(d), paths: loadCustodyPaths(env.ARENA_APPLICATION_CUSTODY_PATHS) };
     }
     bindings.set(d.deploymentId, binding);
   }

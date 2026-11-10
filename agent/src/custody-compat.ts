@@ -62,3 +62,16 @@ export function assessCustody(facts: CustodyFacts): CustodyVerdict {
   }
   return reasons.length === 0 ? { spendable: true, reasons: [] } : { spendable: false, reasons };
 }
+
+/**
+ * Deposit contracts the operator has retired (for example the deposit-only contract that cannot pay out).
+ * Nothing on chain separates their events from a live contract's under an unchanged domain and mapping
+ * version, so the verifier tooling refuses them by address. Returns a reason when `custody` is retired.
+ */
+export function retiredCustodyReason(custody: string, retired: readonly string[]): string | null {
+  const target = normalizeAddress(custody);
+  for (const r of retired) {
+    if (normalizeAddress(r) === target) return `the deposit contract ${target} is retired: its deposits can never be paid out and must not be attested`;
+  }
+  return null;
+}
