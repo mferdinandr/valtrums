@@ -16,6 +16,7 @@ import type { ObservationState } from "../observations/journal.js";
 import { ObservationQueryError, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
 import type { Mode } from "../observations/schema.js";
 import type { OracleStatus } from "../lifecycle-oracle/status.js";
+import { assessCustody, type CustodyFacts } from "../custody-compat.js";
 
 export interface ApplicationBinding {
   source?: ArenaReadSource;
@@ -29,6 +30,12 @@ export interface ApplicationBinding {
    */
   /** Lifecycle oracle status (read-only file written by the oracle process). It reports; it authorizes nothing. */
   oracle?: { namespace: Namespace; load(): Promise<OracleStatus>; staleAfterMs: number };
+  /**
+   * Source-chain custody paths this deployment would accept deposits through (#148). Each is checked with
+   * `assessCustody`: source transfers are enabled only if there is at least one path and every path is
+   * spendable by the payout signer. Operator configuration, never model or client input.
+   */
+  custody?: { namespace: Namespace; paths: ReadonlyArray<CustodyFacts & { label: string }> };
   observations?: {
     namespace: Namespace;
     load(): Promise<ObservationState>;
@@ -62,6 +69,7 @@ export class ApplicationReads {
       if (b?.audits && namespaceKey(b.audits.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign audit archive binding");
       if (b?.observations && namespaceKey(b.observations.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign observation journal binding");
       if (b?.oracle && namespaceKey(b.oracle.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign oracle status binding");
+      if (b?.custody && namespaceKey(b.custody.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign custody binding");
     }
   }
 
@@ -70,7 +78,8 @@ export class ApplicationReads {
     const declared = structuredClone(d.capabilities);
     const capabilities: ResolvedCapabilities = { ...declared,
       observations: declared.observations ?? { enabled: false, reasons: ["observations capability not declared in the deployment manifest"] },
-      oracle: declared.oracle ?? { enabled: false, reasons: ["oracle status capability not declared in the deployment manifest"] } };
+      oracle: declared.oracle ?? { enabled: false, reasons: ["oracle status capability not declared in the deployment manifest"] },
+      custody: declared.custody ?? { enabled: false, reasons: ["custody capability not declared in the deployment manifest"] } };
     for (const key of Object.keys(capabilities) as Capability[]) {
       const c = capabilities[key];
       if (d.protocol !== "lifecycle-v2") { c.enabled = false; c.reasons.push("legacy-v1 remains on the explicit legacy adapter; v1 projection unsupported"); }
@@ -79,6 +88,7 @@ export class ApplicationReads {
       else if (key === "audits" && !binding?.audits) { c.enabled = false; c.reasons.push("archive namespace handoff unavailable (#145)"); }
       else if (key === "observations" && !binding?.observations) { c.enabled = false; c.reasons.push("observation journal handoff unavailable (#146)"); }
       else if (key === "oracle" && !binding?.oracle) { c.enabled = false; c.reasons.push("oracle status handoff unavailable (#147)"); }
+      else if (key === "custody" && !binding?.custody) { c.enabled = false; c.reasons.push("no custody path configured: source-chain transfers and payouts stay disabled (#148)"); }
     }
     return { ...d, capabilities, canonicalDiscovery: { enabled: false, reasons: ["verified deployment and complete live canonical projection coverage required (#144/#80)"] } };
   }
@@ -219,10 +229,19 @@ export class ApplicationReads {
         ["audits", async () => binding.audits!.archive.snapshot()],
         ["observations", async () => binding.observations!.load()],
         ["oracle", async () => binding.oracle!.load()],
+        ["custody", async () => binding.custody!.paths],
       ];
       const components = await Promise.all(probes.map(async ([key, probe]) => {
         const c = availability.capabilities[key];
         if (!c.enabled) return [key, { health: "unavailable", reasons: c.reasons }];
+        if (key === "custody") {
+          const paths = binding.custody!.paths;
+          const rows = paths.map((p) => ({ label: p.label, ...assessCustody(p) }));
+          const enabled = rows.length > 0 && rows.every((r) => r.spendable);
+          // Always degraded: a configured path is an operator assertion, not live proof that a payout works (#80).
+          return [key, { health: "degraded", reasons: [...partial, enabled ? "every configured custody path is spendable by the payout signer (operator-configured facts, not a live payout proof)" : "source-chain transfers and payouts are disabled", ...(rows.length === 0 ? ["no custody path is configured"] : []), ...rows.flatMap((r) => r.reasons.map((reason) => `${r.label}: ${reason}`))],
+            details: { sourceTransfersEnabled: enabled, paths: rows } }];
+        }
         if (key === "oracle") {
           try {
             const st = await binding.oracle!.load();
