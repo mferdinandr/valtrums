@@ -81,3 +81,8 @@ For any NEAR work, invoke the matching skill via the Skill tool before writing c
 - OpenSpec lives in `docs/openspec/`; run it from `docs/` (`cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`). Slash commands are in `.claude/commands/opsx`.
 - Product source of truth: `docs/product-spec.md`. Work order and status: `docs/implementation-roadmap.md` and `docs/implementation-tracker.md`. Current code snapshot: `docs/current-state.md`.
 - Open decisions (DAO, tax/admin policy) are not decided silently; ask the owner.
+
+<!-- claude-reflect: learned rules (saved from the band; edit freely) -->
+## Learned rules
+- After finishing each GitHub issue in this repo, open a PR to main, and assign issues to naufalfzml before starting work on them.
+<!-- end claude-reflect -->
