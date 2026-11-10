@@ -26,7 +26,8 @@ class Boundary extends Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
+  componentDidCatch(error: Error) {
+    console.error("Valtrum 3D battle arena failed", error);
     this.props.onFailure();
   }
   render() {
@@ -142,10 +143,7 @@ export function RecordedArena({
     visibility();
     media.addEventListener("change", motion);
     document.addEventListener("visibilitychange", visibility);
-    const canvas = document.createElement("canvas"),
-      gl = canvas.getContext("webgl2");
-    setSupport(gl ? "supported" : "failed");
-    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    setSupport("supported");
     const observer = new IntersectionObserver(
       ([entry]) => setInView(entry?.isIntersecting ?? false),
       { rootMargin: "150px" },
@@ -274,6 +272,7 @@ export function RecordedArena({
           <div className="battle-arena-message">
             3D is unavailable. Community selection, chart and battle controls
             remain below.
+            <button type="button" className="ml-2 underline" onClick={() => { setReady(false); setSupport("supported"); }}>Try 3D again</button>
           </div>
         )}
         <p className="battle-arena-caption">

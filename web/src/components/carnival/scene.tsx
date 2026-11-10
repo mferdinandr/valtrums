@@ -29,7 +29,8 @@ class WorldBoundary extends Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
+  componentDidCatch(error: Error) {
+    console.error("Valtrum 3D scene failed", error);
     this.props.onFailure();
   }
   render() {
@@ -85,11 +86,9 @@ export function CarnivalScene({
       { rootMargin: "150px", threshold: 0.01 },
     );
     if (host.current) observer.observe(host.current);
-    const gl = document.createElement("canvas").getContext("webgl2");
-    if (gl) {
-      gl.getExtension("WEBGL_lose_context")?.loseContext();
-      setSupported(true);
-    } else setFailed(true);
+    // Let the actual Canvas initialize WebGL. Extra probe contexts compete for
+    // limited GPU resources during route transitions and Strict Mode remounts.
+    setSupported(true);
     return () => {
       media.removeEventListener("change", motion);
       document.removeEventListener("visibilitychange", visibility);
@@ -134,7 +133,7 @@ export function CarnivalScene({
       </div>
       <p className="carnival-scene-caption">
         {failed
-          ? "3D unavailable · all page controls remain available"
+          ? <button type="button" onClick={() => { setLoaded(false); setFailed(false); }}>3D could not load · Try again</button>
           : loaded
             ? (caption ?? COPY[mode])
             : "Preparing local 3D assets…"}
