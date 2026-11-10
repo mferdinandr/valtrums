@@ -22,7 +22,7 @@ export function price(community: number, atMs: bigint | null, value: string, ove
     mappingVersion: "3",
     asset: { chainId: "46630", token: `0x${"aa".repeat(20)}` },
     reference: { chainId: "4663", token: `0x${"bb".repeat(20)}` },
-    source: { name: "fixture-dex", pool: "pool-1", quote: "USD" },
+    source: { name: "fixture-dex", kind: "fixture", pool: "pool-1", quote: "USD" },
     inputs: { kind: "price", price: value, priceScale: 8 },
     evidenceHash: `evidence-${community}-${atMs ?? "none"}-${value}-${counter}`,
     observedAtMs: atMs === null ? null : atMs.toString(),

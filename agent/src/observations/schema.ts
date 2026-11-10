@@ -71,7 +71,8 @@ export const observationSchema = z
     mappingVersion: uint(64),
     asset: identity,
     reference: identity.nullable(),
-    source: z.object({ name: text(64), pool: text(128).nullable(), quote: text(32) }).strict(),
+    /** `kind` is part of the evidence: a fixture or recorded sample can never be relabeled live by configuration. */
+    source: z.object({ name: text(64), kind: z.enum(["fixture", "recorded", "live"]), pool: text(128).nullable(), quote: text(32) }).strict(),
     inputs: z.discriminatedUnion("kind", [priceInput, marketCapInput, volumeInput]),
     evidenceHash: text(128),
     /** Provider observation time (ms), or null when the provider gives none. */
