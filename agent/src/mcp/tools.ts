@@ -18,7 +18,12 @@ export interface ReadToolDeps {
   arena: ArenaReadSource;
   /** Entitlement, DAO disposition, backing health and indexer health reads (#79); optional. */
   state?: StateSource;
-  audits?: { archive: ReportArchive; info: SourceInfo };
+  audits?: {
+    archive: ReportArchive;
+    info: SourceInfo;
+    /** Arena contract the archive is read for; observations attributed to another arena are never returned. */
+    arena?: string;
+  };
   sessions: ReadSessions;
   now: () => number;
   /** Age after which a read is reported stale. Live reads are observed at call time. */
@@ -168,6 +173,7 @@ export const READ_TOOLS: readonly ReadTool[] = [
       const id = battleIdArg(args);
       if (!deps.audits) throw new ToolInputError("audit report archive is not configured");
       const query: ReportQuery = { battleId: id, pageSize: 20 };
+      if (deps.audits.arena) query.arena = deps.audits.arena;
       if (args.community !== undefined) query.community = args.community as number;
       let page;
       try {
@@ -176,9 +182,16 @@ export const READ_TOOLS: readonly ReadTool[] = [
         if (err instanceof QueryValidationError) throw new ToolInputError(err.message);
         throw err;
       }
-      return live(deps, "inspect_audit", deps.audits.info, { battleId: id, observations: page.items, nextCursor: page.nextCursor }, [
+      const limitations = [
         "an archived report does not establish current approval; read the battle's committed audit evidence",
-      ]);
+        "each observation carries its own provenance (fixture, recorded or live); the source label is not an upgrade of it",
+      ];
+      if (page.items.length === 0) {
+        limitations.push(
+          "no archived observation for this battle: the archive file may not exist yet, the producer may be disabled, or the battle has not been audited",
+        );
+      }
+      return live(deps, "inspect_audit", deps.audits.info, { battleId: id, observations: page.items, nextCursor: page.nextCursor }, limitations);
     },
   },
   {
