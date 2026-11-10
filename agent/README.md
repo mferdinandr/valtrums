@@ -182,3 +182,24 @@ ARENA_CONTRACT_ID=arena.example.testnet
 - The read source is always labeled `recorded`. Each observation carries its own `provenance` (`recorded` as written by the agent); no environment flag upgrades it to `live`.
 - `inspect_audit` keeps the historical `result`, the read-time `freshness` (`fresh`/`expired`/`not_applicable`) and `currentApproval: notEstablished` separate. An empty answer is labeled (archive missing, producer disabled or battle not audited yet); a corrupt archive is an error, not an empty history.
 - Retention: there is no pruning; capacity is finite and a full archive is a visible sink error. Retention policy is an open decision.
+
+## Payout roles (relayer and operator)
+
+Two separate processes, each with its own NEAR account and key. A process refuses to start if the other role's variables or the arena agent key (`AGENT_PRIVATE_KEY[_FILE]`) are in its environment. The browser, the read API/MCP and the arena agent never hold either key. The arena agent's optional reconciler (`PAYOUT_RECONCILE_ENABLED`) is unchanged: it never requests signatures and never holds the operator key.
+
+| Variable | Role | Meaning |
+| --- | --- | --- |
+| `PAYOUT_CONTRACT_ID`, `PAYOUT_EVM_RPC_URL` (https), `PAYOUT_CHAIN_ID`, `PAYOUT_INTERVAL_SECS` | both | payout contract, source-chain read RPC (may embed a key: not logged), the one chain every payout must name, pass interval (default 30, min 5) |
+| `PAYOUT_RELAYER_ACCOUNT_ID`, `PAYOUT_RELAYER_PRIVATE_KEY` or `_FILE` | relayer | must be the relayer fixed at payout contract initialization |
+| `PAYOUT_RELAYER_MAX_FEE_PER_GAS_WEI` | relayer | fee cap of the first request; the contract still enforces its registered cap |
+| `PAYOUT_SIGNING_GRACE_SECS` | relayer | how long a signer answer may be missing before the payout is held (default 300) |
+| `PAYOUT_OPERATOR_ACCOUNT_ID`, `PAYOUT_OPERATOR_PRIVATE_KEY` or `_FILE` | operator | must be the operator fixed at initialization |
+| `PAYOUT_OPERATOR_SUBMIT` | operator | `true` submits confirm/revert/restore; default is a dry run that logs the checked proof |
+
+Run: `pnpm -C agent build`, then `pnpm -C agent payout:relayer` and `pnpm -C agent payout:operator`.
+
+- **Relayer pass:** reconcile existing attempts first (rebroadcast the stored signed transaction, record broadcast/pending, hold on missing evidence), then `request_signature` for an `authorized` payout that has no attempt, names the configured chain, whose nonce slot is unused and which reconciliation cleared. Eligibility comes from contract state, so a restart, lost response or duplicate pass never creates a second request; a failed or unconfirmed request is logged and never retried in the same pass.
+- **Operator pass:** reads from its own RPC, builds the proof from finalized chain state, re-checks it against the payout's contract view, then submits. It confirms only an exact finalized transfer (token, sender, destination, amount) of a recorded attempt; it restores only after every attempt is proven reverted and the nonce slot is finalized. Wrong or partial evidence, a used nonce without a matching receipt, a reorg or a client timeout leave the payout open (`reconciliation_required`); a timeout never restores liability.
+- **Status references** (for the read API and portfolio): structured log lines `payout relayer pass` (`requested`, `skipped[]`, `errors`), `payout operator pass` (`results[]` with `submitted|dry_run|refused|failed`, `unresolved`, `errors`), `payout reconciled` (per payout `kind`) and the contract's `get_payout` / `list_open_payouts` state. A signature, a pending transaction or a timeout is never delivered or restored funds; only `confirmed` and `restored` are terminal.
+- **Restart/recovery:** just restart the process. No in-memory state is required for safety. After an operator `failed` result, check `get_payout` and let the next pass re-read the chain.
+- **Not live proof:** everything above is fixture-tested. Live release stays gated by #148 (custody spendability) and #80 (end-to-end acceptance).
