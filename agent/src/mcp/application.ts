@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { labelFor, labelMatches } from "../token-labels.js";
 import type { ReportArchive } from "../audit/report-archive.js";
 import { canonicalJson } from "../audit/report-archive.js";
 import { queryObservations } from "../audit/report-query.js";
@@ -275,11 +276,12 @@ export class ApplicationReads {
         const winner = round?.winner ?? null;
         const status = !b.locked ? "open" : winner === null ? "locked" : "decided";
         items.push({ battleId: String(id), creator: b.creator, mode: b.mode, status, winner,
-          communities: b.communities.map((c, index) => ({ index, representation: c.representation, tokenAddress: c.token_address, chainId: c.chain_id })) });
+          communities: b.communities.map((c, index) => ({ index, representation: c.representation, tokenAddress: c.token_address, chainId: c.chain_id, label: labelFor(c.chain_id, c.token_address) })) });
       }
       const filtered = items.filter((b) => (!q.mode || b.mode === q.mode) && (!q.status || b.status === q.status) &&
         (!q.community || b.communities.some((c) => c.representation === q.community)) &&
-        (!q.q || [b.battleId, b.creator, ...b.communities.flatMap((c) => [c.representation, c.tokenAddress])].some((v) => v.toLowerCase().includes(q.q!))));
+        (!q.q || [b.battleId, b.creator, ...b.communities.flatMap((c) => [c.representation, c.tokenAddress])].some((v) => v.toLowerCase().includes(q.q!)) ||
+          b.communities.some((c) => labelMatches(c.label, q.q!))));
       const page = this.paginate(filtered, params, d, path, [count, items]);
       page.data.truncated = BigInt(count) > BigInt(MAX_SCAN);
       return this.envelope(d, page.data, [...partial, ...(page.data.truncated ? ["only latest 200 battle IDs searched; older discovery requires #144"] : [])], page.snapshot);
@@ -293,9 +295,10 @@ export class ApplicationReads {
         reference_address: e.referenceToken, entry_hash: registry.hashes.get(`${e.chainId}:${e.token.toLowerCase()}`) ?? "",
       })));
       const items = checked.entries.map((e) => ({ ...e, assetKey: `${e.chainId}:${e.token}`, registryVersion: checked.version,
-        registryEntryHash: checked.hashes.get(`${e.chainId}:${e.token}`), eligibility: "notEstablished" as const }))
+        registryEntryHash: checked.hashes.get(`${e.chainId}:${e.token}`), eligibility: "notEstablished" as const,
+        label: labelFor(e.chainId, e.token), referenceLabel: labelFor(e.referenceChainId, e.referenceToken) }))
         .sort((a, b) => a.assetKey.localeCompare(b.assetKey));
-      const page = this.paginate(items.filter((e) => !q.q || [e.assetKey, e.referenceToken].some((v) => v.includes(q.q!))), params, d, path, items);
+      const page = this.paginate(items.filter((e) => !q.q || [e.assetKey, e.referenceToken].some((v) => v.includes(q.q!)) || labelMatches(e.label, q.q!) || labelMatches(e.referenceLabel, q.q!)), params, d, path, items);
       return this.envelope(d, page.data, [...partial, "registry membership is not current audit, backing or deposit eligibility"], page.snapshot);
     }
     const id = path.split("/")[1]!;
@@ -334,7 +337,8 @@ export class ApplicationReads {
       try { readiness = await binding.versioned.readiness(id); } catch { reasons.push("versioned readiness read unavailable"); }
       try { history = await binding.versioned.history(id); } catch { reasons.push("stored history read unavailable"); }
     } else reasons.push("versioned activation/config/backing readiness unavailable");
-    return this.envelope(d, { battleId: id, battle, round, readiness, history }, reasons);
+    const labels = battle.communities.map((c) => labelFor(c.chain_id, c.token_address));
+    return this.envelope(d, { battleId: id, battle, round, readiness, history, labels }, [...reasons, "token labels are display names only; identity is chainId + tokenAddress"]);
   }
 }
 
