@@ -37,6 +37,23 @@ async function forward(url: string, init: RequestInit, doFetch: FetchLike, signa
   }
 }
 
+/** Read-only, non-secret signing parameters owned by the read service (message and recipients). */
+export async function proxySessionConfig(
+  env: Record<string, string | undefined>,
+  doFetch: FetchLike = (u, i) => fetch(u, i), signal?: AbortSignal,
+): Promise<ProxyResult> {
+  const base = baseUrl(env);
+  if (!base) return { status: 503, body: { error: "read API is not configured" } };
+  const out = await forward(`${base}/session/config`, { method: "GET" }, doFetch, signal);
+  const b = out.body as { schemaVersion?: unknown; readMessage?: unknown; sessionRecipient?: unknown; actionRecipient?: unknown };
+  const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 512;
+  // Forward only the known public fields, never anything else the upstream might add.
+  if (out.status !== 200 || b?.schemaVersion !== "arena-session-config-v1" || !text(b.readMessage) || !text(b.sessionRecipient) || !(b.actionRecipient === null || text(b.actionRecipient))) {
+    return { status: 503, body: { error: "session configuration unavailable" } };
+  }
+  return { status: 200, body: { schemaVersion: b.schemaVersion, readMessage: b.readMessage, sessionRecipient: b.sessionRecipient, actionRecipient: b.actionRecipient } };
+}
+
 /** Versioned public reads only. Private sessions/actions retain their existing gateway. */
 export async function proxyApplicationRead(
   path: string, search: URLSearchParams, env: Record<string, string | undefined>,
