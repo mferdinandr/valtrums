@@ -1,0 +1,262 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { BattleCard } from "@/components/battle-card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { useArena } from "@/components/providers";
+import { useAsync } from "@/hooks/use-async";
+import { useTokenMetas } from "@/hooks/use-token-metas";
+import { STATUS_FILTERS } from "@/lib/arena/status";
+import type { BattleStatus } from "@/lib/arena/types";
+import { cn } from "@/lib/utils";
+import { ChevronRight, Plus, Search, Landmark } from "lucide-react";
+import { CarnivalScene } from "@/components/carnival/scene";
+
+const PAGE = 100;
+
+export default function ArenaPage() {
+  const api = useArena();
+  const [filter, setFilter] = useState<BattleStatus | "All">("All");
+  const [view, setView] = useState<"battles" | "dao">("battles");
+  const [query, setQuery] = useState("");
+
+  const { data, error, loading, reload } = useAsync(async () => {
+    const count = await api.getBattleCount();
+    const out = [];
+    for (let from = 0; from < count; from += PAGE)
+      out.push(...(await api.getBattles(from, PAGE)));
+    return out.sort((a, b) => b.id - a.id);
+  }, [api]);
+
+  useEffect(() => {
+    if (
+      !data?.some(
+        (battle) => battle.demo_communities && battle.status === "Live",
+      )
+    )
+      return;
+    const timer = window.setInterval(reload, 5000);
+    return () => window.clearInterval(timer);
+  }, [data, reload]);
+
+  const metas = useTokenMetas(
+    (data ?? []).flatMap(
+      (b) =>
+        b.demo_communities?.map((community) => community.token) ?? [
+          b.token_a,
+          b.token_b,
+        ],
+    ),
+  );
+  const entries = useMemo(
+    () =>
+      (data ?? []).map((battle) => ({
+        battle,
+        participants: battle.demo_communities
+          ? battle.demo_communities.map(({ token, vault }) => ({
+              token: metas[token]!,
+              vault,
+            }))
+          : [
+              {
+                token: metas[battle.token_a]!,
+                vault: battle.vault_a,
+                winner: battle.winner === "A",
+              },
+              {
+                token: metas[battle.token_b]!,
+                vault: battle.vault_b,
+                winner: battle.winner === "B",
+              },
+            ],
+      })),
+    [data, metas],
+  );
+  const term = query.trim().toLowerCase();
+  const shown = entries.filter(
+    ({ battle, participants }) =>
+      (filter === "All" || battle.status === filter) &&
+      (!term ||
+        String(battle.id).includes(term) ||
+        participants.some(
+          ({ token }) =>
+            token.symbol.toLowerCase().includes(term) ||
+            token.id.toLowerCase().includes(term),
+        )),
+  );
+
+  return (
+    <div className="space-y-8">
+      <section id="battle-list" className="scroll-mt-40 space-y-5">
+        <section className="carnival-page-hero">
+          <div>
+            <span className="carnival-sticker">THE COMMUNITY FAIRGROUND</span>
+            <h1>
+              A little rivalry.
+              <br />A place for your crew.
+            </h1>
+            <p>
+              Browse the current battles, inspect each community and find out
+              what is open. Prefer to explore first? The 3D carnival runs
+              without a wallet.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button asChild variant="cyan">
+                <Link href="#battle-schedule">
+                  See the line-up <ChevronRight size={14} />
+                </Link>
+              </Button>
+              <Button asChild variant="ghost">
+                <Link href="/arena/preview">Try the 3D carnival</Link>
+              </Button>
+            </div>
+          </div>
+          <CarnivalScene mode="arena" />
+        </section>
+        <div className="arena-list-header">
+          <div id="battle-schedule" className="scroll-mt-40">
+            <p className="eyebrow text-neon-green">THE BATTLE LINE-UP</p>
+            <h2 className="mt-3 text-2xl md:text-3xl">
+              Find your next rivalry.
+            </h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-mute">
+              Current status, real token identities and the next available
+              action.
+            </p>
+          </div>
+          <Link href="/battles/new" className="arena-create">
+            <Plus size={16} /> Create battle
+          </Link>
+        </div>
+        <div className="arena-view-tabs" role="group" aria-label="Arena view">
+          <button
+            type="button"
+            aria-pressed={view === "battles"}
+            onClick={() => setView("battles")}
+            className={cn(
+              "arena-view-tab",
+              view === "battles" && "arena-view-tab-active",
+            )}
+          >
+            Battles <span>{data?.length ?? "—"}</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "dao"}
+            onClick={() => setView("dao")}
+            className={cn(
+              "arena-view-tab",
+              view === "dao" && "arena-view-tab-active",
+            )}
+          >
+            <Landmark size={15} /> DAO <span>Planned</span>
+          </button>
+        </div>
+        {view === "dao" ? (
+          <div className="arena-dao-empty">
+            <Landmark size={24} className="text-neon-green" />
+            <h2 className="mt-4 text-xl">
+              DAO decisions are not available yet.
+            </h2>
+            <p className="mt-2 max-w-lg text-sm leading-6 text-mute">
+              The planned flow places winning principal in DAO escrow for a burn
+              or return decision. Governance rules and DAO status data are still
+              being developed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setView("battles")}
+              className="mt-4 text-sm text-neon-green underline"
+            >
+              Browse battles
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="arena-filter-bar">
+              <label className="arena-search">
+                <Search size={16} aria-hidden="true" />
+                <span className="sr-only">
+                  Search by community or battle ID
+                </span>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search community or battle ID"
+                />
+              </label>
+              <Link
+                href="/portfolio"
+                className="flex items-center gap-2 text-xs text-mute hover:text-neon-green"
+              >
+                Your portfolio <ChevronRight size={14} />
+              </Link>
+            </div>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Filter by battle status"
+            >
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setFilter(f.value)}
+                  aria-pressed={filter === f.value}
+                  className={cn(
+                    "rounded-lg border px-4 py-2 font-pixel text-xs transition-colors",
+                    filter === f.value
+                      ? "border-neon-green/40 bg-neon-green/10 text-neon-green"
+                      : "border-edge text-mute hover:text-ink",
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-mute">
+              {data
+                ? `${shown.length} ${shown.length === 1 ? "battle" : "battles"} shown`
+                : "Loading battles…"}{" "}
+              · Multi-community battle is simulated in demo mode.
+            </p>
+            {error && (
+              <Card className="border-neon-red text-neon-red">
+                <p>Could not load battles: {error}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-3"
+                  onClick={reload}
+                >
+                  Retry
+                </Button>
+              </Card>
+            )}
+            {loading && !data && (
+              <p className="blink font-pixel text-[10px] text-mute">
+                LOADING...
+              </p>
+            )}
+            {data && shown.length === 0 && (
+              <p className="text-2xl text-mute">
+                No battles match these filters.
+              </p>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {shown.map(({ battle, participants }) => (
+                <BattleCard
+                  key={battle.id}
+                  battle={battle}
+                  participants={participants}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}

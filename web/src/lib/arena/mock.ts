@@ -27,6 +27,11 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 const TOKENS: Record<string, { symbol: string; decimals: number; price: bigint }> = {
+  "cashcat.demo": { symbol: "CASHCAT", decimals: 18, price: 10n ** 15n },
+  "btcethusdt.demo": { symbol: "BTCETHUSDT", decimals: 18, price: 10n ** 15n },
+  "rebate.demo": { symbol: "REBATE", decimals: 18, price: 10n ** 15n },
+  "oak.demo": { symbol: "OAK", decimals: 18, price: 10n ** 15n },
+  "wif.demo": { symbol: "WIF", decimals: 18, price: 10n ** 15n },
   "pepe.tkn.testnet": { symbol: "PEPE", decimals: 18, price: 12n * 10n ** 12n }, // $0.000012
   "shib.tkn.testnet": { symbol: "SHIB", decimals: 18, price: 25n * 10n ** 12n },
   "floki.tkn.testnet": { symbol: "FLOKI", decimals: 9, price: 3n * 10n ** 14n },
@@ -146,6 +151,11 @@ export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
     }),
     mk(6, S, M, "EmergencyHalted", -5 * HOUR_MS, 3_000_000, 4_000_000, init(S, M)),
     mk(7, P, F, "Voided", null, 0, 0),
+    mk(8, "cashcat.demo", "btcethusdt.demo", "Live", -10_000, 800_000, 600_000, {
+      duration_ns: ns(30_000).toString(),
+      end_time_ns: ns(t0 + 20_000).toString(),
+      demo_communities: ["cashcat.demo", "btcethusdt.demo", "rebate.demo", "oak.demo", "wif.demo"].map((token, index) => ({ token, vault: coins((8 - index) * 100_000, 18).toString() })),
+    }),
   ];
 
   const positions = new Map<string, PositionView>();
@@ -221,6 +231,10 @@ export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
     };
   };
 
+  const snapshot = (battle: BattleView): BattleView => battle.demo_communities && battle.status === "Live" && ns(now()) >= BigInt(battle.end_time_ns)
+    ? { ...battle, status: "Settling" }
+    : { ...battle };
+
   const api: MockArenaApi = {
     mode: "mock",
 
@@ -243,13 +257,13 @@ export function createMockArenaApi(options: MockOptions = {}): MockArenaApi {
 
     async getBattles(fromIndex, limit) {
       await wait();
-      return battles.slice(fromIndex, fromIndex + limit).map((b) => ({ ...b }));
+      return battles.slice(fromIndex, fromIndex + limit).map(snapshot);
     },
 
     async getBattle(id) {
       await wait();
       const b = battles.find((x) => x.id === id);
-      return b ? { ...b } : null;
+      return b ? snapshot(b) : null;
     },
 
     async getPosition(id, acct) {

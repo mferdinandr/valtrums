@@ -1,0 +1,828 @@
+body:has(.colosseum-preview) {
+  overflow: hidden;
+}
+body:has(.colosseum-preview) > footer,
+body:has(.colosseum-preview) header:not(.colosseum-topbar) {
+  display: none;
+}
+.colosseum-preview {
+  --team: #3a8967;
+  --ink: #354358;
+  --muted: #607282;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  isolation: isolate;
+  height: 100dvh;
+  overflow: hidden;
+  background: #c6e7eb;
+  color: var(--ink);
+  color-scheme: light;
+  font-family: Inter, sans-serif;
+}
+.colosseum-preview :focus-visible {
+  outline: 3px solid #b95878;
+  outline-offset: 3px;
+}
+.colosseum-world {
+  position: absolute;
+  inset: 0 0 110px;
+}
+.colosseum-world canvas {
+  touch-action: pan-y;
+}
+.colosseum-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    #e5f4ee55,
+    transparent 22%,
+    transparent 65%,
+    #f9f4e5cc
+  );
+}
+.colosseum-topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 2rem;
+  background: #fffaf0c9;
+  border-bottom: 1px solid #fffdf8;
+  backdrop-filter: blur(12px);
+}
+.colosseum-back {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  font-size: 11px;
+  color: #53687a;
+}
+.colosseum-back:hover {
+  color: #ae506c;
+}
+.colosseum-brand {
+  display: grid;
+  gap: 0.3rem;
+  text-align: center;
+}
+.colosseum-brand span {
+  font: 8px/1.5 monospace;
+  letter-spacing: 0.12em;
+  color: #71828a;
+}
+.colosseum-brand strong {
+  font:
+    700 18px/1.1 "Space Grotesk",
+    sans-serif;
+  letter-spacing: 0.02em;
+  color: #b25970;
+}
+.colosseum-preview-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #e4c98e;
+  background: #fff2cc;
+  padding: 0.45rem 0.65rem;
+  border-radius: 99px;
+  color: #80632c;
+  font: 9px/1.3 monospace;
+}
+.colosseum-preview-label > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d19b3c;
+}
+.colosseum-heading {
+  position: absolute;
+  top: 110px;
+  left: 3vw;
+  pointer-events: none;
+}
+.colosseum-kicker {
+  font: 9px/1.4 monospace;
+  letter-spacing: 0.1em;
+  color: #637e84;
+}
+.colosseum-heading h1 {
+  margin-top: 0.65rem;
+  max-width: 510px;
+  font:
+    700 clamp(1.8rem, 3.1vw, 3rem) / 1.02 "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.055em;
+  color: #34475b;
+}
+.colosseum-heading > p:last-child {
+  margin-top: 0.7rem;
+  color: #5a747e;
+  font-size: 11px;
+}
+.colosseum-tools {
+  position: absolute;
+  top: 108px;
+  right: 2rem;
+  display: flex;
+  gap: 0.4rem;
+}
+.colosseum-tools button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  border: 1px solid #fffdf8;
+  border-radius: 14px;
+  color: #64768b;
+  background: #fffaf0dd;
+  box-shadow: 0 3px 0 #a1c0c84d;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+}
+.colosseum-tools button:hover,
+.colosseum-tools button[aria-pressed="true"] {
+  background: #f8c6b6;
+  color: #7d4352;
+}
+.colosseum-tools button:active {
+  transform: translateY(2px);
+}
+.colosseum-tools button:disabled {
+  opacity: 0.5;
+}
+.colosseum-tools button span {
+  display: none;
+}
+.colosseum-dossier {
+  position: absolute;
+  right: 2rem;
+  top: 218px;
+  width: 192px;
+  padding: 1rem;
+  border: 1px solid #fffdf4;
+  border-radius: 20px;
+  background: #fffaf0c9;
+  box-shadow: 0 8px 30px #708c9b12;
+  text-align: right;
+  pointer-events: none;
+}
+.colosseum-dossier-index {
+  font: 9px/1.5 monospace;
+  letter-spacing: 0.1em;
+  color: var(--team);
+}
+.colosseum-dossier > div {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.colosseum-dossier strong {
+  font:
+    700 1.75rem/1.1 "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.05em;
+  overflow-wrap: anywhere;
+}
+.colosseum-dossier > div span {
+  font-size: 11px;
+  color: #7f6c76;
+}
+.colosseum-dossier p {
+  margin-top: 0.7rem;
+  font-size: 10px;
+  line-height: 1.8;
+  color: #627785;
+}
+.colosseum-dossier small {
+  display: block;
+  margin-top: 0.5rem;
+  color: #6f7c83;
+  font-size: 8px;
+  line-height: 1.6;
+}
+.colosseum-unit-status {
+  color: #a36f34 !important;
+}
+.colosseum-bottom {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 0 2rem max(0.8rem, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, #fff7eaf0 40%);
+}
+.colosseum-event {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0;
+  min-height: 38px;
+  font: 10px/1.5 monospace;
+  color: #566d7a;
+}
+.colosseum-event-light {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--team);
+  flex-shrink: 0;
+}
+.colosseum-clock {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #91637a;
+}
+.colosseum-bottom-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.8rem 0;
+  border-block: 1px solid #d6d8ce;
+}
+.colosseum-roster {
+  display: flex;
+  gap: 0.6rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0 0 0.3rem;
+  scrollbar-width: thin;
+  scrollbar-color: #c2c8bc transparent;
+  overscroll-behavior-x: contain;
+}
+.colosseum-roster button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 150px;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid #deded2;
+  border-radius: 16px;
+  background: #fffaf1;
+  color: #445669;
+  text-align: left;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  box-shadow: 0 3px 0 #d9ddce;
+}
+.colosseum-roster button:hover {
+  background: #fff2d5;
+  border-color: var(--unit);
+}
+.colosseum-roster button[aria-pressed="true"] {
+  border-color: var(--unit);
+  background: color-mix(in srgb, var(--unit) 9%, #fffaf1);
+  box-shadow: 0 3px 0 var(--unit);
+}
+.colosseum-roster button > span:nth-child(2) {
+  min-width: 0;
+}
+.colosseum-roster strong {
+  display: block;
+  font:
+    700 11px/1.4 "Space Grotesk",
+    sans-serif;
+  letter-spacing: 0.01em;
+}
+.colosseum-roster small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 8px;
+  line-height: 1.5;
+  color: #667b82;
+}
+.colosseum-unit-emblem {
+  color: var(--unit);
+  font: 25px/1 sans-serif;
+}
+.colosseum-unit-number {
+  margin-left: auto;
+  align-self: start;
+  font: 8px/1 monospace;
+  color: #84928b;
+}
+.colosseum-eliminated {
+  opacity: 0.65;
+}
+.colosseum-eliminated[aria-pressed="true"] {
+  opacity: 1;
+}
+.colosseum-action {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+}
+.colosseum-action > button {
+  min-width: 165px;
+  border-color: #cc705e;
+  border-radius: 14px;
+  background: #f6a28b;
+  color: #613b3d;
+  box-shadow: 0 4px 0 #cf7a69;
+}
+.colosseum-action > button:hover {
+  background: #ffb59c;
+}
+.colosseum-action-copy {
+  display: grid;
+  gap: 0.3rem;
+}
+.colosseum-action-copy > span {
+  font: 8px/1.5 monospace;
+  letter-spacing: 0.08em;
+  color: #93734b;
+}
+.colosseum-action-copy small {
+  font-size: 9px;
+  color: #6d8189;
+}
+.colosseum-winner {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #96702d;
+}
+.colosseum-winner strong {
+  display: block;
+  font:
+    700 18px/1.3 "Space Grotesk",
+    sans-serif;
+}
+.colosseum-winner small {
+  font-size: 8px;
+  color: #7f8383;
+}
+.colosseum-disclosure {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  padding-top: 0.8rem;
+  font-size: 9px;
+  line-height: 1.6;
+  color: #6f8084;
+}
+.colosseum-disclosure > span {
+  flex-shrink: 0;
+  font: 8px/1.5 monospace;
+  letter-spacing: 0.05em;
+  color: #8f7d6e;
+}
+.colosseum-intro {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  width: min(90%, 470px);
+  padding: 1.8rem;
+  text-align: center;
+  border: 2px solid #fffaf3;
+  border-radius: 28px;
+  background: #fff4deeb;
+  box-shadow: 0 12px 0 #c8cfbc66;
+}
+.colosseum-intro > span {
+  font: 8px/1.5 monospace;
+  letter-spacing: 0.16em;
+  color: #9a7464;
+}
+.colosseum-intro > strong {
+  font:
+    700 clamp(1.8rem, 4vw, 3rem) / 1.05 "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.05em;
+  color: #b76274;
+}
+.colosseum-intro button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 99px;
+  background: #f9d8a7;
+  color: #846239;
+  font-size: 11px;
+}
+.colosseum-setup,
+.colosseum-standings {
+  position: absolute;
+  z-index: 3;
+  top: 215px;
+  left: 3vw;
+  width: 245px;
+  max-height: calc(100dvh - 440px);
+  overflow-y: auto;
+  border: 1px solid #fffdf8;
+  border-radius: 17px;
+  background: #fffaf0ed;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 0 #a8c1bc55;
+  color: #5b7380;
+}
+.colosseum-setup summary,
+.colosseum-standings summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.7rem;
+  list-style: none;
+  cursor: pointer;
+  font: 10px/1.4 monospace;
+}
+.colosseum-setup summary::-webkit-details-marker,
+.colosseum-standings summary::-webkit-details-marker {
+  display: none;
+}
+.colosseum-setup summary::after,
+.colosseum-standings summary::after {
+  content: "+";
+  margin-left: auto;
+  color: #af6178;
+}
+.colosseum-setup[open] summary::after,
+.colosseum-standings[open] summary::after {
+  content: "−";
+}
+.colosseum-setup summary > span,
+.colosseum-standings summary > span {
+  font-size: 8px;
+  color: #8f8f83;
+}
+.colosseum-setup > div,
+.colosseum-standings > div {
+  padding: 0.7rem;
+  border-top: 1px solid #e1dfcf;
+}
+.colosseum-setup label {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.8rem;
+  font-size: 10px;
+}
+.colosseum-setup select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem;
+  border: 1px solid #d5dacd;
+  border-radius: 9px;
+  background: #fffdf6;
+  color: #435c6b;
+  font-size: 10px;
+}
+.colosseum-setup p,
+.colosseum-ranking-note {
+  font-size: 9px;
+  line-height: 1.7;
+  color: #7b8384;
+}
+.colosseum-ranking-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #e7e3d6;
+  font: 10px/1.4 monospace;
+}
+.colosseum-ranking-row small {
+  display: block;
+  margin-top: 0.3rem;
+  font:
+    8px/1.4 Inter,
+    sans-serif;
+  color: #7c898c;
+}
+.colosseum-ranking-row strong {
+  color: #5b7e66;
+  font-size: 10px;
+}
+.colosseum-vault-note {
+  display: flex;
+  align-items: start;
+  gap: 0.4rem;
+  padding-top: 0.8rem;
+  color: #967238;
+  font-size: 8px;
+  line-height: 1.7;
+}
+.colosseum-vault-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.colosseum-round-history {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.7rem;
+  color: #7b738e;
+  font: 8px/1.5 monospace;
+}
+.colosseum-round-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e0dfd0;
+}
+.colosseum-round-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--team);
+  transition: width 0.1s linear;
+}
+.colosseum-evidence {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.5rem 0;
+  color: #8c6e38;
+  font-size: 10px;
+}
+.colosseum-evidence button {
+  color: #8c6e38;
+  border-color: #d5c49f;
+}
+.colosseum-loading,
+.colosseum-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: radial-gradient(ellipse, #fff1d5, #c6e7eb 75%);
+}
+.colosseum-loading {
+  z-index: 1;
+  color: #6d7f8a;
+  font-size: 12px;
+}
+.colosseum-loading small {
+  color: #819492;
+  font-size: 9px;
+}
+.colosseum-loader {
+  width: 38px;
+  height: 38px;
+  border: 3px solid #fff8df;
+  border-top-color: #ef9d8b;
+  border-radius: 50%;
+  animation: carnival-spin 1s linear infinite;
+}
+.colosseum-fallback h2 {
+  color: #ab6479;
+  font-size: 1.5rem;
+}
+.colosseum-fallback > p {
+  max-width: 350px;
+  color: #69828a;
+  font-size: 11px;
+  line-height: 1.8;
+}
+.colosseum-fallback-roster {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
+  max-width: 650px;
+}
+.colosseum-fallback-roster > span {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid #fffaf0;
+  border-radius: 16px;
+  background: #fff6e6;
+  font-size: 9px;
+}
+.colosseum-fallback-roster strong {
+  font:
+    700 1rem/1 "Space Grotesk",
+    sans-serif;
+}
+.colosseum-fallback > button {
+  color: #647f89;
+  border-color: #b6c6bd;
+}
+.colosseum-notice {
+  margin-top: 0.5rem;
+  color: #946c3b;
+  font-size: 10px;
+}
+@keyframes carnival-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 1150px) {
+  .colosseum-action-copy {
+    display: none;
+  }
+  .colosseum-dossier {
+    width: 165px;
+  }
+  .colosseum-roster button {
+    flex-basis: 140px;
+  }
+  .colosseum-bottom-main {
+    gap: 1rem;
+  }
+}
+@media (max-width: 760px) {
+  .colosseum-topbar {
+    padding: 0.6rem 1rem;
+    gap: 0.5rem;
+  }
+  .colosseum-back {
+    width: 44px;
+  }
+  .colosseum-back span {
+    display: none;
+  }
+  .colosseum-brand strong {
+    font-size: 14px;
+  }
+  .colosseum-brand span {
+    font-size: 7px;
+  }
+  .colosseum-preview-label {
+    max-width: 75px;
+    font-size: 7px;
+    padding: 0.35rem 0.45rem;
+  }
+  .colosseum-heading {
+    top: 86px;
+    left: 1rem;
+  }
+  .colosseum-heading h1 {
+    max-width: 340px;
+    margin-top: 0.5rem;
+    font-size: 1.9rem;
+  }
+  .colosseum-kicker {
+    font-size: 7px;
+  }
+  .colosseum-heading > p:last-child {
+    margin-top: 0.5rem;
+    font-size: 10px;
+  }
+  .colosseum-tools {
+    top: 184px;
+    right: 1rem;
+    gap: 0.3rem;
+  }
+  .colosseum-tools button {
+    width: 38px;
+  }
+  .colosseum-dossier {
+    display: none;
+  }
+  .colosseum-world {
+    inset: 80px 0 170px;
+  }
+  .colosseum-bottom {
+    padding: 0 1rem max(0.7rem, env(safe-area-inset-bottom));
+  }
+  .colosseum-bottom-main {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+    padding: 0.7rem 0;
+  }
+  .colosseum-roster button {
+    flex-basis: 112px;
+    gap: 0.4rem;
+    padding: 0.6rem 0.4rem;
+  }
+  .colosseum-roster strong {
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .colosseum-roster small {
+    font-size: 8px;
+  }
+  .colosseum-unit-emblem {
+    font-size: 22px;
+  }
+  .colosseum-unit-number {
+    display: none;
+  }
+  .colosseum-action {
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .colosseum-action-copy {
+    display: grid;
+  }
+  .colosseum-action-copy > span {
+    font-size: 7px;
+  }
+  .colosseum-action-copy small {
+    font-size: 8px;
+  }
+  .colosseum-action > button {
+    min-width: 145px;
+    font-size: 10px;
+  }
+  .colosseum-event {
+    font-size: 8px;
+    gap: 0.4rem;
+    min-height: 35px;
+    padding: 0.5rem 0;
+  }
+  .colosseum-event p {
+    max-width: 250px;
+  }
+  .colosseum-clock {
+    font-size: 8px;
+  }
+  .colosseum-disclosure {
+    display: block;
+    padding-top: 0.6rem;
+    font-size: 8px;
+  }
+  .colosseum-disclosure > span {
+    display: none;
+  }
+  .colosseum-setup,
+  .colosseum-standings {
+    top: 235px;
+    left: 1rem;
+    width: min(245px, calc(100vw - 2rem));
+    max-height: calc(100dvh - 490px);
+  }
+  .colosseum-setup:not([open]),
+  .colosseum-standings:not([open]) {
+    max-width: 205px;
+  }
+  .colosseum-fallback {
+    padding-top: 90px;
+    gap: 0.7rem;
+  }
+  .colosseum-fallback h2 {
+    font-size: 1rem;
+  }
+  .colosseum-fallback > svg {
+    display: none;
+  }
+  .colosseum-fallback > p {
+    max-width: 260px;
+    font-size: 9px;
+  }
+  .colosseum-fallback-roster {
+    gap: 0.4rem;
+  }
+  .colosseum-fallback-roster > span {
+    padding: 0.4rem;
+    font-size: 7px;
+  }
+  .colosseum-fallback-roster strong {
+    font-size: 0.75rem;
+  }
+  .colosseum-evidence {
+    font-size: 8px;
+  }
+  .colosseum-evidence button {
+    font-size: 9px;
+  }
+}
+@media (max-height: 700px) and (max-width: 760px) {
+  .colosseum-heading > p:last-child {
+    display: none;
+  }
+  .colosseum-heading h1 {
+    font-size: 1.5rem;
+  }
+  .colosseum-tools {
+    top: 143px;
+  }
+  .colosseum-world {
+    inset: 70px 0 155px;
+  }
+  .colosseum-setup,
+  .colosseum-standings {
+    top: 190px;
+    max-height: calc(100dvh - 400px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .colosseum-loader {
+    animation: none;
+  }
+  .colosseum-tools button:active {
+    transform: none;
+  }
+}

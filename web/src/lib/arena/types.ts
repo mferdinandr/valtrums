@@ -14,6 +14,8 @@ export type BattleStatus =
 export interface BattleView {
   id: number;
   creator: string;
+  /** Demo-only multi-community fixture; legacy contract battles use token_a/token_b. */
+  demo_communities?: { token: string; vault: string }[];
   token_a: string;
   token_b: string;
   bond: string;
@@ -68,6 +70,7 @@ export interface TokenMeta {
   id: string;
   symbol: string;
   decimals: number;
+  icon?: string | null;
 }
 
 /** Current prices, USD per whole coin scaled by 1e18. */

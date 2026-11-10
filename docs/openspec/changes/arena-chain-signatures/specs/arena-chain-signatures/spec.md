@@ -56,3 +56,10 @@ The system SHALL verify successful matching finalized execution before consuming
 #### Scenario: Per-asset payout ID collision
 - **WHEN** two backing contracts issue the same local payout ID
 - **THEN** their payout identities, payloads, statuses and confirmations cannot overwrite each other
+
+### Requirement: Runtime separation and readiness evidence
+Runnable signature initiation and finality confirmation SHALL preserve distinct relayer and operator authorities, reconcile durable attempts after restart and disclose readiness. A broadcast-only reconciler or passing library fixture SHALL NOT establish an operational payout pipeline.
+
+#### Scenario: Signature initiation is absent
+- **WHEN** a reconciler runs without an authorized signature-initiation process
+- **THEN** health reports the missing capability and clients do not advertise live payout readiness

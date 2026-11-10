@@ -105,6 +105,19 @@ The target SHALL include NEAR Intents funding/routing and Bitte agent orchestrat
 - **WHEN** a supported funding action is orchestrated through Bitte and routed through Intents
 - **THEN** evidence binds the preview, authorization, route status and final custody receipt to the same user action; fixture evidence remains labeled
 
+### Requirement: Application worker and projection handoffs
+Integration SHALL verify a restart-safe scheduler consuming persisted frozen-round evidence, compatible live event projections and separately authorized custody verification transport. Unsupported providers, unknown relevant events and absent runtime capabilities SHALL remain explicit release gates.
+
+#### Scenario: New round events are unsupported by the indexer
+- **WHEN** an allowlisted emitter produces an unmodelled relevant event
+- **THEN** the projection remains degraded until a reviewed reducer/version handoff is verified rather than claiming complete application history
+
+### Requirement: Spendable custody release gate
+Source deposits SHALL remain disabled until evidence proves the deployed custody path permits the reservation-bound payout sender to spend the actual received assets. Deposit-only test custody SHALL NOT satisfy this gate. Custody redesign SHALL receive financial/security review before deployment or funding.
+
+#### Scenario: Signer cannot spend held tokens
+- **WHEN** a signer EOA exists but deposited tokens are held in a contract with no authorized withdrawal path
+- **THEN** deposit/payout readiness remains false and integration does not request additional deposits into that path
 ### Requirement: Labelled testnet Intents fixture
 A local fixture of the 1Click API with a fake solver SHALL provide the testnet funding path through the route `intents-fixture`. It SHALL be accepted only in a testnet configuration, labelled in logs, responses, previews, statuses and UI, and pinned to the recorded mainnet responses. It SHALL NOT count as Intents verification; the real route stays a gap and other routes stay refused.
 

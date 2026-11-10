@@ -56,3 +56,10 @@ Target remains Robinhood testnet `46630`. GoPlus covers only mainnet `4663`, so 
 - [x] Verify GoPlus and independent liquidity coverage for the actual mainnet reference tokens on `4663`; record request, date and limitations. Recorded 2026-11-08 by running the agent's own GoPlus client, LP fetcher and decision code for the 13 candidate tokens (see `docs/goplus-audit.md`, "Live coverage"): CASHCAT and BTCETHUSDT pass, STRATEGY rejects, ten stay Pending.
 - [x] Label fixtures as adapter verification and retain Pending for unsupported or unmapped coverage; mainnet `4663` evidence is accepted only through the registry reference mapping.
 - [x] Test pre-lock expiry and changed mapping, idempotent refresh and post-lock snapshot protection.
+
+## Application integration producer follow-up
+
+These are newly scoped runtime handoffs; historical library/server verification above remains unchanged. The [read API change](../arena-application-read-api/tasks.md) owns the archive consumer and frontend read adapter, not producer wiring.
+
+- [ ] Wire the durable archive sink into the runnable lifecycle audit process (including `main.ts` configuration), with a shared explicit archive directory, namespace and write-failure health; do not leave the production pass RAM-only.
+- [ ] Verify process restart and report-server reader interoperability against persisted observations, including sink failure/retry and matching evidence identities; record runtime provenance separately from fixture results.

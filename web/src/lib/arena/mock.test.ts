@@ -13,6 +13,18 @@ describe("mock arena api", () => {
     expect(await a.getLivePrices(3)).toEqual(await b.getLivePrices(3));
   });
 
+  it("exposes the same multi-community demo in the list and detail, then closes its round", async () => {
+    let now = T0;
+    const api = createMockArenaApi({ now: () => now });
+    const battle = await api.getBattle(8);
+    expect(battle?.status).toBe("Live");
+    expect(battle?.demo_communities).toHaveLength(5);
+    expect((await api.getBattles(0, 50)).find((item) => item.id === 8)).toEqual(battle);
+    now += 20_000;
+    expect((await api.getBattle(8))?.status).toBe("Settling");
+    expect((await api.getBattles(0, 50)).find((item) => item.id === 8)?.status).toBe("Settling");
+  });
+
   it("covers every status", async () => {
     const api = createMockArenaApi({ now: () => T0 });
     const statuses = new Set((await api.getBattles(0, 50)).map((x) => x.status));

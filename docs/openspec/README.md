@@ -17,6 +17,30 @@ These ten changes (arena-scoring is archived) supersede `redesign-permissionless
 
 The [shared design](arena-design.md) preserves the cross-cutting data flow, trust boundaries and failure handling.
 
+## Frontend, backend and agent integration plan
+
+The [application integration master plan](plans/arena-application-integration/README.md)
+maps the inspected 2026-11-10 source/working tree. It is a coordination plan, not
+an executable fifth change or a live deployment claim. The former umbrella was
+split before implementation; each change below has its own proposal, design,
+capability spec and unchecked implementation tasks.
+
+| Order | Application change | Dependencies |
+| --- | --- | --- |
+| 1 | [Application read API](changes/arena-application-read-api/proposal.md) | Safe contract views, audit archive and canonical read-model handoffs |
+| 2a | [Market observations and charts](changes/arena-market-observations/proposal.md) | Shared read boundary; live modes gated by qualified providers |
+| 2b | [Lifecycle frontend](changes/arena-lifecycle-frontend/proposal.md) | Shared read boundary plus verified lifecycle/backing/audit/custody capabilities |
+| 3 | [Portfolio and payout frontend](changes/arena-portfolio-payout-frontend/proposal.md) | Shared reads; actions gated by settlement/backing/signing runtime evidence |
+
+- [Current integration map](plans/arena-application-integration/integration-map.md): actual calls, exported ABI, runnable wiring and missing edges.
+- [Reference design](plans/arena-application-integration/design.md) and [proposed API contracts](plans/arena-application-integration/api-contracts.md): cross-change architecture; endpoints are not implemented.
+- [Ownership and handoffs](plans/arena-application-integration/ownership.md): one canonical task owner per responsibility, dependencies and release gates. Existing audit, contract, scheduler/indexer, signing, MCP and player-authorization tasks stay with their original owners.
+- [Source crosscheck and apply gates](plans/arena-application-integration/crosscheck.md): feature mapping against inspected code, corrections and the deposit-only custody blocker. Ready artifacts do not mean all live actions are ready.
+
+Market and lifecycle client work can proceed independently after shared DTOs
+stabilize. Portfolio read-only work may start from API fixtures; financial actions
+wait for their verified prerequisites. No application behavior changes in this split.
+
 ## Coordination and integration
 
 - Backing, lifecycle interfaces, audit/provider research and scoring design can proceed in parallel. Merge dependent work only after prerequisite interfaces are reviewed; use draft or stacked PRs as needed.
