@@ -44,10 +44,14 @@ contract MockTokenTest {
     }
 
     function testDepositThroughCustodyReceivesFullAmount() public {
-        TestnetDepositCustody custody = new TestnetDepositCustody();
+        address holder = address(0xC057);
+        TestnetDepositCustody custody = new TestnetDepositCustody(holder);
         token.mint(address(this), 1000);
         token.approve(address(custody), 1000);
         (uint256 id, uint256 received) = custody.deposit(address(token), 1, 3, REFUND, "alice.testnet", 1000);
-        require(id == 1 && received == 1000 && token.balanceOf(address(custody)) == 1000, "deposit");
+        require(
+            id == 1 && received == 1000 && token.balanceOf(holder) == 1000 && token.balanceOf(address(custody)) == 0,
+            "deposit"
+        );
     }
 }
