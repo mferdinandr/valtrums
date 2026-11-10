@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm build && pnpm start",
+    "dev": "pnpm build && node --env-file-if-exists=.env.local dist/mcp/cli.js http",
+    "dev:settle": "pnpm build && node --env-file-if-exists=.env.local dist/main.js",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
