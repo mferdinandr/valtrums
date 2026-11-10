@@ -14,7 +14,7 @@ Base commit: **93eb024eb50f711662252a0e04fbcfe34610f7ca**, fetched from `origin/
 | Execution | Agent-reported mock mode, on-chain DEX execution and foreign EVM execution code exist |
 | Foreign EVM | Chain Signatures request/relay/receipt code with fixed router and transfer constraints; no implemented Robinhood custody-backed representation or end-to-end Robinhood demo |
 | Agent | [agent README](../agent/README.md): audit heuristic, price sampling/TWAP, locking, settlement and liquidity watchdog |
-| Terminal | [web](../web/README.md): battle UI, portfolio, prompt parsing, deterministic transaction summary, funding adapters and function-call session keys |
+| Terminal | [web](../web/README.md): `/terminal` is the lifecycle intent terminal (create, register, deposit, payout review; rule and optional model parsing; reviewed call and wallet signing). The legacy A/B terminal panel, funding adapters and session keys remain only for the legacy battle page |
 | WAR | Standalone [contract](../contracts/war/src/lib.rs) is present: USDC-backed decaying war bond. The arena still has internal credit and is not wired to WAR |
 | Furnace | Standalone [contract](../contracts/furnace/src/lib.rs) is present: NEP-141 sink and ledger. Arena wiring from the older proposal is not complete |
 | OpenSpec | Ten planned changes in [OpenSpec](openspec/README.md) specify the target; tasks remain unchecked until implementation and verification |
