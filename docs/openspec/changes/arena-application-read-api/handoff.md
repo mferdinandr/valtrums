@@ -26,7 +26,7 @@ and optional `/actions` contracts and account ownership checks remain available.
 | `reference-registry.ts` | On-chain versioned registry, hashes, consistency checks, max 256 entries | Registry membership is not current audit/backing eligibility; mainnet discovery beyond this reference registry remains unsupported |
 | `audit/report-query.ts` | Historical verdict, TTL freshness, reference-token limitations | Archive v1 lacks network/protocol; requires explicit scoped producer handoff |
 | Web read gateway/controller | Allowlisted forwarding, no-store, abort and 300 ms debounce | V1 adds namespace checks and immediately invalidates requests during debounce |
-| Existing web ArenaApi | Explicit legacy or demo UI | Opted-in application mode uses its own DTO/list and does not reinterpret lifecycle state as A/B |
+| Existing web ArenaApi | Removed (no legacy or demo UI remains) | The single application uses its own DTO/list and does not reinterpret lifecycle state as A/B |
 
 ## Public contract
 

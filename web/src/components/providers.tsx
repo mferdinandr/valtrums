@@ -1,12 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { NearProvider, useNearWallet } from "near-connect-hooks";
-import { config } from "@/lib/config";
-import { createMockArenaApi, MOCK_ACCOUNT } from "@/lib/arena/mock";
-import { createNearArenaApi } from "@/lib/arena/near";
-import type { ArenaApi } from "@/lib/arena/types";
-import { createMockEnv, createNearEnv, type TerminalEnv } from "@/lib/terminal/env";
+import { config, configProblems } from "@/lib/config";
 import type { Namespace } from "@/lib/arena-read/application";
 import type { WalletLike } from "@/lib/arena-read/action-session";
 
@@ -19,12 +15,11 @@ export interface WalletState {
 }
 
 const WalletContext = createContext<WalletState | null>(null);
-const ArenaContext = createContext<ArenaApi | null>(null);
-const TerminalEnvContext = createContext<TerminalEnv | null>(null);
 const ApplicationContext = createContext<Namespace | null>(null);
+/** The arena deployment every read is bound to. Always set inside <Providers>. */
 export const useApplicationDeployment = () => useContext(ApplicationContext);
 
-/** Reaches the connected wallet for signing. Null when application mode has no wallet. */
+/** Reaches the connected wallet for signing. */
 const ActionWalletContext = createContext<(() => Promise<WalletLike>) | null>(null);
 export const useActionWallet = () => useContext(ActionWalletContext);
 
@@ -34,98 +29,22 @@ export function useWallet(): WalletState {
   return ctx;
 }
 
-export function useArena(): ArenaApi {
-  const ctx = useContext(ArenaContext);
-  if (!ctx) throw new Error("useArena must be used inside <Providers>");
-  return ctx;
-}
-
-export function useTerminalEnv(): TerminalEnv {
-  const ctx = useContext(TerminalEnvContext);
-  if (!ctx) throw new Error("useTerminalEnv must be used inside <Providers>");
-  return ctx;
-}
-
-const MOCK_KEY = "valtrum:demo-account";
-
-/** Demo mode: a fake wallet so the whole UI is usable without a deployed contract. */
-function MockProviders({ children }: { children: ReactNode }) {
-  const api = useMemo(() => createMockArenaApi({ latencyMs: 150 }), []);
-  const env = useMemo(() => createMockEnv(api), [api]);
-  const [accountId, setAccountId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setAccountId(window.localStorage.getItem(MOCK_KEY));
-    setLoading(false);
-  }, []);
-
-  const signIn = useCallback(async () => {
-    window.localStorage.setItem(MOCK_KEY, MOCK_ACCOUNT);
-    setAccountId(MOCK_ACCOUNT);
-  }, []);
-  const signOut = useCallback(async () => {
-    window.localStorage.removeItem(MOCK_KEY);
-    setAccountId(null);
-  }, []);
-
-  const wallet = useMemo(() => ({ accountId, loading, signIn, signOut }), [accountId, loading, signIn, signOut]);
+/** The single screen shown when required configuration is missing. There is no fallback application. */
+export function ConfigError({ missing }: { missing: string[] }) {
   return (
-    <WalletContext.Provider value={wallet}>
-      <ArenaContext.Provider value={api}>
-        <TerminalEnvContext.Provider value={env}>{children}</TerminalEnvContext.Provider>
-      </ArenaContext.Provider>
-    </WalletContext.Provider>
-  );
-}
-
-function NearBridge({ children }: { children: ReactNode }) {
-  const { signedAccountId, loading, signIn, signOut, connector } = useNearWallet();
-
-  const api = useMemo(
-    () =>
-      createNearArenaApi({
-        contractId: config.arenaContractId,
-        network: config.network,
-        rpcUrl: config.rpcUrl,
-        connector,
-      }),
-    [connector],
-  );
-
-  const env = useMemo(
-    () =>
-      createNearEnv({
-        api,
-        arenaId: config.arenaContractId,
-        network: config.network,
-        rpcUrl: config.rpcUrl,
-        connector,
-        fundingMode: config.fundingRouter,
-      }),
-    [api, connector],
-  );
-
-  const wallet = useMemo<WalletState>(
-    () => ({ accountId: signedAccountId || null, loading, signIn, signOut }),
-    [signedAccountId, loading, signIn, signOut],
-  );
-
-  return (
-    <WalletContext.Provider value={wallet}>
-      <ArenaContext.Provider value={api}>
-        <TerminalEnvContext.Provider value={env}>{children}</TerminalEnvContext.Provider>
-      </ArenaContext.Provider>
-    </WalletContext.Provider>
+    <main role="alert" className="mx-auto max-w-xl space-y-3 p-8">
+      <h1 className="text-xl">Valtrum is not configured</h1>
+      <p>Set these environment variables in <code>web/.env.local</code> and restart the dev server:</p>
+      <ul className="list-disc pl-5">{missing.map((m) => <li key={m}><code>{m}</code></li>)}</ul>
+    </main>
   );
 }
 
 /**
- * Application read mode with an opt-in wallet (NEXT_PUBLIC_APPLICATION_WALLET=true). It gives the pages the
- * connected account and a way to reach the wallet for signing. It does NOT provide the legacy ArenaApi, so
- * no legacy A/B action can run from this mode.
+ * The connected account and a way to reach the wallet for signing. The wallet only signs messages and
+ * transactions the user reviewed; no key lives in this bundle.
  */
-function ApplicationWalletBridge({ namespace, children }: { namespace: Namespace; children: ReactNode }) {
+function WalletBridge({ namespace, children }: { namespace: Namespace; children: ReactNode }) {
   const { signedAccountId, loading, signIn, signOut, connector } = useNearWallet();
   const wallet = useMemo<WalletState>(
     () => ({ accountId: signedAccountId || null, loading, signIn, signOut }),
@@ -142,29 +61,17 @@ function ApplicationWalletBridge({ namespace, children }: { namespace: Namespace
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  if (config.applicationDeployment) {
-    const protocol = config.applicationProtocol;
-    if (protocol !== "legacy-v1" && protocol !== "lifecycle-v2") return <p role="alert">Unsupported arena read protocol.</p>;
-    const namespace: Namespace = { deploymentId: config.applicationDeployment, network: `near-${config.network}`,
-      arenaContract: config.arenaContractId, protocol };
-    if (config.applicationWallet) {
-      return (
-        <NearProvider config={{ network: config.network }}>
-          <ApplicationWalletBridge namespace={namespace}>{children}</ApplicationWalletBridge>
-        </NearProvider>
-      );
-    }
-    const unavailable = async () => { throw new Error("Wallet actions are unavailable in application read mode"); };
-    return <ApplicationContext.Provider value={namespace}>
-      <WalletContext.Provider value={{ accountId: null, loading: false, signIn: unavailable, signOut: unavailable }}>
-        {children}
-      </WalletContext.Provider>
-    </ApplicationContext.Provider>;
-  }
-  if (config.mock) return <MockProviders>{children}</MockProviders>;
+  const missing = configProblems();
+  if (missing.length > 0) return <ConfigError missing={missing} />;
+  const namespace: Namespace = {
+    deploymentId: config.deployment,
+    network: `near-${config.network}`,
+    arenaContract: config.arenaContractId,
+    protocol: "lifecycle-v2",
+  };
   return (
     <NearProvider config={{ network: config.network }}>
-      <NearBridge>{children}</NearBridge>
+      <WalletBridge namespace={namespace}>{children}</WalletBridge>
     </NearProvider>
   );
 }

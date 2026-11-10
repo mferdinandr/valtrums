@@ -1,11 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import {
-  useWallet,
-  useApplicationDeployment,
-  useActionWallet,
-} from "@/components/providers";
+import { useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
 
 function shorten(id: string): string {
@@ -14,19 +10,7 @@ function shorten(id: string): string {
 
 export function WalletButton() {
   const { accountId, loading, signIn, signOut } = useWallet();
-  const deployment = useApplicationDeployment();
-  const actionWallet = useActionWallet();
   const action = useAction();
-  if (deployment && !actionWallet)
-    return (
-      <span
-        className="text-xs text-mute"
-        title="Wallet connection is disabled for this deployment"
-      >
-        Read only
-      </span>
-    );
-
   if (loading) {
     return (
       <Button variant="ghost" size="sm" disabled aria-label="Loading wallet">
