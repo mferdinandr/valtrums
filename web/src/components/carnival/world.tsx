@@ -194,10 +194,10 @@ function Installation(props: WorldProps) {
   const primary = CONTENDERS[selected] ?? CONTENDERS[0]!;
   const host =
     mode === "terminal"
-      ? "rebate"
+      ? "degen"
       : mode === "portfolio"
-        ? "oak"
-        : "btcethusdt";
+        ? "wallet"
+        : "good";
   return (
     <>
       <primitive object={scene} dispose={null} />

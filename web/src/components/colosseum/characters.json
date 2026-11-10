@@ -1,5 +1,5 @@
 {
-  "provenance": "Original toy 3D adaptations informed by contract-matched listing artwork for four tokens. WIF remains an unverified interpretation. Not official artwork or token approval.",
+  "provenance": "Six visible registry-matched mascots: CASHCAT retains listing-informed artwork; WALLET, GOOD, AI, VLAD and DEGEN are original thematic interpretations, not verified official logos. Four hidden legacy mascots are preserved. No artwork establishes token approval.",
   "sources": [
     "docs/findings-and-decisions.md",
     "docs/product-spec.md",
@@ -30,6 +30,7 @@
       "name": "BTCETHUSDT",
       "asset": "btcethusdt",
       "demoTokenId": "btcethusdt.demo",
+      "hidden": true,
       "referenceChainId": 4663,
       "referenceAddress": "0xae2df3c1749daee721c1bfcbbfdde5d61ae7cb99",
       "title": "All Coins, One Big Grin",
@@ -48,6 +49,7 @@
       "name": "OAK",
       "asset": "oak",
       "demoTokenId": "oak.demo",
+      "hidden": true,
       "referenceChainId": 4663,
       "referenceAddress": "0x6511c233790ec10f7d673c64dc82c3f941d57828",
       "title": "The Little Sprout",
@@ -66,6 +68,7 @@
       "name": "REBATE",
       "asset": "rebate",
       "demoTokenId": "rebate.demo",
+      "hidden": true,
       "referenceChainId": 4663,
       "referenceAddress": "0xb7ff57631b97000d950236ef63bd463da5beba7e",
       "title": "The Return-arrow Pal",
@@ -84,6 +87,7 @@
       "name": "WIF",
       "asset": "wif",
       "demoTokenId": "wif.demo",
+      "hidden": true,
       "referenceChainId": 4663,
       "referenceAddress": "0x96c5d997a462bce2577bee9527a1a08101927519",
       "title": "The Happy Hatdog",
@@ -97,6 +101,46 @@
         "listingUrl": null
       },
       "researchNote": "2026-11-07 research: tax fields empty, Pending. Not current approval."
+    },
+    {
+      "name": "WALLET", "asset": "wallet", "demoTokenId": "wallet.demo",
+      "referenceChainId": 4663, "referenceAddress": "0x0339f5459fc690ac85f1782e15782a151b4a9e1b",
+      "title": "The Pocket Pathfinder", "type": "Wallet explorer toy", "color": "#358d6d",
+      "description": "A mint leather pocket explorer with stitched edges, a brass clasp, card tabs and chunky walking boots.",
+      "visualReference": { "status": "original-interpretation", "reviewedAt": "2026-11-10", "imageUrl": null, "listingUrl": null },
+      "researchNote": "Registry-matched reference address. Original symbolic design; not an official Robinhood mascot or audit approval."
+    },
+    {
+      "name": "GOOD", "asset": "good", "demoTokenId": "good.demo",
+      "referenceChainId": 4663, "referenceAddress": "0x5f62c57e5c537887117eef828b7e3ad41c009feb",
+      "title": "The Sunshine Pal", "type": "Thumbs-up sunshine toy", "color": "#e6a52a",
+      "description": "A golden sunshine pal with petal rays, an enamel heart badge and an oversized thumbs-up glove.",
+      "visualReference": { "status": "original-interpretation", "reviewedAt": "2026-11-10", "imageUrl": null, "listingUrl": null },
+      "researchNote": "Registry-matched Good In The Hood reference. Original positive-theme mascot, not verified logo artwork or approval."
+    },
+    {
+      "name": "AI", "asset": "ai", "demoTokenId": "ai.demo",
+      "referenceChainId": 4663, "referenceAddress": "0x0d4a117dccce7ba3d0a475ec9068c20c35310fd8",
+      "title": "The Heartfelt Inu", "type": "Affair Inu canine toy", "color": "#d76d8c",
+      "description": "A peach Inu with triangular ears, cream muzzle, curled tail, rose scarf and a heart pendant. AI means Affair Inu here.",
+      "visualReference": { "status": "original-interpretation", "reviewedAt": "2026-11-10", "imageUrl": null, "listingUrl": null },
+      "researchNote": "Exact Affair Inu address; not Artificial Inu or an AI technology token. Original interpretation, not verified logo artwork or approval."
+    },
+    {
+      "name": "VLAD", "asset": "vlad", "demoTokenId": "vlad.demo",
+      "referenceChainId": 4663, "referenceAddress": "0xfdbb27e971e72e38c41b1c772fb409c94dd92789",
+      "title": "The Forest Archer", "type": "Hooded archer toy", "color": "#458953",
+      "description": "A cheerful forest archer with a sculpted hood, feather cap, brass belt, quiver and curved wooden bow.",
+      "visualReference": { "status": "original-interpretation", "reviewedAt": "2026-11-10", "imageUrl": null, "listingUrl": null },
+      "researchNote": "Registry-matched The Robinhood reference. Fictional archer, not a real-person likeness or official endorsement."
+    },
+    {
+      "name": "DEGEN", "asset": "degen", "demoTokenId": "degen.demo",
+      "referenceChainId": 4663, "referenceAddress": "0x0830a9dd26a04e959657ab6788d45f5725590c32",
+      "title": "The Violet Showstopper", "type": "Top-hat magician toy", "color": "#8557c4",
+      "description": "A violet showman with a tall ribboned hat, star wand, bow tie and layered coat tails.",
+      "visualReference": { "status": "original-interpretation", "reviewedAt": "2026-11-10", "imageUrl": null, "listingUrl": null },
+      "researchNote": "Registry-matched DEGEN reference. Original magician interpretation, not a claim of verified branding or eligibility."
     }
   ]
 }

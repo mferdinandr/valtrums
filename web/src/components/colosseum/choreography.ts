@@ -1,7 +1,7 @@
 /** Isolated deterministic exhibition fixtures. No market observations or financial authority. */
 import registry from "./characters.json";
-export const CHARACTER_ASSET_VERSION = "logo-toys-2";
-export const CONTENDERS = registry.characters.map((c, index) => ({
+export const CHARACTER_ASSET_VERSION = "registry-toys-3";
+export const CONTENDERS = registry.characters.filter((c) => !("hidden" in c && c.hidden)).map((c, index) => ({
   ...c,
   number: String(index + 1).padStart(2, "0"),
   synthetic: false,
@@ -52,7 +52,7 @@ export function makeRuntime(
 }
 export function rosterFor(count: number): Contender[] {
   const roster = CONTENDERS.slice(0, Math.min(count, CONTENDERS.length));
-  if (count === 6)
+  if (count > CONTENDERS.length)
     roster.push({
       ...CONTENDERS[0]!,
       name: "TEST UNIT",
@@ -283,7 +283,7 @@ export function fighterPose(index: number, state: PreviewRuntime) {
   const { x: tx, z: tz } = challengeAt(index, state.roster.length);
   const distance = Math.max(0.001, Math.hypot(tx - hx, tz - hz));
   const attacking = beat.fighting && !state.reduced && beat.attacker === index;
-  const ranged = ["oak", "rebate"].includes(state.roster[index]?.asset ?? "");
+  const ranged = ["vlad", "degen"].includes(state.roster[index]?.asset ?? "");
   const travel =
     attacking && !ranged
       ? smooth((beat.local - 0.55) / 0.5) *

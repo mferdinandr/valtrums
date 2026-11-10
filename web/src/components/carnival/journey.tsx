@@ -21,7 +21,7 @@ import {
   Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import registry from "@/components/colosseum/characters.json";
+import { CONTENDERS } from "@/components/colosseum/choreography";
 import {
   CHAPTERS,
   chapterAt,
@@ -174,7 +174,7 @@ export function LandingJourney() {
   }, [reduced, compact]);
   const staticMode = reduced || compact || failed;
   const current = chapterAt(progress),
-    crew = registry.characters[selected] ?? registry.characters[0]!;
+    crew = CONTENDERS[selected] ?? CONTENDERS[0]!;
   useEffect(() => {
     if (
       staticMode ||
@@ -399,7 +399,7 @@ export function LandingJourney() {
               role="group"
               aria-label="Meet a community mascot"
             >
-              {registry.characters.map((c, i) => (
+              {CONTENDERS.map((c, i) => (
                 <button
                   key={c.asset}
                   aria-pressed={selected === i}

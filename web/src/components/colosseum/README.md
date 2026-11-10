@@ -43,6 +43,15 @@ financial behavior or backend scoring integration is implied by this renderer.
 ## Token identity and visual source
 
 `characters.json` is the shared cosmetic definition used by the generator and UI.
+The visible roster is now CASHCAT, WALLET, GOOD, AI (Affair Inu), VLAD and DEGEN,
+matching the reference identities in the existing testnet registry. Lifecycle
+matching uses chain/address, never ticker or roster position. WALLET is a stitched
+pocket explorer; GOOD a sunshine pal; AI an Inu with a heart scarf; VLAD a forest
+archer; DEGEN a violet top-hat showman. These five are original thematic designs,
+not verified official logo reproductions. Each GLB embeds seven animation clips.
+Legacy BTCETHUSDT, OAK, REBATE and WIF files remain on disk and in the generator
+catalog with `hidden: true`; all displayed rosters use filtered `CONTENDERS`.
+The historical artwork notes below describe the preserved legacy collection.
 It records the frontend demo token ID separately from the Robinhood mainnet
 reference chain/address. Neither reference identity nor a model grants approval.
 

@@ -117,6 +117,17 @@ describe("lifecycle arena authority", () => {
     d.battle.communities[0]!.reference_chain_id = "1";
     expect(lifecycleRoster(d.battle.communities)[0]!.generic).toBe(true);
   });
+  it("maps every registry reference to its own model regardless of roster order", () => {
+    const template = detail().battle.communities[0]!;
+    const reversed = [...CONTENDERS].reverse();
+    const communities = reversed.map((c) => ({
+      ...template,
+      reference_chain_id: String(c.referenceChainId),
+      reference_address: c.referenceAddress.toUpperCase(),
+    }));
+    expect(lifecycleRoster(communities).map((c) => c.asset)).toEqual(reversed.map((c) => c.asset));
+    expect(lifecycleRoster(communities).every((c) => !c.generic)).toBe(true);
+  });
   it("keeps sixteen generic communities distinct and spaced around the arena", () => {
     const d = detail();
     d.battle.communities = Array.from({ length: 16 }, (_, i) => ({

@@ -77,6 +77,81 @@
         "Hit",
         "Walk"
       ]
+    },
+    {
+      "name": "wallet",
+      "bytes": 527480,
+      "triangles": 17956,
+      "meshes": 24,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "good",
+      "bytes": 440500,
+      "triangles": 15116,
+      "meshes": 21,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "ai",
+      "bytes": 397140,
+      "triangles": 13764,
+      "meshes": 23,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "vlad",
+      "bytes": 428780,
+      "triangles": 14638,
+      "meshes": 28,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "degen",
+      "bytes": 402876,
+      "triangles": 13264,
+      "meshes": 28,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
     }
   ]
 }

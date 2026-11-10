@@ -43,7 +43,7 @@ for (const [index, character] of registry.characters.entries()) {
     ["#94633b", "#d8ad59"],
     ["#f0edf6", "#ffffff"],
     ["#d5a56f", "#fff0d9"],
-  ][index];
+  ][index] ?? [character.color, "#fff1d6"];
   const material = (color, roughness = 0.6) =>
     new T.MeshStandardMaterial({ color, roughness, metalness: 0.03 });
   const mat = {
@@ -175,7 +175,114 @@ for (const [index, character] of registry.characters.entries()) {
     legs.push(g);
     return g;
   }
-  if (index === 0 || index === 4) {
+  if (index >= 5) {
+    // Distinct registry mascots share the existing animated pivot contract.
+    const kind = character.asset;
+    head.position.set(0, 2.03, 0);
+    function heart(parent, at, scale = 1) {
+      const g = group(parent, "HeartBadge", at);
+      ball(g, [-0.09, 0.05, 0], 0.13, "pink");
+      ball(g, [0.09, 0.05, 0], 0.13, "pink");
+      const tip = mesh(g, new T.ConeGeometry(0.19, 0.25, 20), "pink", [0, -0.09, 0]);
+      tip.rotation.z = Math.PI;
+      g.scale.setScalar(scale);
+    }
+    for (const s of [-1, 1]) {
+      arm(s, [s * 0.8, 1.4, 0]);
+      const foot = leg([s * 0.38, 0.66, 0]);
+      box(foot, [0, -0.45, 0.18], [0.57, 0.12, 0.75], "accent", 0.04);
+      for (let j = 0; j < 3; j++)
+        box(foot, [0, -0.28 + j * 0.05, 0.49], [0.24, 0.025, 0.025], "white", 0.008);
+    }
+    if (kind === "wallet") {
+      const pocket = group(head, "StitchedWallet", [0, -0.35, 0]);
+      box(pocket, [0, 0, 0], [1.65, 1.55, 0.68], "body", 0.22);
+      box(pocket, [0, -0.1, 0.36], [1.48, 1.12, 0.12], "accent", 0.16);
+      for (const s of [-1, 1])
+        for (let j = 0; j < 9; j++)
+          box(pocket, [s * 0.67, -0.53 + j * 0.12, 0.44], [0.055, 0.04, 0.025], "cream", 0.006);
+      for (let j = 0; j < 3; j++) {
+        box(pocket, [-0.4 + j * 0.39, 0.83 + j * 0.06, -0.08], [0.35, 0.4, 0.1], j === 1 ? "gold" : "mint", 0.05);
+        box(pocket, [-0.4 + j * 0.39, 0.92 + j * 0.06, -0.015], [0.2, 0.035, 0.02], "white", 0.005);
+      }
+      const clasp = group(pocket, "BrassClasp", [0.7, -0.2, 0.49]);
+      box(clasp, [0, 0, 0], [0.45, 0.35, 0.17], "cream", 0.08);
+      ball(clasp, [0, 0, 0.11], [0.085, 0.085, 0.035], "gold");
+      face(pocket, 0.13, 0.46, 0.27);
+    } else if (kind === "good") {
+      const sun = group(head, "SunshineRays");
+      ball(sun, [0, 0, 0], [0.72, 0.72, 0.38], "gold");
+      for (let j = 0; j < 12; j++) {
+        const a = j * Math.PI / 6;
+        const ray = box(sun, [Math.sin(a) * 0.9, Math.cos(a) * 0.9, -0.05], [0.22, 0.4, 0.2], "accent", 0.1);
+        ray.rotation.z = -a;
+      }
+      face(sun, 0.09, 0.37, 0.25);
+      ball(body, [0, 1.05, 0], [0.58, 0.55, 0.4], "cream");
+      heart(body, [0, 1.12, 0.4], 0.8);
+      const thumb = group(arms[1], "ThumbsUp", [0.1, -0.35, 0.15]);
+      box(thumb, [0, 0.1, 0], [0.24, 0.54, 0.25], "cream", 0.1);
+    } else if (kind === "ai") {
+      ball(body, [0, 1.05, 0], [0.65, 0.67, 0.5], "cream");
+      ball(head, [0, 0, 0], [0.78, 0.65, 0.58], "cream");
+      for (const s of [-1, 1]) {
+        mesh(head, new T.ConeGeometry(0.29, 0.65, 4), "body", [s * 0.52, 0.55, 0]).rotation.z = -s * 0.22;
+        mesh(head, new T.ConeGeometry(0.17, 0.42, 4), "pink", [s * 0.52, 0.57, 0.12]);
+        ball(head, [s * 0.2, -0.2, 0.51], [0.29, 0.2, 0.18], "white");
+      }
+      face(head, 0.07, 0.55, 0.27);
+      ball(head, [0, -0.13, 0.71], [0.11, 0.08, 0.07], "ink");
+      ring(body, [0, 1.61, 0], 0.45, 0.13, "accent").rotation.x = Math.PI / 2;
+      box(body, [0.4, 1.32, 0.43], [0.3, 0.64, 0.12], "accent");
+      heart(body, [0, 1.45, 0.55]);
+      const tail = group(body, "CurledTail");
+      tube(tail, [[0, 0.9, -0.4], [0.55, 1, -0.8], [0.8, 1.5, -0.65], [0.45, 1.65, -0.5], [0.33, 1.4, -0.5]], 0.14, "cream");
+    } else {
+      ball(body, [0, 1.12, 0], [0.63, 0.67, 0.47]);
+      box(body, [0, 0.88, 0], [1.15, 0.18, 0.9], "ink", 0.07);
+      box(body, [0, 0.89, 0.49], [0.25, 0.23, 0.1], "gold", 0.04);
+      ball(head, [0, 0, -0.06], [0.8, 0.77, 0.61]);
+      ball(head, [0, -0.05, 0.32], [0.59, 0.56, 0.32], "cream");
+      face(head, 0.03, 0.63, 0.23);
+      if (kind === "vlad") {
+        const hood = group(head, "ArcherHood");
+        ring(hood, [0, 0, 0.35], 0.66, 0.13, "accent").scale.set(1, 1.12, 1);
+        const cap = mesh(hood, new T.ConeGeometry(0.72, 0.6, 3), "leaf", [0, 0.69, -0.05]);
+        cap.rotation.z = -0.2;
+        const feather = ball(hood, [0.48, 0.98, 0], [0.1, 0.42, 0.04], "gold");
+        feather.rotation.z = -0.55;
+        cylinder(body, [0.45, 1.45, -0.48], 0.19, 0.95, "eyeBrown").rotation.z = -0.25;
+        for (let j = 0; j < 3; j++) {
+          cylinder(body, [0.35 + j * 0.09, 2, -0.48], 0.02, 0.6, "gold");
+          ball(body, [0.35 + j * 0.09, 2.25, -0.48], [0.06, 0.13, 0.03], "cream");
+        }
+        const bow = group(arms[0], "ArcherBow");
+        tube(bow, [[-0.2, 0.4, 0.2], [-0.5, -0.15, 0.25], [-0.2, -0.9, 0.2]], 0.055, "eyeBrown");
+        tube(bow, [[-0.2, 0.4, 0.2], [-0.12, -0.25, 0.2], [-0.2, -0.9, 0.2]], 0.012, "cream");
+      } else {
+        const hat = group(head, "ShowmanHat");
+        cylinder(hat, [0, 0.58, 0], 0.89, 0.13, "accent");
+        cylinder(hat, [0, 1.03, 0], 0.58, 0.9, "body");
+        cylinder(hat, [0, 0.74, 0], 0.59, 0.2, "gold");
+        cylinder(hat, [0, 1.49, 0], 0.6, 0.08, "accent");
+        for (const s of [-1, 1]) {
+          mesh(body, new T.ConeGeometry(0.21, 0.72, 3), "accent", [s * 0.35, 0.73, -0.4]);
+          ball(body, [s * 0.17, 1.58, 0.48], [0.19, 0.12, 0.07], "gold");
+        }
+        ball(body, [0, 1.58, 0.55], 0.08, "pink");
+        const wand = group(arms[1], "StarWand");
+        cylinder(wand, [0, -0.2, 0.33], 0.045, 1.15, "ink");
+        const star = new T.Shape();
+        for (let j = 0; j < 10; j++) {
+          const a = j * Math.PI / 5, r = j % 2 ? 0.14 : 0.3;
+          const x = Math.sin(a) * r, y = Math.cos(a) * r;
+          if (j === 0) star.moveTo(x, y); else star.lineTo(x, y);
+        }
+        star.closePath();
+        mesh(wand, new T.ExtrudeGeometry(star, { depth: 0.08, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 }), "gold", [0, 0.48, 0.3]);
+      }
+    }
+  } else if (index === 0 || index === 4) {
     ball(body, [0, 1.13, 0], [0.83, 0.85, 0.64]);
     ball(body, [0, 1.14, 0.5], [0.58, 0.61, 0.23], "cream");
     head.position.set(0, 2.12, 0.04);
@@ -731,13 +838,13 @@ for (const [index, character] of registry.characters.entries()) {
     binary: true,
     animations: clips,
   });
-  await writeFile(
-    new URL(`${character.asset}.glb`, output),
-    Buffer.from(binary),
-  );
+  const assetPath = new URL(`${character.asset}.glb`, output);
+  // Archived binaries remain byte-for-byte intact; only active assets regenerate.
+  if (!character.hidden) await writeFile(assetPath, Buffer.from(binary));
+  const bytes = character.hidden ? (await readFile(assetPath)).byteLength : binary.byteLength;
   report.push({
     name: character.asset,
-    bytes: binary.byteLength,
+    bytes,
     triangles,
     meshes,
     animations: clips.map((c) => c.name),
