@@ -50,6 +50,11 @@ export function FaucetPanel() {
           </div>
         </div>
         {f.loading && !f.state && <p role="status" className="text-xs text-mute">Reading the faucet…</p>}
+        {f.state && f.state.tokens.length === 0 && (
+          <p role="status" className="lifecycle-callout">
+            <strong>No tokens yet.</strong> The faucet contract is live, but the operator has not offered any token. Check back soon.
+          </p>
+        )}
         <ul className="token-grid">
           {(f.state?.tokens ?? []).map((t) => {
             const reason = unavailableReason(t, f.state?.paused ?? false);
