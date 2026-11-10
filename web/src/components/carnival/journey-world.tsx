@@ -1,4 +1,5 @@
 "use client";
+import { contenderPositions } from "./contender-layout";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, useGLTF, useCursor } from "@react-three/drei";
 import {
@@ -527,13 +528,7 @@ function Environment(props: JourneyWorldProps) {
         onSelect={() => props.onSelect(3)}
       />
       {CONTENDERS.map((c, i) => {
-        const at: [number, number, number][] = [
-          [-7, 2.77, -8],
-          [-5, 2.77, -14],
-          [0, 2.77, -16],
-          [5, 2.77, -14],
-          [7, 2.77, -8],
-        ];
+        const at = contenderPositions(CONTENDERS.length);
         return (
           <group
             key={c.asset}
