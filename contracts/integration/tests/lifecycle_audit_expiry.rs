@@ -12,10 +12,8 @@ fn fixture_arena_wasm() -> anyhow::Result<Vec<u8>> {
         .expect("workspace")
         .to_path_buf();
     let target = workspace.join("target/lifecycle-fixtures");
-    let status = std::process::Command::new("cargo")
+    let status = common::cargo_wasm_build()
         .current_dir(&workspace)
-        // Custom symbol sections otherwise inflate the base64 deploy request past sandbox's RPC limit.
-        .env("CARGO_PROFILE_RELEASE_STRIP", "symbols")
         .args([
             "build",
             "--release",

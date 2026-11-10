@@ -667,7 +667,7 @@ fn fixture_player_policy_wasm() -> anyhow::Result<Vec<u8>> {
         .expect("workspace")
         .to_path_buf();
     let target = workspace.join("target/player-policy-fixtures");
-    let status = std::process::Command::new("cargo")
+    let status = common::cargo_wasm_build()
         .current_dir(&workspace)
         .args([
             "build",

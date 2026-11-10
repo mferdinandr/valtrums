@@ -70,7 +70,7 @@ fn fixture_backing_wasm() -> anyhow::Result<Vec<u8>> {
         .expect("workspace")
         .to_path_buf();
     let target = workspace.join("target/backing-fixtures");
-    let status = std::process::Command::new("cargo")
+    let status = common::cargo_wasm_build()
         .current_dir(&workspace)
         .args([
             "build",

@@ -17,6 +17,13 @@ pub const USDC_TO_COIN_NUM: u128 = 1_000_000_000_000_000;
 
 static BUILD: Once = Once::new();
 
+/// Keep every sandbox deploy payload small, including separately built fixture contracts.
+pub fn cargo_wasm_build() -> Command {
+    let mut command = Command::new("cargo");
+    command.env("CARGO_PROFILE_RELEASE_STRIP", "symbols");
+    command
+}
+
 /// Builds every contract once per test run and returns the wasm bytes for `name`
 /// (the crate's library name, for example `valtrum_arena`).
 pub fn wasm(name: &str) -> Vec<u8> {
@@ -25,7 +32,7 @@ pub fn wasm(name: &str) -> Vec<u8> {
         .expect("workspace dir")
         .to_path_buf();
     BUILD.call_once(|| {
-        let status = Command::new("cargo")
+        let status = cargo_wasm_build()
             .current_dir(&workspace)
             .args([
                 "build",
