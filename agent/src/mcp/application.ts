@@ -15,6 +15,7 @@ import { DEFAULT_LIMIT, MAX_SCAN, parseSearchParams, SearchValidationError } fro
 import type { ObservationState } from "../observations/journal.js";
 import { ObservationQueryError, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
 import type { Mode } from "../observations/schema.js";
+import type { OracleStatus } from "../lifecycle-oracle/status.js";
 
 export interface ApplicationBinding {
   source?: ArenaReadSource;
@@ -26,6 +27,8 @@ export interface ApplicationBinding {
    * Persisted market observations for this deployment. `load` replays the journal read-only and throws
    * when it is missing or corrupt; the service then reports the capability degraded, never an empty chart.
    */
+  /** Lifecycle oracle status (read-only file written by the oracle process). It reports; it authorizes nothing. */
+  oracle?: { namespace: Namespace; load(): Promise<OracleStatus>; staleAfterMs: number };
   observations?: {
     namespace: Namespace;
     load(): Promise<ObservationState>;
@@ -58,13 +61,16 @@ export class ApplicationReads {
       }
       if (b?.audits && namespaceKey(b.audits.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign audit archive binding");
       if (b?.observations && namespaceKey(b.observations.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign observation journal binding");
+      if (b?.oracle && namespaceKey(b.oracle.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign oracle status binding");
     }
   }
 
   private availability(d: Deployment) {
     const binding = this.bindings.get(d.deploymentId);
     const declared = structuredClone(d.capabilities);
-    const capabilities: ResolvedCapabilities = { ...declared, observations: declared.observations ?? { enabled: false, reasons: ["observations capability not declared in the deployment manifest"] } };
+    const capabilities: ResolvedCapabilities = { ...declared,
+      observations: declared.observations ?? { enabled: false, reasons: ["observations capability not declared in the deployment manifest"] },
+      oracle: declared.oracle ?? { enabled: false, reasons: ["oracle status capability not declared in the deployment manifest"] } };
     for (const key of Object.keys(capabilities) as Capability[]) {
       const c = capabilities[key];
       if (d.protocol !== "lifecycle-v2") { c.enabled = false; c.reasons.push("legacy-v1 remains on the explicit legacy adapter; v1 projection unsupported"); }
@@ -72,6 +78,7 @@ export class ApplicationReads {
       else if (key === "assets" && !binding?.registry) { c.enabled = false; c.reasons.push("trusted reference registry unavailable"); }
       else if (key === "audits" && !binding?.audits) { c.enabled = false; c.reasons.push("archive namespace handoff unavailable (#145)"); }
       else if (key === "observations" && !binding?.observations) { c.enabled = false; c.reasons.push("observation journal handoff unavailable (#146)"); }
+      else if (key === "oracle" && !binding?.oracle) { c.enabled = false; c.reasons.push("oracle status handoff unavailable (#147)"); }
     }
     return { ...d, capabilities, canonicalDiscovery: { enabled: false, reasons: ["verified deployment and complete live canonical projection coverage required (#144/#80)"] } };
   }
@@ -211,10 +218,25 @@ export class ApplicationReads {
         ["assets", async () => binding.registry!.load()],
         ["audits", async () => binding.audits!.archive.snapshot()],
         ["observations", async () => binding.observations!.load()],
+        ["oracle", async () => binding.oracle!.load()],
       ];
       const components = await Promise.all(probes.map(async ([key, probe]) => {
         const c = availability.capabilities[key];
         if (!c.enabled) return [key, { health: "unavailable", reasons: c.reasons }];
+        if (key === "oracle") {
+          try {
+            const st = await binding.oracle!.load();
+            const stale = this.now() - Number(st.updatedAtMs) > binding.oracle!.staleAfterMs;
+            const rows = Object.values(st.battles);
+            const holding = rows.filter((r) => ["pending_evidence", "blocked", "needs_rounds_started", "error"].includes(r.phase));
+            const reasons = [...(st.passError ? [`oracle pass error: ${st.passError}`] : []), ...(stale ? ["oracle status is stale: the oracle process may be down"] : []),
+              ...(st.writesEnabled ? [] : ["oracle writes are disabled (dry run)"]),
+              ...holding.slice(0, 10).map((r) => `battle ${r.battleId} ${r.phase}: ${r.reasons[0] ?? r.lastError ?? "no reason recorded"}`)];
+            return [key, { health: "degraded", reasons: [...partial, "status is the oracle's own report, not chain authority", ...reasons],
+              details: { updatedAtMs: st.updatedAtMs, passes: st.passes, writesEnabled: st.writesEnabled, passError: st.passError, stale,
+                battles: rows.slice(0, 20).map((r) => ({ battleId: r.battleId, phase: r.phase, roundId: r.roundId, reasons: r.reasons, lastError: r.lastError, updatedAtMs: r.updatedAtMs })) } }];
+          } catch { return [key, { health: "unavailable", reasons: ["oracle status missing or unreadable"] }]; }
+        }
         try { await probe(); return [key, { health: "degraded", reasons: [...partial, "probe succeeded; canonical completeness not established"] }]; }
         catch { return [key, { health: "unavailable", reasons: ["dependency read failed"] }]; }
       }));
