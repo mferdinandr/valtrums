@@ -60,3 +60,41 @@ describe("create_lifecycle_battle review", () => {
     expect(r.ok && r.notes.join(" ")).toMatch(/no bond and no round duration/);
   });
 });
+
+import { previewMismatches, toActionRequest } from "./create-review";
+
+describe("preview comparison before authorization", () => {
+  const drafts = [asset(1), asset(2, { referenceChainId: "4663", referenceAddress: `0x${"bb".repeat(20)}` })];
+  const review = (() => { const r = buildCreateReview("arena.testnet", drafts, "PriceGain"); if (!r.ok) throw new Error("fixture"); return r; })();
+  const preview = (over: Record<string, unknown> = {}) => ({
+    accountId: "alice.testnet",
+    transaction: { signerId: "alice.testnet", receiverId: "arena.testnet", actions: [{ methodName: "create_lifecycle_battle", args: review.args, deposit: CREATE_DEPOSIT_YOCTO }] },
+    ...over,
+  });
+
+  it("builds the action request in the service's shape, with reference fields only when set", () => {
+    const req = toActionRequest(drafts, "PriceGain") as { kind: string; mode: string; assets: Array<Record<string, unknown>> };
+    expect(req).toMatchObject({ kind: "create_battle", mode: "PriceGain" });
+    expect(req.assets[0]).toEqual({ chainId: "46630", tokenAddress: `0x${"1".repeat(40)}`, representation: "c1.rep.testnet", custodyDomain: "custody-v1" });
+    expect(req.assets[1]).toMatchObject({ referenceChainId: "4663", referenceAddress: `0x${"bb".repeat(20)}` });
+  });
+
+  it("accepts a preview that is exactly the reviewed call, regardless of key order", () => {
+    expect(previewMismatches(preview(), review, "alice.testnet")).toEqual([]);
+    const reversed = { mode: review.args.mode, assets: review.args.assets.map((a) => Object.fromEntries(Object.entries(a).reverse())) };
+    const reordered = { ...preview(), transaction: { ...preview().transaction, actions: [{ methodName: "create_lifecycle_battle", args: reversed, deposit: CREATE_DEPOSIT_YOCTO }] } };
+    expect(previewMismatches(reordered, review, "alice.testnet")).toEqual([]);
+  });
+
+  it("stops on any difference: account, contract, method, arguments, deposit or call count", () => {
+    const base = preview();
+    const tweak = (f: (p: ReturnType<typeof preview>) => void) => { const p = structuredClone(base); f(p); return previewMismatches(p, review, "alice.testnet"); };
+    expect(tweak((p) => { p.transaction.signerId = "mallory.testnet"; })).toContain("the preview is for another account");
+    expect(tweak((p) => { p.transaction.receiverId = "evil.testnet"; })).toContain("the preview targets another contract");
+    expect(tweak((p) => { p.transaction.actions[0]!.methodName = "ft_transfer"; })).toContain("the preview calls another method");
+    expect(tweak((p) => { (p.transaction.actions[0]!.args as { mode: string }).mode = "VolumeRatio"; })).toContain("the preview arguments differ from the reviewed arguments");
+    expect(tweak((p) => { p.transaction.actions[0]!.deposit = "1"; })).toContain("the preview attaches another deposit");
+    expect(tweak((p) => { p.transaction.actions.push({ methodName: "x", args: { assets: [], mode: "PriceGain" as const }, deposit: "0" }); })).toContain("the preview does not contain exactly one call");
+    expect(previewMismatches({}, review, "alice.testnet")).toEqual(["the preview has no transaction"]);
+  });
+});

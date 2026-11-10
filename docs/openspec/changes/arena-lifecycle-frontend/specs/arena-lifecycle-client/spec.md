@@ -41,3 +41,14 @@ The client SHALL require compatible lifecycle activation and a verified custody-
 #### Scenario: Deposit-only custody is configured
 - **WHEN** the configured custody has no verified reservation-bound payout path
 - **THEN** source-transfer controls remain disabled with a custody compatibility reason even when contract reads succeed
+
+### Requirement: Reviewed, session-bound wallet actions
+The client SHALL enable wallet signing of lifecycle actions only on a deployment that opts in, SHALL take the signing message and recipients from the read service, SHALL keep the session token in memory only, and SHALL NOT request any authorization until the service's canonical preview equals the call the user reviewed.
+
+#### Scenario: The service's preview differs from the reviewed call
+- **WHEN** the canonical preview names another account, contract, method, arguments or deposit than the reviewed call
+- **THEN** the flow stops before the wallet is asked to authorize and shows why
+
+#### Scenario: The wallet rejects or the receipt is not verified
+- **WHEN** the user rejects a prompt, or a transaction was submitted but no verified receipt exists
+- **THEN** the review stays intact for a retry and no battle is reported as created

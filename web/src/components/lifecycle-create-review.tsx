@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useApplicationSearch } from "@/hooks/use-application-search";
+import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
+import { useWallet } from "@/components/providers";
 import type { ApplicationPage, Namespace } from "@/lib/arena-read/application";
-import { buildCreateReview, MAX_COMMUNITIES, MIN_COMMUNITIES, SCORING_MODES, type AssetDraft } from "@/lib/arena-read/create-review";
+import { buildCreateReview, MAX_COMMUNITIES, MIN_COMMUNITIES, SCORING_MODES, toActionRequest, type AssetDraft } from "@/lib/arena-read/create-review";
 
 interface RegistryAsset { chainId: string; token: string; referenceChainId: string; referenceToken: string; assetKey: string; registryVersion: string }
 
@@ -39,15 +41,18 @@ function AssetPicker({ namespace, onPick }: { namespace: Namespace; onPick: (a: 
 }
 
 /**
- * Review of `create_lifecycle_battle` for an application deployment. It shows the exact arguments and
- * costs. It does NOT sign or send: wallet signing of lifecycle actions needs the NEP-413 action session
- * that this client does not provide yet, so nothing leaves this page and no funds can move from it.
+ * Review and, on a deployment that enables a wallet, signing of `create_lifecycle_battle`. The reviewed
+ * arguments are compared with the service's canonical preview before any authorization is requested; the
+ * session token is memory-only; a wallet rejection leaves the review intact for a retry.
  */
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>("PriceGain");
   const [assets, setAssets] = useState<AssetDraft[]>([empty(), empty()]);
   const [copied, setCopied] = useState(false);
   const review = buildCreateReview(namespace.arenaContract, assets, mode);
+  const request = useMemo(() => toActionRequest(assets, mode), [assets, mode]);
+  const { signIn } = useWallet();
+  const create = useLifecycleCreate(request, review.ok ? review : null);
   const set = (i: number, patch: Partial<AssetDraft>) => setAssets((all) => all.map((a, j) => (j === i ? { ...a, ...patch } : a)));
   // Hide "nothing picked yet" noise until at least one field has been touched.
   const touched = assets.some((a) => a.tokenAddress || a.representation || a.custodyDomain);
@@ -58,7 +63,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
         <p className="eyebrow text-neon-green">NEW LIFECYCLE BATTLE / REVIEW</p>
         <h1 className="mt-3 text-3xl">Review a battle before you sign</h1>
         <p className="mt-3 text-sm text-mute">{namespace.deploymentId} · {namespace.network} · {namespace.arenaContract}</p>
-        <p className="mt-3 text-sm text-neon-amber">Review only: this page does not sign or send anything. Rounds last 30 seconds and there is no bond or duration to choose.</p>
+        <p className="mt-3 text-sm text-neon-amber">Nothing is signed or sent until you request the service's canonical preview, it matches this review, and you authorize it in your wallet. Rounds last 30 seconds and there is no bond or duration to choose.</p>
       </section>
 
       <Card>
@@ -98,9 +103,43 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs" aria-label="Exact arguments">{JSON.stringify(review.args, null, 2)}</pre>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button variant="ghost" type="button" onClick={async () => { await navigator.clipboard?.writeText(JSON.stringify(review.args)); setCopied(true); }}>{copied ? "Copied" : "Copy exact arguments"}</Button>
-              <Button type="button" disabled aria-describedby="sign-disabled">Sign with wallet</Button>
+              {create.connected ? (
+                <Button type="button" onClick={create.preview} disabled={create.flow.step === "previewing" || create.flow.step === "signing"}>
+                  {create.flow.step === "previewing" ? "Requesting preview…" : "Request canonical preview"}
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" onClick={() => void signIn()}>Connect wallet to sign</Button>
+              )}
             </div>
-            <p id="sign-disabled" className="mt-2 text-xs text-neon-amber">Signing is not enabled in this client yet: lifecycle actions need the NEP-413 action session. Nothing was sent.</p>
+            {!create.connected && <p className="mt-2 text-xs text-mute">Signing needs a connected wallet on a deployment that enables it (NEXT_PUBLIC_APPLICATION_WALLET). Without one this page stays review-only and nothing is sent.</p>}
+            {create.flow.step === "blocked" && (
+              <ul role="alert" className="mt-3 list-disc pl-4 text-xs text-neon-red">
+                <li>Stopped before any authorization: the service's preview is not the call you reviewed.</li>
+                {create.flow.reasons.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+            )}
+            {create.flow.step === "previewed" && (
+              <div className="mt-3 space-y-2" role="status">
+                <p className="text-xs text-neon-green">The service's canonical preview equals the reviewed call. Nothing is signed yet.</p>
+                <p className="break-all text-xs text-mute">Preview {create.flow.previewed.record.previewHash}</p>
+                <Button type="button" onClick={create.execute}>Authorize and sign with wallet</Button>
+                <p className="text-xs text-mute">Your wallet will ask you to approve this exact preview, then to sign the transaction.</p>
+              </div>
+            )}
+            {create.flow.step === "signing" && <p role="status" className="mt-3 text-xs text-mute">Waiting for the wallet and the verified receipt…</p>}
+            {create.flow.step === "done" && (
+              <p role={create.flow.result.ok ? "status" : "alert"} className={create.flow.result.ok ? "mt-3 text-xs text-neon-green" : "mt-3 text-xs text-neon-amber"}>
+                {create.flow.result.ok
+                  ? `Confirmed with a verified receipt. Transaction ${create.flow.result.txHash}.`
+                  : `Not confirmed (${create.flow.result.status}): ${create.flow.result.reason}${create.flow.result.txHash ? ` Transaction ${create.flow.result.txHash} was submitted; it is not a created battle until the receipt is verified.` : ""}`}
+                {create.flow.result.fixture ? ` ${create.flow.result.fixture}` : ""}
+              </p>
+            )}
+            {create.flow.step === "error" && (
+              <p role="alert" className="mt-3 text-xs text-neon-red">
+                {create.flow.message} <button type="button" className="underline" onClick={create.reset}>Try again</button>
+              </p>
+            )}
           </>
         )}
       </Card>

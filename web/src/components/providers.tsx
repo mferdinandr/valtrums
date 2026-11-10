@@ -8,6 +8,7 @@ import { createNearArenaApi } from "@/lib/arena/near";
 import type { ArenaApi } from "@/lib/arena/types";
 import { createMockEnv, createNearEnv, type TerminalEnv } from "@/lib/terminal/env";
 import type { Namespace } from "@/lib/arena-read/application";
+import type { WalletLike } from "@/lib/arena-read/action-session";
 
 export interface WalletState {
   /** Connected account id, or null when signed out. */
@@ -22,6 +23,10 @@ const ArenaContext = createContext<ArenaApi | null>(null);
 const TerminalEnvContext = createContext<TerminalEnv | null>(null);
 const ApplicationContext = createContext<Namespace | null>(null);
 export const useApplicationDeployment = () => useContext(ApplicationContext);
+
+/** Reaches the connected wallet for signing. Null when application mode has no wallet. */
+const ActionWalletContext = createContext<(() => Promise<WalletLike>) | null>(null);
+export const useActionWallet = () => useContext(ActionWalletContext);
 
 export function useWallet(): WalletState {
   const ctx = useContext(WalletContext);
@@ -115,12 +120,40 @@ function NearBridge({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Application read mode with an opt-in wallet (NEXT_PUBLIC_APPLICATION_WALLET=true). It gives the pages the
+ * connected account and a way to reach the wallet for signing. It does NOT provide the legacy ArenaApi, so
+ * no legacy A/B action can run from this mode.
+ */
+function ApplicationWalletBridge({ namespace, children }: { namespace: Namespace; children: ReactNode }) {
+  const { signedAccountId, loading, signIn, signOut, connector } = useNearWallet();
+  const wallet = useMemo<WalletState>(
+    () => ({ accountId: signedAccountId || null, loading, signIn, signOut }),
+    [signedAccountId, loading, signIn, signOut],
+  );
+  const getWallet = useCallback(async () => (await connector.getConnectedWallet()).wallet as unknown as WalletLike, [connector]);
+  return (
+    <ApplicationContext.Provider value={namespace}>
+      <WalletContext.Provider value={wallet}>
+        <ActionWalletContext.Provider value={getWallet}>{children}</ActionWalletContext.Provider>
+      </WalletContext.Provider>
+    </ApplicationContext.Provider>
+  );
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   if (config.applicationDeployment) {
     const protocol = config.applicationProtocol;
     if (protocol !== "legacy-v1" && protocol !== "lifecycle-v2") return <p role="alert">Unsupported arena read protocol.</p>;
     const namespace: Namespace = { deploymentId: config.applicationDeployment, network: `near-${config.network}`,
       arenaContract: config.arenaContractId, protocol };
+    if (config.applicationWallet) {
+      return (
+        <NearProvider config={{ network: config.network }}>
+          <ApplicationWalletBridge namespace={namespace}>{children}</ApplicationWalletBridge>
+        </NearProvider>
+      );
+    }
     const unavailable = async () => { throw new Error("Wallet actions are unavailable in application read mode"); };
     return <ApplicationContext.Provider value={namespace}>
       <WalletContext.Provider value={{ accountId: null, loading: false, signIn: unavailable, signOut: unavailable }}>

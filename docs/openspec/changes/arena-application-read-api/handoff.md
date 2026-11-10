@@ -69,6 +69,15 @@ archive fixture/recorded/live labels survive. Acquisition time is distinct from
 nullable observation time. Archive responses retain observation references and
 sequence watermark, which is an archive watermark, never a chain watermark.
 
+## Routes and capabilities added after the foundation
+
+These extend the same versioned facade; each stays read-only and namespace-bound.
+
+- `GET /api/arena/v1/battles/{id}/observations` (#146): persisted market evidence with watermark, revision, coverage and a provisional exact-score projection; capability `observations`; configuration `OBSERVATION_JOURNAL_DIR`, `ARENA_APPLICATION_OBSERVATION_SCOPE`. A missing or corrupt journal is a 503, never an empty chart.
+- Health components `oracle` (#147, the lifecycle oracle's own report from `ORACLE_STATE_DIR`) and `custody` (#148, `assessCustody` over `ARENA_APPLICATION_CUSTODY_PATHS`, source transfers enabled only if every configured path is spendable). Both are optional capabilities in the manifest and are never reported healthy: they are operator or process assertions, not live proof.
+- `GET /session/config` on the read service and `/api/arena/session/config` on the gateway (#149): the NEP-413 message and the session and action recipients, read-only, non-secret; the gateway forwards only those fields.
+- Optional manifest capabilities `observations`, `oracle` and `custody` are absent in older manifests, which stay valid and report "not declared".
+
 ## Configuration/runbook
 
 Build with `pnpm build`; run the existing `pnpm -F @valtrum/agent read:serve`.
