@@ -228,11 +228,21 @@ export async function readGrantStatus(rpcUrl: string, policy: string, user: stri
 
 // ── Remembering grant ids in this browser ───────────────────────────────────────────────────────────────
 
+export type AgentStrategy = "crowd" | "underdog";
+export const STRATEGY_OPTIONS: ReadonlyArray<{ value: AgentStrategy; title: string; description: string }> = [
+  { value: "crowd", title: "Follow the crowd", description: "Back the community whose vault is the largest." },
+  { value: "underdog", title: "Back the underdog", description: "Back the community whose vault is the smallest." },
+];
+
 export interface SavedGrant {
   localIdHex: string;
   createdAtMs: number;
   /** A display name such as the token symbol; never an identity. */
   label: string;
+  /** What the agent program needs to run this grant. Absent on grants saved before these fields existed. */
+  delegate?: string;
+  strategy?: AgentStrategy;
+  mappingVersion?: string;
 }
 
 /** The contract has no "list my grants" view, so ids created here are remembered per account in this browser. */
@@ -243,11 +253,20 @@ export function parseSavedGrants(raw: string | null): SavedGrant[] {
   try {
     const value = JSON.parse(raw) as unknown;
     if (!Array.isArray(value)) return [];
-    return value.filter(
-      (v): v is SavedGrant =>
-        !!v && typeof v === "object" && typeof (v as SavedGrant).localIdHex === "string" && fromHex((v as SavedGrant).localIdHex) !== null &&
-        Number.isFinite((v as SavedGrant).createdAtMs) && typeof (v as SavedGrant).label === "string",
-    );
+    return value
+      .filter(
+        (v): v is SavedGrant =>
+          !!v && typeof v === "object" && typeof (v as SavedGrant).localIdHex === "string" && fromHex((v as SavedGrant).localIdHex) !== null &&
+          Number.isFinite((v as SavedGrant).createdAtMs) && typeof (v as SavedGrant).label === "string",
+      )
+      .map((v) => ({
+        localIdHex: v.localIdHex,
+        createdAtMs: v.createdAtMs,
+        label: v.label,
+        ...(typeof v.delegate === "string" && validAccount(v.delegate) ? { delegate: v.delegate } : {}),
+        ...(v.strategy === "crowd" || v.strategy === "underdog" ? { strategy: v.strategy } : {}),
+        ...(typeof v.mappingVersion === "string" && /^[1-9][0-9]{0,19}$/.test(v.mappingVersion) ? { mappingVersion: v.mappingVersion } : {}),
+      }));
   } catch {
     return [];
   }
@@ -255,3 +274,27 @@ export function parseSavedGrants(raw: string | null): SavedGrant[] {
 
 export const addSavedGrant = (list: readonly SavedGrant[], grant: SavedGrant): SavedGrant[] =>
   list.some((g) => g.localIdHex === grant.localIdHex) ? [...list] : [grant, ...list].slice(0, 50);
+
+/** The environment variable that should hold an agent's key: `agent-a.testnet` becomes `PLAYER_KEY_AGENT_A_TESTNET`. */
+export const keyEnvFor = (delegate: string): string => `PLAYER_KEY_${delegate.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`.slice(0, 64);
+
+/**
+ * The configuration entry the player agent program reads (`agent/player-agents.example.json`). The strategy lives
+ * here, off chain: the grant is the only limit and a strategy carries no authority. The key itself is never part of it.
+ */
+export function buildAgentConfig(grant: SavedGrant, user: string): { agents: Array<Record<string, unknown>> } | null {
+  if (!grant.delegate || !grant.strategy || fromHex(grant.localIdHex) === null) return null;
+  return {
+    agents: [
+      {
+        delegate: grant.delegate,
+        user,
+        localId: grant.localIdHex,
+        mappingVersion: grant.mappingVersion ?? "1",
+        strategy: grant.strategy,
+        mode: "rule",
+        keyEnv: keyEnvFor(grant.delegate),
+      },
+    ],
+  };
+}

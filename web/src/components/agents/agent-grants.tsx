@@ -9,8 +9,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
-  addSavedGrant, buildGrantReview, buildRevokeReview, emptyGrantForm, gasUnits, parseSavedGrants, randomLocalId, readGrantStatus, savedGrantsKey,
-  type GrantForm, type GrantStatus, type SavedGrant,
+  addSavedGrant, buildAgentConfig, buildGrantReview, buildRevokeReview, emptyGrantForm, gasUnits, parseSavedGrants, randomLocalId, readGrantStatus, savedGrantsKey,
+  STRATEGY_OPTIONS, type AgentStrategy, type GrantForm, type GrantStatus, type SavedGrant,
 } from "@/lib/arena-read/agent-grant";
 import type { CallReview } from "@/lib/arena-read/create-review";
 import { config } from "@/lib/config";
@@ -51,6 +51,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
   const policy = config.policyContract;
   const [form, setForm] = useState<GrantForm>(emptyGrantForm());
   const [picked, setPicked] = useState<string>("");
+  const [strategy, setStrategy] = useState<AgentStrategy>("crowd");
   const [localId, setLocalId] = useState<number[]>(() => randomLocalId());
   const [tx, setTx] = useState<Tx>({ step: "idle" });
   const [saved, setSaved] = useState<SavedGrant[]>([]);
@@ -124,7 +125,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
   const createGrant = async () => {
     if (!review.ok) return;
     if (await send(review, setTx)) {
-      persist(addSavedGrant(saved, { localIdHex: review.localIdHex, createdAtMs: Date.now(), label: picked || "token" }));
+      persist(addSavedGrant(saved, { localIdHex: review.localIdHex, createdAtMs: Date.now(), label: picked || "token", delegate: form.delegate, strategy, mappingVersion: form.mappingVersion }));
       setLocalId(randomLocalId());
       setTimeout(() => void refresh(), 4000);
     }
@@ -170,6 +171,19 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
           <Label>
             Representation (NEAR account of the NEP-141 token)
             <Input value={form.representation} maxLength={64} onChange={(e) => set({ representation: e.target.value.trim().toLowerCase() })} />
+          </Label>
+          <Label className="sm:col-span-2">
+            Strategy (how the agent chooses; it carries no authority, the limits below do)
+            <select
+              className="mt-1 block w-full rounded-lg border border-edge bg-transparent p-2 text-sm"
+              value={strategy}
+              onChange={(e) => setStrategy(e.target.value as AgentStrategy)}
+              aria-label="Strategy"
+            >
+              {STRATEGY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.title} · {o.description}</option>
+              ))}
+            </select>
           </Label>
           <Label>
             Per-action limit (base units)
@@ -271,6 +285,25 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
                     )}
                   </dl>
                 )}
+                {accountId && (() => {
+                  const cfg = buildAgentConfig(g, accountId);
+                  return cfg ? (
+                    <details className="lifecycle-tech mt-3">
+                      <summary>Agent config · copy into the agent program</summary>
+                      <p className="mt-2 text-xs text-mute">
+                        Save as the agent config file and set <code>{String(cfg.agents[0]!.keyEnv)}</code> to the agent account&apos;s key in the
+                        agent&apos;s own environment. The key is never shown here or sent anywhere. Run:{" "}
+                        <code>pnpm -C agent player:run --config &lt;file&gt;</code> (dry run by default).
+                      </p>
+                      <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs" aria-label="Agent config">
+                        {JSON.stringify(cfg, null, 2)}
+                      </pre>
+                      <Button type="button" variant="ghost" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(cfg, null, 2))}>
+                        Copy config
+                      </Button>
+                    </details>
+                  ) : null;
+                })()}
                 {status && (status.state === "active" || status.state === "expired") && (
                   <div className="mt-3">
                     {revoking === g.localIdHex ? (

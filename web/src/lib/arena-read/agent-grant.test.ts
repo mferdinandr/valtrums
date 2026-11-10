@@ -1,7 +1,7 @@
 // FIXTURE-ONLY: synthetic accounts and responses. Nothing here touches a chain.
 import { describe, expect, it } from "vitest";
 import {
-  addSavedGrant, buildGrantReview, buildRevokeReview, emptyGrantForm, fromHex, parseSavedGrants, randomLocalId, readGrantStatus, rpcView, toHex, type GrantForm,
+  addSavedGrant, buildAgentConfig, buildGrantReview, buildRevokeReview, emptyGrantForm, fromHex, keyEnvFor, parseSavedGrants, randomLocalId, readGrantStatus, rpcView, toHex, type GrantForm,
 } from "./agent-grant";
 
 const NOW = Date.parse("2026-11-11T00:00:00Z");
@@ -124,5 +124,28 @@ describe("saved grant ids", () => {
     const b = { localIdHex: toHex(localId.map((x) => x + 1)), createdAtMs: 2, label: "B" };
     expect(addSavedGrant(addSavedGrant([], a), b).map((g) => g.label)).toEqual(["B", "A"]);
     expect(addSavedGrant([a], a)).toHaveLength(1);
+  });
+});
+
+describe("agent config for the player program", () => {
+  const saved = { localIdHex: toHex(localId), createdAtMs: NOW, label: "CASHCAT", delegate: "agent-a.testnet", strategy: "underdog" as const, mappingVersion: "2" };
+  it("builds the entry the agent program reads, with the key named but never included", () => {
+    const cfg = buildAgentConfig(saved, "alice.testnet");
+    expect(cfg).toEqual({ agents: [{ delegate: "agent-a.testnet", user: "alice.testnet", localId: toHex(localId), mappingVersion: "2", strategy: "underdog", mode: "rule", keyEnv: "PLAYER_KEY_AGENT_A_TESTNET" }] });
+    expect(JSON.stringify(cfg)).not.toMatch(/ed25519/);
+  });
+  it("gives nothing for a grant saved before the strategy existed", () => {
+    expect(buildAgentConfig({ localIdHex: toHex(localId), createdAtMs: NOW, label: "x" }, "alice.testnet")).toBeNull();
+  });
+  it("names the key variable safely from any account id", () => {
+    expect(keyEnvFor("agent-a.testnet")).toBe("PLAYER_KEY_AGENT_A_TESTNET");
+    expect(keyEnvFor("a.b").startsWith("PLAYER_KEY_")).toBe(true);
+    expect(keyEnvFor("x".repeat(64)).length).toBeLessThanOrEqual(64);
+  });
+  it("keeps the strategy fields only when they are well formed", () => {
+    const raw = JSON.stringify([{ ...saved, strategy: "yolo", delegate: "BAD ACCOUNT" }, saved]);
+    const [bad, good] = parseSavedGrants(raw);
+    expect(bad).toEqual({ localIdHex: saved.localIdHex, createdAtMs: NOW, label: "CASHCAT", mappingVersion: "2" });
+    expect(good).toEqual(saved);
   });
 });
