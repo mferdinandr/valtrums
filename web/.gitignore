@@ -1,3 +1,7 @@
 .next/
 next-env.d.ts
 out/
+
+# Playwright
+/e2e/.results/
+/playwright-report/
