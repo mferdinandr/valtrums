@@ -9,6 +9,9 @@
 #   scripts/pre-commit.sh --install       install a git pre-push hook that runs this before every push
 #   scripts/pre-commit.sh --uninstall     remove that hook (only if this script installed it)
 #
+# CPU: checks run at low priority (nice 10) with parallelism capped to about a third of your cores, so the
+# machine stays usable. Override with LOCAL_CI_JOBS=<n> (for example LOCAL_CI_JOBS=1 for the gentlest run).
+#
 # Stages (same commands as CI):
 #   contracts  cargo fmt --check, cargo clippy --all-targets -D warnings, cargo test (excluding valtrum-integration)
 #   sandbox    fetch the pinned SputnikDAO wasm (network), then cargo test -p valtrum-integration   [slow]
@@ -37,11 +40,26 @@ while [ $# -gt 0 ]; do
       ONLY="${1:-}"
       case "$ONLY" in contracts | sandbox | node | docker | docs) ;; *) echo "--only needs one of: contracts sandbox node docker docs" >&2; exit 2 ;; esac
       ;;
-    -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
 done
+
+# ---- CPU limits -----------------------------------------------------------------------------
+CORES="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+DEFAULT_JOBS=$(( CORES / 3 )); [ "$DEFAULT_JOBS" -lt 1 ] && DEFAULT_JOBS=1
+JOBS="${LOCAL_CI_JOBS:-$DEFAULT_JOBS}"
+case "$JOBS" in '' | *[!0-9]* | 0) echo "LOCAL_CI_JOBS must be a positive integer" >&2; exit 2 ;; esac
+export CARGO_BUILD_JOBS="$JOBS"      # rustc / cargo build parallelism
+export RUST_TEST_THREADS="$JOBS"     # cargo test threads
+export UV_THREADPOOL_SIZE="$JOBS"    # node libuv pool
+export LOCAL_CI_JOBS="$JOBS"         # read by web/next.config.ts to cap build workers
+export RAYON_NUM_THREADS="$JOBS"     # SWC / Rust-based JS tooling thread pools
+export GOMAXPROCS="$JOBS"            # esbuild (used by vitest)
+# --v8-pool-size caps V8 background threads (GC, compilation): without it each tsc process burns ~200% CPU.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=4096 --v8-pool-size=$(( JOBS > 1 ? JOBS : 1 ))"
+NICE=(nice -n 10)
 
 if [ -t 1 ]; then BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; DIM=$'\033[2m'; RESET=$'\033[0m'; else BOLD="" RED="" GREEN="" DIM="" RESET=""; fi
 
@@ -129,10 +147,10 @@ stage_sandbox() {
 stage_node() {
   cd "$ROOT"
   run pnpm install --frozen-lockfile
-  run pnpm typecheck
-  run pnpm -F @valtrum/agent test
-  run pnpm -F @valtrum/web test
-  run pnpm build
+  run pnpm --workspace-concurrency=1 typecheck
+  run pnpm -F @valtrum/agent test --maxWorkers="$JOBS"
+  run pnpm -F @valtrum/web test --maxWorkers="$JOBS"
+  run pnpm --workspace-concurrency=1 build
 }
 stage_docker() {
   cd "$ROOT"
@@ -180,13 +198,13 @@ stage_docs() {
 run() {
   echo "${DIM}+ $*${RESET}"
   [ "$DRY" = 1 ] && return 0
-  "$@" || exit 1
+  "${NICE[@]}" "$@" || exit 1
 }
 
 # ---- run ------------------------------------------------------------------------------------
 FAILED=()
 START_ALL=$SECONDS
-echo "${BOLD}local CI: ${STAGES[*]}${RESET}$([ "$DRY" = 1 ] && echo ' (dry run)')"
+echo "${BOLD}local CI: ${STAGES[*]}${RESET}$([ "$DRY" = 1 ] && echo ' (dry run)') ${DIM}[nice 10, $JOBS of $CORES cores]${RESET}"
 for stage in "${STAGES[@]}"; do
   echo
   echo "${BOLD}== $stage ==${RESET}"
