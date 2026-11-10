@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Landing } from "@/components/kinetic/landing";
+import "@/components/carnival/journey.css";
 
 export const metadata: Metadata = {
-  title: "Valtrum — Your tribe. Their liquidity.",
+  title: "Valtrum — Find your people. Bring the big energy.",
   description:
-    "Explore token-community battles. Try a wallet-free practice round, learn the mechanics, then enter Valtrum on NEAR testnet.",
+    "Meet original toy mascots, explore token-community battles, and try the wallet-free Token Carnival on NEAR testnet.",
 };
 export default function HomePage() {
   return <Landing />;

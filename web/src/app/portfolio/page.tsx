@@ -22,6 +22,7 @@ import {
 } from "@/lib/arena/withdraw";
 import { isRefundable, STATUS_LABEL, STATUS_TONE } from "@/lib/arena/status";
 import type { BattleView, PositionView, TokenMeta } from "@/lib/arena/types";
+import { CarnivalScene } from "@/components/carnival/scene";
 
 interface Row {
   battle: BattleView;
@@ -253,25 +254,49 @@ export default function PortfolioPage() {
       });
   };
 
+  const hero = (
+    <section className="carnival-page-hero">
+      <div>
+        <span className="carnival-sticker">
+          YOUR PERSONAL CORNER OF THE FAIRGROUND
+        </span>
+        <h1>
+          Your crew.
+          <br />
+          Your keepsakes.
+        </h1>
+        <p>
+          Follow positions, inspect credit and liquid balances, and review every
+          claim or withdrawal. The cabinet illustration represents no account
+          amount.
+        </p>
+      </div>
+      <CarnivalScene mode="portfolio" />
+    </section>
+  );
+
   if (walletLoading)
     return <p className="blink font-pixel text-[10px] text-mute">LOADING...</p>;
   if (!accountId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-lg text-neon-pink">Current portfolio</h1>
-        <p className="text-2xl text-mute">
-          Connect a wallet to see your positions and credit.
-        </p>
-        <Button variant="cyan" onClick={() => void signIn()}>
-          Connect wallet
-        </Button>
+        {hero}
+        <Card>
+          <h2 className="text-xl text-neon-pink">Your portfolio is waiting.</h2>
+          <p className="text-2xl text-mute">
+            Connect a wallet to see your positions and credit.
+          </p>
+          <Button variant="cyan" onClick={() => void signIn()}>
+            Connect wallet
+          </Button>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div><p className="eyebrow text-neon-green">04 / TRACK YOUR OUTCOME</p><h1 className="mt-3 text-3xl">Your portfolio.</h1><p className="mt-2 text-sm text-mute">Follow positions, claim eligible outcomes, then withdraw liquid balances.</p></div>
+      {hero}
       {error && (
         <p role="alert" className="text-xl text-neon-red">
           Could not load portfolio: {error}
@@ -282,8 +307,12 @@ export default function PortfolioPage() {
       )}
       {data && (
         <>
-          <div className="portfolio-guide"><span>01 &nbsp; FOLLOW YOUR POSITION</span><span>02 &nbsp; CLAIM OR REFUND</span><span>03 &nbsp; WITHDRAW BALANCE</span></div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="portfolio-guide">
+            <span>01 &nbsp; FOLLOW YOUR POSITION</span>
+            <span>02 &nbsp; CLAIM OR REFUND</span>
+            <span>03 &nbsp; WITHDRAW BALANCE</span>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-[.8fr_1.2fr]">
             <CreditPanel account={data.account} />
             <LiquidBalances
               rows={data.tokenIds.map<LiquidRow>((id) => ({
@@ -314,29 +343,33 @@ export default function PortfolioPage() {
                 .
               </p>
             )}
-            {data.rows.map((row) => (
-              <PositionRow
-                key={row.battle.id}
-                row={row}
-                accountId={accountId}
-                metaA={
-                  metas[row.battle.token_a] ?? fallbackMeta(row.battle.token_a)
-                }
-                metaB={
-                  metas[row.battle.token_b] ?? fallbackMeta(row.battle.token_b)
-                }
-                balance={
-                  data.balances[
-                    row.position.side === "A"
-                      ? row.battle.token_a
-                      : row.battle.token_b
-                  ] ?? 0n
-                }
-                busyToken={busyToken}
-                onWithdraw={onWithdraw}
-                onDone={reload}
-              />
-            ))}
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              {data.rows.map((row) => (
+                <PositionRow
+                  key={row.battle.id}
+                  row={row}
+                  accountId={accountId}
+                  metaA={
+                    metas[row.battle.token_a] ??
+                    fallbackMeta(row.battle.token_a)
+                  }
+                  metaB={
+                    metas[row.battle.token_b] ??
+                    fallbackMeta(row.battle.token_b)
+                  }
+                  balance={
+                    data.balances[
+                      row.position.side === "A"
+                        ? row.battle.token_a
+                        : row.battle.token_b
+                    ] ?? 0n
+                  }
+                  busyToken={busyToken}
+                  onWithdraw={onWithdraw}
+                  onDone={reload}
+                />
+              ))}
+            </div>
           </section>
         </>
       )}

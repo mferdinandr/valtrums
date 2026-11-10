@@ -1,0 +1,82 @@
+{
+  "generator": "Three.js GLTFExporter",
+  "direction": "Token Carnival × Toybox",
+  "originalAssets": true,
+  "models": [
+    {
+      "name": "cashcat",
+      "bytes": 422272,
+      "triangles": 15020,
+      "meshes": 21,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "btcethusdt",
+      "bytes": 360340,
+      "triangles": 12632,
+      "meshes": 24,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "oak",
+      "bytes": 329040,
+      "triangles": 11604,
+      "meshes": 19,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "rebate",
+      "bytes": 391548,
+      "triangles": 13432,
+      "meshes": 19,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    },
+    {
+      "name": "wif",
+      "bytes": 626292,
+      "triangles": 22976,
+      "meshes": 21,
+      "animations": [
+        "Idle",
+        "Attack",
+        "Selected",
+        "Victory",
+        "Defeat",
+        "Hit",
+        "Walk"
+      ]
+    }
+  ]
+}

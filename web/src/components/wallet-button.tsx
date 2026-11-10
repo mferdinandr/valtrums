@@ -27,7 +27,7 @@ export function WalletButton() {
   return (
     <div className="flex items-center gap-2">
       <span
-        className="max-w-[150px] truncate rounded-lg border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
+        className="max-w-[110px] sm:max-w-[150px] truncate rounded-xl border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
         title={accountId}
       >
         {shorten(accountId)}

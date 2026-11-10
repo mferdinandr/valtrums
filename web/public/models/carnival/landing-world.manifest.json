@@ -1,0 +1,28 @@
+{
+  "asset": "landing-world.glb",
+  "originalAsset": true,
+  "bytes": 1967164,
+  "triangles": 63742,
+  "meshes": 51,
+  "movableNodes": [
+    "GateLeft",
+    "GateRight",
+    "HubTop",
+    "OverlookReactorHead0",
+    "OverlookReactorHead1"
+  ],
+  "zones": [
+    {
+      "asset": "landing-foundry.glb",
+      "bytes": 300272,
+      "triangles": 8756,
+      "meshes": 23
+    },
+    {
+      "asset": "landing-vault.glb",
+      "bytes": 521752,
+      "triangles": 16968,
+      "meshes": 24
+    }
+  ]
+}

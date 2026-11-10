@@ -4,15 +4,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border font-pixel text-xs font-semibold leading-none transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out motion-safe:active:scale-[.98] disabled:pointer-events-none disabled:opacity-40",
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border font-pixel text-xs font-semibold leading-none transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out motion-safe:active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {
-        primary: "border-neon-green bg-neon-green text-void hover:bg-[#defa9a]",
-        pink: "border-neon-pink bg-neon-pink/10 text-neon-pink hover:bg-neon-pink hover:text-black",
-        cyan: "border-neon-cyan bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan hover:text-black",
+        primary:
+          "border-[#ce806b] bg-[#f6ae96] text-[#623e40] shadow-[0_3px_0_#d18b76] hover:bg-[#ffc2a8]",
+        pink: "border-[#cfadc3] bg-[#f5e4ee] text-neon-pink shadow-[0_3px_0_#dec4d4] hover:bg-[#efd6e5]",
+        cyan: "border-[#a2c7c6] bg-[#d9eee9] text-neon-cyan shadow-[0_3px_0_#b2ceca] hover:bg-[#c5e6dc]",
         ghost:
-          "border-edge bg-transparent text-mute hover:border-ink hover:text-ink",
+          "border-edge bg-panel text-mute hover:border-neon-cyan/50 hover:text-ink",
       },
       size: {
         sm: "px-3 py-2",

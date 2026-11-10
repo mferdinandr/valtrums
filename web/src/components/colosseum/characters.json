@@ -1,0 +1,72 @@
+{
+  "provenance": "Original cosmetic interpretations of project research candidates; not official mascots or token approvals.",
+  "sources": [
+    "docs/findings-and-decisions.md",
+    "docs/product-spec.md",
+    "docs/openspec/changes/arena-lifecycle/specs/arena-lifecycle/spec.md",
+    "contracts/arena/src/lifecycle.rs",
+    "web/src/lib/arena/mock.ts"
+  ],
+  "characters": [
+    {
+      "name": "CASHCAT",
+      "asset": "cashcat",
+      "demoTokenId": "cashcat.demo",
+      "referenceChainId": 4663,
+      "referenceAddress": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+      "title": "The Paw-powered Pal",
+      "type": "Feline toy mascot",
+      "color": "#3a8967",
+      "description": "A round little cashcat with oversized paws, rosy cheeks and a curling tail. Always ready with a wave.",
+      "researchNote": "2026-11-07 research: potential pass, not current approval."
+    },
+    {
+      "name": "BTCETHUSDT",
+      "asset": "btcethusdt",
+      "demoTokenId": "btcethusdt.demo",
+      "referenceChainId": 4663,
+      "referenceAddress": "0xae2df3c1749daee721c1bfcbbfdde5d61ae7cb99",
+      "title": "The Capsule Crew",
+      "type": "Triple-capsule toy robot",
+      "color": "#8061ae",
+      "description": "One cheerful four-legged robot carrying three candy-colored capsules and a spring-loaded reactor tool.",
+      "researchNote": "One token named BTCETHUSDT; not three underlying assets. Research potential pass, not current approval."
+    },
+    {
+      "name": "OAK",
+      "asset": "oak",
+      "demoTokenId": "oak.demo",
+      "referenceChainId": 4663,
+      "referenceAddress": "0x6511c233790ec10f7d673c64dc82c3f941d57828",
+      "title": "The Little Sprout",
+      "type": "Walking tree mascot",
+      "color": "#4c8245",
+      "description": "A pocket-sized oak with a fluffy leaf canopy, root feet and leafy mittens. Small tree, big enthusiasm.",
+      "researchNote": "2026-11-07 research: v4 liquidity verification blocked; exhibition presence does not establish eligibility."
+    },
+    {
+      "name": "REBATE",
+      "asset": "rebate",
+      "demoTokenId": "rebate.demo",
+      "referenceChainId": 4663,
+      "referenceAddress": "0xb7ff57631b97000d950236ef63bd463da5beba7e",
+      "title": "The Receipt Buddy",
+      "type": "Cash-register toy mascot",
+      "color": "#a87423",
+      "description": "A smiling peach-colored cash register with a receipt scarf, candy buttons and a halo of little coins.",
+      "researchNote": "2026-11-07 research: GoPlus clean; v4 liquidity verification blocked. Not current approval."
+    },
+    {
+      "name": "WIF",
+      "asset": "wif",
+      "demoTokenId": "wif.demo",
+      "referenceChainId": 4663,
+      "referenceAddress": "0x96c5d997a462bce2577bee9527a1a08101927519",
+      "title": "The Happy Hatdog",
+      "type": "Canine toy mascot",
+      "color": "#b85878",
+      "description": "A friendly dog with a big soft hat, a pom-pom and a curling tail. Celebrates every little moment.",
+      "researchNote": "2026-11-07 research: tax fields empty, Pending. Not current approval."
+    }
+  ]
+}

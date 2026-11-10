@@ -17,5 +17,6 @@ export interface BattleControls {
   status: BattleStatus;
   winner: Side | null;
   symbols: [string, string];
+  tokenIds?: [string, string];
   progress: number;
 }

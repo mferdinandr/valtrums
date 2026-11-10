@@ -9,6 +9,7 @@ import { useArena, useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
 import { useAsync } from "@/hooks/use-async";
 import { formatUsdc, toBigInt } from "@/lib/amounts";
+import { CarnivalScene } from "@/components/carnival/scene";
 
 const DURATIONS = [
   { label: "1 hour", secs: 3600 },
@@ -64,94 +65,129 @@ export default function CreateBattlePage() {
   };
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <div><Link href="/arena" className="text-xs text-neon-green">← Back to battles</Link><p className="eyebrow mt-5 text-neon-green">CREATE / CURRENT ARENA</p><h1 className="mt-3 text-3xl">Set up a rivalry.</h1><p className="mt-3 text-sm leading-6 text-mute">Choose two token contracts and a duration. Review the bond before proposing your battle for audit.</p></div>
-      <Card>
-        <CardTitle>01 / Choose communities and duration</CardTitle>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="token-a">Token A (NEP-141 contract id)</Label>
-            <Input
-              id="token-a"
-              placeholder="pepe.tkn.testnet"
-              value={tokenA}
-              onChange={(e) => setTokenA(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="token-b">Token B (NEP-141 contract id)</Label>
-            <Input
-              id="token-b"
-              placeholder="shib.tkn.testnet"
-              value={tokenB}
-              onChange={(e) => setTokenB(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="duration">Battle duration</Label>
-            <select
-              id="duration"
-              value={secs}
-              onChange={(e) => setSecs(Number(e.target.value))}
-              className="w-full border-2 border-edge bg-black/50 px-3 py-2 font-term text-xl text-ink focus:border-neon-cyan focus:outline-none"
+    <div className="space-y-6">
+      <div className="page-heading">
+        <Link href="/arena" className="text-xs text-neon-green">
+          ← Back to battles
+        </Link>
+        <p className="eyebrow mt-5">THE RIVALRY WORKSHOP / CURRENT ARENA</p>
+        <h1>Make a little rivalry.</h1>
+        <p>
+          Choose two token contracts and a duration. Review the bond before
+          proposing your battle for audit.
+        </p>
+      </div>
+      <div className="carnival-workspace">
+        <div className="space-y-6">
+          <Card>
+            <CardTitle>01 / Choose communities and duration</CardTitle>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="token-a">Token A (NEP-141 contract id)</Label>
+                <Input
+                  id="token-a"
+                  placeholder="pepe.tkn.testnet"
+                  value={tokenA}
+                  onChange={(e) => setTokenA(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="token-b">Token B (NEP-141 contract id)</Label>
+                <Input
+                  id="token-b"
+                  placeholder="shib.tkn.testnet"
+                  value={tokenB}
+                  onChange={(e) => setTokenB(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="duration">Battle duration</Label>
+                <select
+                  id="duration"
+                  value={secs}
+                  onChange={(e) => setSecs(Number(e.target.value))}
+                  className="w-full rounded-xl border border-edge bg-panel px-4 py-3 font-term text-sm text-ink focus:border-neon-cyan focus:outline-none"
+                >
+                  {DURATIONS.map((d) => (
+                    <option key={d.secs} value={d.secs}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {problem && (
+                <p role="alert" className="text-lg text-neon-red">
+                  {problem}
+                </p>
+              )}
+            </div>
+          </Card>
+
+          <Card className="border-neon-amber">
+            <CardTitle className="text-neon-amber">
+              02 / Review proposal bond
+            </CardTitle>
+            <p className="text-3xl text-neon-amber">
+              {bond === null ? "--" : formatUsdc(bond)}
+            </p>
+            <p className="mt-2 text-lg text-mute">
+              Sent in USDC with the proposal. The agent audits both coins; if
+              the battle fails the audit and is voided, the bond is forfeited.
+            </p>
+          </Card>
+
+          {accountId ? (
+            <Button
+              size="lg"
+              variant="pink"
+              onClick={() => void submit()}
+              disabled={!ready || action.busy || cfg.data?.paused}
             >
-              {DURATIONS.map((d) => (
-                <option key={d.secs} value={d.secs}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {problem && (
+              {action.busy ? "Sending..." : "Propose battle"}
+            </Button>
+          ) : (
+            <Button size="lg" variant="cyan" onClick={() => void signIn()}>
+              Connect wallet to propose
+            </Button>
+          )}
+          {cfg.data?.paused && (
+            <p className="text-lg text-neon-red">The arena is paused.</p>
+          )}
+          {action.error && (
             <p role="alert" className="text-lg text-neon-red">
-              {problem}
+              {action.error}
+            </p>
+          )}
+          {done && (
+            <p className="text-xl text-neon-green">
+              Proposal sent.{" "}
+              <Link href="/arena" className="underline">
+                See it in the arena
+              </Link>
+              .
             </p>
           )}
         </div>
-      </Card>
-
-      <Card className="border-neon-amber">
-        <CardTitle className="text-neon-amber">02 / Review proposal bond</CardTitle>
-        <p className="text-3xl text-neon-amber">
-          {bond === null ? "--" : formatUsdc(bond)}
-        </p>
-        <p className="mt-2 text-lg text-mute">
-          Sent in USDC with the proposal. The agent audits both coins; if the
-          battle fails the audit and is voided, the bond is forfeited.
-        </p>
-      </Card>
-
-      {accountId ? (
-        <Button
-          size="lg"
-          variant="pink"
-          onClick={() => void submit()}
-          disabled={!ready || action.busy || cfg.data?.paused}
-        >
-          {action.busy ? "Sending..." : "Propose battle"}
-        </Button>
-      ) : (
-        <Button size="lg" variant="cyan" onClick={() => void signIn()}>
-          Connect wallet to propose
-        </Button>
-      )}
-      {cfg.data?.paused && (
-        <p className="text-lg text-neon-red">The arena is paused.</p>
-      )}
-      {action.error && (
-        <p role="alert" className="text-lg text-neon-red">
-          {action.error}
-        </p>
-      )}
-      {done && (
-        <p className="text-xl text-neon-green">
-          Proposal sent.{" "}
-          <Link href="/arena" className="underline">
-            See it in the arena
-          </Link>
-          .
-        </p>
-      )}
+        <aside className="carnival-workspace-aside">
+          <CarnivalScene mode="create" />
+          <div className="carnival-aside-copy">
+            <span className="eyebrow text-neon-pink">
+              A LITTLE ASSEMBLY REQUIRED
+            </span>
+            <h2 className="mt-3">From an idea to an audit.</h2>
+            <ol>
+              <li>01 · Choose distinct token contracts.</li>
+              <li>02 · Review the duration and configured USDC bond.</li>
+              <li>03 · Confirm in your wallet and follow the proposal.</li>
+            </ol>
+            <p>
+              The mascot is your decorative workshop host. The current proposal
+              form uses two communities; multi-community creation belongs to the
+              target flow.
+            </p>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

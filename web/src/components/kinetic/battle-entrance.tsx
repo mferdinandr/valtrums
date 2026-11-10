@@ -78,15 +78,15 @@ export function BattleEntrance({
       aria-hidden="true"
       className="battle-portal pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-xl"
     >
-      <div className="portal-left absolute inset-y-0 left-0 w-1/2 border-r border-neon-green/50 bg-[#141d1b] bg-[linear-gradient(125deg,#34432a,transparent)]" />
-      <div className="portal-right absolute inset-y-0 right-0 w-1/2 border-l border-neon-green/50 bg-[#141d1b] bg-[linear-gradient(235deg,#34432a,transparent)]" />
+      <div className="portal-left absolute inset-y-0 left-0 w-1/2 border-r border-neon-green/20 bg-[#e7ecdf]" />
+      <div className="portal-right absolute inset-y-0 right-0 w-1/2 border-l border-neon-pink/20 bg-[#f2dfdc]" />
       <div className="portal-copy absolute inset-0 flex flex-col items-center justify-center text-center">
         <span className="eyebrow text-neon-green">
           {label ?? `Entering battle / ${id.toString().padStart(3, "0")}`}
         </span>
         <span className="mt-4 font-pixel text-2xl sm:text-4xl">{symbols}</span>
         <span className="mt-4 font-mono text-[10px] uppercase tracking-[.3em] text-mute">
-          Welcome to the chamber
+          Your community booth is opening
         </span>
       </div>
     </div>

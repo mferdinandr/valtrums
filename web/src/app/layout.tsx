@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { Providers } from "@/components/providers";
 import { RouteFrame } from "@/components/kinetic/route-frame";
 
 export const metadata: Metadata = {
-  title: "Valtrum | meme-coin liquidity warfare on NEAR",
+  title: "Valtrum | A little rivalry. Big community energy.",
   description:
-    "Pick a tribe, back it with your coins, and take the loser's liquidity.",
+    "A playful fairground for token communities. Explore battles, meet original 3D mascots and review every action before signing.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -25,14 +26,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Navbar />
           <main
             id="main-content"
-            className="mx-auto min-h-[75vh] max-w-[1440px] px-5 py-7 lg:px-10 lg:py-9"
+            className="site-main mx-auto min-h-[75vh] max-w-[1360px] px-5 py-7 lg:px-10 lg:py-9"
           >
             <RouteFrame>{children}</RouteFrame>
           </main>
         </Providers>
-        <footer className="mx-auto mt-12 flex max-w-[1440px] flex-wrap justify-between gap-3 border-t border-edge px-5 py-7 font-pixel text-[10px] uppercase tracking-wider text-mute lg:px-10">
-          <span>Valtrum / Community-powered rivalry</span>
-          <span>Built on NEAR · Testnet experience</span>
+        <footer className="site-footer">
+          <div>
+            <strong>Valtrum ✳</strong>
+            <p>A little rivalry. A lot of community.</p>
+          </div>
+          <nav aria-label="Footer navigation">
+            <Link href="/arena">Battles</Link>
+            <Link href="/arena/preview">3D playground</Link>
+            <Link href="/portfolio">Portfolio</Link>
+          </nav>
+          <p>Built on NEAR · Testnet experience</p>
         </footer>
       </body>
     </html>

@@ -1,5 +1,10 @@
 # Kinetic Arena
 
+> Historical notes for the earlier graphite/mechanical redesign. The current
+> Token Carnival implementation, route matrix, GLB pipeline and verification
+> limits are documented in [CARNIVAL-UI.md](CARNIVAL-UI.md). The old Machine and
+> BattleMachine renderers referenced below have been replaced.
+
 Local UI redesign of the existing Valtrum application. No deployment, migration, contract change or new economic feature is included.
 
 ## Visual system

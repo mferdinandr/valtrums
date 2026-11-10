@@ -65,7 +65,7 @@ export function BattleDeck({
   return (
     <section
       aria-label="Playable battle arena"
-      className="relative overflow-hidden rounded-2xl border border-edge bg-[#161f26]"
+      className="battle-workspace relative overflow-hidden rounded-3xl border border-edge bg-panel"
     >
       <BattleEntrance
         id={battle.id}
@@ -88,7 +88,7 @@ export function BattleDeck({
         )}
       </div>
       <div className="grid xl:grid-cols-[1.6fr_1fr]">
-        <div className="relative min-w-0 bg-[radial-gradient(ellipse_at_center,#344a3433,transparent_70%)]">
+        <div className="relative min-w-0 bg-[#e6f0e6]">
           <div className="pointer-events-none absolute left-5 top-4 z-10 rounded border border-edge bg-void/70 px-3 py-2 text-[10px] uppercase tracking-wider text-mute">
             {battle.status === "Live"
               ? "Battle live / deposits closed"
@@ -108,6 +108,7 @@ export function BattleDeck({
               status: battle.status,
               winner: battle.winner,
               symbols: [metaA.symbol, metaB.symbol],
+              tokenIds: [metaA.id, metaB.id],
               progress,
             }}
           />

@@ -1,0 +1,35 @@
+{
+  "originalAssets": true,
+  "models": [
+    {
+      "mode": "welcome",
+      "bytes": 385580,
+      "triangles": 13168
+    },
+    {
+      "mode": "arena",
+      "bytes": 475028,
+      "triangles": 16132
+    },
+    {
+      "mode": "create",
+      "bytes": 242984,
+      "triangles": 8312
+    },
+    {
+      "mode": "terminal",
+      "bytes": 212860,
+      "triangles": 7062
+    },
+    {
+      "mode": "portfolio",
+      "bytes": 299696,
+      "triangles": 10412
+    },
+    {
+      "mode": "battle",
+      "bytes": 205080,
+      "triangles": 6800
+    }
+  ]
+}

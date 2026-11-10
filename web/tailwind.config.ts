@@ -5,18 +5,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        void: "#101418",
-        panel: "#192126",
-        edge: "#36434a",
+        void: "#fcf7ed",
+        panel: "#fffdf7",
+        edge: "#ded9cd",
         neon: {
-          green: "#d0f570",
-          pink: "#c8a6f7",
-          cyan: "#a7ccc0",
-          amber: "#f0cc86",
-          red: "#ff4d5e",
+          green: "#36775c",
+          pink: "#a64e72",
+          cyan: "#3b7584",
+          amber: "#91682d",
+          red: "#b34550",
         },
-        ink: "#eeefe7",
-        mute: "#acb9bd",
+        ink: "#354358",
+        mute: "#66747e",
       },
       fontFamily: {
         pixel: ['"Space Grotesk"', "sans-serif"],
