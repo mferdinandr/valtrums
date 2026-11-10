@@ -69,6 +69,8 @@ export interface BattleActivity {
   lateDeposits: LateDepositEntry[];
   /** Every event reference for this battle, in canonical order. */
   activity: EventRef[];
+  /** Present only when versioned round events were actually recorded. No inferred past evidence. */
+  rounds?: Record<string, { evidence: import("./round-events.js").RoundEvidenceV1; ref: EventRef; complete: boolean }>;
 }
 
 export interface PayoutActivity {
@@ -210,6 +212,11 @@ export function buildProjection(events: AcceptedEvent[], opts: BuildOptions): Pr
         b.backings[e.community] = { approved: e.approved, evidenceHash: e.evidenceHash, expiresAtMs: e.expiresAtMs, ref };
       } else if (e.name === "late_deposit_recorded") {
         b.lateDeposits.push({ beneficiary: e.beneficiary, refundAddress: e.refundAddress, units: e.units, ref });
+      } else if (e.name === "lifecycle_round_opened_v1" || e.name === "lifecycle_round_pending_v1" || e.name === "lifecycle_round_resolved_v1") {
+        b.rounds ??= {};
+        const prior = b.rounds[e.round.roundId];
+        // A delayed pending/open event cannot replace an already recorded resolution.
+        if (!prior?.complete) b.rounds[e.round.roundId] = { evidence: e.round, ref, complete: e.name === "lifecycle_round_resolved_v1" };
       }
       continue;
     }

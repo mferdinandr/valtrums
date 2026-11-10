@@ -5,6 +5,7 @@ import { queryObservations } from "../audit/report-query.js";
 import type { ReferenceRegistrySource } from "../reference-registry.js";
 import { buildSnapshot } from "../reference-registry.js";
 import { readApplicationBattle, readApplicationRound } from "./application-adapter.js";
+import type { VersionedLifecycleReadSource } from "./application-adapter.js";
 import {
   APPLICATION_SCHEMA, integer, manifestSchema, namespaceKey, namespaceOf, safeId,
   type ApplicationBattleSummary, type ApplicationEnvelope, type Capability, type Deployment, type Namespace,
@@ -14,6 +15,7 @@ import { DEFAULT_LIMIT, MAX_SCAN, parseSearchParams, SearchValidationError } fro
 
 export interface ApplicationBinding {
   source?: ArenaReadSource;
+  versioned?: VersionedLifecycleReadSource;
   registry?: ReferenceRegistrySource;
   /** Archive v1 lacks network/protocol: require an explicit, deployment-bound producer handoff. */
   audits?: { archive: Pick<ReportArchive, "snapshot">; namespace: Namespace };
@@ -53,7 +55,7 @@ export class ApplicationReads {
       else if (key === "assets" && !binding?.registry) { c.enabled = false; c.reasons.push("trusted reference registry unavailable"); }
       else if (key === "audits" && !binding?.audits) { c.enabled = false; c.reasons.push("archive namespace handoff unavailable (#145)"); }
     }
-    return { ...d, capabilities, canonicalDiscovery: { enabled: false, reasons: ["safe versioned views and verified live canonical projection required (#144)"] } };
+    return { ...d, capabilities, canonicalDiscovery: { enabled: false, reasons: ["verified deployment and complete live canonical projection coverage required (#144/#80)"] } };
   }
 
   private envelope<T>(d: Deployment, data: T, reasons: string[], snapshot: string | null = null,
@@ -119,8 +121,8 @@ export class ApplicationReads {
     if (path === "health") {
       const availability = this.availability(d);
       const probes: Array<[Capability, () => Promise<unknown>]> = [
-        ["battles", async () => integer(await binding.source!.battleCount())],
-        ["detail", async () => integer(await binding.source!.battleCount())],
+        ["battles", async () => binding.versioned ? binding.versioned.count() : integer(await binding.source!.battleCount())],
+        ["detail", async () => binding.versioned ? binding.versioned.count() : integer(await binding.source!.battleCount())],
         ["assets", async () => binding.registry!.load()],
         ["audits", async () => binding.audits!.archive.snapshot()],
       ];
@@ -136,13 +138,13 @@ export class ApplicationReads {
       const { cursor: _cursor, ...filters } = params;
       const q = parseSearchParams(filters);
       const source = binding.source!;
-      const count = integer(await source.battleCount());
-      if (BigInt(count) > BigInt(Number.MAX_SAFE_INTEGER)) throw new ApplicationError(422, "unsupported_boundary", "safe count view required (#144)");
+      const count = binding.versioned ? await binding.versioned.count() : integer(await source.battleCount());
+      if (!binding.versioned && BigInt(count) > BigInt(Number.MAX_SAFE_INTEGER)) throw new ApplicationError(422, "unsupported_boundary", "safe count view required (#144)");
       const items: ApplicationBattleSummary[] = [];
-      for (let id = Number(count), scanned = 0; id >= 1 && scanned < MAX_SCAN; id--, scanned++) {
-        const b = await readApplicationBattle(source, String(id));
+      for (let id = BigInt(count), scanned = 0; id >= 1n && scanned < MAX_SCAN; id--, scanned++) {
+        const b = binding.versioned ? await binding.versioned.battle(String(id)) : await readApplicationBattle(source, String(id));
         if (!b) continue;
-        const round = b.locked ? await readApplicationRound(source, String(id)) : null;
+        const round = b.locked ? binding.versioned ? await binding.versioned.round(String(id)) : await readApplicationRound(source, String(id)) : null;
         const winner = round?.winner ?? null;
         const status = !b.locked ? "open" : winner === null ? "locked" : "decided";
         items.push({ battleId: String(id), creator: b.creator, mode: b.mode, status, winner,
@@ -152,7 +154,7 @@ export class ApplicationReads {
         (!q.community || b.communities.some((c) => c.representation === q.community)) &&
         (!q.q || [b.battleId, b.creator, ...b.communities.flatMap((c) => [c.representation, c.tokenAddress])].some((v) => v.toLowerCase().includes(q.q!))));
       const page = this.paginate(filtered, params, d, path, [count, items]);
-      page.data.truncated = Number(count) > MAX_SCAN;
+      page.data.truncated = BigInt(count) > BigInt(MAX_SCAN);
       return this.envelope(d, page.data, [...partial, ...(page.data.truncated ? ["only latest 200 battle IDs searched; older discovery requires #144"] : [])], page.snapshot);
     }
     if (capability === "assets") {
@@ -170,7 +172,8 @@ export class ApplicationReads {
       return this.envelope(d, page.data, [...partial, "registry membership is not current audit, backing or deposit eligibility"], page.snapshot);
     }
     const id = path.split("/")[1]!;
-    try { safeId(id); } catch { throw new ApplicationError(422, "unsupported_boundary", "safe lifecycle ID view required (#144)"); }
+    try { integer(id); if (!binding.versioned || capability === "audits") safeId(id); }
+    catch { throw new ApplicationError(422, "unsupported_boundary", capability === "audits" ? "archive v1 only supports safe numeric battle IDs" : "safe lifecycle ID view required (#144)"); }
     if (capability === "audits") {
       const query = parseSearchParams({ limit: params.limit });
       const community = params.community === undefined ? undefined : Number(params.community);
@@ -187,15 +190,20 @@ export class ApplicationReads {
       response.provenance.watermark = selected.length ? integer(selected.reduce((max, o) => Math.max(max, o.seq), 0)) : null;
       return response;
     }
-    const battle = await readApplicationBattle(binding.source!, id);
+    const battle = binding.versioned ? await binding.versioned.battle(id) : await readApplicationBattle(binding.source!, id);
     if (!battle) throw new ApplicationError(404, "not_found", "battle not found");
     let round = null;
-    const reasons = [...partial, "activation/config/backing readiness and exact-score/window history unavailable (#144)"];
+    const reasons = [...partial, "exact-score/window history requires qualified versioned event backfill"];
     if (battle.locked) {
-      try { round = await readApplicationRound(binding.source!, id); if (!round) reasons.push("current round unavailable"); }
+      try { round = binding.versioned ? await binding.versioned.round(id) : await readApplicationRound(binding.source!, id); if (!round) reasons.push("current round unavailable"); }
       catch { reasons.push("current round read failed"); }
     }
-    return this.envelope(d, { battleId: id, battle, round, readiness: null, history: null }, reasons);
+    let readiness = null; let history = null;
+    if (binding.versioned) {
+      try { readiness = await binding.versioned.readiness(id); } catch { reasons.push("versioned readiness read unavailable"); }
+      try { history = await binding.versioned.history(id); } catch { reasons.push("stored history read unavailable"); }
+    } else reasons.push("versioned activation/config/backing readiness unavailable");
+    return this.envelope(d, { battleId: id, battle, round, readiness, history }, reasons);
   }
 }
 

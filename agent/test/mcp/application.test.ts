@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApplicationReads, handleApplicationRead, type ApplicationBinding } from "../../src/mcp/application.js";
 import { integer, manifestSchema, namespaceOf, type Deployment } from "../../src/mcp/application-contract.js";
-import { battleSchema } from "../../src/mcp/application-adapter.js";
+import { battleSchema, VersionedLifecycleReadSource } from "../../src/mcp/application-adapter.js";
 import { FixtureArenaReadSource, NearArenaReadSource } from "../../src/mcp/read-source.js";
 import { staticReferenceRegistry } from "../../src/reference-registry.js";
 import { InMemoryReportArchive } from "../../src/audit/report-archive.js";
@@ -26,6 +26,28 @@ const invoke = async (s: ApplicationReads, path = "battles", p = params()) => {
 const service = (d = deployment(), binding: ApplicationBinding = { source: makeSource() }) => new ApplicationReads([d], new Map([[d.deploymentId, binding]]), () => NOW);
 
 describe("application boundary", () => {
+  it("uses the opted-in string-ID ABI beyond JS safe range without legacy lookup", async () => {
+    const id = "18446744073709551615";
+    const source = makeSource(); const legacyLookup = vi.spyOn(source, "battle");
+    const view = vi.fn(async (_contract: string, method: string, args: Record<string, unknown>) => {
+      if (method === "get_lifecycle_battle_count_v1") return id;
+      if (method === "get_lifecycle_battle_v1") return args.battle_id === id ? battle() : null;
+      if (method === "get_lifecycle_round_history_v1") return null;
+      if (method === "get_lifecycle_readiness_v1") return { schema_version: "lifecycle-application-v1", block_height: id, observed_at_ms: "1", activated: false, paused: false,
+        legacy_battle_count: "0", activation_blocked_by_legacy: false, protocol: null, oracle: null, audit_policy_hash: null, observation_policy: null, battle_found: true, backings: [] };
+      throw new Error("unknown view");
+    });
+    const s = service(undefined, { source, versioned: new VersionedLifecycleReadSource("arena.testnet", view) });
+    const page = await invoke(s);
+    expect(page.body.data.items[0].battleId).toBe(id);
+    const detail = await invoke(s, `battles/${id}`);
+    expect(detail.status).toBe(200); expect(detail.body.data.readiness.block_height).toBe(id);
+    expect(legacyLookup).not.toHaveBeenCalled();
+    expect(view).toHaveBeenCalledWith("arena.testnet", "get_lifecycle_battle_v1", { battle_id: id });
+    view.mockRejectedValue(new Error("MethodNotFound"));
+    expect((await invoke(s, `battles/${id}`)).status).toBe(503);
+    expect(legacyLookup).not.toHaveBeenCalled();
+  });
   it("preserves exact integers and rejects rounded, signed, exponent and overflowing boundaries", () => {
     expect(integer("18446744073709551615")).toBe("18446744073709551615");
     expect(integer("340282366920938463463374607431768211455", 128)).toHaveLength(39);

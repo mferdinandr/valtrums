@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import type { ViewFn } from "./read-source.js";
 import { FixtureArenaReadSource, NearArenaReadSource } from "./read-source.js";
-import { battleSchema, roundSchema } from "./application-adapter.js";
+import { battleSchema, roundSchema, VersionedLifecycleReadSource } from "./application-adapter.js";
 import { manifestSchema, namespaceKey, namespaceOf, safeId } from "./application-contract.js";
 import { ApplicationReads, type ApplicationBinding } from "./application.js";
 import { NearReferenceRegistrySource, staticReferenceRegistry } from "../reference-registry.js";
@@ -24,6 +24,7 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
     if (d.protocol === "lifecycle-v2" && d.adapter === "rpc") {
       const view = views(d.network === "near-testnet" ? "testnet" : "mainnet");
       binding = {
+        ...(d.abi.version === "lifecycle-application-v1" ? { versioned: new VersionedLifecycleReadSource(d.arenaContract, view) } : {}),
         source: new NearArenaReadSource({ network: d.network, kind: "live", name: d.arenaContract }, view, { arena: d.arenaContract, payout: d.companions.payout }),
         ...(d.companions.registry === d.arenaContract ? { registry: new NearReferenceRegistrySource(d.arenaContract, { view: async <T>(c: string, m: string, a: Record<string, unknown>) => await view(c, m, a) as T }) } : {}),
       };

@@ -10,13 +10,15 @@
  * so u64 values never lose precision through a JavaScript number.
  */
 
-/** Identity of a block source. `recorded` is a fixture/replay source; `live` is a future adapter. */
+/** Identity of a block source. Source kind never upgrades recorded assertions into live evidence. */
 export interface SourceIdentity {
   /** Domain/network identity, e.g. "near-testnet". Part of every dedup key and projection namespace. */
   network: string;
   sourceType: "recorded" | "live";
   /** Optional declared genesis/start-domain anchor; recorded sources may omit it. */
   genesis?: string;
+  provider?: string;
+  qualification?: string;
 }
 
 /** A height+hash reference to a block (height is a decimal string). */
@@ -63,7 +65,7 @@ export type BlockAt =
   | { kind: "incomplete" } // a block exists but its data is not fully available
   | { kind: "beyond_head" }; // the height is above the source's latest head
 
-/** Injectable read-only source. A recorded source and a future live adapter implement this alike. */
+/** Injectable read-only source, shared by recorded replay and the qualified live adapter. */
 export interface BlockSource {
   identity(): SourceIdentity;
   /** The source's declared latest and finalized heads (finality is a source assertion). */
@@ -74,6 +76,8 @@ export interface BlockSource {
 
 /** Persisted indexer configuration. Reopening a store under a conflicting config is rejected. */
 export interface IndexerConfig {
+  /** Live provider/genesis binding. Missing on historical recorded stores. */
+  sourceFingerprint?: string;
   network: string;
   /** Allowlisted originating/executing contract accounts. */
   contracts: string[];
@@ -99,7 +103,9 @@ export interface IndexerConfig {
  * Any other event from an allowlisted emitter is reported as `unknown_event` (a degraded status),
  * never silently dropped.
  */
-export type SupportedEventName =
+import type { RoundEventName, RoundEvidenceV1 } from "./round-events.js";
+
+export type SupportedEventName = RoundEventName
   | "lifecycle_battle_created"
   | "audit_updated"
   | "lifecycle_deposit"
@@ -118,6 +124,7 @@ export type SupportedEventName =
   | "payout_state_changed";
 
 export const SUPPORTED_EVENTS: readonly SupportedEventName[] = [
+  "lifecycle_round_opened_v1", "lifecycle_round_pending_v1", "lifecycle_round_resolved_v1",
   "lifecycle_battle_created",
   "audit_updated",
   "lifecycle_deposit",
@@ -167,6 +174,7 @@ interface EventCommon {
 }
 
 export type AcceptedEvent =
+  | (EventCommon & { name: RoundEventName; battleId: string; round: RoundEvidenceV1 })
   | (EventCommon & { name: "lifecycle_battle_created"; battleId: string; creator: string })
   | (EventCommon & {
       name: "audit_updated";

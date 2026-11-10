@@ -1,4 +1,5 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { roundEvidenceSchema } from "./round-events.js";
 import { join } from "node:path";
 import { eventPayloadDigest } from "./parser.js";
 import { eventsDigestUpTo, type RetentionCheckpoint } from "./retention.js";
@@ -252,7 +253,7 @@ export class JsonFileIndexerStore {
 }
 
 function assertCompatibleConfig(stored: IndexerConfig, incoming: IndexerConfig): void {
-  const scalar: (keyof IndexerConfig)[] = ["network", "standard", "schemaVersion", "reducerVersion", "anchorHash", "anchorHeight"];
+  const scalar: (keyof IndexerConfig)[] = ["network", "standard", "schemaVersion", "reducerVersion", "anchorHash", "anchorHeight", "sourceFingerprint"];
   for (const k of scalar) {
     if (stored[k] !== incoming[k]) throw new StoreConfigConflictError(k);
   }
@@ -293,6 +294,7 @@ function counter(value: unknown): value is number {
  * operator rewriting both data and checksums. The source remains a declared trust boundary. */
 function validateState(state: StoreState): void {
   const cfg = record(state.config, "config");
+  check(cfg.sourceFingerprint === undefined || typeof cfg.sourceFingerprint === "string" && /^[0-9a-f]{64}$/.test(cfg.sourceFingerprint), "invalid source fingerprint");
   for (const key of ["network", "standard", "schemaVersion", "reducerVersion"]) check(text(cfg[key]), `invalid config ${key}`);
   check(decimal(cfg.anchorHeight) && (cfg.anchorHash === null || text(cfg.anchorHash)), "invalid start anchor");
   check(counter(cfg.retainedDepth), "invalid retained depth");
@@ -394,6 +396,13 @@ function validateState(state: StoreState): void {
     else if (name === "payout_signature_received") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && hex64(e.txHash) && decimal(e.maxFeePerGas), "invalid payout signature");
     else if (name === "payout_signature_failed") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && decimal(e.maxFeePerGas), "invalid payout signature failure");
     else if (name === "payout_state_changed") check(acct(e.backing) && acct(e.holder) && hex64(e.requestId) && (e.from === null || text(e.from)) && text(e.to) && (e.reason === null || text(e.reason)), "invalid payout state");
+    else if (["lifecycle_round_opened_v1", "lifecycle_round_pending_v1", "lifecycle_round_resolved_v1"].includes(name)) {
+      check(decimal(e.battleId) && roundEvidenceSchema.safeParse(e.round).success, "invalid round evidence");
+      const round = e.round as { outcome: { type: string } | null; scores: unknown };
+      check(name === "lifecycle_round_opened_v1" ? round.outcome === null && round.scores === null
+        : name === "lifecycle_round_pending_v1" ? round.outcome?.type === "pending" && round.scores === null
+          : round.outcome !== null && round.outcome.type !== "pending" && Array.isArray(round.scores), "invalid round outcome");
+    }
     else check(false, "unsupported journal event");
     check(typeof e.payloadDigest === "string" && /^[0-9a-f]{64}$/.test(e.payloadDigest) && eventPayloadDigest(raw) === e.payloadDigest, "journal payload digest mismatch");
   }
