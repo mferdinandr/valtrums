@@ -110,6 +110,9 @@ Assumptions and limits of this mode:
 | `INDEXER_STATE_DIR` | `./.agent-state/indexer` | indexer state directory (single writer) |
 | `INDEXER_RETENTION_DEPTH` | `10000` | finalized blocks kept behind the finalized head; older ones become a hashed summary checkpoint and are pruned (provisional blocks and dedup keys never are) |
 | `INDEXER_ANCHOR_HEIGHT`, `INDEXER_ANCHOR_HASH` | lowest recorded height, genesis | declared start of the processed chain |
+| `INDEXER_SOURCE` | `recorded` | `near-data` selects the live, finalized-only NEAR Data source (cross-checked against an archival RPC header per block). Never combined with `INDEXER_RECORDED_CHAIN`; finality and completeness are provider-declared, not a cryptographic proof. Setup, trust limits and a full example: `docs/openspec/changes/arena-testnet-integrations/live-source-handoff.md` |
+| `INDEXER_GENESIS_HEIGHT`, `INDEXER_GENESIS_HASH`, `INDEXER_PROVIDER_EVIDENCE` | unset | required with `near-data`: the pinned genesis block and the reviewed provider qualification record (a path or short reference). `INDEXER_ANCHOR_HEIGHT` and `INDEXER_ANCHOR_HASH` (parent hash of the first block) are also required |
+| `INDEXER_NEARDATA_URL`, `NEAR_RPC_URL` | `https://<network>.neardata.xyz`, `https://archival-rpc.<network>.near.org` | HTTPS origins without credentials, query or redirects; live mode reads at most 20 blocks per pass |
 
 The indexer has no write authority and an indexer failure never blocks settlement or payout passes.
 
