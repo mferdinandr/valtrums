@@ -24,3 +24,12 @@ Check tasks only after implementation and verification. Player authorization and
 - [x] Test changed recipient, amount, policy or expired preview and revoked or missing authorization. (`agent/test/mcp/actions.test.ts`)
 - [x] Test broadcast hash remains pending until verified receipt and unsupported routes submit no funds. (`agent/test/mcp/actions.test.ts`, `web/src/lib/terminal/actions.test.ts`)
 - [x] Test backend search parameters, debounce, cancellation and stale-response protection where search is provided.
+
+## Lifecycle terminal UI
+
+- [x] Specify the lifecycle intent terminal requirements and scenarios (this change).
+- [ ] Strict lifecycle intent model and mapping to action requests (`web/src/lib/terminal/lifecycle-intent.ts`).
+- [ ] Rule parser (English and Bahasa Indonesia), asset resolution through the backend registry search, and the optional model parser behind `/api/terminal/lifecycle`.
+- [ ] Terminal UI replacing the A/B terminal: prompt, intent summary, reviewed call, preview/compare/authorize/sign, verified receipt, separate deposit credit read.
+- [ ] Payout intent reviewed with submission disabled and the specific reason (blocked on #148 and an exposed entitlement).
+- [ ] Unit tests (parsers, hostile model output, amount edges, 2 to 16 communities, unresolved assets, mapping, route with a fake model fetch) and a Brave e2e on the fixture service.
