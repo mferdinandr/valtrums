@@ -38,6 +38,17 @@ export interface CreateArgs {
   mode: ScoringMode;
 }
 
+/** What a wallet will be asked to sign, in the shape the preview comparison needs (create, register and deposit). */
+export interface CallReview {
+  receiver: string;
+  method: string;
+  args: unknown;
+  depositYocto: string;
+  gasTgas: string;
+  lines: Array<{ label: string; value: string }>;
+  notes: string[];
+}
+
 export type ReviewResult =
   | { ok: true; args: CreateArgs; method: "create_lifecycle_battle"; receiver: string; depositYocto: string; gasTgas: string; lines: Array<{ label: string; value: string }>; notes: string[] }
   | { ok: false; problems: string[] };
@@ -126,7 +137,7 @@ const canonical = (v: unknown): string =>
  * An empty list means the service will ask the wallet to sign exactly the reviewed call; anything else
  * must stop the flow before any authorization is requested.
  */
-export function previewMismatches(preview: PreviewLike, review: Extract<ReviewResult, { ok: true }>, account: string): string[] {
+export function previewMismatches(preview: PreviewLike, review: CallReview, account: string): string[] {
   const out: string[] = [];
   const tx = preview.transaction;
   if (!tx) return ["the preview has no transaction"];

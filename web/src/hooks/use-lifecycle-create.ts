@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
 import { ActionSession, createActionWallet } from "@/lib/arena-read/action-session";
 import { previewCreate } from "@/lib/arena-read/create-flow";
-import type { ReviewResult } from "@/lib/arena-read/create-review";
+import { readCredit } from "@/lib/arena-read/deposit-flow";
+import type { CallReview } from "@/lib/arena-read/create-review";
 import { executeTerminalAction, type ActionRunResult, type PreviewedAction } from "@/lib/terminal/actions";
 
 export type CreateFlow =
@@ -18,12 +19,12 @@ export type CreateFlow =
   | { step: "error"; message: string };
 
 /**
- * Drives preview, comparison and execution of a create_lifecycle_battle action. The session token stays in
+ * Drives preview, comparison and execution of one reviewed action (create, register or deposit). The session token stays in
  * memory only. The flow cannot reach authorization unless the server's preview equals the reviewed call, and
  * a wallet rejection or an error leaves the review untouched so the user can retry. Nothing here retries a
  * broadcast on its own.
  */
-export function useLifecycleCreate(request: Record<string, unknown>, review: Extract<ReviewResult, { ok: true }> | null) {
+export function useLifecycleCreate(request: Record<string, unknown>, review: CallReview | null) {
   const { accountId } = useWallet();
   const getWallet = useActionWallet();
   const [flow, setFlow] = useState<CreateFlow>({ step: "idle" });
@@ -68,5 +69,14 @@ export function useLifecycleCreate(request: Record<string, unknown>, review: Ext
   }, [flow, deps]);
 
   const reset = useCallback(() => setFlow({ step: "idle" }), []);
-  return { flow, preview, execute, reset, connected: !!accountId && !!getWallet };
+  /** The account's position as the arena reports it, read through the action status. Null when unavailable. */
+  const readPosition = useCallback(async (actionId: string) => {
+    try {
+      const { token, wallet } = await deps();
+      return await readCredit(actionId, { session: token, wallet });
+    } catch {
+      return null;
+    }
+  }, [deps]);
+  return { flow, preview, execute, reset, readPosition, connected: !!accountId && !!getWallet };
 }

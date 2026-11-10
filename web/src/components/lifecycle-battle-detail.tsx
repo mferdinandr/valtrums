@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
+import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { useLifecycleBattle } from "@/hooks/use-lifecycle-battle";
 import { useNow } from "@/hooks/use-now";
@@ -15,8 +16,8 @@ const when = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(
 /**
  * Authoritative lifecycle battle detail. Everything shown is a contract read or a labeled derivation:
  * the clock can say a recorded window has ended ("awaiting resolution") but never who won, and no demo
- * or legacy data is shown when a read fails. Actions are not offered here: eligibility reasons are listed
- * instead, and creating or funding a battle needs the reviewed wallet flow.
+ * or legacy data is shown when a read fails. Registration and deposit are offered only through the reviewed wallet flow
+ * (`LifecycleParticipate`); eligibility reasons are listed here.
  */
 export function LifecycleBattleDetail({ namespace, battleId }: { namespace: Namespace; battleId: string }) {
   const { data, loading, error, stale } = useLifecycleBattle(namespace, battleId);
@@ -92,6 +93,8 @@ export function LifecycleBattleDetail({ namespace, battleId }: { namespace: Name
       {blockers.length > 0 && (
         <Card><CardTitle>Arena readiness</CardTitle><ul className="list-disc pl-4 text-sm text-neon-amber">{blockers.map((b) => <li key={b}>{b}</li>)}</ul></Card>
       )}
+
+      <LifecycleParticipate namespace={namespace} battleId={Number(detail.battleId)} communities={rows.map((r) => ({ index: r.index, representation: r.representation }))} locked={detail.battle.locked} />
 
       {detail.battle.locked && (
         <Card><CardTitle>Round observations</CardTitle><ObservationChart namespace={namespace} battleId={detail.battleId} /></Card>

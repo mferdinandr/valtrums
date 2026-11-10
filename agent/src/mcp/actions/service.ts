@@ -249,7 +249,7 @@ export class ActionService {
     const battleId = typeof binding.battleId === "number" ? binding.battleId : null;
     const community = typeof binding.community === "number" ? binding.community : null;
     const position =
-      record.preview.kind === "deposit" && battleId !== null && community !== null
+      (record.preview.kind === "deposit" || record.preview.kind === "register_position") && battleId !== null && community !== null
         ? await this.deps.source.position(battleId, community, record.preview.accountId)
         : null;
     const grant = await this.grantState(record);

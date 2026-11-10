@@ -94,3 +94,30 @@ test("the battle detail does not overflow horizontally on a narrow screen", asyn
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test("an open battle shows the exact register and deposit calls and sends no action request before the user asks", async ({ page }) => {
+  const actionCalls: string[] = [];
+  page.on("request", (r) => { if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) actionCalls.push(r.url()); });
+  await page.goto("/arena/1");
+  await expect(page.getByText("1 · REGISTER A POSITION (STORAGE, NOT A STAKE)")).toBeVisible();
+  await expect(page.getByText("register_lifecycle_position")).toBeVisible();
+  await expect(page.getByText("The deposit pays for storage; it is not a stake.")).toBeVisible();
+  // The deposit review stays blocked until a valid exact integer amount is typed.
+  await expect(page.getByText("amount must be a positive integer in token base units")).toBeVisible();
+  await page.getByLabel("Deposit amount").fill("1.5");
+  await expect(page.getByText("amount must be a positive integer in token base units")).toBeVisible();
+  await page.getByLabel("Deposit amount").fill("250");
+  await expect(page.getByText("ft_transfer_call", { exact: true })).toBeVisible();
+  await expect(page.getByText("250 base units")).toBeVisible();
+  await expect(page.getByText("A confirmed transaction is not a credited position", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Community 2" }).click();
+  await expect(page.getByText("#1 / community 2").first()).toBeVisible();
+  expect(actionCalls).toEqual([]);
+});
+
+test("a locked battle offers no registration or deposit", async ({ page }) => {
+  await page.goto("/arena/2");
+  await expect(page.getByText("This battle is locked. Positions can no longer be registered")).toBeVisible();
+  await expect(page.getByText("register_lifecycle_position")).toHaveCount(0);
+  await expect(page.getByLabel("Deposit amount")).toHaveCount(0);
+});

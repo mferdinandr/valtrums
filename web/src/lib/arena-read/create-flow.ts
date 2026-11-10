@@ -1,4 +1,4 @@
-import { previewMismatches, type ReviewResult } from "./create-review";
+import { previewMismatches, type CallReview } from "./create-review";
 import { previewTerminalAction, type ActionClientDeps, type PreviewedAction } from "@/lib/terminal/actions";
 
 export type PreviewOutcome =
@@ -12,7 +12,7 @@ export type PreviewOutcome =
  * is asked for anything.
  */
 export async function previewCreate(
-  request: Record<string, unknown>, review: Extract<ReviewResult, { ok: true }>, account: string, deps: ActionClientDeps,
+  request: Record<string, unknown>, review: CallReview, account: string, deps: ActionClientDeps,
 ): Promise<PreviewOutcome> {
   const previewed = await previewTerminalAction(request, deps);
   const reasons = previewMismatches(previewed.record.preview as never, review, account);

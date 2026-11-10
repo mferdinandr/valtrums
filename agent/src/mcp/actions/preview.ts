@@ -28,8 +28,10 @@ const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
 const PAYOUT_REQUEST_DEPOSIT_YOCTO = "30000000000000000000000";
 /** `reserve` storage deposit for a grant reservation; unused part refunded. */
 const RESERVE_DEPOSIT_YOCTO = "10000000000000000000000";
+/** `register_lifecycle_position` storage deposit upper bound (0.01 NEAR); the arena charges actual storage and refunds the rest. */
+const REGISTER_DEPOSIT_YOCTO = "10000000000000000000000";
 
-export type ActionKind = "create_battle" | "deposit" | "payout";
+export type ActionKind = "create_battle" | "register_position" | "deposit" | "payout";
 export const SUPPORTED_FUNDING_ROUTES = ["direct"] as const;
 
 /**
@@ -61,6 +63,7 @@ export interface GrantRequest {
 
 export type ActionRequest =
   | { kind: "create_battle"; assets: AssetRequest[]; mode: ScoringMode }
+  | { kind: "register_position"; battleId: number; community: number }
   | {
       kind: "deposit";
       battleId: number;
@@ -125,6 +128,7 @@ export type ActionErrorCode =
   | "audit_expired"
   | "backing_missing"
   | "not_registered"
+  | "already_registered"
   | "insufficient_balance"
   | "insufficient_entitlement"
   | "grant_invalid"
@@ -181,11 +185,12 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
   if (!r || typeof r !== "object" || Array.isArray(r)) return fail("invalid_request", "request must be an object");
   const allowed: Record<string, string[]> = {
     create_battle: ["kind", "assets", "mode"],
+    register_position: ["kind", "battleId", "community"],
     deposit: ["kind", "battleId", "community", "amount", "route", "grant", "requestId"],
     payout: ["kind", "backing", "amount", "destination", "requestId", "grant"],
   };
   const keys = allowed[String(r.kind)];
-  if (!keys) return fail("invalid_request", "kind must be create_battle, deposit or payout");
+  if (!keys) return fail("invalid_request", "kind must be create_battle, register_position, deposit or payout");
   for (const k of Object.keys(r)) if (!keys.includes(k)) fail("invalid_request", `unknown field: ${k}`);
   if (r.kind === "create_battle") {
     if (!Array.isArray(r.assets) || r.assets.length < 2 || r.assets.length > 16) {
@@ -212,6 +217,13 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
       };
     });
     return { kind: "create_battle", assets, mode: r.mode as ScoringMode };
+  }
+  if (r.kind === "register_position") {
+    const battleId = Number(r.battleId);
+    const community = Number(r.community);
+    if (!Number.isSafeInteger(battleId) || battleId < 1) fail("invalid_request", "battleId must be a positive integer");
+    if (!Number.isSafeInteger(community) || community < 0 || community > 15) fail("invalid_request", "community must be 0 to 15");
+    return { kind: "register_position", battleId, community };
   }
   if (r.kind === "deposit") {
     const battleId = Number(r.battleId);
@@ -318,6 +330,31 @@ export async function buildPreview(
         actions: [{ type: "FunctionCall", methodName: "create_lifecycle_battle", args: { assets, mode: request.mode }, gas: gasUnits, deposit: CREATE_DEPOSIT_YOCTO }],
       },
       limitations: [...limitations, "the arena still validates the assets and the reference registry at creation"],
+    };
+  }
+
+  if (request.kind === "register_position") {
+    const battle = await source.battle(request.battleId);
+    if (!battle) return fail("battle_not_found", `battle ${request.battleId} not found`);
+    if (battle.locked) fail("battle_locked", "the battle is locked; positions can no longer be registered");
+    const community = battle.communities[request.community];
+    if (!community) return fail("invalid_request", `battle ${request.battleId} has no community ${request.community}`);
+    const position = await source.position(request.battleId, request.community, caller);
+    if (position.registered) fail("already_registered", "this account already has a position in this community");
+    return {
+      ...base,
+      kind: "register_position",
+      accountId: caller,
+      signerId: caller,
+      authorization: "user_signature",
+      binding: { arena: ctx.arena, battleId: request.battleId, community: request.community },
+      costs: { attachedDepositYocto: REGISTER_DEPOSIT_YOCTO, gasTgas: "30", notes: ["storage payment only, not a stake: the arena keeps actual storage and refunds the rest", "a deposit needs a registered position first"] },
+      transaction: {
+        signerId: caller,
+        receiverId: ctx.arena,
+        actions: [{ type: "FunctionCall", methodName: "register_lifecycle_position", args: { battle_id: request.battleId, community: request.community }, gas: gas(30n), deposit: REGISTER_DEPOSIT_YOCTO }],
+      },
+      limitations: [...limitations, "registering moves no tokens; the position is credited only after a deposit is accepted"],
     };
   }
 

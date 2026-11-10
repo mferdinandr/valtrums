@@ -292,3 +292,41 @@ describe("payout display states", () => {
 it("ActionError carries a machine-readable code", () => {
   expect(new ActionError("unsupported_route", "x").code).toBe("unsupported_route");
 });
+
+describe("register_position", () => {
+  const register = (over: Record<string, unknown> = {}) => ({ kind: "register_position", battleId: 1, community: 0, ...over });
+
+  it("prepares only the storage registration call, with an upper-bound deposit", async () => {
+    const preview = await buildPreview(validateRequest(register()), "bob.testnet", source, ctx, NOW);
+    expect(preview.kind).toBe("register_position");
+    expect(preview.authorization).toBe("user_signature");
+    expect(preview.accountId).toBe("bob.testnet");
+    expect(preview.transaction).toMatchObject({
+      signerId: "bob.testnet",
+      receiverId: "arena.testnet",
+      actions: [{ methodName: "register_lifecycle_position", args: { battle_id: 1, community: 0 } }],
+    });
+    expect(preview.transaction.actions).toHaveLength(1);
+    expect(BigInt(preview.transaction.actions[0]!.deposit)).toBeGreaterThan(0n);
+    expect(preview.costs.notes.join(" ")).toMatch(/storage/);
+  });
+
+  it("rejects extra fields, a grant and unknown communities", async () => {
+    expect(() => validateRequest(register({ amount: "5" }))).toThrow(/unknown field/);
+    expect(() => validateRequest(register({ grant: {} }))).toThrow(/unknown field/);
+    expect(() => validateRequest(register({ community: 16 }))).toThrow(/community/);
+    await expect(buildPreview(validateRequest(register({ community: 9 })), "bob.testnet", source, ctx, NOW)).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("refuses a missing or locked battle and an already registered position", async () => {
+    await expect(buildPreview(validateRequest(register({ battleId: 77 })), "bob.testnet", source, ctx, NOW)).rejects.toMatchObject({ code: "battle_not_found" });
+    await expect(buildPreview(validateRequest(register({ battleId: 2 })), "bob.testnet", source, ctx, NOW)).rejects.toMatchObject({ code: "battle_locked" });
+    await expect(buildPreview(validateRequest(register()), "alice.testnet", source, ctx, NOW)).rejects.toMatchObject({ code: "already_registered" });
+  });
+
+  it("reports the position in the action attribution", async () => {
+    const record = await service.preview("bob.testnet", register());
+    const attribution = await service.attribution(record.actionId, "bob.testnet");
+    expect(attribution).toMatchObject({ battleId: 1, community: 0, position: { registered: false } });
+  });
+});

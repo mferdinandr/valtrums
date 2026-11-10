@@ -35,7 +35,7 @@ export const ACTION_TOOLS: readonly ActionTool[] = [
   {
     name: "preview_action",
     description:
-      "Build a canonical, hashed preview of create_battle, deposit or payout for the session account (or, with a grant, " +
+      "Build a canonical, hashed preview of create_battle, register_position, deposit or payout for the session account (or, with a grant, " +
       "for the grant user with the session as delegate). Returns the action id, preview hash and expiry; moves nothing.",
     inputSchema: { type: "object", properties: { ...session, request: { type: "object" } }, required: ["session", "request"], additionalProperties: false },
     run: (args, actions, caller) => actions.preview(caller, args.request),
