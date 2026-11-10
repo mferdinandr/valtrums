@@ -17,6 +17,8 @@
     "audit:report:list": "node dist/audit/report-cli.js list",
     "audit:report:get": "node dist/audit/report-cli.js get",
     "audit:report:seed-demo": "node dist/audit/report-cli.js seed-demo",
+    "payout:relayer": "node dist/payout-role-main.js relayer",
+    "payout:operator": "node dist/payout-role-main.js operator",
     "read:mcp": "node dist/mcp/cli.js mcp",
     "read:serve": "node dist/mcp/cli.js http",
     "intents:fixture": "node dist/intents-fixture/cli.js"
