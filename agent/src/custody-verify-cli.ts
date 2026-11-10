@@ -3,9 +3,10 @@
  * JSON timeline of verdicts until the receipt is verified, rejected or the wait expires.
  * It signs and sends nothing and holds no secrets. The RPC URL is never printed.
  *
- *   node dist/custody-verify-cli.js --rpc <url> --tx <hash> --log-index <n> --token <addr> --custody <addr>
- *     --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30] [--max-depth 256] [--state-rpc <url>]
+ *   node dist/custody-verify-cli.js --rpc <url> --tx <hash> --log-index <n> --token <addr> --custody <addr> --holder <addr>
+ *     --payout-sender <addr> --mapping-version <n> [--battle <n>] [--chain-id 46630] [--wait-seconds 1800] [--poll-seconds 30] [--max-depth 256] [--state-rpc <url>]
  */
+import { assessCustody } from "./custody-compat.js";
 import { verifyDeposit, type AssetMapping, type Verdict } from "./custody-verifier.js";
 import { RpcFinalitySource } from "./evm-finality-source.js";
 
@@ -48,10 +49,16 @@ function arg(name: string, fallback?: string): string {
 
 async function main(): Promise<void> {
   const mapping: AssetMapping = {
-    chainId: BigInt(arg("chain-id", "46630")), token: arg("token"), custody: arg("custody"),
+    chainId: BigInt(arg("chain-id", "46630")), token: arg("token"), custody: arg("custody"), holder: arg("holder"),
     custodyDomain: arg("custody-domain", "robinhood-testnet"), representation: arg("representation", "unset.testnet"),
     mappingVersion: BigInt(arg("mapping-version")),
   };
+  // Hard gate before any RPC call: never verify a receipt for a path whose tokens the payout signer cannot spend.
+  const gate = assessCustody({ depositContract: mapping.custody, tokenHolder: mapping.holder, payoutSender: arg("payout-sender"), holderCodeHash: null });
+  if (!gate.spendable) {
+    console.error(`custody path is not spendable: ${gate.reasons.join("; ")}`);
+    process.exit(2);
+  }
   const battle = process.argv.includes("--battle") ? BigInt(arg("battle")) : undefined;
   const source = new RpcFinalitySource(arg("rpc"), process.argv.includes("--state-rpc") ? { stateUrl: arg("state-rpc") } : {});
   const timeline = await pollVerdicts(

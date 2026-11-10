@@ -20,7 +20,14 @@ export interface FinalitySource {
 export interface AssetMapping {
   chainId: bigint;
   token: string;
+  /** The deposit-attribution contract that emits `Deposited`. It holds no tokens. */
   custody: string;
+  /**
+   * The account that actually holds the deposited tokens: the account the payout contract signs for. The
+   * `Transfer` and balance evidence are checked at this address, never at `custody`. It must differ from
+   * `custody`: a deposit contract that keeps the tokens has no way to pay them out.
+   */
+  holder: string;
   custodyDomain: string;
   representation: string;
   mappingVersion: bigint;
@@ -76,6 +83,9 @@ export async function verifyDeposit(
   }
   const token = normalizeAddress(mapping.token);
   const custody = normalizeAddress(mapping.custody);
+  let holder: string;
+  try { holder = normalizeAddress(mapping.holder); } catch { return rejected("mapping has no valid token holder address"); }
+  if (holder === custody) return rejected("the token holder must not be the deposit contract: tokens kept there cannot be paid out");
   const key = receiptKey(mapping.chainId, request.transactionHash, request.logIndex);
   try {
     try {
@@ -125,21 +135,21 @@ export async function verifyDeposit(
     if (request.battleId !== undefined && target.battleId !== request.battleId) return rejected("battle mismatch");
     if (!NEAR_ACCOUNT.test(target.beneficiary)) return rejected("unattributed beneficiary");
 
-    // Actual custody increase: token Transfer logs into custody must equal the measured deposits,
-    // and the custody balance must have grown by at least that much across the block.
+    // Actual increase at the holder: token Transfer logs into the holder must equal the measured deposits,
+    // and the holder's balance must have grown by at least that much across the block.
     let transferred = 0n;
     for (const log of receipt.logs) {
       if (normalizeAddress(log.address) !== token || log.topics.length !== 3 || log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) continue;
       if (!/^0x[0-9a-f]{64}$/i.test(log.data) || !/^0x[0-9a-f]{64}$/i.test(log.topics[2] ?? "")) return rejected("malformed Transfer log");
-      if (normalizeAddress(`0x${log.topics[2]!.slice(26)}`) === custody) transferred += BigInt(log.data);
+      if (normalizeAddress(`0x${log.topics[2]!.slice(26)}`) === holder) transferred += BigInt(log.data);
     }
     if (transferred !== depositedTotal) return rejected("measured amount differs from token transfers");
     if (receipt.blockNumber === 0n) return rejected("invalid receipt block");
     const [before, after] = await Promise.all([
-      source.balanceOfAt(token, custody, receipt.blockNumber - 1n),
-      source.balanceOfAt(token, custody, receipt.blockNumber),
+      source.balanceOfAt(token, holder, receipt.blockNumber - 1n),
+      source.balanceOfAt(token, holder, receipt.blockNumber),
     ]);
-    if (after < before || after - before < transferred) return rejected("custody balance did not increase by the received amount");
+    if (after < before || after - before < transferred) return rejected("holder balance did not increase by the received amount");
 
     // Re-read the head: a moved or disputed finalized head means the evidence is stale.
     const recheck = await source.finalizedBlock();
@@ -151,7 +161,7 @@ export async function verifyDeposit(
       chainId: mapping.chainId.toString(), tx: request.transactionHash.toLowerCase(), logIndex: request.logIndex,
       block: [receipt.blockNumber.toString(), receipt.blockHash.toLowerCase()],
       finalized: [finalized.number.toString(), finalized.hash.toLowerCase()],
-      token, custody, depositId: target.depositId.toString(), refundAddress: target.refundAddress, requested: target.requested.toString(),
+      token, custody, holder, depositId: target.depositId.toString(), refundAddress: target.refundAddress, requested: target.requested.toString(),
       received: target.received.toString(), balances: [before.toString(), after.toString()],
     });
     return {
