@@ -1,6 +1,6 @@
 import { type Server, createServer } from "node:http";
 import { type ActionToolDeps, callActionTool } from "./actions/tools.js";
-import { SessionError, type ReadSessions } from "./session.js";
+import { READ_SESSION_MESSAGE, SessionError, type ReadSessions } from "./session.js";
 import { AccessDeniedError, READ_TOOLS, ToolInputError, callReadTool } from "./tools.js";
 import { handleApplicationRead, type ApplicationReads } from "./application.js";
 
@@ -65,6 +65,18 @@ export async function handleReadRequest(req: ReadHttpRequest, deps: ReadHttpDeps
 
   if (url.pathname.startsWith("/api/arena/v1/")) {
     return handleApplicationRead(req.method, url.pathname.slice("/api/arena/v1/".length), url.searchParams, deps.application);
+  }
+
+  // Server-owned, non-secret signing parameters. The browser signs exactly this message for exactly these
+  // recipients, so a client bundle can never ship a mismatched copy.
+  if (segments.length === 2 && segments[0] === "session" && segments[1] === "config") {
+    if (req.method !== "GET") return reply(405, { error: "method not allowed" });
+    return reply(200, {
+      schemaVersion: "arena-session-config-v1",
+      readMessage: READ_SESSION_MESSAGE,
+      sessionRecipient: deps.sessions.recipient,
+      actionRecipient: deps.actions ? deps.actions.recipient : null,
+    });
   }
 
   if (segments.length === 1 && segments[0] === "session") {

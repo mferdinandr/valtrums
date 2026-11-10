@@ -12,6 +12,16 @@ describe("read API over HTTP", () => {
     expect(JSON.parse(res.body)).toMatchObject({ network: "near-testnet", source: { kind: "fixture" }, freshness: "fresh" });
   });
 
+  it("serves the signing parameters (message and recipients) read-only and without secrets", async () => {
+    const deps = await makeDeps();
+    const res = await handleReadRequest({ method: "GET", url: "/session/config" }, deps);
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toEqual({ schemaVersion: "arena-session-config-v1", readMessage: expect.stringContaining("read-only session"), sessionRecipient: "valtrum-read.test", actionRecipient: null });
+    expect(JSON.stringify(body)).not.toMatch(/secret|token/i);
+    expect((await handleReadRequest({ method: "POST", url: "/session/config", body: "{}" }, deps)).status).toBe(405);
+  });
+
   it("takes the session only from the Authorization header and refuses other accounts", async () => {
     const deps = await makeDeps();
     const inUrl = await handleReadRequest({ method: "GET", url: `/tools/inspect_positions?session=${deps.aliceToken}` }, deps);

@@ -144,3 +144,17 @@ describe("gateway route", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("session config gateway", () => {
+  const env = { ARENA_READ_API_URL: "http://localhost:8790" };
+  const upstream = (over: Record<string, unknown> = {}) => async () => Response.json({ schemaVersion: "arena-session-config-v1", readMessage: "read only", sessionRecipient: "valtrum-read", actionRecipient: null, extra: "dropped", ...over });
+  it("forwards only the known public fields and refuses malformed upstream answers", async () => {
+    const { proxySessionConfig } = await import("./proxy");
+    const ok = await proxySessionConfig(env, upstream());
+    expect(ok).toEqual({ status: 200, body: { schemaVersion: "arena-session-config-v1", readMessage: "read only", sessionRecipient: "valtrum-read", actionRecipient: null } });
+    for (const bad of [{ schemaVersion: "other" }, { sessionRecipient: "" }, { readMessage: 5 }, { actionRecipient: 7 }]) {
+      expect((await proxySessionConfig(env, upstream(bad))).status).toBe(503);
+    }
+    expect((await proxySessionConfig({})).status).toBe(503);
+  });
+});

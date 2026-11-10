@@ -74,6 +74,11 @@ export class ReadSessions {
     this.maxNonceAgeMs = opts.maxNonceAgeMs ?? 5 * 60 * 1000;
   }
 
+  /** The NEP-413 recipient clients must sign for. Public, non-secret configuration. */
+  get recipient(): string {
+    return this.opts.recipient;
+  }
+
   async open(req: SignedReadRequest): Promise<ReadSession> {
     if (typeof req?.accountId !== "string" || !ACCOUNT.test(req.accountId)) throw new SessionError("invalid account id");
     if (typeof req.publicKey !== "string" || typeof req.signature !== "string" || typeof req.nonce !== "string") {
