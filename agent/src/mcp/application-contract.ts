@@ -31,7 +31,9 @@ export const deploymentSchema = z.object({
   adapter: z.enum(["rpc", "fixture"]),
   companions: z.object({ payout: account.nullable(), registry: account.nullable(), backing: z.array(account).max(256) }).strict(),
   abi: z.object({ version: evidence, evidence, codeHash: evidence.nullable() }).strict(),
-  capabilities: z.object({ battles: capability, detail: capability, assets: capability, audits: capability }).strict(),
+  capabilities: z.object({ battles: capability, detail: capability, assets: capability, audits: capability,
+    /** Optional: a manifest written before market observations existed stays valid and reports it as not declared. */
+    observations: capability.optional() }).strict(),
 }).strict();
 export const manifestSchema = z.array(deploymentSchema).max(32).superRefine((items, ctx) => {
   const ids = new Set<string>();
@@ -43,6 +45,7 @@ export const manifestSchema = z.array(deploymentSchema).max(32).superRefine((ite
 export type Deployment = z.infer<typeof deploymentSchema>;
 export type Namespace = Pick<Deployment, "deploymentId" | "network" | "arenaContract" | "protocol">;
 export type Capability = keyof Deployment["capabilities"];
+export type ResolvedCapabilities = Record<Capability, { enabled: boolean; reasons: string[] }>;
 export interface ApplicationEnvelope<T> {
   schemaVersion: typeof APPLICATION_SCHEMA;
   namespace: Namespace;

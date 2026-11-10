@@ -8,10 +8,13 @@ import { readApplicationBattle, readApplicationRound } from "./application-adapt
 import type { VersionedLifecycleReadSource } from "./application-adapter.js";
 import {
   APPLICATION_SCHEMA, integer, manifestSchema, namespaceKey, namespaceOf, safeId,
-  type ApplicationBattleSummary, type ApplicationEnvelope, type Capability, type Deployment, type Namespace,
+  type ApplicationBattleSummary, type ApplicationEnvelope, type Capability, type Deployment, type Namespace, type ResolvedCapabilities,
 } from "./application-contract.js";
 import { UnsafeReadBoundaryError, type ArenaReadSource } from "./read-source.js";
 import { DEFAULT_LIMIT, MAX_SCAN, parseSearchParams, SearchValidationError } from "./search.js";
+import type { ObservationState } from "../observations/journal.js";
+import { ObservationQueryError, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
+import type { Mode } from "../observations/schema.js";
 
 export interface ApplicationBinding {
   source?: ArenaReadSource;
@@ -19,6 +22,18 @@ export interface ApplicationBinding {
   registry?: ReferenceRegistrySource;
   /** Archive v1 lacks network/protocol: require an explicit, deployment-bound producer handoff. */
   audits?: { archive: Pick<ReportArchive, "snapshot">; namespace: Namespace };
+  /**
+   * Persisted market observations for this deployment. `load` replays the journal read-only and throws
+   * when it is missing or corrupt; the service then reports the capability degraded, never an empty chart.
+   */
+  observations?: {
+    namespace: Namespace;
+    load(): Promise<ObservationState>;
+    /** Modes provider qualification (#147 / testnet owner) has approved; empty means no score is shown. */
+    qualifiedModes: ReadonlySet<Mode>;
+    /** Approved boundary tolerance and maximum sample gap (ms). Absent: coverage and scores stay unavailable. */
+    coveragePolicy: { boundaryToleranceMs: number; maxGapMs: number } | null;
+  };
 }
 export class ApplicationError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -26,7 +41,7 @@ export class ApplicationError extends Error {
 const invalid = (message: string): never => { throw new ApplicationError(400, "invalid_query", message); };
 const digest = (v: unknown): string => createHash("sha256").update(canonicalJson(v)).digest("hex");
 export const applicationRoute = (path: string): boolean =>
-  /^(capabilities|health|battles|assets|battles\/[1-9][0-9]{0,19}(?:\/audits)?)$/.test(path);
+  /^(capabilities|health|battles|assets|battles\/[1-9][0-9]{0,19}(?:\/(?:audits|observations))?)$/.test(path);
 
 /** Versioned facade inside the existing MCP HTTP server; no actions or account routes. */
 export class ApplicationReads {
@@ -42,18 +57,21 @@ export class ApplicationReads {
         throw new Error("application source does not match manifest");
       }
       if (b?.audits && namespaceKey(b.audits.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign audit archive binding");
+      if (b?.observations && namespaceKey(b.observations.namespace) !== namespaceKey(namespaceOf(d))) throw new Error("foreign observation journal binding");
     }
   }
 
   private availability(d: Deployment) {
     const binding = this.bindings.get(d.deploymentId);
-    const capabilities = structuredClone(d.capabilities);
+    const declared = structuredClone(d.capabilities);
+    const capabilities: ResolvedCapabilities = { ...declared, observations: declared.observations ?? { enabled: false, reasons: ["observations capability not declared in the deployment manifest"] } };
     for (const key of Object.keys(capabilities) as Capability[]) {
       const c = capabilities[key];
       if (d.protocol !== "lifecycle-v2") { c.enabled = false; c.reasons.push("legacy-v1 remains on the explicit legacy adapter; v1 projection unsupported"); }
       else if ((key === "battles" || key === "detail") && !binding?.source) { c.enabled = false; c.reasons.push("read source unavailable"); }
       else if (key === "assets" && !binding?.registry) { c.enabled = false; c.reasons.push("trusted reference registry unavailable"); }
       else if (key === "audits" && !binding?.audits) { c.enabled = false; c.reasons.push("archive namespace handoff unavailable (#145)"); }
+      else if (key === "observations" && !binding?.observations) { c.enabled = false; c.reasons.push("observation journal handoff unavailable (#146)"); }
     }
     return { ...d, capabilities, canonicalDiscovery: { enabled: false, reasons: ["verified deployment and complete live canonical projection coverage required (#144/#80)"] } };
   }
@@ -93,6 +111,72 @@ export class ApplicationReads {
       ? Buffer.from(JSON.stringify({ scope, snapshot, offset: end })).toString("base64url") : null, truncated: false } };
   }
 
+  /**
+   * Persisted observation evidence for one battle (and optionally one round/community), with coverage
+   * and a PROVISIONAL exact-score projection. The contract's recorded round/winner is returned in a
+   * separate field and is the only authority; nothing here resolves a battle. A missing, unreadable or
+   * corrupt journal is a 503, never an empty chart and never a fixture fallback.
+   */
+  private async observations(d: Deployment, binding: ApplicationBinding, id: string, params: Record<string, string>, partial: string[]) {
+    const obs = binding.observations!;
+    const num = (key: string, max: number): number | undefined => {
+      const v = params[key];
+      if (v === undefined) return undefined;
+      if (!/^(0|[1-9][0-9]*)$/.test(v) || Number(v) > max) invalid(`invalid ${key}`);
+      return Number(v);
+    };
+    const limit = params.limit === undefined ? DEFAULT_LIMIT : Number(params.limit);
+    const community = num("community", 15);
+    const after = num("after", Number.MAX_SAFE_INTEGER);
+    for (const key of ["round", "observedFrom", "observedTo"]) if (params[key] !== undefined && !/^(0|[1-9][0-9]{0,19})$/.test(params[key]!)) invalid(`invalid ${key}`);
+    let state: ObservationState;
+    try { state = await obs.load(); }
+    catch { throw new ApplicationError(503, "observations_unavailable", "observation journal is missing, unreadable or corrupt; recovery is documented in the agent runbook"); }
+    let page;
+    try {
+      page = queryMarketObservations(state, { namespace: obs.namespace, battleId: id, ...(params.round !== undefined ? { roundId: params.round } : {}),
+        ...(community !== undefined ? { community } : {}), ...(after !== undefined ? { afterSeq: after } : {}), limit,
+        ...(params.observedFrom !== undefined ? { observedFromMs: params.observedFrom } : {}), ...(params.observedTo !== undefined ? { observedToMs: params.observedTo } : {}) });
+    } catch (e) { if (e instanceof ObservationQueryError) return invalid(e.message); throw e; }
+
+    const reasons = [...partial, "samples are persisted evidence; display polling is not provider cadence"];
+    // Frozen round facts come from the contract view, never from the observations.
+    let recorded: { roundId: string; winner: number | null; candidates: number[]; startNs: string | null; endNs: string | null } | null = null;
+    let frozen: FrozenRound | null = null;
+    const battle = binding.versioned ? await binding.versioned.battle(id).catch(() => null) : null;
+    const round = binding.versioned ? await binding.versioned.round(id).catch(() => null) : null;
+    if (round) recorded = { roundId: round.round_id, winner: round.winner, candidates: round.candidates, startNs: round.start_ns, endNs: round.end_ns };
+    if (!battle || !round) reasons.push("frozen round facts unavailable; coverage and scores withheld");
+    else if (params.round !== undefined && params.round !== round.round_id) reasons.push("round window is only known for the current round; coverage and scores withheld");
+    else if (!round.start_ns || !round.end_ns) reasons.push("round window not recorded yet; coverage and scores withheld");
+    else if (!battle.observation_policy_hash) reasons.push("frozen observation policy hash unavailable; coverage and scores withheld");
+    else if (!obs.coveragePolicy) reasons.push("no approved coverage policy configured; coverage and scores withheld");
+    else frozen = { namespace: obs.namespace, battleId: id, roundId: round.round_id, mode: battle.mode, policyHash: battle.observation_policy_hash,
+      candidates: round.candidates, startNs: round.start_ns, endNs: round.end_ns, ...obs.coveragePolicy };
+    const coverage = frozen ? roundCoverage(state, frozen) : null;
+    const projection = frozen ? provisionalProjection(state, frozen, obs.qualifiedModes) : null;
+    if (projection?.status === "unavailable") reasons.push(...projection.reasons);
+    // The label comes from the samples themselves (their own `source.kind`), never from configuration.
+    const kinds = [...new Set(page.items.map((i) => i.observation.source.kind))].sort();
+    const sourceKind = kinds.includes("fixture") ? "fixture" : kinds.includes("recorded") ? "recorded" : kinds.includes("live") ? "live" : "none";
+    if (sourceKind === "fixture") reasons.push("fixture samples: not live provider evidence");
+    else if (sourceKind === "recorded") reasons.push("recorded samples: not a live feed");
+    else if (sourceKind === "none") reasons.push("no samples in this page");
+    if (kinds.length > 1) reasons.push(`mixed sample sources on this page: ${kinds.join(", ")}`);
+    const response = this.envelope(d, {
+      battleId: id, sourceKind, sourceKinds: kinds,
+      items: page.items.map((i) => ({ seq: integer(i.seq), id: i.id, ...i.observation })),
+      nextCursor: page.nextCursor, truncated: page.truncated,
+      revision: integer(page.revision), retractedSinceCursor: page.retractedSinceCursor,
+      recorded, coverage, projection,
+    }, reasons, digest([namespaceOf(d), page.watermark, page.revision]), "market");
+    response.provenance.watermark = integer(page.watermark.seq);
+    response.provenance.sourceReferences = [d.abi.evidence, page.watermark.headHash];
+    response.provenance.health = sourceKind === "live" && !coverage?.communities.some((c) => !c.complete) && reasons.length === partial.length + 1 ? "healthy" : "degraded";
+    response.provenance.complete = !!coverage && coverage.communities.every((c) => c.complete);
+    return response;
+  }
+
   async read(path: string, search: URLSearchParams): Promise<unknown> {
     if (!applicationRoute(path)) throw new ApplicationError(404, "not_found", "unknown application read route");
     const params: Record<string, string> = {};
@@ -109,9 +193,10 @@ export class ApplicationReads {
     if (!d) return invalid("unknown deployment/protocol");
     delete params.deployment; delete params.protocol;
     const binding = this.bindings.get(d.deploymentId) ?? {};
-    const capability: Capability | null = path === "health" ? null : path === "assets" ? "assets" : path.endsWith("/audits") ? "audits" : path === "battles" ? "battles" : "detail";
+    const capability: Capability | null = path === "health" ? null : path === "assets" ? "assets" : path.endsWith("/audits") ? "audits" : path.endsWith("/observations") ? "observations" : path === "battles" ? "battles" : "detail";
     const allowed = capability === "battles" ? ["q", "mode", "status", "community", "limit", "cursor"]
-      : capability === "assets" ? ["q", "limit", "cursor"] : capability === "audits" ? ["community", "limit", "cursor"] : [];
+      : capability === "assets" ? ["q", "limit", "cursor"] : capability === "audits" ? ["community", "limit", "cursor"]
+        : capability === "observations" ? ["round", "community", "after", "limit", "observedFrom", "observedTo"] : [];
     if (Object.keys(params).some((k) => !allowed.includes(k))) invalid("unknown query parameter");
     if (params.limit !== undefined && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(params.limit)) invalid("limit must be 1 to 50");
     if (capability && !this.availability(d).capabilities[capability].enabled) {
@@ -125,6 +210,7 @@ export class ApplicationReads {
         ["detail", async () => binding.versioned ? binding.versioned.count() : integer(await binding.source!.battleCount())],
         ["assets", async () => binding.registry!.load()],
         ["audits", async () => binding.audits!.archive.snapshot()],
+        ["observations", async () => binding.observations!.load()],
       ];
       const components = await Promise.all(probes.map(async ([key, probe]) => {
         const c = availability.capabilities[key];
@@ -172,6 +258,10 @@ export class ApplicationReads {
       return this.envelope(d, page.data, [...partial, "registry membership is not current audit, backing or deposit eligibility"], page.snapshot);
     }
     const id = path.split("/")[1]!;
+    if (capability === "observations") {
+      try { integer(id); } catch { return invalid("battle id is outside the u64 range"); }
+      return this.observations(d, binding, id, params, partial);
+    }
     try { integer(id); if (!binding.versioned || capability === "audits") safeId(id); }
     catch { throw new ApplicationError(422, "unsupported_boundary", capability === "audits" ? "archive v1 only supports safe numeric battle IDs" : "safe lifecycle ID view required (#144)"); }
     if (capability === "audits") {
