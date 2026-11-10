@@ -73,17 +73,25 @@ async function call(deps: ActionClientDeps, path: string, method: "GET" | "POST"
   return "record" in data ? { ...data.record, transaction: data.transaction } : data;
 }
 
-/** Runs one action end to end through the shared boundary. Nothing is signed before `prepare`. */
-export async function runTerminalAction(request: Record<string, unknown>, deps: ActionClientDeps): Promise<ActionRunResult> {
-  let actionId: string | null = null;
+export interface PreviewedAction {
+  record: ActionRecordView;
+  fixture?: string;
+}
+
+/** Step 1: asks the service for the canonical preview. Nothing is signed or sent. */
+export async function previewTerminalAction(request: Record<string, unknown>, deps: ActionClientDeps): Promise<PreviewedAction> {
+  const record = await call(deps, "", "POST", { request });
+  const notice = fixtureNotice(record.preview?.binding);
+  return { record, ...(notice ? { fixture: notice } : {}) };
+}
+
+/** Steps 2 to 5: authorize the exact preview, prepare, sign and send, then wait for a verified receipt. */
+export async function executeTerminalAction(previewed: PreviewedAction, deps: ActionClientDeps): Promise<ActionRunResult> {
+  const actionId = previewed.record.actionId;
   let txHash: string | null = null;
-  let label: { fixture?: string } = {};
+  const label: { fixture?: string } = previewed.fixture ? { fixture: previewed.fixture } : {};
   try {
-    const preview = await call(deps, "", "POST", { request });
-    actionId = preview.actionId;
-    const notice = fixtureNotice(preview.preview?.binding);
-    if (notice) label = { fixture: notice };
-    const proof = await deps.wallet.signMessage(actionAuthorizationMessage(preview.previewHash));
+    const proof = await deps.wallet.signMessage(actionAuthorizationMessage(previewed.record.previewHash));
     const authorized = await call(deps, `/${actionId}/authorize`, "POST", { proof: { kind: "user_signature", ...proof } });
     if (authorized.status !== "authorized") return { ok: false, status: authorized.status, actionId, reason: authorized.reason ?? "not authorized", txHash, ...label };
     const prepared = await call(deps, `/${actionId}/prepare`, "POST", {});
@@ -109,4 +117,15 @@ export async function runTerminalAction(request: Record<string, unknown>, deps: 
   } catch (err) {
     return { ok: false, status: "error", actionId, txHash, reason: err instanceof Error ? err.message : String(err), ...label };
   }
+}
+
+/** Runs one action end to end through the shared boundary. Nothing is signed before `prepare`. */
+export async function runTerminalAction(request: Record<string, unknown>, deps: ActionClientDeps): Promise<ActionRunResult> {
+  let previewed: PreviewedAction;
+  try {
+    previewed = await previewTerminalAction(request, deps);
+  } catch (err) {
+    return { ok: false, status: "error", actionId: null, txHash: null, reason: err instanceof Error ? err.message : String(err) };
+  }
+  return executeTerminalAction(previewed, deps);
 }
