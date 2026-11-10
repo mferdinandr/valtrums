@@ -44,6 +44,24 @@ DAO membership, weights, quorum, deadline, execution/fallback; behavior after a 
 - [ ] 8. Implement bounded NEAR AI player agents, MCP and terminal authorization/preview checks.
 - [ ] 9. Complete UI, observability and end-to-end testnet demo with failure/recovery evidence.
 
+## Progress against the checklist (2026-11-11)
+
+The checkboxes above stay unticked on purpose: an item is ticked only when its acceptance gate is proven on testnet with recorded evidence. This section records where each item stands. "Code" means implemented and unit-tested with synthetic inputs; "proven" means recorded in [testnet-evidence.md](testnet-evidence.md). See [current-state.md](current-state.md) for the detail.
+
+| # | Item | Code | Proven on testnet | Open |
+| --- | --- | --- | --- | --- |
+| 1 | Integrations and data sources | NEAR, Robinhood testnet RPC, GoPlus, DexScreener and mainnet pool reads wired | NEAR testnet and Robinhood custody transactions; GoPlus and pool reads in a dry run | NEAR Intents is a labeled fixture; Bitte orchestration not shown |
+| 2 | Backing, representation, redemption, burn | Backing and receipt-registry contracts, custody verifier | Six backings deployed and wired | Six custody deposits are waiting for finality; no mint from a receipt, redemption or burn yet |
+| 3 | Multi-community lifecycle | Arena lifecycle and the single lifecycle web app | Battle 1 created with six communities | Not locked; deposits are refused until audit and backing approvals exist |
+| 4 | GoPlus and LP audit | Audit pass, policy, report archive, price pool reader | Dry run: five pass, AI pending (no liquidity evidence) | No approval submitted; AI cannot pass without a pool the reader supports |
+| 5 | Scoring and overtime | Four modes and tie rounds in the arena, lifecycle oracle (dry run) | None | No round has run; the oracle account of the deployed arena is not confirmed set |
+| 6 | Settlement, revenue, Robinhood payout | Settlement, payout relayer and operator, reconciler | None | Spendable custody (#148) and a confirmed payout are unproven; the terminal blocks payout |
+| 7 | Principal isolation and DAO | Escrow and DAO entry points; DAO account on testnet | DAO proposals for wiring passed | The disposition decision is open |
+| 8 | Player agents, MCP, terminal | Player policy, Agents page, player program (dry run), read API and MCP, lifecycle terminal | Policy redeployed on testnet | No live agent proposal sent; terminal model parsing needs a key the owner provides |
+| 9 | UI, observability, full demo | Lifecycle UI, faucet page, live price preview | Pages checked in a browser against testnet reads | End-to-end demo with failure recovery (#80), connected deposit UX (#149) and portfolio and payout (#151) are open |
+
+Also delivered outside the original checklist: the testnet faucet contract and page, token names and logos, and the display-only live price preview.
+
 Dependency details and acceptance scenarios are in the roadmap. In particular, backing precedes deposits; audit gates live rounds; scoring precedes settlement; DAO disposition waits for governance design; UI cannot claim payment from a signature or broadcast alone.
 
 The documentation PR must use **Refs #N**, not an auto-closing keyword. Keep this implementation issue open until its acceptance criteria are delivered.
