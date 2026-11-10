@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["backing", "payout", "player-policy", "receipt-registry", "arena", "furnace", "integration", "mock-dex", "mock-ft", "mock-lifecycle", "mock-mpc", "ref-adapter", "router", "war"]
+members = ["backing", "faucet", "payout", "player-policy", "receipt-registry", "arena", "furnace", "integration", "mock-dex", "mock-ft", "mock-lifecycle", "mock-mpc", "ref-adapter", "router", "war"]
 
 [workspace.package]
 version = "0.1.0"
