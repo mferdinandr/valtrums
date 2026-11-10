@@ -115,3 +115,26 @@ Raw data: [`evidence/2026-11-09-near-testnet-wiring.json`](evidence/2026-11-09-n
 ## 7. Player policy redeploy (2026-11-09, live testnet)
 
 PR #129 changed the `player-policy` init signature (`new(owner, registry)`) and stored reservation layout, so the old `policy.valtrum-owner-b694.testnet` (initialised, old layout) cannot be upgraded in place. A new account `policy-v2.valtrum-owner-b694.testnet` was created, the new wasm deployed and initialised in one transaction (owner `valtrum-owner-b694.testnet`, registry `registry.valtrum-owner-b694.testnet`; tx `AxKcwmn81sQRvCWC5UT3aoGcoSKm8kZuZG37xugfiSAk`). On-chain code hash `7ky2Quhr6SpFtsjNcSjdQrShhivr93YYaCHeLP2qadkM` equals the base58 SHA-256 of the host-built wasm (hex `6469717ae168237e7a7ffd093c964e20d6f093acdb1f5840fbcc9c7e99cda4aa`, 246.3 KB). The owner was funded with 2.9 NEAR from `valtrum-council2-b694.testnet` for this (tx `BKzweG64RDi6r1iAAYakgdaTSGYyJcbBaPYHbWsmy5B2`). The old account was not touched. Limits: a successful init in the deploying transaction is the only proof of the init arguments (the contract has no config view); no grant, reservation or receipt was exercised live. The wasm is a host build and is not reproducible. Anything reading `PLAYER_POLICY_CONTRACT_ID` should now use the new id.
+
+## 8. Faucet, agent registration and custody deposits (2026-11-10 to 2026-11-11, live testnet; times are the owner's local UTC+7 date)
+
+All assets are FIXTURES (mock tokens, no value). Nothing here proves a mint, a payout or a played round.
+
+- **Accounts.** `valtrum-operator.testnet` (faucet operator) and `valtrum-faucet.testnet` (faucet contract) were created with keys in the OS keychain. The faucet contract (`contracts/faucet`, 26 unit tests) was deployed and initialized in one call. It holds no stock and no token is configured yet.
+- **Agent registration.** The arena whitelist was empty (`get_config.agents` was `[]`). The owner called `add_agent` for `valtrum-agent-b694.testnet` (transaction `J6YQ7pe4Z4Yzvvc31WU4o4cwiMxk6tp2cqB4JEZbozE6`, 0.311 Tgas burned); a later `get_config` returned the agent in `agents`. `remove_agent` exists, so the whitelist can be corrected.
+- **Policy contract pointer.** The local configuration of the agent and the web app pointed at the old `policy` account; it was corrected to `policy-v2` (see section 7). No chain change.
+- **Custody deposits on Robinhood testnet (46630).** One deposit per mock token, `mapping_version` 3, battle 1, beneficiary `valtrum-operator.testnet` (decoded from the transaction input), amount 1,000,000 tokens each, from the deployer `0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6`:
+
+| Token | Transaction | Block |
+| --- | --- | --- |
+| CASHCAT `0x5b2ba17e5be1b611c1299809db89c5fe21d9d0a6` | `0x92dacbe0811b927f95dbfe9c372b4bc37d1eee56e40a432d4e481b10eaead8cf` | `0x90790d7` |
+| WALLET `0x78e7621559bc0e3cc10f8bb61dc2a371afe66e27` | `0xcb70a2bbf7da472ccc222b638bd600d22ff9806f51dc35585c6fd6253643b40e` | `0x90790f1` |
+| GOOD `0xaed11a367b102f2da3ac2dfcf1de9cc97a47a850` | `0xe283464ea26b06672f3fa840c3919e44bd23958d7d0a5d16f669dfdce418f7a1` | `0x9079104` |
+| AI `0x973c4e0601c03a4899b8c9643b299aaaece4ba0a` | `0x76729017dfb995d2639f4d1b8017371b41759b9eb28282e6bb006058000dd7dd` | `0x907911e` |
+| VLAD `0xd879e8483d63265abe2549a347017e59a04a15bc` | `0x5de5a6cc7e0fd605a50f86d210ef32e9c52bf26a913c6ef249780c9622ff56be` | `0x9079136` |
+| DEGEN `0x209aa417c2aa45a13304acc51c4c393d0ac5ba84` | `0x8b7de280a1601327ff9ed4b6c9f72dc6f2d1a75f9bbf0196d2b46dd768767fba` | `0x9079150` |
+
+- **Audit dry run (read only).** The production audit pass ran against battle 1 with a recording transport that sent nothing. Result: CASHCAT, WALLET, GOOD, VLAD and DEGEN `pass`; AI `pending` (`unknown_field`, `lp_no_evidence`, `evidence_time_missing`) because its only pool is a v4 pool with no liquidity evidence the reader supports. The output was not archived in the repository.
+
+**Limitations.** The deposits had not been verified as finalized when this was written, so no receipt is attested and no representation is minted. The official Robinhood RPC hosts were unreachable from the owner's network; reads went through a local DNS-over-HTTPS relay that is not part of the repository. The amounts and the deposit count come from the owner's session notes and the transaction input, not from a re-read of every receipt.
+

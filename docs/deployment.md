@@ -6,7 +6,7 @@
 
 ## Existing implementation: supported operations
 
-These commands operate the **legacy NEAR arena**, whose rules and recorded accounts are in [current-state.md](current-state.md). This documentation PR did not run them or verify a live deployment.
+These commands operate the **legacy NEAR arena**, whose recorded accounts are in the appendix of [current-state.md](current-state.md); the current lifecycle system is described at the top of that page. This documentation PR did not run them or verify a live deployment.
 
 Requirements: Rust stable with wasm32-unknown-unknown, near-cli-rs, Node >=22 and the pnpm version pinned in package.json. From repository root:
 
@@ -88,6 +88,11 @@ Live testnet deployment from the owner's accounts; details, code hashes and tran
 | Backing (fixture asset, DAO-owned) | `backing1.valtrum-owner-b694.testnet` |
 | Backings for the six mock tokens (DAO-owned, wired 2026-11-09) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
 | Registry verifier | `valtrum-verifier-b694.testnet` |
+| Infrastructure agent (in the arena whitelist, see [testnet-evidence.md](testnet-evidence.md) section 8) | `valtrum-agent-b694.testnet` |
+| Faucet contract (owner-managed) | `valtrum-faucet.testnet` |
+| Faucet operator (claims receipts, stocks the faucet; separate from the payout operator `valtrum-operator-b694`) | `valtrum-operator.testnet` |
+
+Configuration pointers (local, git-ignored files): the agent reads `agent/.env.local` and the web app `web/.env.local`. Both must point `PLAYER_POLICY_CONTRACT_ID` and `NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID` at `policy-v2` (the old `policy` account has the layout from before PR #129), `NEXT_PUBLIC_FAUCET_CONTRACT_ID` at the faucet, and `PRICE_PREVIEW_RPC_URL` at a reachable Robinhood mainnet RPC. The faucet, its funding steps and the audit variables are described in the [agent README](../agent/README.md#testnet-faucet).
 
 Measured storage: wasm size times 1e19 yoctoNEAR plus a small overhead (arena 664 KB is 7.0 NEAR, backing 389 KB, payout 304 KB, policy 209 KB, registry 160 KB); the DAO create cost the owner 6.1 NEAR. Deployed through a script that signs in process (keys read from the git-ignored `.env`, never passed as arguments); each account was created, keyed with the owner key, deployed and initialised in one transaction. Build: `cd contracts/<crate> && cargo near build non-reproducible-wasm --no-abi --out-dir <dir>`. Still not deployed: Robinhood custody and mock tokens (separate work), real-token backings, payout backing registration, reference-registry entries.
 
