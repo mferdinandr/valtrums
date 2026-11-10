@@ -38,7 +38,7 @@ test("a locked battle shows recorded state, readiness blockers and never a timer
     page.getByRole("status").filter({ hasText: "Awaiting resolution" }),
   ).toBeVisible();
   await expect(page.getByText("recorded winner")).toHaveCount(0);
-  await expect(page.getByText("fixture data")).toBeVisible();
+  await expect(page.getByText("fixture data").first()).toBeVisible();
   // Exact u64 vault stays exact.
   await expect(
     page.getByText("18,446,744,073,709,551,615", { exact: true }),
@@ -235,4 +235,12 @@ test("a locked battle offers no registration or deposit", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText("register_lifecycle_position")).toHaveCount(0);
   await expect(page.getByLabel("Deposit amount")).toHaveCount(0);
+});
+
+test("the landing page renders in application mode with its 3D canvas and no unavailable card", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("unavailable for the selected application deployment")).toHaveCount(0);
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
+  // Create links point at the lifecycle review page, not the blocked legacy one.
+  await expect(page.locator('a[href="/battles/new"]')).toHaveCount(0);
 });
