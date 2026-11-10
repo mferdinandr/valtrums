@@ -56,7 +56,7 @@ describe("indexer runtime over a recorded chain", () => {
     );
     await writeFile(chainPath, JSON.stringify(first));
     const stateDir = join(dir, "state");
-    const rt = await createIndexerRuntime({ recordedChainPath: chainPath, stateDir, contracts: ["arena.testnet"], retentionDepth: 5 });
+    const rt = await createIndexerRuntime({ source: "recorded", recordedChainPath: chainPath, stateDir, contracts: ["arena.testnet"], retentionDepth: 5 });
     expect((await rt.sync())?.status).toBe("healthy");
 
     const longer = chainFile(
