@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
-import { Pause, Play, Ticket } from "lucide-react";
+import { Ticket } from "lucide-react";
 import type { BattleControls } from "@/components/kinetic/battle-state";
 
 export type CarnivalMode =
@@ -67,8 +67,7 @@ export function CarnivalScene({
     [near, setNear] = useState(false),
     [seen, setSeen] = useState(false),
     [visible, setVisible] = useState(true),
-    [reduced, setReduced] = useState(true),
-    [paused, setPaused] = useState(false);
+    [reduced, setReduced] = useState(true);
   useEffect(() => {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
     const motion = () => setReduced(media.matches);
@@ -122,7 +121,7 @@ export function CarnivalScene({
             <World
               mode={mode}
               selected={selected}
-              frozen={reduced || paused || !near || !visible}
+              frozen={reduced || !near || !visible}
               onSelect={onSelect}
               battle={battle}
               onReady={() => setLoaded(true)}
@@ -138,17 +137,6 @@ export function CarnivalScene({
             ? (caption ?? COPY[mode])
             : "Preparing local 3D assets…"}
       </p>
-      {!failed && loaded && !reduced && (
-        <button
-          type="button"
-          aria-label={paused ? "Resume 3D animation" : "Pause 3D animation"}
-          aria-pressed={paused}
-          className="carnival-scene-pause"
-          onClick={() => setPaused((v) => !v)}
-        >
-          {paused ? <Play size={14} /> : <Pause size={14} />}
-        </button>
-      )}
     </div>
   );
 }

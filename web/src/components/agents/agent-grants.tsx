@@ -1,4 +1,5 @@
 "use client";
+import { TransactionLink } from "@/components/transaction-link";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
@@ -224,9 +225,12 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
       <Card aria-label="Grant review">
         <CardTitle>02 / Review before you sign</CardTitle>
         {!review.ok ? (
-          <ul role="status" className="list-disc pl-4 text-sm text-neon-amber">
-            {review.problems.map((p) => <li key={p}>{p}</li>)}
-          </ul>
+          <details className="lifecycle-tech">
+            <summary>Complete the form to review your agent</summary>
+            <ul className="list-disc pl-4 text-sm text-neon-amber">
+              {[...new Set(review.problems)].map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          </details>
         ) : (
           <>
             <Lines review={review} />
@@ -244,6 +248,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
         {tx.step === "done" && (
           <p role="status" className="mt-3 text-xs text-neon-green">
             Submitted{tx.hash ? ` (transaction ${tx.hash})` : ""}. It is a grant only once the chain reports it below.
+            <TransactionLink hash={tx.hash} />
           </p>
         )}
         {tx.step === "error" && <p role="alert" className="mt-3 text-xs text-neon-red">{tx.message}</p>}

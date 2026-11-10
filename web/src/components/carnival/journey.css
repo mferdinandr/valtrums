@@ -57,16 +57,16 @@ body:has(.landing-journey) > .site-footer {
   );
 }
 .journey-shade-1 {
-  background: linear-gradient(90deg, #fff5e54d, transparent 60%);
+  background: linear-gradient(90deg, #fff5e5ed, #fff5e5a6 24%, transparent 65%);
 }
 .journey-shade-2,
 .journey-shade-3,
 .journey-shade-5 {
-  background: linear-gradient(270deg, #fff5e555, transparent 65%);
+  background: linear-gradient(270deg, #fff5e5ed, #fff5e5a6 24%, transparent 65%);
 }
 .journey-shade-4,
 .journey-shade-6 {
-  background: linear-gradient(90deg, #fff5e566, transparent 60%);
+  background: linear-gradient(90deg, #fff5e5ed, #fff5e5a6 24%, transparent 65%);
 }
 .journey-panels {
   position: absolute;
@@ -110,10 +110,10 @@ body:has(.landing-journey) > .site-footer {
     600 10px/1.5 "Space Grotesk",
     sans-serif;
   letter-spacing: 0.04em;
-  background: #fff8e5db;
-  border: 1px solid #f1e5ce;
-  border-radius: 99px;
-  padding: 0.45rem 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  border-bottom: 1px solid #8b647466;
+  padding: 0.5rem 0;
 }
 .journey-panel-0 {
   top: clamp(125px, 15vh, 180px);
@@ -163,10 +163,11 @@ body:has(.landing-journey) > .site-footer {
 .journey-panel-4,
 .journey-panel-5,
 .journey-panel-6 {
-  padding: 1.7rem;
-  border-radius: 6px 30px 30px 6px;
-  border-left: 2px solid #c5b5e2;
-  background: linear-gradient(90deg, #fffaf0f0 65%, #fffaf0a6);
+  padding: 1.4rem 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-shadow: 0 1px 16px #fffaf0;
 }
 .journey-panel-1 {
   left: 5vw;
@@ -266,9 +267,9 @@ body:has(.landing-journey) > .site-footer {
   display: flex;
   gap: 0.4rem;
   padding: 0.3rem;
-  border: 1px solid #fffaf3;
-  border-radius: 99px;
-  background: #fffaf0d9;
+  border: 0;
+  border-radius: 0;
+  background: #fffaf0e8;
   backdrop-filter: blur(8px);
   max-width: calc(100% - 190px);
   overflow-x: auto;
@@ -281,7 +282,7 @@ body:has(.landing-journey) > .site-footer {
   gap: 0.5rem;
   min-height: 44px;
   padding: 0.5rem 0.8rem;
-  border-radius: 99px;
+  border-radius: 0;
   color: #7a8688;
   font:
     10px/1.4 "Space Grotesk",
@@ -293,8 +294,9 @@ body:has(.landing-journey) > .site-footer {
   font: 8px monospace;
 }
 .journey-chapters button[aria-current="step"] {
-  color: #967081;
-  background: #f4dfdf;
+  color: #584153;
+  background: transparent;
+  box-shadow: inset 0 -2px #ac667d;
 }
 .journey-controls {
   display: flex;
@@ -521,7 +523,8 @@ body:has(.landing-journey) > .site-footer {
     max-width: 450px;
     margin: 0 auto;
     padding: 1.1rem;
-    border-radius: 22px;
+    border-radius: 0;
+    background: #fffaf0ed;
   }
   .journey-panel h2 {
     font-size: clamp(1.7rem, 7vw, 2.2rem);

@@ -136,7 +136,7 @@ describe("lifecycle presentation and fallback", () => {
     state.data = null;
     state.error = "upstream unavailable";
     const html = render();
-    expect(html).toContain("could not be read");
+    expect(html).toContain("could not be loaded");
     expect(html).not.toContain("3D arena");
   });
 });

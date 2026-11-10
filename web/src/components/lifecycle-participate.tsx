@@ -1,4 +1,5 @@
 "use client";
+import { TransactionLink } from "@/components/transaction-link";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/components/providers";
@@ -194,6 +195,7 @@ function Step({
               {flow.result.ok
                 ? `Receipt verified. Transaction ${flow.result.txHash}.`
                 : `Not confirmed (${flow.result.status}): ${flow.result.reason}${flow.result.txHash ? ` Transaction ${flow.result.txHash} was submitted; it has no effect on your position until the receipt is verified.` : ""}`}
+              <TransactionLink hash={flow.result.txHash} />
             </p>
           )}
           {flow.step === "error" && (

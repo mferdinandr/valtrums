@@ -43,7 +43,7 @@ export default function PortfolioPage() {
   if (!namespace) {
     return (
       <Card role="alert" className="m-4 space-y-2 p-4">
-        <p>Lifecycle reads are not configured for this deployment, so there is no portfolio to show. No legacy or demo data is used.</p>
+        <p>Your portfolio is currently unavailable. Please try again later.</p>
         <Link href="/arena" className="underline">
           Browse battles
         </Link>
@@ -59,10 +59,6 @@ export default function PortfolioPage() {
           <span className="lifecycle-pill">YOUR COMMUNITY KEEPSAKES</span>
           <h1>Your journey.<br />Every receipt.</h1>
           <p>Follow your positions, review your entitlements and keep track of every transfer. Your wallet holds the keys.</p>
-          <details className="lifecycle-tech">
-            <summary>Connected arena</summary>
-            {namespace.deploymentId} · {namespace.network} · {namespace.arenaContract}
-          </details>
         </div>
         <CarnivalScene mode="portfolio" caption="Your keepsake cabinet · decoration, not wallet balances" />
       </header>
@@ -82,7 +78,7 @@ export default function PortfolioPage() {
             dropped on sign-out or when you switch accounts.
           </p>
           <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>
-            {busy ? "Reading…" : portfolio.state.step === "ready" ? "Refresh from the read service" : "Sign and load my account"}
+            {busy ? "Loading…" : portfolio.state.step === "ready" ? "Refresh portfolio" : "Sign and view portfolio"}
           </Button>
           {portfolio.state.step === "error" && (
             <p role="alert" className="text-base text-neon-amber">

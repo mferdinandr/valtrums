@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
-import { Aperture, Bot, Droplets, Swords, Layers3, Terminal, Plus } from "lucide-react";
+import { Bot, Droplets, Swords, Layers3, Terminal, Plus } from "lucide-react";
+import { Brand } from "@/components/brand";
 import { arenaNavigationActive } from "@/lib/arena-read/routes";
 
 const LINKS = [
@@ -36,8 +37,7 @@ export function Navbar() {
           href="/"
           className="flex items-center gap-2.5 font-pixel text-xl font-bold tracking-[-.06em]"
         >
-          <Aperture size={28} strokeWidth={1.5} className="text-neon-pink" />{" "}
-          VALTRUM<span className="text-xs text-neon-green">✳</span>
+          <Brand />
         </Link>
         <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-[9px] uppercase tracking-wider text-mute sm:inline-flex">
           <span className="status-dot" />

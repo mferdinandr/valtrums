@@ -55,8 +55,7 @@ export function LifecycleBattleDetail({
   if (!data)
     return (
       <Card role="alert" className="border-neon-red text-neon-red">
-        Battle #{battleId} could not be read: {error ?? "no response"}. No demo
-        or legacy data is shown in its place.
+        Battle #{battleId} could not be loaded: {error ?? "no response"}.
         <p className="mt-3">
           <Link href="/arena" className="underline">
             Back to the battle list
@@ -331,24 +330,6 @@ export function LifecycleBattleDetail({
             rounds are never reconstructed.
           </p>
         )}
-        <details className="lifecycle-tech">
-          <summary>Battle identity &amp; data provenance</summary>
-          <p>
-            Deployment: {namespace.deploymentId} · {namespace.network} ·{" "}
-            {namespace.arenaContract}
-          </p>
-          <p>
-            Creator: {detail.battle.creator} (
-            {shortAccount(detail.battle.creator)})
-          </p>
-          <p>
-            {data.provenance.kind} · {data.provenance.health} ·{" "}
-            {data.provenance.complete ? "complete" : "partial"}
-          </p>
-          {data.provenance.reasons.map((r) => (
-            <p key={r}>{r}</p>
-          ))}
-        </details>
       </Card>
     </div>
   );

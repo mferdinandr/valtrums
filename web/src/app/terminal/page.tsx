@@ -27,7 +27,7 @@ export default function TerminalPage() {
         <LifecycleTerminal namespace={deployment} />
       ) : (
         <Card role="alert">
-          Lifecycle reads are not configured for this deployment, so the terminal cannot review a request.{" "}
+          The assistant is currently unavailable. Please try again later.{" "}
           <Link href="/arena" className="underline">
             Back to the battle list
           </Link>

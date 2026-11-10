@@ -8,7 +8,7 @@ import { ApplicationBattleList } from "@/components/application-battle-list";
 export default function ArenaPage() {
   const deployment = useApplicationDeployment();
   if (!deployment) {
-    return <Card role="alert">The arena read deployment is not configured, so no battles can be listed.</Card>;
+    return <Card role="alert">Battles are currently unavailable. Please try again later.</Card>;
   }
   return <ApplicationBattleList namespace={deployment} />;
 }

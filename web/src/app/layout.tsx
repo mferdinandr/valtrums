@@ -5,6 +5,7 @@ import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { Providers } from "@/components/providers";
 import { RouteFrame } from "@/components/kinetic/route-frame";
+import { Brand } from "@/components/brand";
 
 export const metadata: Metadata = {
   title: "Valtrum | A little rivalry. Big community energy.",
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </Providers>
         <footer className="site-footer">
           <div>
-            <strong>Valtrum ✳</strong>
+            <Link href="/" aria-label="Valtrum home"><Brand /></Link>
             <p>A little rivalry. A lot of community.</p>
           </div>
           <nav aria-label="Footer navigation">

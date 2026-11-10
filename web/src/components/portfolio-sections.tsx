@@ -71,9 +71,7 @@ export function EntitlementAvailabilitySection({ part, nowMs }: { part: Portfoli
     <Card className="space-y-2 p-4">
       <h2 className="text-lg text-neon-green">Per-account entitlements</h2>
       <p className="text-sm text-mute">{envelopeLabel(part.env, nowMs)}</p>
-      {a.available ? (
-        <p className="text-base text-neon-green">Reported by the read service.</p>
-      ) : (
+      {!a.available && (
         <div role="status" className="space-y-1">
           <Badge tone="amber">not available from the contract yet</Badge>
           <p className="text-base text-mute">{a.reason}. This is unknown, not zero.</p>
@@ -124,10 +122,9 @@ export function LateFundsSection() {
   return (
     <Card role="status" className="space-y-2 p-4">
       <h2 className="text-lg text-neon-green">Late funds and refunds</h2>
-      <Badge tone="amber">not available from the read service yet</Badge>
+      <Badge tone="amber">Status unavailable</Badge>
       <p className="text-base text-mute">
-        No exported read reports deposits that arrived after a battle locked or their refunds. A late deposit is returned by the arena and credits no
-        position; this page cannot show its refund status, and it does not claim there is none.
+        Deposits received after a battle locks are returned and do not join the battle. Refund status is currently unavailable here.
       </p>
     </Card>
   );

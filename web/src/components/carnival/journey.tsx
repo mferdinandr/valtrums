@@ -14,8 +14,6 @@ import {
 import {
   ArrowDown,
   ArrowUpRight,
-  Pause,
-  Play,
   Sparkles,
   X,
   Info,
@@ -112,7 +110,6 @@ export function LandingJourney() {
   const [progress, setProgress] = useState(0),
     [reduced, setReduced] = useState(false),
     [compact, setCompact] = useState(false),
-    [paused, setPaused] = useState(false),
     [active, setActive] = useState(true),
     [seen, setSeen] = useState(false),
     [supported, setSupported] = useState(false),
@@ -303,7 +300,7 @@ export function LandingJourney() {
               <World
                 progress={progress}
                 reduced={reduced || compact}
-                ambientPaused={paused}
+                ambientPaused={false}
                 active={active && !topic}
                 selected={selected}
                 onSelect={setSelected}
@@ -372,10 +369,6 @@ export function LandingJourney() {
               Every community brings a different personality. Meet the mascots,
               inspect the rules, and choose your own way into Valtrum.
             </p>
-            <p className="journey-small">
-              Mascots and scenery are cosmetic. They never change token
-              performance or eligibility.
-            </p>
           </section>
           <section
             id="carnival-community"
@@ -424,13 +417,8 @@ export function LandingJourney() {
               with an idea.
             </h2>
             <p>
-              Choose two token communities, set a duration, and review your USDC
-              proposal bond before signing.
-            </p>
-            <p className="journey-small">
-              The current wallet flow pairs two communities and requires a
-              configured USDC bond. This little assembly machine is an
-              illustration, not a submitted proposal.
+              Pick your communities, choose a challenge, and review the details
+              before your wallet signs.
             </p>
             <div className="journey-actions">
               <Button asChild>
@@ -458,12 +446,7 @@ export function LandingJourney() {
               Personal challenges.
             </h2>
             <p>
-              Watch a decorative challenge at the arena overlook. Each host
-              plays with its own spring reactor.
-            </p>
-            <p className="journey-small">
-              This landing is decorative. Inside a battle, the arena follows
-              that battle’s recorded status. Character actions remain cosmetic.
+              Pick a crew. Follow the chart. Watch the round unfold.
             </p>
             <div className="journey-actions">
               <Button asChild variant="cyan">
@@ -487,10 +470,6 @@ export function LandingJourney() {
             <p>
               Follow your positions, review the outcome, then claim or withdraw
               when the current arena makes those actions available.
-            </p>
-            <p className="journey-small">
-              Claiming and withdrawing are separate steps. The vault animation
-              shows no wallet balance, payout or confirmed transaction.
             </p>
             <div className="journey-actions">
               <Button asChild variant="cyan">
@@ -552,8 +531,6 @@ export function LandingJourney() {
             </nav>
             <p className="journey-endnote">
               Built on NEAR · Testnet experience
-              <br />
-              Original community characters · Illustrative world
             </p>
           </section>
         </div>
@@ -581,31 +558,9 @@ export function LandingJourney() {
             >
               Skip journey <ArrowDown size={12} />
             </button>
-            {loaded && !staticMode && (
-              <button
-                className="journey-pause"
-                aria-label={
-                  paused
-                    ? "Resume ambient animation"
-                    : "Pause ambient animation"
-                }
-                aria-pressed={paused}
-                onClick={() => setPaused((v) => !v)}
-              >
-                {paused ? <Play size={14} /> : <Pause size={14} />}
-              </button>
-            )}
           </div>
         </div>
-        <p className="journey-render-note">
-          {failed
-            ? <button type="button" onClick={() => { setLoaded(false); setFailed(false); }}>3D could not load · Try again</button>
-            : loaded
-              ? reduced || compact
-                ? "Original 3D world · simplified still view"
-                : "Original 3D world · decorative · scroll to explore"
-              : "Illustrated view while local 3D assets load"}
-        </p>
+        {failed && <p className="journey-render-note"><button type="button" onClick={() => { setLoaded(false); setFailed(false); }}>Try loading the world again</button></p>}
         {!staticMode && (
           <div className="journey-progress" aria-hidden="true">
             <span style={{ transform: `scaleX(${progress})` }} />

@@ -41,6 +41,7 @@ export function RecoveryAlerts() {
   return (
     <Card className="space-y-3 p-4">
       <h2 className="text-lg text-neon-green">Recovery alerts</h2>
+      {!alerts && !error && <p role="status" className="text-sm text-mute">Checking for alerts…</p>}
       {error && (
         <p role="alert" className="text-base text-neon-amber">
           Alerts unavailable: {error}. This is not &quot;no alerts&quot;.

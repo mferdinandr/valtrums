@@ -1,4 +1,5 @@
 "use client";
+import { TransactionLink } from "@/components/transaction-link";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/components/providers";
@@ -37,7 +38,7 @@ const EXAMPLES = [
 ];
 
 export const PAYOUT_BLOCKED_REASON =
-  "A payout cannot be submitted yet: spendable custody (#148) is not proven and the arena contract exposes no entitlement for your account. Nothing was sent.";
+  "Payout requests are currently unavailable. Nothing was sent.";
 
 const CREDIT_TEXT: Record<CreditState, string> = {
   credited: "Credited: the arena reports this amount on your position.",
@@ -149,7 +150,7 @@ function ReviewedCall({
       )}
       {flow.step === "previewed" && (
         <div role="status" className="space-y-2">
-          <p className="text-xs text-neon-green">The service&apos;s canonical preview equals the reviewed call. Nothing is signed yet.</p>
+          <p className="text-xs text-neon-green">Your request is ready to review in your wallet. Nothing has been signed yet.</p>
           <p className="break-all text-xs text-mute">Preview {flow.previewed.record.previewHash}</p>
           <Button type="button" onClick={run.execute} disabled={waitingBaseline}>
             {waitingBaseline ? "Reading your current position…" : "Authorize and sign with wallet"}
@@ -168,6 +169,7 @@ function ReviewedCall({
             ? `Receipt verified. Transaction ${flow.result.txHash}.`
             : `Not confirmed (${flow.result.status}): ${flow.result.reason}${flow.result.txHash ? ` Transaction ${flow.result.txHash} was submitted; it has no effect until the receipt is verified.` : ""}`}
           {flow.result.ok && flow.result.fixture ? ` ${flow.result.fixture}` : ""}
+          <TransactionLink hash={flow.result.txHash} />
         </p>
       )}
       {flow.step === "error" && (

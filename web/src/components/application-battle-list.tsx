@@ -52,11 +52,6 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
             </Button>
             <span className="text-xs text-mute">Watching needs no wallet.</span>
           </div>
-          <details className="lifecycle-tech">
-            <summary>Connected arena</summary>
-            {namespace.deploymentId} · {namespace.network} ·{" "}
-            {namespace.arenaContract} · {namespace.protocol}
-          </details>
         </div>
         <CarnivalScene
           mode="arena"
@@ -116,19 +111,12 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
       )}
       {result && (
         <>
-          <p className="text-xs text-mute">
-            {result.provenance.kind} ·{" "}
-            {error || loading ? "stale" : result.provenance.health} ·{" "}
-            {result.provenance.complete ? "complete" : "partial"}
-          </p>
-          {result.provenance.reasons.map((reason) => (
-            <p className="text-xs text-mute" key={reason}>
-              {reason}
-            </p>
-          ))}
+          {(error || loading || !result.provenance.complete || result.provenance.health !== "healthy") && (
+            <p role="status" className="text-xs text-mute">Battle information may be incomplete or out of date.</p>
+          )}
           {!result.data.items.length && (
             <div className="lifecycle-empty">
-              <h3>No crews on this page yet.</h3>
+              <h3>No battles found.</h3>
               <p className="mt-2 text-sm text-mute">
                 Try another search or create a new rivalry.
               </p>
@@ -137,12 +125,12 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {result.data.items.map((battle) => (
               <Card
-                className="lifecycle-crew"
+                className="lifecycle-crew battle-preview-card"
                 key={`${namespace.deploymentId}:${battle.battleId}`}
               >
-                <p className="eyebrow text-neon-green">
+                <div className="battle-preview-meta"><p className="eyebrow text-neon-green">
                   BATTLE #{battle.battleId} · {battle.communities.length} CREWS
-                </p>
+                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : "In progress"}</span></div>
                 <h2 className="mt-3 text-xl">
                   <span className="sr-only">Battle #{battle.battleId}: </span>
                   {modeName(battle.mode)}
@@ -154,18 +142,18 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                       ? "The result is recorded"
                       : "Crews locked in"}
                 </p>
-                <div className="lifecycle-facts">
+                <div className="battle-preview-roster">
                   {battle.communities.map((c) => (
-                    <span key={c.index} title={c.representation} className="token-pill">
+                    <div key={c.index} title={c.representation} className="battle-preview-token">
                       {c.label ? (
                         <>
-                          <TokenIcon symbol={displaySymbol(c.label, "")} size={22} />
-                          {displaySymbol(c.label, "")}
+                          <TokenIcon symbol={displaySymbol(c.label, "")} size={44} />
+                          <strong>{displaySymbol(c.label, "")}</strong>
                         </>
                       ) : (
                         communityName(c.index)
                       )}
-                    </span>
+                    </div>
                   ))}
                 </div>
                 {battle.winner !== null && (
@@ -176,25 +164,13 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                       : communityName(battle.winner)}
                   </p>
                 )}
-                <div className="lifecycle-actions">
+                <div className="lifecycle-actions battle-preview-enter">
                   <Button asChild variant="cyan">
                     <Link href={`/arena/${battle.battleId}`}>
                       Enter arena <ArrowUpRight size={15} />
                     </Link>
                   </Button>
                 </div>
-                <details className="lifecycle-tech">
-                  <summary>Community contracts</summary>
-                  <p>Creator: {shortAccount(battle.creator)}</p>
-                  {battle.communities.map((c) => (
-                    <p key={c.index}>
-                      {c.label ? `${displaySymbol(c.label, "")} (${c.label.name}) · ` : ""}
-                      {c.representation}
-                      <br />
-                      {c.chainId}:{c.tokenAddress}
-                    </p>
-                  ))}
-                </details>
                 {battle.status !== "open" && (
                   <>
                     <Button

@@ -19,8 +19,8 @@ export default function AgentsPage() {
             Keep the keys.
           </h1>
           <p className="text-sm text-mute">
-            An agent plays for you inside limits you set: one token, a per-action limit, a total budget and an end
-            date. Your tokens stay in your account and you can revoke the grant at any time.
+            Set a token, spending limits and an end date for your agent. You can revoke access at any time.
+            Your agent can suggest deposits, but cannot move tokens on its own.
           </p>
           <div className="lifecycle-facts">
             <span>Your wallet signs</span>
@@ -30,12 +30,7 @@ export default function AgentsPage() {
         </div>
         <CarnivalScene mode="terminal" caption="Your agent kiosk · decoration, not an agent's balance" />
       </header>
-      <Card role="note" className="lifecycle-callout">
-        <strong>What works today:</strong> creating a grant, reading its budget and revoking it. A running agent can
-        propose a deposit and reserve budget. <strong>Not enabled yet:</strong> an agent cannot move tokens on its own,
-        because executing a reserved deposit is still an open decision in the project docs.
-      </Card>
-      {namespace ? <AgentGrants namespace={namespace} /> : <Card role="alert">The arena deployment is not configured.</Card>}
+      {namespace ? <AgentGrants namespace={namespace} /> : <Card role="alert">Agents are currently unavailable. Please try again later.</Card>}
     </div>
   );
 }

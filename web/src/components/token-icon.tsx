@@ -18,11 +18,10 @@ export function TokenIcon({ symbol, size = 40 }: { symbol: string; size?: number
       aria-hidden="true"
       style={{ width: size, height: size, borderColor: accent, background: `${accent}22`, color: accent, fontSize: Math.round(size * 0.36) }}
     >
-      {src && !failed ? (
+      {monogram(symbol)}
+      {src && !failed && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" width={size} height={size} loading="lazy" onError={() => setFailed(true)} />
-      ) : (
-        monogram(symbol)
       )}
     </span>
   );

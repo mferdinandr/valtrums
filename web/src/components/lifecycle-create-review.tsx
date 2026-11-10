@@ -1,4 +1,5 @@
 "use client";
+import { TransactionLink } from "@/components/transaction-link";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -102,15 +103,10 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             every detail before your wallet signs.
           </p>
           <div className="lifecycle-facts">
-            <span>2–16 communities</span>
+            <span>{available === null ? "Choose at least 2 communities" : `${MIN_COMMUNITIES}–${pickerCapacity(available, MAX_COMMUNITIES)} communities`}</span>
             <span>30-second rounds</span>
             <span>No proposal bond</span>
           </div>
-          <details className="lifecycle-tech">
-            <summary>Connected deployment</summary>
-            {namespace.deploymentId} · {namespace.network} ·{" "}
-            {namespace.arenaContract}
-          </details>
         </div>
         <CarnivalScene
           mode="create"
@@ -302,7 +298,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             {create.flow.step === "previewed" && (
               <div className="mt-3 space-y-2" role="status">
                 <p className="text-xs text-neon-green">
-                  The service's canonical preview equals the reviewed call.
+                  Your request is ready to review in your wallet.
                   Nothing is signed yet.
                 </p>
                 <p className="break-all text-xs text-mute">
@@ -337,6 +333,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 {create.flow.result.fixture
                   ? ` ${create.flow.result.fixture}`
                   : ""}
+                <TransactionLink hash={create.flow.result.txHash} />
               </p>
             )}
             {create.flow.step === "error" && (

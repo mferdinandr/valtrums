@@ -1,4 +1,5 @@
 "use client";
+import { TransactionLink } from "@/components/transaction-link";
 
 import { useMemo, useState } from "react";
 import { useWallet } from "@/components/providers";
@@ -97,16 +98,17 @@ export function PayoutRequest({
   return (
     <Card className="space-y-4 p-4" aria-label="Payout request">
       <h2 className="text-lg text-neon-green">Request a payout (original token on Robinhood Chain)</h2>
-      {facts?.error && <p className="text-sm text-neon-amber">Deployment facts partly unavailable: {facts.error}</p>}
+      {facts?.error && <p className="text-sm text-neon-amber">Some payout information is unavailable. Please try again later.</p>}
       {!gate.enabled && (
         <div role="status" className="space-y-1" data-testid="payout-disabled">
           <Badge tone="amber">payout requests disabled</Badge>
-          <ul className="list-disc pl-4 text-base text-mute">
-            {gate.reasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-          <p className="text-sm text-mute">Payout status, transfers and recovery alerts above stay readable while requests are disabled.</p>
+          <p className="text-sm text-mute">Payout requests are not available right now. You can still review your transfers and alerts.</p>
+          <details className="lifecycle-tech">
+            <summary>Why can't I request a payout?</summary>
+            <ul className="list-disc pl-4 text-sm text-mute">
+              {gate.reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          </details>
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -204,6 +206,7 @@ export function PayoutRequest({
                 {flow.result.ok
                   ? `The payout request transaction is verified (${flow.result.txHash}). This is a request, not a payment: it is paid only when its transfer is confirmed below.`
                   : `Not confirmed (${flow.result.status}): ${flow.result.reason}${flow.result.txHash ? ` Transaction ${flow.result.txHash} was submitted; refresh the status before doing anything else.` : ""}`}
+                <TransactionLink hash={flow.result.txHash} />
               </p>
               <Button type="button" variant="ghost" onClick={onChanged}>
                 Refresh payout status

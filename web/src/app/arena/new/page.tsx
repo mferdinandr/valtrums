@@ -11,7 +11,7 @@ export default function NewLifecycleBattlePage() {
   if (!deployment) {
     return (
       <Card role="alert">
-        Lifecycle reads are not configured for this deployment, so a lifecycle battle cannot be reviewed here.{" "}
+        Creating a battle is currently unavailable. Please try again later.{" "}
         <Link href="/arena" className="underline">Back to the battle list</Link>
       </Card>
     );
