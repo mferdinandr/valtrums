@@ -7,6 +7,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
+import { ReferencePreviewChart } from "@/components/battle-chart/reference-preview";
 import { lifecycleRoster } from "@/components/colosseum/lifecycle-runtime";
 import { useLifecycleBattle } from "@/hooks/use-lifecycle-battle";
 import { useNow } from "@/hooks/use-now";
@@ -166,10 +167,18 @@ export function LifecycleBattleDetail({
               />
             </section>
           ) : (
-            <p className="py-3 text-sm text-mute">
-              Round observations appear once the crews lock in and evidence is
-              available.
-            </p>
+            <section>
+              <h2 className="my-3 text-lg">Live price preview</h2>
+              <ReferencePreviewChart
+                symbols={rows.map((r) =>
+                  displaySymbol(r.label, communityName(r.index)),
+                )}
+              />
+              <p className="py-3 text-sm text-mute">
+                Round observations appear once the crews lock in and evidence
+                is available.
+              </p>
+            </section>
           )
         }
       />

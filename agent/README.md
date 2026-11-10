@@ -263,3 +263,18 @@ Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and 
 - **Safety limits** per agent: `fractionBps` (default 2500), `maxPerHour` (6), `maxFailures` (3), `intervalSecs` (60), `scanBattles` (20). It skips communities where the user has no registered position, because registering needs the user's own signature.
 - **Required environment:** `ARENA_CONTRACT_ID`, `PLAYER_POLICY_CONTRACT_ID`, optional `NEAR_RPC_URL`, `PLAYER_AGENTS_PATH`. Testnet only.
 
+## Testnet faucet
+
+The faucet is a NEAR contract (`contracts/faucet`, crate `valtrum-faucet`), not a service: nothing to host and no faucet key to protect. It gives the caller a fixed amount of each backed representation token it holds. It never mints: a representation can only be minted from finalized custody, so the operator funds the contract once (below). Players need only a NEAR testnet account and a little NEAR for gas; the web page at `/faucet` reads the contract over RPC and each claim is a transaction the player's own wallet signs.
+
+- **Claim:** `claim(token)`. The claimer is always the caller. One claim per account and token per cooldown (24 h by default) and an optional daily budget per token that bounds what many new accounts can take. A failed transfer restores the cooldown, the budget and the record deposit.
+- **Owner:** `set_token(token, symbol, amount, daily_budget)`, `remove_token`, `set_cooldown_secs`, `set_paused`, `set_owner`, `withdraw_ft`, `withdraw_near`.
+- **Web:** set `NEXT_PUBLIC_FAUCET_CONTRACT_ID` in `web/.env.local`.
+- **Tests:** `cargo test -p valtrum-faucet`.
+
+### Funding the faucet (operator)
+
+`pnpm -C agent faucet:plan plan --faucet <contract account> --operator <account> --battle <open lifecycle battle id> --depositor <0x address> [--tokens 1000000] [--claim 100] [--daily 100000] [--symbols CASHCAT,WALLET]` prints the ordered steps and exact commands to deploy the contract and put backed representation on it for all six tokens (default stock 1,000,000 per token, which serves 10,000 claims of 100). It prints text only: it sends nothing, reads no key and makes no network call. Every step that sends a transaction is marked, names its signer and refers to keys by environment variable name; you review and run each one yourself. `faucet:plan attest --file <verify output>` turns a verified custody verdict into the registry `attest` call for the verifier account.
+
+Prerequisites it checks for you: an open lifecycle battle that includes the backings (`claim_receipt` fails closed without one; one battle can hold all six tokens), separate operator and faucet accounts, and a reachable Robinhood RPC. Wait for the finalized block once for all deposits, then verify, attest, claim the receipt and claim the representation per token. This is the first live run of that path on testnet.
+

@@ -148,3 +148,26 @@ A local fixture of the 1Click API with a fake solver SHALL provide the testnet f
 #### Scenario: Fixture labelling
 - **WHEN** a quote, status, preview, action status or terminal result concerns the fixture
 - **THEN** it carries the fixture label and is never presented as a verified Intents integration
+
+### Requirement: Testnet token faucet
+A testnet faucet contract SHALL give the caller small amounts of already backed NEP-141 representation tokens that it holds, and SHALL NOT mint any representation. The claimer SHALL always be the caller. It SHALL allow one claim per account and token per cooldown, MAY bound the total handed out per day per token, and SHALL restore a claim's cooldown, daily budget and record deposit when its transfer fails. Its owner SHALL be able to pause it, set tokens and withdraw stock, and nothing else SHALL be able to move its stock.
+
+#### Scenario: First claim
+- **WHEN** an account without storage on a representation token claims it
+- **THEN** the contract pays that account's minimum storage registration from its own balance, transfers the configured amount, and records the claim
+
+#### Scenario: Claim again too soon
+- **WHEN** the same account claims the same token inside the cooldown
+- **THEN** the call fails and nothing is sent
+
+#### Scenario: Failed transfer
+- **WHEN** the transfer fails (no stock, a paused token, a failed registration)
+- **THEN** the claim record, the daily budget and the record deposit are restored, so the claimer keeps their cooldown and deposit
+
+#### Scenario: Daily budget
+- **WHEN** a token's daily budget is used up
+- **THEN** further claims of that token fail until the next day, so many new accounts cannot empty the stock in one day
+
+#### Scenario: Not the owner
+- **WHEN** an account other than the owner sets a token, pauses the faucet or withdraws stock
+- **THEN** the call fails

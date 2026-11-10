@@ -18,6 +18,8 @@ interface Props {
   status?: string;
   result?: string;
   pending?: boolean;
+  /** Hide the status line under the source (used by the display-only price preview, which assigns no result). */
+  hideLead?: boolean;
   range?: [number, number];
   signed?: boolean;
   resetKey?: string | number;
@@ -315,20 +317,24 @@ export function ScoreChart(props: Props) {
         {props.source}
         {props.status ? ` · ${props.status}` : ""}
       </p>
-      <p
-        className="score-chart-lead"
-        key={`${props.pending}:${props.result}:${standings.leaders.map((l) => l.id).join()}`}
-      >
-        <TrendingUp size={15} />
-        {headline}
-      </p>
+      {!props.hideLead && (
+        <p
+          className="score-chart-lead"
+          key={`${props.pending}:${props.result}:${standings.leaders.map((l) => l.id).join()}`}
+        >
+          <TrendingUp size={15} />
+          {headline}
+        </p>
+      )}
       <span className="sr-only" role="status">
         {props.result ??
-          (props.pending
-            ? "Evidence incomplete"
-            : unique
-              ? `${unique.name} is the provisional chart leader`
-              : "No unique chart leader")}
+          (props.hideLead
+            ? "Live reference prices; no result is assigned from this chart"
+            : props.pending
+              ? "Evidence incomplete"
+              : unique
+                ? `${unique.name} is the provisional chart leader`
+                : "No unique chart leader")}
       </span>
       <Plot key={props.resetKey} {...props} />
       <p className="score-chart-note">

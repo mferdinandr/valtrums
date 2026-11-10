@@ -41,6 +41,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/arena/new">Create Battle</Link>
             <Link href="/terminal">Terminal</Link>
             <Link href="/agents">Agents</Link>
+            <Link href="/faucet">Faucet</Link>
             <Link href="/portfolio">Portfolio</Link>
           </nav>
           <p>Built on NEAR · Testnet experience</p>

@@ -4061,6 +4061,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "valtrum-faucet"
+version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "valtrum-furnace"
 version = "0.1.0"
 dependencies = [

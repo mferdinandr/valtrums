@@ -84,3 +84,11 @@ discovery stays disabled until full deployment coverage and #80 acceptance.
 - [ ] Wire live custody-verifier transport and protocol-controlled mapping/registry attestation with the backing owner, separating source receipt verification from the trusted operator assertion and recording actual-received/finality evidence.
 - [ ] Resolve custody/payout compatibility with the backing owner before enabling source deposits: the current `TestnetDepositCustody` is deposit-only with no withdrawal/recovery. Prepare any custody redesign for explicit financial/security review; prove the deployed reservation-bound sender can spend the actual held assets rather than assuming an EOA signature suffices. Partly delivered (#148, option A chosen by the owner; see `custody-compatibility.md`): the deposit-only finding with source evidence, `assessCustody`, the forwarder contract that holds nothing (12 Foundry tests), the verifier's separate holder checks and the CLI gate. Update 2026-11-10: the forwarder is deployed and verified on chain (`docs/evidence/2026-11-10-forwarder-deploy.json`, no mapping version bump needed under route R1) and the old contract is recorded as retired. The gate is in application health (#168). Still open and not claimed: confirming the payout contract's registered sender (no view exists), running the verifier on a real forwarder deposit, and a live payout from the holder.
 - [ ] Verify cross-process dependency health, configuration/namespace consistency and rollback gating for application reads, collectors and workers; downstream clients consume this evidence before enabling capabilities.
+
+## Testnet faucet
+
+- [x] Faucet contract (`contracts/faucet`) with 26 unit tests, the "Get test tokens" page that reads it over RPC, and the funding plan generator (`pnpm -C agent faucet:plan`).
+- [ ] Sandbox test of the claim flow with a mock NEP-141, including the callback's `#[private]` guard and a failed transfer.
+- [ ] Security review of the contract (the NEAR contract audit checklist) before it holds stock.
+- [ ] Deploy the faucet contract, fund it with backed representation for all six tokens and offer them (operator actions; needs the owner's per-transaction approval; the first live run of deposit, claim receipt and claim representation).
+- [ ] Verify one live claim on testnet and record the evidence.
