@@ -62,3 +62,17 @@ The target SHALL include NEAR Intents funding/routing and Bitte agent orchestrat
 #### Scenario: Intended service flow
 - **WHEN** a supported funding action is orchestrated through Bitte and routed through Intents
 - **THEN** evidence binds the preview, authorization, route status and final custody receipt to the same user action; fixture evidence remains labeled
+
+### Requirement: Application worker and projection handoffs
+Integration SHALL verify a restart-safe scheduler consuming persisted frozen-round evidence, compatible live event projections and separately authorized custody verification transport. Unsupported providers, unknown relevant events and absent runtime capabilities SHALL remain explicit release gates.
+
+#### Scenario: New round events are unsupported by the indexer
+- **WHEN** an allowlisted emitter produces an unmodelled relevant event
+- **THEN** the projection remains degraded until a reviewed reducer/version handoff is verified rather than claiming complete application history
+
+### Requirement: Spendable custody release gate
+Source deposits SHALL remain disabled until evidence proves the deployed custody path permits the reservation-bound payout sender to spend the actual received assets. Deposit-only test custody SHALL NOT satisfy this gate. Custody redesign SHALL receive financial/security review before deployment or funding.
+
+#### Scenario: Signer cannot spend held tokens
+- **WHEN** a signer EOA exists but deposited tokens are held in a contract with no authorized withdrawal path
+- **THEN** deposit/payout readiness remains false and integration does not request additional deposits into that path

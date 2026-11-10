@@ -63,3 +63,10 @@ Winning principal SHALL remain isolated until an authorized DAO mechanism is exp
 #### Scenario: Governance unresolved
 - **WHEN** there is a unique winner but governance is unresolved
 - **THEN** principal stays escrowed and losing-token rewards remain independent
+
+### Requirement: Versioned application read compatibility
+Reviewed application views SHALL expose lossless identifiers and activation/readiness with provenance-compatible references, reusing existing audit expiry. New historical round evidence SHALL retain actual windows, candidates, outcomes and available exact scores; records predating that storage SHALL remain explicitly incomplete.
+
+#### Scenario: Old round lacks stored evidence
+- **WHEN** a historical round predates versioned score/window storage
+- **THEN** reads identify incomplete fields instead of reconstructing a fabricated exact score or window

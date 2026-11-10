@@ -196,3 +196,10 @@ The arena SHALL store, with each audit pass, an expiry taken only from the white
 - **WHEN** every record is a pass with enough life left
 - **THEN** the agent sends the lock once with a deposit of at least 1 yocto plus storage, and a failure is retried after a backoff with a bounded error
 
+### Requirement: Runnable audit archive handoff
+An archive-enabled lifecycle audit process SHALL durably publish attributed reports to its configured archive with explicit provenance and failure health. The passive reader SHALL consume the same persisted format; a RAM report store or demo seed SHALL NOT establish live publication.
+
+#### Scenario: Audit process restarts
+- **WHEN** the archive-enabled process restarts after a successful append
+- **THEN** the report reader can recover the attributed report and archive failures remain visible and retryable
+

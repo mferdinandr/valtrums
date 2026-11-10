@@ -41,3 +41,13 @@ Check tasks only after implementation and verification. Research can proceed ind
 - [ ] Demonstrate at least two independently user-funded player agents using MCP under separate grants.
 - [ ] Map evidence to Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms while identifying open DAO rules.
 - [ ] Run end-to-end failure and recovery tests and obtain independent review of the implemented target.
+
+## Application runtime handoff follow-up
+
+The existing provider qualification, live BlockSource, reorg and cross-service acceptance tasks above remain canonical. These additions cover missing process wiring, not a second copy of those tasks. See [integration ownership](../../plans/arena-application-integration/ownership.md).
+
+- [ ] Implement a separately configured lifecycle scheduler/oracle runtime that reads frozen candidates/policy/windows, consumes the market-owner persisted evidence interface and reconciles contract state after restart before opening/submitting rounds; preserve pending evidence and fresh overtime boundaries.
+- [ ] Integrate newly reviewed lifecycle/round/settlement/backing/payout event schemas into read-model reducers and backfill/version handling; retain degraded health for unmodelled relevant events and do not invent unavailable history.
+- [ ] Wire live custody-verifier transport and protocol-controlled mapping/registry attestation with the backing owner, separating source receipt verification from the trusted operator assertion and recording actual-received/finality evidence.
+- [ ] Resolve custody/payout compatibility with the backing owner before enabling source deposits: the current `TestnetDepositCustody` is deposit-only with no withdrawal/recovery. Prepare any custody redesign for explicit financial/security review; prove the deployed reservation-bound sender can spend the actual held assets rather than assuming an EOA signature suffices.
+- [ ] Verify cross-process dependency health, configuration/namespace consistency and rollback gating for application reads, collectors and workers; downstream clients consume this evidence before enabling capabilities.

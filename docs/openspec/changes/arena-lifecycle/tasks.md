@@ -27,3 +27,11 @@ Check tasks only after implementation and verification. Coordinate audit and bac
 - [x] Keep principal locked without a valid future DAO decision and expose no owner-only or worker-only disposition.
 - [x] Verify unresolved governance does not block independently backed losing-token rewards.
 - [x] Verify lifecycle integration with backing, audit and scoring before claiming live acceptance.
+
+## Application read/view compatibility follow-up
+
+New application requirements discovered during integration mapping; completed contract work above is preserved. The [read API](../arena-application-read-api/tasks.md) consumes views; [testnet integrations](../arena-testnet-integrations/tasks.md) owns live indexing. Review corresponding capability deltas before implementing new ABI/state requirements.
+
+- [ ] Define and implement reviewed versioned activation/readiness and lossless u64 discovery boundaries needed by application reads; reuse the already exported `audit_expires_at_ms`, add only missing configuration/backing fields and expose missing capabilities explicitly.
+- [ ] Define and implement round-history, frozen-window, exact-score/evidence and pending-resolution views/events consistent with the [scoring spec](../../specs/arena-scoring/spec.md); distinguish existing stored fields from genuinely new state.
+- [ ] Document deployment/upgrade/storage implications and historical backfill limits, coordinate event schema with indexer consumers, and verify serialization/compatibility; never fabricate missing past scores or evidence.
