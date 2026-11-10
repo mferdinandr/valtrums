@@ -46,7 +46,7 @@ pnpm -C web build
 # local CI (same checks as .github/workflows/ci.yml; run before opening a PR)
 scripts/pre-commit.sh            # only the stages for your changed files
 scripts/pre-commit.sh --all      # contracts, sandbox, node, docker
-scripts/pre-commit.sh --install  # optional: run it as the git pre-commit hook
+scripts/pre-commit.sh --install  # git pre-push hook: runs it before every push (skip once: git push --no-verify)
 ```
 
 ## Conventions
@@ -55,6 +55,7 @@ scripts/pre-commit.sh --install  # optional: run it as the git pre-commit hook
 - One feature = one branch (`feat/…`, `fix/…`, `chore/…`, `style/…`, `docs/…`) = one PR to `main`. Each PR has several small logical commits, never one large commit.
 - Use `docs/…` for documentation-only branches (specs, OpenSpec artifacts, the findings log); the PR title then starts with `docs:`.
 - Never push to `main`. Open a PR from the feature branch, then wait for the owner's review. Merge only after the owner approves, using a merge commit or rebase (not squash). Approval applies to that PR only.
+- Before every `git push`, run `scripts/pre-commit.sh` (it is the local CI; the GitHub Actions CI workflow is disabled). Fix failures instead of pushing; never use `git push --no-verify` or `SKIP_LOCAL_CI=1` unless the owner says so. The optional pre-push hook (`scripts/pre-commit.sh --install`) runs it automatically.
 - Run tests before opening a PR. Rust: no `unwrap()` in contract code paths, checked math only. TypeScript: strict mode.
 - No secrets in the repo; use `.env` files (git-ignored).
 
