@@ -1,5 +1,5 @@
 import type { NearTransport } from "./near-client.js";
-import type { Hash, PayoutLedger } from "./payout-reconciler.js";
+import type { Hash, NoSpendProofInput, PaymentEvidenceInput, PayoutLedger } from "./payout-reconciler.js";
 import type { PayoutHoldReason, PayoutPage, PayoutView } from "./payout-status.js";
 
 /** Gas for payout calls that only change state or call the backing once. */
@@ -68,5 +68,61 @@ export class NearPayoutLedger implements PayoutLedger {
 
   requireReconciliation(p: PayoutView, reason: PayoutHoldReason): Promise<void> {
     return this.write(this.relayer, "require_reconciliation", { ...this.key(p), reason });
+  }
+}
+
+/** `request_signature` calls the MPC signer through the payout contract (about 280 Tgas needed). */
+const SIGN_GAS = "300 Tgas";
+
+/**
+ * Relayer-only: ask the contract to build the transfer from the reservation and request a signature.
+ * The relayer chooses only the fee cap; the contract enforces the registered cap, strictly rising
+ * fees and the attempt limit.
+ */
+export async function requestPayoutSignature(
+  transport: NearTransport,
+  contractId: string,
+  p: PayoutView,
+  maxFeePerGas: bigint,
+): Promise<void> {
+  await transport.call(
+    contractId,
+    "request_signature",
+    { backing: p.backing, holder: p.holder, request_id: p.request_id, max_fee_per_gas: maxFeePerGas.toString() },
+    SIGN_GAS,
+    ONE_YOCTO,
+  );
+}
+
+/**
+ * Operator ledger: reads the open payouts and holds ONLY the operator methods. It is built over the
+ * operator account's transport and used by the separate operator process; the relayer methods do not
+ * exist here, so this process cannot request a signature or record a broadcast.
+ */
+export class NearPayoutOperatorLedger {
+  /** Same read path as the relayer ledger: view calls only. */
+  readonly reads: NearPayoutLedger;
+
+  constructor(
+    private readonly contractId: string,
+    private readonly operator: NearTransport,
+  ) {
+    this.reads = new NearPayoutLedger(contractId, operator);
+  }
+
+  private key(p: PayoutView): { backing: string; holder: string; request_id: Hash } {
+    return { backing: p.backing, holder: p.holder, request_id: p.request_id };
+  }
+
+  async confirmPayout(p: PayoutView, evidence: PaymentEvidenceInput): Promise<void> {
+    await this.operator.call(this.contractId, "confirm_payout", { ...this.key(p), evidence }, "300 Tgas", ONE_YOCTO);
+  }
+
+  async recordRevert(p: PayoutView, txHash: Hash): Promise<void> {
+    await this.operator.call(this.contractId, "record_revert", { ...this.key(p), tx_hash: txHash }, PAYOUT_CALL_GAS, ONE_YOCTO);
+  }
+
+  async restorePayout(p: PayoutView, proof: NoSpendProofInput): Promise<void> {
+    await this.operator.call(this.contractId, "restore_payout", { ...this.key(p), proof }, "300 Tgas", ONE_YOCTO);
   }
 }
