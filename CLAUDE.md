@@ -85,4 +85,5 @@ For any NEAR work, invoke the matching skill via the Skill tool before writing c
 <!-- claude-reflect: learned rules (saved from the band; edit freely) -->
 ## Learned rules
 - After finishing each GitHub issue in this repo, open a PR to main, and assign issues to naufalfzml before starting work on them.
+- Write commit messages, code comments, and UI text for this project in English.
 <!-- end claude-reflect -->
