@@ -14,6 +14,7 @@ import { Crosshair, Eye, Expand, Pause, Play } from "lucide-react";
 import { useNow } from "@/hooks/use-now";
 import type { BattleView, TokenMeta } from "@/lib/arena/types";
 import { battleRoster, recordedRuntime } from "./battle-runtime";
+import type { Contender, PreviewRuntime } from "./choreography";
 import "./battle-arena.css";
 
 const Scene = dynamic(() => import("./scene"), { ssr: false });
@@ -48,12 +49,59 @@ export function BattleArena({
   chart: ReactNode;
   leaderToken?: string | null;
 }) {
+  const identity = tokens.map((t) => `${t.id}:${t.symbol}`).join("|");
+  const roster = useMemo(() => battleRoster(tokens), [identity]);
+  return (
+    <RecordedArena
+      battleId={String(battle.id)}
+      tokens={tokens}
+      roster={roster}
+      resolveRuntime={(now) => recordedRuntime(battle, roster, now)}
+      selected={selected}
+      onSelect={onSelect}
+      chart={chart}
+      leaderToken={leaderToken}
+      provenance={battle.demo_communities ? "Simulated" : "Recorded"}
+      waitingText={
+        battle.status === "Live" || battle.status === "Settling"
+          ? "Awaiting recorded result · no winner assigned"
+          : `${battle.status} · inspect the battle details`
+      }
+    />
+  );
+}
+
+/** Shared renderer/presentation; each protocol supplies its own authoritative adapter. */
+export function RecordedArena({
+  battleId,
+  tokens,
+  roster,
+  resolveRuntime,
+  selected,
+  onSelect,
+  chart,
+  leaderToken,
+  provenance,
+  waitingText,
+}: {
+  battleId: string;
+  tokens: Array<{ id: string; symbol: string }>;
+  roster: Contender[];
+  resolveRuntime: (now: number) => PreviewRuntime;
+  selected: string;
+  onSelect: (token: string) => void;
+  chart?: ReactNode;
+  leaderToken?: string | null;
+  provenance: string;
+  waitingText: string;
+}) {
   const host = useRef<HTMLDivElement>(null),
     clock = useRef(0);
   const now = useNow(250);
   const [paused, setPaused] = useState(false),
     [reduced, setReduced] = useState(true),
     [visible, setVisible] = useState(true),
+    [inView, setInView] = useState(true),
     [ready, setReady] = useState(false),
     [support, setSupport] = useState<"checking" | "supported" | "failed">(
       "checking",
@@ -62,10 +110,9 @@ export function BattleArena({
     [notice, setNotice] = useState(""),
     [entering, setEntering] = useState(true);
   const identity = tokens.map((t) => `${t.id}:${t.symbol}`).join("|");
-  const roster = useMemo(() => battleRoster(tokens), [identity]);
-  const runtime = useRef(recordedRuntime(battle, roster, 0));
+  const runtime = useRef(resolveRuntime(0));
   runtime.current = {
-    ...recordedRuntime(battle, roster, now),
+    ...resolveRuntime(now),
     time: clock.current,
     selected: Math.max(
       0,
@@ -73,7 +120,7 @@ export function BattleArena({
     ),
     camera,
     reduced,
-    paused: paused || !visible,
+    paused: paused || !visible || !inView,
     chartLeader: leaderToken
       ? tokens.findIndex((t) => t.id === leaderToken)
       : null,
@@ -99,13 +146,26 @@ export function BattleArena({
       gl = canvas.getContext("webgl2");
     setSupport(gl ? "supported" : "failed");
     gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry?.isIntersecting ?? false),
+      { rootMargin: "150px" },
+    );
+    if (host.current) observer.observe(host.current);
     return () => {
+      observer.disconnect();
       media.removeEventListener("change", motion);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
   useEffect(() => {
-    if (paused || reduced || !visible || support !== "supported" || !ready)
+    if (
+      paused ||
+      reduced ||
+      !visible ||
+      !inView ||
+      support !== "supported" ||
+      !ready
+    )
       return;
     let frame = 0,
       previous = performance.now();
@@ -117,7 +177,7 @@ export function BattleArena({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [paused, reduced, visible, support, ready]);
+  }, [paused, reduced, visible, inView, support, ready]);
   const fail = useCallback(() => setSupport("failed"), []),
     loaded = useCallback(() => setReady(true), []);
   const select = useCallback(
@@ -143,20 +203,17 @@ export function BattleArena({
       ? `${tokens[round.winner]?.symbol} wins · recorded result`
       : round.stage === "fighting"
         ? "Battle live · deposits closed"
-        : battle.status === "Live" || battle.status === "Settling"
-          ? "Awaiting recorded result · no winner assigned"
-          : `${battle.status} · inspect the battle details`;
+        : waitingText;
   return (
     <section
       ref={host}
       className="battle-arena"
-      aria-label={`3D arena for battle ${battle.id}`}
+      aria-label={`3D arena for battle ${battleId}`}
     >
       <div className="battle-arena-toolbar">
         <div>
           <span className="eyebrow">
-            Battle #{battle.id} /{" "}
-            {battle.demo_communities ? "Simulated" : "Recorded"} state
+            Battle #{battleId} / {provenance} state
           </span>
           <p role="status">{status}</p>
         </div>
@@ -192,7 +249,7 @@ export function BattleArena({
       <div className="battle-arena-stage">
         {ready && entering && !reduced && (
           <div className="battle-arena-entry" aria-hidden="true">
-            Entering battle #{battle.id}
+            Entering battle #{battleId}
           </div>
         )}
         {support === "supported" && (
@@ -200,7 +257,8 @@ export function BattleArena({
             <Scene
               key={identity}
               runtime={runtime}
-              frozen={paused || reduced || !visible}
+              frozen={paused || reduced || !visible || !inView}
+              revision={`${selected}:${camera}:${round.round}:${round.stage}:${round.winner}:${round.candidates.join(",")}:${reduced}:${paused}`}
               onSelect={select}
               onReady={loaded}
               onFailure={fail}
@@ -247,7 +305,7 @@ export function BattleArena({
           </button>
         ))}
       </div>
-      <div className="battle-arena-chart">{chart}</div>
+      {chart && <div className="battle-arena-chart">{chart}</div>}
       <p className="battle-arena-note">
         Animation pause affects visuals only. The battle clock, data and
         deposits follow the backend. Characters act on their own reactors;

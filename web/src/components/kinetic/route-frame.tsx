@@ -31,9 +31,11 @@ export function RouteFrame({ children }: { children: ReactNode }) {
     <div ref={ref} className="route-content relative">
       <p className="mb-5 flex items-center gap-2 text-[10px] text-mute">
         <span className="status-dot" />
-        {config.mock
-          ? "Demo mode · simulated data and transactions"
-          : `${config.network} · NEAR arena`}
+        {config.applicationDeployment
+          ? `${config.network} · lifecycle arena`
+          : config.mock
+            ? "Demo mode · simulated data and transactions"
+            : `${config.network} · NEAR arena`}
       </p>
       <div key={pathname} className="route-reveal">
         {children}

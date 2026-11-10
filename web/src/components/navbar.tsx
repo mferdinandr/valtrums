@@ -6,10 +6,18 @@ import { cn } from "@/lib/utils";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
 import { Aperture, Swords, Layers3, Terminal, Plus } from "lucide-react";
+import {
+  arenaNavigationActive,
+  createBattlePath,
+} from "@/lib/arena-read/routes";
 
 const LINKS = [
   { href: "/arena", label: "Arena", icon: Swords },
-  { href: "/battles/new", label: "Create", icon: Plus },
+  {
+    href: createBattlePath(!!config.applicationDeployment),
+    label: "Create",
+    icon: Plus,
+  },
   { href: "/terminal", label: "Terminal", icon: Terminal },
   { href: "/portfolio", label: "Portfolio", icon: Layers3 },
 ];
@@ -26,7 +34,7 @@ export function Navbar() {
     >
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 lg:px-10">
         <Link
-          href="/"
+          href={config.applicationDeployment ? "/arena" : "/"}
           className="flex items-center gap-2.5 font-pixel text-xl font-bold tracking-[-.06em]"
         >
           <Aperture size={28} strokeWidth={1.5} className="text-neon-pink" />{" "}
@@ -34,18 +42,22 @@ export function Navbar() {
         </Link>
         <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-[9px] uppercase tracking-wider text-mute sm:inline-flex">
           <span className="status-dot" />
-          {config.applicationDeployment ? config.network : config.mock ? "demo data" : config.network}
+          {config.applicationDeployment
+            ? config.network
+            : config.mock
+              ? "demo data"
+              : config.network}
         </span>
         <nav
           aria-label="Main navigation"
           className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto md:flex-1 md:justify-center"
         >
-          {LINKS.map((l) => {
+          {LINKS.filter(
+            (l) => !config.applicationDeployment || l.href.startsWith("/arena"),
+          ).map((l) => {
             const active =
               l.href === "/arena"
-                ? pathname === "/arena" ||
-                  (pathname.startsWith("/battles/") &&
-                    pathname !== "/battles/new")
+                ? arenaNavigationActive(pathname)
                 : pathname.startsWith(l.href);
             return (
               <Link

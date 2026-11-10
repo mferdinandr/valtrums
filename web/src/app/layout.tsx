@@ -6,6 +6,8 @@ import { Navbar } from "@/components/navbar";
 import { Providers } from "@/components/providers";
 import { RouteFrame } from "@/components/kinetic/route-frame";
 import { ApplicationReadBoundary } from "@/components/application-read-boundary";
+import { config } from "@/lib/config";
+import { createBattlePath } from "@/lib/arena-read/routes";
 
 export const metadata: Metadata = {
   title: "Valtrum | A little rivalry. Big community energy.",
@@ -29,7 +31,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             id="main-content"
             className="site-main mx-auto min-h-[75vh] max-w-[1360px] px-5 py-7 lg:px-10 lg:py-9"
           >
-            <ApplicationReadBoundary><RouteFrame>{children}</RouteFrame></ApplicationReadBoundary>
+            <ApplicationReadBoundary>
+              <RouteFrame>{children}</RouteFrame>
+            </ApplicationReadBoundary>
           </main>
         </Providers>
         <footer className="site-footer">
@@ -39,8 +43,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
           <nav aria-label="Footer navigation">
             <Link href="/arena">Battles</Link>
-            <Link href="/battles/new">Create Battle</Link>
-            <Link href="/portfolio">Portfolio</Link>
+            <Link href={createBattlePath(!!config.applicationDeployment)}>
+              Create Battle
+            </Link>
+            {!config.applicationDeployment && (
+              <Link href="/portfolio">Portfolio</Link>
+            )}
           </nav>
           <p>Built on NEAR · Testnet experience</p>
         </footer>
