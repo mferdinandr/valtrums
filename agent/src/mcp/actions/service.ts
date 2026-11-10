@@ -1,7 +1,7 @@
 import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
 import type { Nep413Verifier } from "../session.js";
 import { FIXTURE_LABEL, FIXTURE_ROUTE, assertFixtureAllowed } from "../../intents-fixture/label.js";
-import { sha256Hex } from "./canonical.js";
+import { hashCanonical, sha256Hex } from "./canonical.js";
 import {
   ActionError,
   type ActionRequest,
@@ -239,7 +239,15 @@ export class ActionService {
    * turns it into a grant preview through the same path as any action.
    */
   async propose(caller: string, output: unknown): Promise<ActionRecord> {
-    return this.preview(caller, proposalToRequest(output, caller, this.deps.delegateGrants ?? {}));
+    const request = proposalToRequest(output, caller, this.deps.delegateGrants ?? {});
+    // The request id is derived here, never taken from the proposal: the same grant, battle and community always
+    // map to the same id, so a repeated proposal (for example after the agent lost its own state) is the same
+    // reservation on the contract, which is idempotent per request identity, and cannot spend the budget twice.
+    if (request.kind === "deposit" && request.grant && !request.requestId) {
+      const requestId = hashCanonical({ v: "player-proposal-v1", user: request.grant.user, localId: request.grant.localId, battleId: request.battleId, community: request.community });
+      return this.preview(caller, { ...request, requestId });
+    }
+    return this.preview(caller, request);
   }
 
   /** The user, signer, position, grant and reservation an action is bound to, read now. */

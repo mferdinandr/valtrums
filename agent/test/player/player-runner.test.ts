@@ -111,7 +111,10 @@ describe("player runner (live)", () => {
   });
   it("records a signer failure and stops after the failure limit", async () => {
     const deps = setup()({ live: true, sign: async () => { throw new Error("rpc down"); } });
-    for (let i = 0; i < agent.maxFailures; i++) expect(await tick(agent, deps)).toMatchObject({ kind: "error", message: "rpc down" });
+    for (let i = 0; i < agent.maxFailures; i++) {
+      expect(await tick(agent, deps)).toMatchObject({ kind: "error", message: "rpc down" });
+      clock += 1_000; // time passes between rounds, so a retry is a new preview of the same reservation
+    }
     expect(await tick(agent, deps)).toEqual({ kind: "skipped", reason: "circuit_open" });
   });
   it("respects the hourly limit", async () => {
@@ -122,6 +125,27 @@ describe("player runner (live)", () => {
     clock += 3_700_000;
     // An hour later the limit is open again (the fixture audit has expired by then, which is a different reason).
     expect(await tick(agent, deps)).not.toEqual({ kind: "skipped", reason: "hourly_limit" });
+  });
+});
+
+describe("player runner (lost state)", () => {
+  const requestIdOf = (out: Awaited<ReturnType<typeof tick>>): string => {
+    if (out.kind !== "dry_run") throw new Error(`expected a dry run, got ${out.kind}`);
+    const args = out.transaction.actions[0]!.args as { action: { request_id: number[] } };
+    return Buffer.from(args.action.request_id).toString("hex");
+  };
+  it("asks for the same reservation again after the agent lost its own state, so the contract treats it as one", async () => {
+    const first = await tick(agent = (setup(), agent), setup()());
+    // A new run with an empty state file: the same community is chosen again and gets the same request id.
+    const second = await tick(agent, setup()());
+    expect(requestIdOf(first)).toBe(requestIdOf(second));
+    expect(requestIdOf(first)).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it("uses a different request id for a different community, battle or grant", async () => {
+    const a = await tick(agent = (setup(), agent), setup()());
+    agent = { ...agent, strategy: "underdog" };
+    const b = await tick(agent, setup()());
+    expect(requestIdOf(a)).not.toBe(requestIdOf(b));
   });
 });
 
