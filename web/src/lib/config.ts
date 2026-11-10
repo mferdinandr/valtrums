@@ -15,6 +15,8 @@ export const config = {
   rpcUrl: process.env.NEXT_PUBLIC_NEAR_RPC_URL?.trim() || DEFAULT_RPC[network],
   arenaContractId,
   applicationDeployment: process.env.NEXT_PUBLIC_ARENA_READ_DEPLOYMENT?.trim() || null,
+  /** Application read mode has no wallet unless this is "true"; the legacy ArenaApi is never provided there. */
+  applicationWallet: process.env.NEXT_PUBLIC_APPLICATION_WALLET === "true",
   applicationProtocol: process.env.NEXT_PUBLIC_ARENA_READ_PROTOCOL?.trim() || "lifecycle-v2",
   /** Without a contract id the app runs entirely on the deterministic in-memory mock. */
   mock: arenaContractId === "",
