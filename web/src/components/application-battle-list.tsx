@@ -128,6 +128,9 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           {(error || loading || !result.provenance.complete || result.provenance.health !== "healthy") && (
             <p role="status" className="text-xs text-mute">Battle information may be incomplete or out of date.</p>
           )}
+          {result.provenance.kind === "fixture" && (
+            <p className="text-xs text-mute">Fixture data · not live battles</p>
+          )}
           {!result.data.items.length && (
             <div className="lifecycle-empty">
               <h3>No battles found.</h3>
