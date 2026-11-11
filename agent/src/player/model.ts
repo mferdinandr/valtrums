@@ -15,6 +15,11 @@ export interface ModelInput {
 export interface ModelProposer {
   /** The model's raw answer, or null when it gave none. Never throws. */
   propose(input: ModelInput): Promise<string | null>;
+  /**
+   * Like `propose`, plus the NEAR AI `chat_id` of the answer. Every answer is signed inside the TEE and the
+   * signature can be fetched later from `GET /v1/signature/{chat_id}`, so a decision can be audited.
+   */
+  proposeDetailed?(input: ModelInput): Promise<{ text: string; chatId: string | null } | null>;
 }
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -37,23 +42,28 @@ export function buildPrompt(input: ModelInput): { system: string; user: string }
 export function createModelProposer(opts: { apiKey: string; model: string; baseUrl?: string; fetchImpl?: FetchLike; timeoutMs?: number }): ModelProposer {
   const doFetch: FetchLike = opts.fetchImpl ?? ((u, i) => fetch(u, i));
   const base = (opts.baseUrl ?? DEFAULT_MODEL_BASE_URL).replace(/\/+$/, "");
-  return {
+  const proposer: Required<ModelProposer> = {
     async propose(input) {
+      return (await proposer.proposeDetailed(input))?.text ?? null;
+    },
+    async proposeDetailed(input) {
       const { system, user } = buildPrompt(input);
       try {
         const res = await doFetch(`${base}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${opts.apiKey}` },
-          body: JSON.stringify({ model: opts.model, temperature: 0, max_tokens: 300, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+          body: JSON.stringify({ model: opts.model, temperature: 0, max_tokens: 500, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
           signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
         });
         if (!res.ok) return null;
-        const body = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+        const body = (await res.json()) as { id?: unknown; choices?: Array<{ message?: { content?: unknown } }> };
         const content = body.choices?.[0]?.message?.content;
-        return typeof content === "string" && content.trim() ? content : null;
+        if (typeof content !== "string" || !content.trim()) return null;
+        return { text: content, chatId: typeof body.id === "string" ? body.id : null };
       } catch {
         return null;
       }
     },
   };
+  return proposer;
 }

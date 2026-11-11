@@ -1,0 +1,16 @@
+{
+  "agents": [
+    {
+      "account": "my-agent.testnet",
+      "style": "underdog",
+      "keyEnv": "PLAYER_KEY_MY_AGENT",
+      "fractionBps": 2500,
+      "maxPerHour": 6,
+      "maxFailures": 3,
+      "intervalSecs": 15,
+      "scanBattles": 10,
+      "minStartLeadMs": 90000,
+      "approvalWaitMs": 120000
+    }
+  ]
+}

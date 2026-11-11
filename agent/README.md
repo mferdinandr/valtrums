@@ -253,6 +253,8 @@ Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and 
 
 ## Player agent program
 
+Two programs exist; read [docs/player-agents.md](../docs/player-agents.md) first. `pnpm -C agent player:auto --config <file> [--live] [--once]` runs **autonomous** agents that play with their own account and balance (join, register, deposit, no approval step; every play is decided by NEAR AI Cloud, so `NEAR_AI_API_KEY` is required; dry run by default, testnet only; example config `player-autonomous.example.json`). The rest of this section describes the **grant** agent.
+
 `pnpm -C agent player:run --config <file> [--live] [--once]` runs the player agents described in a config file (see `player-agents.example.json`). It is a separate process from the read API and the settlement loop.
 
 - **Dry run by default.** It reads the chain, chooses a deposit with the agent's strategy, sends it through the action boundary (preview, grant check, revalidation) and prepares the delegate's `reserve` transaction, then stops. `--live` lets each agent sign its own `reserve` with the key named in its config.

@@ -56,7 +56,7 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
   const state = new PlayerState(env.PLAYER_STATE_PATH?.trim() || "./.data/player-state.json");
   const apiKey = env.NEAR_AI_API_KEY?.trim();
   const model = apiKey
-    ? createModelProposer({ apiKey, model: env.NEAR_AI_MODEL?.trim() || "deepseek-ai/DeepSeek-V3.1", ...(env.NEAR_AI_BASE_URL?.trim() ? { baseUrl: env.NEAR_AI_BASE_URL.trim() } : {}) })
+    ? createModelProposer({ apiKey, model: env.NEAR_AI_MODEL?.trim() || "deepseek-ai/DeepSeek-V4.1-Flash-1017", ...(env.NEAR_AI_BASE_URL?.trim() ? { baseUrl: env.NEAR_AI_BASE_URL.trim() } : {}) })
     : undefined;
 
   // Each agent signs with its own key only; keys are read here and never logged.
