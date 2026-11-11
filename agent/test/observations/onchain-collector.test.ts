@@ -142,6 +142,14 @@ describe("collector runner", () => {
     expect(await runner(views({ locked: false })).pass()).toBe(0);
     expect(await runner(views({ startMs: NOW - 60_000 })).pass()).toBe(0);
   });
+  it("re-reads an unlocked battle at most every 15 s, to spare the NEAR RPC", async () => {
+    const v = views({ locked: false });
+    const r = runner(v);
+    await r.pass();
+    await r.pass();
+    await r.pass();
+    expect(v.battles).toBe(1);
+  });
   it("samples a round whose window is not open yet, so the start the oracle records has a sample next to it", async () => {
     expect(await runner(views({ startMs: null })).pass()).toBe(1);
     expect((await loadObservationState(dir)).state.observations).toHaveLength(1);
