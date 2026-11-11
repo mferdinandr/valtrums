@@ -52,6 +52,29 @@ export async function readCommunityIndex(
   return index >= 0 ? index : null;
 }
 
+export interface CommunityReadiness {
+  index: number;
+  /** True once the arena holds both an audit approval and a backing approval for the community. */
+  approved: boolean;
+}
+
+/**
+ * The creator's community in the battle and whether deposits can open for it. The agent's audit pass writes the
+ * approvals some time after the join, so a deposit sent right away is refused (`audit_missing`). Null until the
+ * community is listed.
+ */
+export async function readCommunityReadiness(
+  rpcUrl: string, arena: string, battleId: number, representation: string, doFetch?: FetchLike,
+): Promise<CommunityReadiness | null> {
+  const battle = await rpcView<{ communities?: Array<{ representation?: string; audit_evidence_hash?: string | null; backing_evidence_hash?: string | null }> }>(
+    rpcUrl, arena, "get_lifecycle_battle", { battle_id: battleId }, doFetch,
+  );
+  const index = battle?.communities?.findIndex((c) => c.representation === representation) ?? -1;
+  if (index < 0) return null;
+  const c = battle!.communities![index]!;
+  return { index, approved: !!c.audit_evidence_hash && !!c.backing_evidence_hash };
+}
+
 /** Reasons the first deposit cannot be signed with this token, amount and balance. Empty means it can. */
 export function firstDepositProblems(representation: string, amount: string, balance: string | null): string[] {
   const out: string[] = [];

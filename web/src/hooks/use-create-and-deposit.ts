@@ -5,7 +5,7 @@ import { useActionWallet, useWallet } from "@/components/providers";
 import { ActionSession, createActionWallet } from "@/lib/arena-read/action-session";
 import type { CallReview } from "@/lib/arena-read/create-review";
 import { previewCreate } from "@/lib/arena-read/create-flow";
-import { readCommunityIndex, readCreatedBattleId } from "@/lib/arena-read/create-deposit";
+import { readCommunityReadiness, readCreatedBattleId } from "@/lib/arena-read/create-deposit";
 import { buildDepositReview, depositRequest } from "@/lib/arena-read/deposit-flow";
 import { buildJoinReview, joinRequest } from "@/lib/arena-read/open-arena";
 import { config } from "@/lib/config";
@@ -22,7 +22,7 @@ export const STAGE_NAME: Record<Stage, string> = { create: "Creating the battle"
 
 export type RunState =
   | { step: "idle" }
-  | { step: "running"; stage: Stage }
+  | { step: "running"; stage: Stage; waitingForAudit?: boolean }
   | { step: "failed"; stage: Stage; message: string; battleId: number | null }
   | { step: "done"; battleId: number };
 
@@ -35,6 +35,10 @@ export interface Plan {
   /** Base units. */
   amount: string;
 }
+
+/** The agent audits on its own schedule (30 s by default), so wait for about two passes plus margin. */
+const AUDIT_WAIT_TRIES = 30;
+const AUDIT_WAIT_MS = 3_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function retry<T>(attempts: number, task: () => Promise<T | null>): Promise<T | null> {
@@ -113,8 +117,17 @@ export function useCreateAndDeposit(plan: Plan) {
       }
       stage = "deposit";
       setState({ step: "running", stage });
-      const community = await retry(5, () => readCommunityIndex(config.rpcUrl, plan.arena, battleId, plan.representation));
-      if (community === null) throw new Error("the arena does not list your community yet");
+      let community: number | null = null;
+      for (let i = 0; i < AUDIT_WAIT_TRIES; i++) {
+        const ready = await readCommunityReadiness(config.rpcUrl, plan.arena, battleId, plan.representation).catch(() => null);
+        if (ready?.approved) {
+          community = ready.index;
+          break;
+        }
+        setState({ step: "running", stage, waitingForAudit: true });
+        await sleep(AUDIT_WAIT_MS);
+      }
+      if (community === null) throw new Error("the community has no audit approval yet. The audit service approves it on its own schedule; press Continue to check again. If this keeps happening, the audit service is probably not running");
       const depositReview = buildDepositReview({ arena: plan.arena, representation: plan.representation, battleId, community, amount: plan.amount });
       await act(depositRequest(battleId, community, plan.amount), depositReview.ok ? depositReview : null);
       setState({ step: "done", battleId });

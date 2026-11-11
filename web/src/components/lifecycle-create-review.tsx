@@ -297,7 +297,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             )}
             {run.state.step === "running" && (
               <p role="status" className="mt-3 text-xs text-mute">
-                {STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.
+                {run.state.waitingForAudit ? "Step 3 of 3: waiting for the community's audit approval. This can take a minute." : `${STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.`}
               </p>
             )}
             {run.state.step === "failed" && (
