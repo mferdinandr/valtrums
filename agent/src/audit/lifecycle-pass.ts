@@ -108,6 +108,12 @@ export interface LifecycleAuditPassDeps {
   backing?: Pick<BackingRefresher, "refresh">;
   /** Optional cancel step (AUDIT_CANCEL_ENABLED): cancels a battle whose start passed with fewer than two funded communities. */
   cancel?: Pick<LifecycleCanceller, "tryCancel">;
+  /**
+   * Written by every sweep: the earliest future start time (ms) among unlocked battles with at least two funded
+   * communities, or null. The agent loop sleeps until then so the lock goes out at the start time, not up to a
+   * whole interval later.
+   */
+  wake?: { nextStartMs: number | null; /** Battles starting at `nextStartMs`; the next pass handles them first. */ imminent?: number[] };
   log?: Logger;
 }
 
@@ -150,8 +156,23 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     const hot: number[] = [];
     const rest: number[] = [];
     const discoveryStarted = Date.now();
+    // Fast path: the loop woke for a battle start, so those battles go first and the discovery of every other
+    // battle is skipped for this one pass (the next pass rediscovers). The lock then goes out right away
+    // instead of after reading all the old battles. A stale hint (start long past) is ignored.
+    const wakeNow = deps.refresh.now().getTime();
+    const fast =
+      deps.wake && deps.wake.nextStartMs !== null && deps.wake.nextStartMs <= wakeNow + 1_000 && deps.wake.nextStartMs >= wakeNow - 10_000 && (deps.wake.imminent?.length ?? 0) > 0
+        ? [...deps.wake.imminent!].sort((a, b) => b - a)
+        : null;
+    if (fast && deps.wake) {
+      hot.push(...fast);
+      for (let id = total; id >= 1; id--) if (!fast.includes(id)) rest.push(id);
+      deps.wake.imminent = [];
+      deps.wake.nextStartMs = null;
+      log.info("lifecycle audit fast path: starting battles first", { battles: fast });
+    }
     // Bound read concurrency; signatures and approval submissions below remain sequential.
-    for (let newest = total; newest >= 1; newest -= 3) {
+    for (let newest = fast ? 0 : total; newest >= 1; newest -= 3) {
       const ids = Array.from({ length: Math.min(3, newest) }, (_, i) => newest - i);
       const results = await Promise.allSettled(ids.map((id) => deps.source.get(id)));
       for (const [i, result] of results.entries()) {
@@ -163,6 +184,28 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         } else rest.push(id); // retried and reported by the audit loop
       }
     }
+    if (deps.wake && !fast) {
+      const nowMs = deps.refresh.now().getTime();
+      let next: number | null = null;
+      let imminent: number[] = [];
+      for (const [id, v] of views) {
+        if (!v || v.locked || v.cancelled || !v.start_at_ms || fundedIndices(v).length < MIN_FUNDED) continue;
+        const startMs = Number(v.start_at_ms);
+        if (!Number.isFinite(startMs) || startMs <= nowMs) continue;
+        if (next === null || startMs < next) {
+          next = startMs;
+          imminent = [id];
+        } else if (startMs === next) imminent.push(id);
+      }
+      deps.wake.nextStartMs = next;
+      deps.wake.imminent = imminent;
+    }
+    // A battle whose start has come must not wait behind the renewal of an idle one: every other battle yields
+    // (stops before its next provider call or transaction) once that start time passes. The pass then returns
+    // at once and the next one takes the fast path above.
+    const startingIds = new Set<number>(fast ?? deps.wake?.imminent ?? []);
+    const dueStart = fast ? null : (deps.wake?.nextStartMs ?? null);
+    const yieldFor = (id: number): boolean => dueStart !== null && !startingIds.has(id) && deps.refresh.now().getTime() >= dueStart;
     log.info("lifecycle audit discovery complete", { battles: total, priorityBattles: hot.length, durationMs: Date.now() - discoveryStarted });
     const queue = [...hot, ...rest];
     // Unlocked, uncancelled battles can still receive a joining token, so they are re-checked
@@ -176,6 +219,10 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     for (const [id, v] of views) if (v && !v.locked && !v.cancelled) open.add(id);
     for (let pos = 0; pos < queue.length; pos++) {
       const id = queue[pos]!;
+      if (yieldFor(id)) {
+        log.info("lifecycle audit yielding to a starting battle", { next: id });
+        return { checked, ready, errors };
+      }
       try {
         // A token that joined an already-visited (or later-queued) open battle jumps the queue.
         let jumped = false;
@@ -278,6 +325,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
           log,
           registry,
           isLocked: async () => false,
+          shouldYield: () => yieldFor(id),
         });
         log.info("lifecycle audit evaluation complete", { battleId: id, durationMs: Date.now() - auditStarted, ready: result.ready });
         // Attribution is bounded to the current view's communities and their trusted indices.
@@ -334,7 +382,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         let backingReady: boolean | undefined;
         if (deps.backing) {
           const backingStarted = Date.now();
-          const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass");
+          const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass", () => yieldFor(id));
           log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length, durationMs: Date.now() - backingStarted });
           errors += backed.failed.length;
           // The refresh just sent is not yet confirmed (ready was read before sending). Look again in a few

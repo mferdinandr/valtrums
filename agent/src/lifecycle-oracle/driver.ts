@@ -24,7 +24,7 @@ import { MAX_STATUS_BATTLES, STATUS_SCHEMA } from "./status.js";
 
 export interface LifecycleViews {
   count(): Promise<string>;
-  battle(id: string): Promise<{ locked: boolean; mode: "PriceGain" | "MarketCapGrowth" | "VolumeRatio" | "LowestDrawdown"; observation_policy_hash: string | null } | null>;
+  battle(id: string): Promise<{ locked: boolean; start_at_ms?: string | null; mode: "PriceGain" | "MarketCapGrowth" | "VolumeRatio" | "LowestDrawdown"; observation_policy_hash: string | null } | null>;
   round(id: string): Promise<{ round_id: string; candidates: number[]; start_ns: string | null; end_ns: string | null; winner: number | null } | null>;
   readiness(id: string): Promise<{ activated: boolean; paused: boolean; oracle: string | null }>;
 }
@@ -36,6 +36,11 @@ export interface OracleDeps {
   state?: Pick<OracleStateDir, "write">;
   now?: () => number;
   log?: Logger;
+  /**
+   * After a rounds-start or open transaction, how often and how many times to look for the chain to show it
+   * before taking the next step in the same visit (default 12 tries, 400 ms apart).
+   */
+  followUp?: { tries: number; delayMs: number };
 }
 
 export interface PassReport {
@@ -53,6 +58,11 @@ const WRITE_GAS = "100 Tgas";
 /** Newest battles scanned per pass, like the read service. Older locked battles need the indexer (#144). */
 export const MAX_SCAN = 200;
 const MAX_BACKOFF_PASSES = 8;
+/** About how long an open-round transaction takes to land plus the page's next refresh. */
+export const OPEN_LEAD_MS = 3_500;
+/** An unlocked battle whose start passed this long ago is re-read only every COLD_RECHECK_PASSES passes. */
+const COLD_AFTER_MS = 5 * 60_000;
+const COLD_RECHECK_PASSES = 10;
 
 export class LifecycleOracle {
   private readonly log: Logger;
@@ -60,6 +70,8 @@ export class LifecycleOracle {
   private readonly battles = new Map<string, BattleStatus>();
   private readonly finished = new Set<string>();
   private readonly failures = new Map<string, { count: number; skipUntilPass: number }>();
+  /** Battles that never locked long after their start: skipped until this pass number. */
+  private readonly coldUntilPass = new Map<string, number>();
   private passes = 0;
   private passError: string | null = null;
 
@@ -103,6 +115,7 @@ export class LifecycleOracle {
     for (let id = count, scanned = 0; id >= 1n && scanned < MAX_SCAN; id--, scanned++) {
       const battleId = id.toString();
       if (this.finished.has(battleId)) continue;
+      if ((this.coldUntilPass.get(battleId) ?? 0) > this.passes) continue;
       const failure = this.failures.get(battleId);
       if (failure && this.passes < failure.skipUntilPass) continue;
       try {
@@ -148,11 +161,31 @@ export class LifecycleOracle {
     }
   }
 
-  private async one(battleId: string, loadEvidence: () => Promise<ObservationState>): Promise<BattleStatus> {
+  /** Waits for the chain to show a round (or its window) after the oracle's own write; false if it never does. */
+  private async waitForRound(battleId: string, needWindow: boolean): Promise<boolean> {
+    const { tries, delayMs } = this.deps.followUp ?? { tries: 12, delayMs: 400 };
+    for (let i = 0; i < tries; i++) {
+      const round = await this.deps.views.round(battleId).catch(() => null);
+      if (round && (!needWindow || (round.start_ns && round.end_ns))) return true;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return false;
+  }
+
+  /**
+   * `depth` lets one visit take the next step right away (rounds started, then opened) instead of waiting
+   * a whole pass for each. At most two follow-ups, and only after a write that reported itself sent.
+   */
+  private async one(battleId: string, loadEvidence: () => Promise<ObservationState>, depth = 0): Promise<BattleStatus> {
     const { views } = this.deps;
     const battle = await views.battle(battleId);
     if (!battle) return this.row(battleId, "not_locked", null, ["battle not found"], []);
-    if (!battle.locked) return this.row(battleId, "not_locked", null, ["battle is not locked yet"], []);
+    if (!battle.locked) {
+      const startAt = battle.start_at_ms ? Number(battle.start_at_ms) : NaN;
+      if (Number.isFinite(startAt) && this.now() - startAt > COLD_AFTER_MS) this.coldUntilPass.set(battleId, this.passes + COLD_RECHECK_PASSES);
+      return this.row(battleId, "not_locked", null, ["battle is not locked yet"], []);
+    }
+    this.coldUntilPass.delete(battleId);
     const ready = await views.readiness(battleId);
     // Identity is validated before ANY write: wrong oracle, paused or not activated means hold.
     if (ready.oracle !== this.cfg.accountId) return this.row(battleId, "blocked", null, [`the arena's oracle is ${ready.oracle ?? "unset"}, not ${this.cfg.accountId}`], []);
@@ -173,12 +206,17 @@ export class LifecycleOracle {
       }
       // The config holds a bare yocto integer; near-kit refuses a unitless amount, so the unit is explicit here.
       const a = await this.write(battleId, "start_lifecycle_rounds", "start_lifecycle_rounds", { battle_id: battleId, terms }, `${this.cfg.roundsStorageDepositYocto} yocto`);
+      if (a.outcome === "sent" && depth < 2 && (await this.waitForRound(battleId, false))) return this.one(battleId, loadEvidence, depth + 1);
       return this.row(battleId, "needs_rounds_started", null, ["terms reveal sent; waiting for the contract to show the rounds"], [a]);
     }
     if (!round.start_ns || !round.end_ns) {
       // Overtime and the first round both land here: a fresh window for exactly the contract's candidates.
-      const startNs = (BigInt(this.now()) * 1_000_000n).toString();
+      // The window starts when the transaction is expected to land, not when it is sent: the contract allows the
+      // start within 300 s of block time, and a send-time start burned the first seconds of the round before the
+      // chain (and the page) even showed it.
+      const startNs = (BigInt(this.now() + OPEN_LEAD_MS) * 1_000_000n).toString();
       const a = await this.write(battleId, "open_lifecycle_round", "open_lifecycle_round", { battle_id: battleId, round_id: round.round_id, start_ns: startNs }, ONE_YOCTO);
+      if (a.outcome === "sent" && depth < 2) await this.waitForRound(battleId, true);
       return this.row(battleId, "needs_open", round.round_id, [`opening round ${round.round_id} for candidates ${round.candidates.join(", ")}`], [a]);
     }
     const nowNs = BigInt(this.now()) * 1_000_000n;

@@ -10,7 +10,15 @@ export interface LoopOptions {
   now?: () => number;
   /** Resolves after `ms` or as soon as the signal aborts. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** An absolute time (ms) the next pass should not be later than, for example a battle start; null for none. */
+  nextWakeAt?: () => number | null;
 }
+
+/** Wake slightly after the target so the agent's clock has certainly passed it. */
+const WAKE_CUSHION_MS = 50;
+/** A wake time that passed less than this long ago still triggers a prompt pass. */
+const WAKE_GRACE_MS = 10_000;
+const MIN_WAKE_SLEEP_MS = 200;
 
 export const abortableSleep = (ms: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
@@ -44,7 +52,12 @@ export async function runLoop(opts: LoopOptions): Promise<void> {
     } catch (err) {
       log.error("pass failed", { error: errorMessage(err) });
     }
-    await sleep(opts.intervalMs, opts.signal);
+    const wake = opts.nextWakeAt?.() ?? null;
+    const untilWake = wake === null ? Number.POSITIVE_INFINITY : wake - now() + WAKE_CUSHION_MS;
+    // Never sleep past the interval. A wake time reached within the last 10 s (a pass yielded to it) runs the next
+    // pass almost at once, with a short floor so it can never spin; an older, stale one is ignored.
+    const pause = untilWake > -WAKE_GRACE_MS ? Math.min(opts.intervalMs, Math.max(untilWake, MIN_WAKE_SLEEP_MS)) : opts.intervalMs;
+    await sleep(pause, opts.signal);
   }
   log.info("loop stopped");
 }

@@ -91,7 +91,12 @@ export class BackingRefresher {
     this.log = deps.log ?? silentLogger;
   }
 
-  async refresh(battleId: number, wanted: (community: number) => boolean = () => true): Promise<BackingRefreshResult> {
+  async refresh(
+    battleId: number,
+    wanted: (community: number) => boolean = () => true,
+    /** Checked before each transaction; true stops sending (the next visit continues). */
+    shouldYield: () => boolean = () => false,
+  ): Promise<BackingRefreshResult> {
     const result: BackingRefreshResult = { sent: [], failed: [], ready: new Set() };
     const nowMs = this.deps.now().getTime();
     const ahead = this.deps.refreshAheadMs ?? DEFAULT_BACKING_REFRESH_AHEAD_MS;
@@ -107,6 +112,7 @@ export class BackingRefresher {
         this.log.warn("backing refresh skipped: representation is not trusted", { battleId, community: status.community });
         continue;
       }
+      if (shouldYield()) break;
       const key = `${battleId}:${status.community}`;
       const wait = this.retryAt.get(key);
       if (wait !== undefined && nowMs < wait) continue;

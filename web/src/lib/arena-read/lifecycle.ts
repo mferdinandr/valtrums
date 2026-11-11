@@ -124,7 +124,9 @@ export function roundPhase(round: LifecycleRound | null, nowMs: number): RoundPh
   if (!round.start_ns || !round.end_ns) return { kind: "awaiting_open", candidates: round.candidates };
   const endMs = Number(BigInt(round.end_ns) / 1_000_000n);
   if (nowMs <= 0) return { kind: "window_open", msLeft: 0, candidates: round.candidates }; // clock not read yet (server render)
-  return nowMs < endMs ? { kind: "window_open", msLeft: endMs - nowMs, candidates: round.candidates } : { kind: "awaiting_resolution", candidates: round.candidates };
+  // The oracle may open a window slightly ahead of now (it lands when the transaction does); never show more than the window length.
+  const startMs = Number(BigInt(round.start_ns) / 1_000_000n);
+  return nowMs < endMs ? { kind: "window_open", msLeft: Math.min(endMs - nowMs, endMs - startMs), candidates: round.candidates } : { kind: "awaiting_resolution", candidates: round.candidates };
 }
 
 export interface CommunityRow {

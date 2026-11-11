@@ -136,6 +136,11 @@ export interface RefreshDeps {
    * every pass). A missing, changed or expired record is always audited at once.
    */
   notPassedRetryMs?: number;
+  /**
+   * Checked before each community is re-audited. When it returns true the refresh stops there and returns what
+   * it has (the records written so far are kept; the rest is picked up on a later pass).
+   */
+  shouldYield?: () => boolean;
   fetchGoPlus: (q: GoPlusQuery) => Promise<RawGoPlusResponse>;
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
   submitter: Pick<AuditSubmitter, "submit">;
@@ -198,6 +203,7 @@ export async function refreshBattleAudit(
     new Date(deps.now().getTime() + (deps.refreshAheadMs ?? 0)),
   );
   for (const { index, reason } of before.needsRefresh) {
+    if (deps.shouldYield?.()) break;
     const log = deps.log ?? silentLogger;
     if (reason === "not_passed" && deps.notPassedRetryMs) {
       const last = deps.records.get(key(index));

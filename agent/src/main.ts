@@ -113,9 +113,12 @@ async function main(): Promise<void> {
   const archiveCfg = loadReportArchiveConfig(process.env, auditCfg !== null);
   const auditSource = new NearLifecycleAuditSource(cfg.arenaContractId, transport);
   const auditRecords = new Map<string, AuditRecord>();
+  // Filled by each audit sweep with the next battle start, so the loop can wake exactly then.
+  const lifecycleWake: { nextStartMs: number | null } = { nextStartMs: null };
   const lifecycleAudit = auditCfg
     ? createLifecycleAuditPass({
         source: auditSource,
+        wake: lifecycleWake,
         // The lock step is separate (lifecycle-lock.ts) and off unless AUDIT_LOCK_ENABLED=true.
         ...(auditCfg.lockEnabled
           ? {
@@ -256,6 +259,7 @@ async function main(): Promise<void> {
       log.info("pass complete", { ...report, watchdog });
     },
     intervalMs: rt.intervalSecs * 1000,
+    nextWakeAt: () => lifecycleWake.nextStartMs,
     watchdogIntervalMs: rt.watchdogIntervalSecs * 1000,
     signal: stop.signal,
     log,

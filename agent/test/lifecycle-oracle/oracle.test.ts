@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildSubmission } from "../../src/lifecycle-oracle/evidence.js";
 import { loadOracleConfig, type OracleConfig, type ObservationTerms } from "../../src/lifecycle-oracle/config.js";
-import { LifecycleOracle } from "../../src/lifecycle-oracle/driver.js";
+import { LifecycleOracle, OPEN_LEAD_MS } from "../../src/lifecycle-oracle/driver.js";
 import { OracleLockedError, OracleStateDir, loadOracleStatus } from "../../src/lifecycle-oracle/status.js";
 import { ObservationJournal, loadObservationState } from "../../src/observations/journal.js";
 import type { FrozenRound } from "../../src/observations/query.js";
@@ -37,27 +37,29 @@ describe("round lifecycle", () => {
   it("starts rounds, opens, waits for the recorded end, then resolves from persisted evidence", async () => {
     arena.lockedBattle("1");
     const o = oracle();
-    await o.pass();
-    expect(methods()).toEqual(["start_lifecycle_rounds"]);
-    // An explicit unit: near-kit refuses a bare integer amount as ambiguous (found in the 2026-11-11 live run).
-    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", terms: TERMS }, deposit: "10000000000000000000000 yocto" });
+    // One visit starts the rounds and, once the chain shows them, opens the first window straight away.
     await o.pass();
     expect(methods()).toEqual(["start_lifecycle_rounds", "open_lifecycle_round"]);
-    expect(arena.calls[1]?.args.start_ns).toBe((BigInt(nowMs) * 1_000_000n).toString());
+    // An explicit unit: near-kit refuses a bare integer amount as ambiguous (found in the 2026-11-11 live run).
+    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", terms: TERMS }, deposit: "10000000000000000000000 yocto" });
+    // The window starts a little ahead of the send time, when the transaction is expected to land.
+    expect(arena.calls[1]?.args.start_ns).toBe((BigInt(nowMs + OPEN_LEAD_MS) * 1_000_000n).toString());
     // Inside the window the clock alone does nothing.
     nowMs += 10_000;
     await o.pass();
     expect(methods()).toHaveLength(2);
     expect(o.status().battles["1"]?.phase).toBe("window_open");
     // Collect evidence, pass the recorded end.
-    for (const [c, a, b] of [[0, "300", "330"], [1, "300", "310"], [2, "300", "300"]] as const) { await sample(c, "1", Number(START_MS), a); await sample(c, "1", Number(START_MS) + 30_000, b); }
-    nowMs = Number(START_MS) + 30_500;
+    // The window opened OPEN_LEAD_MS after the send time.
+    const windowStart = Number(START_MS) + OPEN_LEAD_MS;
+    for (const [c, a, b] of [[0, "300", "330"], [1, "300", "310"], [2, "300", "300"]] as const) { await sample(c, "1", windowStart, a); await sample(c, "1", windowStart + 30_000, b); }
+    nowMs = windowStart + 30_500;
     await o.pass();
     expect(methods().at(-1)).toBe("submit_lifecycle_observations");
     expect(winnerOf()).toBe(0);
     const submitted = arena.calls.at(-1)!.args.observations as Array<{ community: number; observed_times_ns: string[]; evidence_hash: string }>;
     expect(submitted.map((s) => s.community)).toEqual([0, 1, 2]);
-    expect(submitted[0]?.observed_times_ns).toEqual([(START_MS * 1_000_000n).toString(), ((START_MS + 30_000n) * 1_000_000n).toString()]);
+    expect(submitted[0]?.observed_times_ns).toEqual([(BigInt(windowStart) * 1_000_000n).toString(), (BigInt(windowStart + 30_000) * 1_000_000n).toString()]);
     expect(submitted[0]?.evidence_hash).toMatch(/^obs:[0-9a-f]{64}$/);
     // After a recorded winner nothing more is sent, and the status says so.
     const before = arena.calls.length;
@@ -110,14 +112,15 @@ describe("round lifecycle", () => {
     arena.lockedBattle("1");
     const o = oracle();
     await o.pass(); await o.pass();
-    for (const [c, a, b] of [[0, "100", "110"], [1, "200", "220"], [2, "300", "300"]] as const) { await sample(c, "1", Number(START_MS), a); await sample(c, "1", Number(START_MS) + 30_000, b); }
-    nowMs = Number(START_MS) + 31_000;
+    const firstStart = Number(START_MS) + OPEN_LEAD_MS;
+    for (const [c, a, b] of [[0, "100", "110"], [1, "200", "220"], [2, "300", "300"]] as const) { await sample(c, "1", firstStart, a); await sample(c, "1", firstStart + 30_000, b); }
+    nowMs = firstStart + 31_000;
     await o.pass(); // 0 and 1 tie exactly (10/100 = 20/200): overtime
     expect(arena.battles.get("1")?.round).toMatchObject({ id: 2, candidates: [0, 1], start: null, winner: null });
     await o.pass();
     const open = arena.calls.at(-1)!;
     expect(open).toMatchObject({ method: "open_lifecycle_round", args: { round_id: "2" } });
-    const start2 = nowMs;
+    const start2 = nowMs + OPEN_LEAD_MS;
     for (const [c, a, b] of [[0, "110", "121"], [1, "220", "231"]] as const) { await sample(c, "2", start2, a); await sample(c, "2", start2 + 30_000, b); }
     nowMs = start2 + 31_000;
     await o.pass();
@@ -265,7 +268,7 @@ describe("status, isolation and recovery", () => {
     const o = oracle();
     const first = await o.pass();
     expect(first).toMatchObject({ errors: 1 });
-    expect(o.status().battles["1"]?.phase).toBe("needs_rounds_started");
+    expect(o.status().battles["1"]?.phase).toBe("needs_open"); // started and opened in the same visit
     expect(o.status().battles["2"]).toMatchObject({ phase: "error", lastError: "view failed" });
     arena.failViewsFor.clear();
     const second = await o.pass(); // battle 2 is still backing off
