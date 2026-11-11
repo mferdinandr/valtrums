@@ -1,0 +1,74 @@
+- generic [active] [ref=f2e1]:
+  - link "Skip to content" [ref=f2e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - link "VALTRUM ✳" [ref=f2e5] [cursor=pointer]:
+        - /url: /
+        - text: VALTRUM
+        - generic [ref=f2e12]: ✳
+      - generic [ref=f2e13]: testnet
+      - navigation "Main navigation" [ref=f2e15]:
+        - link "Arena" [ref=f2e16] [cursor=pointer]:
+          - /url: /arena
+        - link "Create" [ref=f2e26] [cursor=pointer]:
+          - /url: /arena/new
+        - link "Terminal" [ref=f2e28] [cursor=pointer]:
+          - /url: /terminal
+        - link "Agents" [ref=f2e31] [cursor=pointer]:
+          - /url: /agents
+        - link "Faucet" [ref=f2e35] [cursor=pointer]:
+          - /url: /faucet
+        - link "Portfolio" [ref=f2e39] [cursor=pointer]:
+          - /url: /portfolio
+      - generic [ref=f2e44]:
+        - button "Loading wallet" [disabled]: Loading wallet…
+  - main [ref=f2e45]:
+    - generic [ref=f2e46]:
+      - paragraph [ref=f2e47]: testnet · lifecycle arena
+      - generic [ref=f2e50]:
+        - generic [ref=f2e51]:
+          - generic [ref=f2e52]:
+            - generic [ref=f2e53]: TESTNET FAUCET
+            - heading "Get test tokens. Join a battle." [level=1] [ref=f2e54]: Get test tokens.Join a battle.
+            - paragraph [ref=f2e55]: Claim a small amount of each community token on NEAR testnet, once a day per token. You only need a NEAR testnet account; the faucet registers your storage for you.
+            - generic [ref=f2e56]:
+              - generic [ref=f2e57]: No EVM wallet needed
+              - generic [ref=f2e58]: Backed 1:1
+              - generic [ref=f2e59]: Testnet only
+          - generic [ref=f2e60]:
+            - img "Meet the crew · original toy mascots. Important actions are available outside this 3D illustration." [ref=f2e61]:
+              - generic [ref=f2e66]: A little world is waiting
+            - paragraph: Preparing local 3D assets…
+        - generic [ref=f2e67]:
+          - generic [ref=f2e68]:
+            - heading "01 / Your account" [level=3] [ref=f2e69]
+            - button "Connect wallet" [ref=f2e70] [cursor=pointer]
+            - paragraph [ref=f2e71]: Claiming is a transaction your wallet signs and pays the gas for, so you need a little testnet NEAR (get it from a public NEAR testnet faucet). The first claim of a token also attaches a small deposit for your claim record; the unused part is refunded.
+          - generic [ref=f2e72]:
+            - generic [ref=f2e73]:
+              - heading "02 / Test tokens" [level=3] [ref=f2e74]
+              - generic [ref=f2e75]:
+                - button "Refresh" [ref=f2e76] [cursor=pointer]
+                - button "Nothing to claim" [disabled]
+            - list
+            - paragraph [ref=f2e77]: Testnet tokens with no value. Each is a NEAR representation backed 1:1 by tokens deposited on Robinhood testnet, so the faucet never mints. After claiming, register a position in a battle and deposit from the battle page.
+  - contentinfo [ref=f2e78]:
+    - generic [ref=f2e79]:
+      - strong [ref=f2e80]: Valtrum ✳
+      - paragraph [ref=f2e81]: A little rivalry. A lot of community.
+    - navigation "Footer navigation" [ref=f2e82]:
+      - link "Battles" [ref=f2e83] [cursor=pointer]:
+        - /url: /arena
+      - link "Create Battle" [ref=f2e84] [cursor=pointer]:
+        - /url: /arena/new
+      - link "Terminal" [ref=f2e85] [cursor=pointer]:
+        - /url: /terminal
+      - link "Agents" [ref=f2e86] [cursor=pointer]:
+        - /url: /agents
+      - link "Faucet" [ref=f2e87] [cursor=pointer]:
+        - /url: /faucet
+      - link "Portfolio" [ref=f2e88] [cursor=pointer]:
+        - /url: /portfolio
+    - paragraph [ref=f2e89]: Built on NEAR · Testnet experience
+  - button "Open Next.js Dev Tools" [ref=f2e95] [cursor=pointer]

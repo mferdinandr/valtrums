@@ -1,0 +1,70 @@
+- generic [active] [ref=f4e1]:
+  - link "Skip to content" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - link "VALTRUM ✳" [ref=f4e5] [cursor=pointer]:
+        - /url: /
+        - text: VALTRUM
+        - generic [ref=f4e12]: ✳
+      - generic [ref=f4e13]: testnet
+      - navigation "Main navigation" [ref=f4e15]:
+        - link "Arena" [ref=f4e16] [cursor=pointer]:
+          - /url: /arena
+        - link "Create" [ref=f4e26] [cursor=pointer]:
+          - /url: /arena/new
+        - link "Terminal" [ref=f4e28] [cursor=pointer]:
+          - /url: /terminal
+        - link "Agents" [ref=f4e31] [cursor=pointer]:
+          - /url: /agents
+        - link "Faucet" [ref=f4e35] [cursor=pointer]:
+          - /url: /faucet
+        - link "Portfolio" [ref=f4e39] [cursor=pointer]:
+          - /url: /portfolio
+      - generic [ref=f4e44]:
+        - button "Loading wallet" [disabled]: Loading wallet…
+  - main [ref=f4e45]:
+    - generic [ref=f4e46]:
+      - paragraph [ref=f4e47]: testnet · lifecycle arena
+      - generic [ref=f4e50]:
+        - generic [ref=f4e51]:
+          - generic [ref=f4e52]:
+            - generic [ref=f4e53]: THE HELP KIOSK / INTENT TERMINAL
+            - heading "A little help with your next move." [level=1] [ref=f4e54]
+            - paragraph [ref=f4e55]: Say what you want in plain English or Bahasa Indonesia. You always see the exact call first; nothing is sent to the action service until you ask for a preview, and only your wallet signs.
+          - generic [ref=f4e56]:
+            - img "Your command kiosk · decorative. Important actions are available outside this 3D illustration." [ref=f4e57]:
+              - generic [ref=f4e62]: A little world is waiting
+            - paragraph: Preparing local 3D assets…
+        - generic [ref=f4e64]:
+          - heading "01 / Say what you want" [level=3] [ref=f4e65]
+          - generic [ref=f4e66]:
+            - generic [ref=f4e67]:
+              - text: Your request (English or Bahasa Indonesia)
+              - textbox "Terminal prompt" [ref=f4e68]:
+                - /placeholder: daftar di battle 7 komunitas 2
+            - generic [ref=f4e69]:
+              - button "Read my request" [disabled]
+              - button "daftar di battle 7 komunitas 2" [ref=f4e70] [cursor=pointer]
+              - button "deposit 250 ke battle 7 komunitas 2" [ref=f4e71] [cursor=pointer]
+            - paragraph [ref=f4e72]: Reading a request sends nothing to your wallet or the action service. Communities are numbered from 1; amounts are exact whole numbers in token base units; tokens are matched by registry address.
+  - contentinfo [ref=f4e73]:
+    - generic [ref=f4e74]:
+      - strong [ref=f4e75]: Valtrum ✳
+      - paragraph [ref=f4e76]: A little rivalry. A lot of community.
+    - navigation "Footer navigation" [ref=f4e77]:
+      - link "Battles" [ref=f4e78] [cursor=pointer]:
+        - /url: /arena
+      - link "Create Battle" [ref=f4e79] [cursor=pointer]:
+        - /url: /arena/new
+      - link "Terminal" [ref=f4e80] [cursor=pointer]:
+        - /url: /terminal
+      - link "Agents" [ref=f4e81] [cursor=pointer]:
+        - /url: /agents
+      - link "Faucet" [ref=f4e82] [cursor=pointer]:
+        - /url: /faucet
+      - link "Portfolio" [ref=f4e83] [cursor=pointer]:
+        - /url: /portfolio
+    - paragraph [ref=f4e84]: Built on NEAR · Testnet experience
+  - button "Open Next.js Dev Tools" [ref=f4e90] [cursor=pointer]
+  - alert [ref=f4e94]

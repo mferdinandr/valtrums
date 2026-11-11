@@ -1,0 +1,133 @@
+- generic [active] [ref=f1e1]:
+  - link "Skip to content" [ref=f1e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f1e3]:
+    - generic [ref=f1e4]:
+      - link "VALTRUM ✳" [ref=f1e5] [cursor=pointer]:
+        - /url: /
+        - text: VALTRUM
+        - generic [ref=f1e12]: ✳
+      - generic [ref=f1e13]: testnet
+      - navigation "Main navigation" [ref=f1e15]:
+        - link "Arena" [ref=f1e16] [cursor=pointer]:
+          - /url: /arena
+        - link "Create" [ref=f1e26] [cursor=pointer]:
+          - /url: /arena/new
+        - link "Terminal" [ref=f1e28] [cursor=pointer]:
+          - /url: /terminal
+        - link "Agents" [ref=f1e31] [cursor=pointer]:
+          - /url: /agents
+        - link "Faucet" [ref=f1e35] [cursor=pointer]:
+          - /url: /faucet
+        - link "Portfolio" [ref=f1e39] [cursor=pointer]:
+          - /url: /portfolio
+      - generic [ref=f1e44]:
+        - button "Loading wallet" [disabled]: Loading wallet…
+  - main [ref=f1e45]:
+    - generic [ref=f1e46]:
+      - paragraph [ref=f1e47]: testnet · lifecycle arena
+      - generic [ref=f1e50]:
+        - generic [ref=f1e51]:
+          - generic [ref=f1e52]:
+            - generic [ref=f1e53]: YOUR PLAYER AGENTS
+            - heading "Give an agent a budget. Keep the keys." [level=1] [ref=f1e54]: Give an agent a budget.Keep the keys.
+            - paragraph [ref=f1e55]: "An agent plays for you inside limits you set: one token, a per-action limit, a total budget and an end date. Your tokens stay in your account and you can revoke the grant at any time."
+            - generic [ref=f1e56]:
+              - generic [ref=f1e57]: Your wallet signs
+              - generic [ref=f1e58]: Bounded budget
+              - generic [ref=f1e59]: Revocable
+          - generic [ref=f1e60]:
+            - img "Your command kiosk · decorative. Important actions are available outside this 3D illustration." [ref=f1e61]:
+              - generic [ref=f1e66]: A little world is waiting
+            - paragraph: Preparing local 3D assets…
+        - note [ref=f1e67]:
+          - strong [ref=f1e68]: "What works today:"
+          - text: creating a grant, reading its budget and revoking it. A running agent can propose a deposit and reserve budget.
+          - strong [ref=f1e69]: "Not enabled yet:"
+          - text: an agent cannot move tokens on its own, because executing a reserved deposit is still an open decision in the project docs.
+        - generic [ref=f1e70]:
+          - generic [ref=f1e71]:
+            - heading "01 / Give an agent a budget" [level=3] [ref=f1e72]
+            - generic "Chosen token" [ref=f1e73]: Pick the token the agent may play with.
+            - generic [ref=f1e75]:
+              - generic [ref=f1e76]:
+                - text: Find a community token
+                - textbox "Find a community token" [ref=f1e77]:
+                  - /placeholder: Search a token name (CASHCAT) or address
+              - status [ref=f1e78]: Searching…
+              - list
+            - group [ref=f1e79]:
+              - generic [ref=f1e80]:
+                - text: Agent account (NEAR)
+                - textbox "Agent account (NEAR)" [ref=f1e81]:
+                  - /placeholder: agent.testnet
+              - generic [ref=f1e82]:
+                - text: Representation (NEAR account of the NEP-141 token)
+                - textbox "Representation (NEAR account of the NEP-141 token)" [ref=f1e83]
+              - generic [ref=f1e84]:
+                - text: Strategy (how the agent chooses; it carries no authority, the limits below do)
+                - combobox "Strategy" [ref=f1e85]:
+                  - option "Follow the crowd · Back the community whose vault is the largest." [selected]
+                  - option "Back the underdog · Back the community whose vault is the smallest."
+              - generic [ref=f1e86]:
+                - text: Per-action limit (base units)
+                - textbox "Per-action limit (base units)" [ref=f1e87]
+              - generic [ref=f1e88]:
+                - text: Total budget (base units)
+                - textbox "Total budget (base units)" [ref=f1e89]
+              - generic [ref=f1e90]:
+                - text: Valid for (days)
+                - textbox "Valid for (days)" [ref=f1e91]: "7"
+              - generic [ref=f1e92]:
+                - text: "Only battle # (optional)"
+                - 'textbox "Only battle # (optional)" [ref=f1e93]':
+                  - /placeholder: any battle
+              - group [ref=f1e94]:
+                - generic "Advanced" [ref=f1e95] [cursor=pointer]
+          - generic "Grant review" [ref=f1e96]:
+            - heading "02 / Review before you sign" [level=3] [ref=f1e97]
+            - status [ref=f1e98]:
+              - listitem [ref=f1e99]: connect your wallet first
+              - listitem [ref=f1e100]: the agent account must be a valid NEAR account id
+              - listitem [ref=f1e101]: choose a token from the registry
+              - listitem [ref=f1e102]: choose a token from the registry
+              - listitem [ref=f1e103]: the representation must be a valid NEAR account id
+              - listitem [ref=f1e104]: the custody domain is required (at most 64 characters)
+              - listitem [ref=f1e105]: the per-action limit must be a positive integer in token base units
+              - listitem [ref=f1e106]: the total budget must be a positive integer in token base units
+          - generic [ref=f1e107]:
+            - generic [ref=f1e108]:
+              - heading "03 / Your agents" [level=3] [ref=f1e109]
+              - button "Refresh" [disabled]
+            - paragraph [ref=f1e110]: Connect your wallet to see the grants you created in this browser.
+            - list
+  - contentinfo [ref=f1e111]:
+    - generic [ref=f1e112]:
+      - strong [ref=f1e113]: Valtrum ✳
+      - paragraph [ref=f1e114]: A little rivalry. A lot of community.
+    - navigation "Footer navigation" [ref=f1e115]:
+      - link "Battles" [ref=f1e116] [cursor=pointer]:
+        - /url: /arena
+      - link "Create Battle" [ref=f1e117] [cursor=pointer]:
+        - /url: /arena/new
+      - link "Terminal" [ref=f1e118] [cursor=pointer]:
+        - /url: /terminal
+      - link "Agents" [ref=f1e119] [cursor=pointer]:
+        - /url: /agents
+      - link "Faucet" [ref=f1e120] [cursor=pointer]:
+        - /url: /faucet
+      - link "Portfolio" [ref=f1e121] [cursor=pointer]:
+        - /url: /portfolio
+    - paragraph [ref=f1e122]: Built on NEAR · Testnet experience
+  - generic [ref=f1e127] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=f1e128]
+    - generic [ref=f1e132]:
+      - button "Open issues overlay" [ref=f1e133]:
+        - generic [ref=f1e134]:
+          - generic [aria-hidden] [ref=f1e135]: "1"
+          - generic [ref=f1e136]: "2"
+        - generic [ref=f1e137]:
+          - text: Issue
+          - generic [aria-hidden] [ref=f1e138]: s
+      - button "Collapse issues badge" [ref=f1e139]
+  - alert [ref=f1e142]

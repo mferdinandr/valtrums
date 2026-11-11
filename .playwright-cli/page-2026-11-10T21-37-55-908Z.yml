@@ -1,0 +1,75 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "VALTRUM ✳" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - text: VALTRUM
+        - generic [ref=e12]: ✳
+      - generic [ref=e13]: testnet
+      - navigation "Main navigation" [ref=e15]:
+        - link "Arena" [ref=e16] [cursor=pointer]:
+          - /url: /arena
+        - link "Create" [ref=e26] [cursor=pointer]:
+          - /url: /arena/new
+        - link "Terminal" [ref=e28] [cursor=pointer]:
+          - /url: /terminal
+        - link "Agents" [ref=e31] [cursor=pointer]:
+          - /url: /agents
+        - link "Faucet" [ref=e35] [cursor=pointer]:
+          - /url: /faucet
+        - link "Portfolio" [ref=e39] [cursor=pointer]:
+          - /url: /portfolio
+      - generic [ref=e44]:
+        - button "Loading wallet" [disabled]: Loading wallet…
+  - main [ref=e45]:
+    - generic [ref=e46]:
+      - paragraph [ref=e47]: testnet · lifecycle arena
+      - region "Application battles" [ref=e50]:
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - generic [ref=e53]: THE COMMUNITY FAIRGROUND
+            - heading "Find your next rivalry." [level=1] [ref=e54]
+            - paragraph [ref=e55]: Meet the crews, pick your community and step into its 3D arena. Watch the round unfold, then inspect the recorded result.
+            - generic [ref=e56]:
+              - link "Create a battle" [ref=e57] [cursor=pointer]:
+                - /url: /arena/new
+              - generic [ref=e59]: Watching needs no wallet.
+            - group [ref=e60]:
+              - generic "Connected arena" [ref=e61] [cursor=pointer]
+          - generic [ref=e62]:
+            - img "Community fairground · decorative. Important actions are available outside this 3D illustration." [ref=e63]:
+              - generic [ref=e68]: A little world is waiting
+            - paragraph: Preparing local 3D assets…
+        - generic [ref=e69]:
+          - heading "The battle line-up" [level=2] [ref=e70]
+          - paragraph [ref=e71]: Every crew. One arena.
+        - generic [ref=e72]:
+          - generic [ref=e76]: Search community or battle ID
+          - textbox "Search community or battle ID" [ref=e77]
+        - group "Filter by battle status" [ref=e78]:
+          - button "All" [pressed] [ref=e79] [cursor=pointer]
+          - button "open" [ref=e80] [cursor=pointer]
+          - button "locked" [ref=e81] [cursor=pointer]
+          - button "decided" [ref=e82] [cursor=pointer]
+        - status [ref=e83]: Loading battles…
+  - contentinfo [ref=e84]:
+    - generic [ref=e85]:
+      - strong [ref=e86]: Valtrum ✳
+      - paragraph [ref=e87]: A little rivalry. A lot of community.
+    - navigation "Footer navigation" [ref=e88]:
+      - link "Battles" [ref=e89] [cursor=pointer]:
+        - /url: /arena
+      - link "Create Battle" [ref=e90] [cursor=pointer]:
+        - /url: /arena/new
+      - link "Terminal" [ref=e91] [cursor=pointer]:
+        - /url: /terminal
+      - link "Agents" [ref=e92] [cursor=pointer]:
+        - /url: /agents
+      - link "Faucet" [ref=e93] [cursor=pointer]:
+        - /url: /faucet
+      - link "Portfolio" [ref=e94] [cursor=pointer]:
+        - /url: /portfolio
+    - paragraph [ref=e95]: Built on NEAR · Testnet experience
+  - button "Open Next.js Dev Tools" [ref=e101] [cursor=pointer]

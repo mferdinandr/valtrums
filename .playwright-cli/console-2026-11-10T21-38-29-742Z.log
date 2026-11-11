@@ -1,0 +1,7 @@
+[      92ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[     102ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[     319ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[     373ms] [LOG] [Fast Refresh] done in 155ms @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[     423ms] [WARNING] THREE.Clock: This module has been deprecated. Please use THREE.Timer instead. @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[   16075ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761
+[   16100ms] [LOG] [Fast Refresh] done in 8ms @ http://localhost:3000/_next/static/chunks/0q_c_next_dist_1skkl57lz0ico._.js:761

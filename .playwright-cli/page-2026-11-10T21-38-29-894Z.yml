@@ -1,0 +1,89 @@
+- generic [active] [ref=f3e1]:
+  - link "Skip to content" [ref=f3e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - link "VALTRUM ✳" [ref=f3e5] [cursor=pointer]:
+        - /url: /
+        - text: VALTRUM
+        - generic [ref=f3e12]: ✳
+      - generic [ref=f3e13]: testnet
+      - navigation "Main navigation" [ref=f3e15]:
+        - link "Arena" [ref=f3e16] [cursor=pointer]:
+          - /url: /arena
+        - link "Create" [ref=f3e26] [cursor=pointer]:
+          - /url: /arena/new
+        - link "Terminal" [ref=f3e28] [cursor=pointer]:
+          - /url: /terminal
+        - link "Agents" [ref=f3e31] [cursor=pointer]:
+          - /url: /agents
+        - link "Faucet" [ref=f3e35] [cursor=pointer]:
+          - /url: /faucet
+        - link "Portfolio" [ref=f3e39] [cursor=pointer]:
+          - /url: /portfolio
+      - generic [ref=f3e44]:
+        - button "Loading wallet" [disabled]: Loading wallet…
+  - main [ref=f3e45]:
+    - generic [ref=f3e46]:
+      - paragraph [ref=f3e47]: testnet · lifecycle arena
+      - generic [ref=f3e50]:
+        - generic [ref=f3e51]:
+          - generic [ref=f3e52]:
+            - generic [ref=f3e53]: YOUR COMMUNITY KEEPSAKES
+            - heading "Your journey. Every receipt." [level=1] [ref=f3e54]: Your journey.Every receipt.
+            - paragraph [ref=f3e55]: Follow your positions, review your entitlements and keep track of every transfer. Your wallet holds the keys.
+            - group [ref=f3e56]:
+              - generic "Connected arena" [ref=f3e57] [cursor=pointer]
+          - generic [ref=f3e58]:
+            - img "Your keepsake cabinet · illustration, not balances. Important actions are available outside this 3D illustration." [ref=f3e59]:
+              - generic [ref=f3e64]: A little world is waiting
+            - paragraph: Preparing local 3D assets…
+        - generic [ref=f3e65]:
+          - paragraph [ref=f3e66]: Connect a wallet to read your positions, entitlements, transfers and principal.
+          - button "Connect wallet" [ref=f3e67] [cursor=pointer]
+        - generic [ref=f3e68]:
+          - heading "Recovery alerts" [level=2] [ref=f3e69]
+          - list
+        - generic "Payout request" [ref=f3e70]:
+          - heading "Request a payout (original token on Robinhood Chain)" [level=2] [ref=f3e71]
+          - status [ref=f3e72]:
+            - generic [ref=f3e73]: payout requests disabled
+            - list [ref=f3e74]:
+              - listitem [ref=f3e75]: connect a wallet
+              - listitem [ref=f3e76]: deployment capabilities could not be read
+              - listitem [ref=f3e77]: custody health could not be read
+              - listitem [ref=f3e78]: your entitlements have not been read yet
+            - paragraph [ref=f3e79]: Payout status, transfers and recovery alerts above stay readable while requests are disabled.
+          - generic [ref=f3e80]:
+            - generic [ref=f3e81]:
+              - text: Original asset (backing)
+              - combobox "Original asset (backing)" [ref=f3e82]
+            - generic [ref=f3e83]:
+              - text: Amount (integer base units)
+              - textbox "Amount (integer base units)" [ref=f3e84]:
+                - /placeholder: e.g. 100
+            - generic [ref=f3e85]:
+              - text: Destination (20-byte address on the source chain)
+              - textbox "Destination (20-byte address on the source chain)" [ref=f3e86]:
+                - /placeholder: 0x…
+          - button "Connect wallet to request" [ref=f3e87] [cursor=pointer]
+  - contentinfo [ref=f3e88]:
+    - generic [ref=f3e89]:
+      - strong [ref=f3e90]: Valtrum ✳
+      - paragraph [ref=f3e91]: A little rivalry. A lot of community.
+    - navigation "Footer navigation" [ref=f3e92]:
+      - link "Battles" [ref=f3e93] [cursor=pointer]:
+        - /url: /arena
+      - link "Create Battle" [ref=f3e94] [cursor=pointer]:
+        - /url: /arena/new
+      - link "Terminal" [ref=f3e95] [cursor=pointer]:
+        - /url: /terminal
+      - link "Agents" [ref=f3e96] [cursor=pointer]:
+        - /url: /agents
+      - link "Faucet" [ref=f3e97] [cursor=pointer]:
+        - /url: /faucet
+      - link "Portfolio" [ref=f3e98] [cursor=pointer]:
+        - /url: /portfolio
+    - paragraph [ref=f3e99]: Built on NEAR · Testnet experience
+  - button "Open Next.js Dev Tools" [ref=f3e105] [cursor=pointer]
+  - alert [ref=f3e109]
