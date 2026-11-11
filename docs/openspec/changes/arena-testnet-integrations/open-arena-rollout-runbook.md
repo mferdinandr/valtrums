@@ -23,6 +23,7 @@ Facts used (from `docs/evidence/2026-11-09-near-testnet-wiring.json` and `docs/t
 | 4 | Create the oracle account `valtrum-oracle-b694.testnet` through the testnet helper; its key is appended to `.env` as `TESTNET_ORACLE_*` | `create-oracle` | none (helper) | free | Account stays |
 | 5 | Fix the lifecycle oracle | `set-oracle` | OWNER | 1 yocto | **No: permanent, can never change** |
 | 6 | Set the observation policy for future locks | `set-policy <terms.json> PriceGain` | OWNER | 1 yocto | Yes for future locks; a locked battle keeps its policy |
+| 6b | Register the arena account on every joinable backing token (NEP-145 `storage_deposit {account_id: arena, registration_only: true}`); without it every deposit is refused with "not registered" (found in the 2026-11-11 live run) | `storage_deposit` per backing | any funded account | about 0.00125 NEAR each | Registration stays |
 | 7 | Run the observation collector and the oracle worker | see "Runtime" below | ORACLE (worker) | gas per round | Stop the processes |
 | 8 | Live run and cancel-and-refund drill | web or terminal, user wallets | USER1, USER2, creator | faucet tokens | Evidence only |
 
