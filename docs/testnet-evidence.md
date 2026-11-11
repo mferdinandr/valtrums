@@ -158,3 +158,13 @@ All assets are FIXTURES (mock tokens, no value). This is the first live run of t
 | DEGEN | `0x136bb2555d27eba595b09e4f6d08369de0f2328304b4a5b747aecdf485445bc3` (block `0x909b40d`) | `G5vEDEnuRYoA2jsBRpmAZuCS9xhWdtQjSYyLh2n6evhZ` | `C6BzYqQNtkhCpivu1wPPisbBSMVSasEgbhW5RGafBNX7` | `CRK4ZZX7ZVPvZfGkV4Wx3zbAu4aRwAAniRAuSShoj8Gn` | `G3gatWzPxaKge7xmgHbLtM5iJ6MHXtm9R3AmAv61gZzB` |
 
 **Limitations.** No user claim was made yet (a wallet-signed `claim` from the page is untested). Nothing here proves a played round, a lock or a payout. Hashes come from the command output of the run; the first six deposits remain unverified.
+
+## 10. Open arena rollout, steps 1 to 3 (2026-11-11, live testnet)
+
+Owner-approved action by action, with `scripts/testnet-wiring/open-arena.mjs` (dry run first). Full record: [evidence/2026-11-11-open-arena-rollout.json](evidence/2026-11-11-open-arena-rollout.json).
+
+- **Arena code redeploy.** wasm from `main` `87185c5` (727,107 bytes, sha256 `332cbeb6...2af8`, host build), signed by the arena account with the owner's deploy key, code only: tx `CFve6fmmEnF4H1HeEjs2EPgy9m47KtQtP7oEyuTGJc7u`. Three earlier attempts failed with no state change (two signed by the owner account, `ActorNoPermission`; one `LackBalanceForState`). Council3 sent 0.5 NEAR for the larger code (tx `X4jGJvxXCekh6vf4QuHCFvxgs35QVxXrwzTe46WoCzR`) because the owner had 0.32 NEAR available. Read back: the allowlist view exists and was empty; battle 1 still reads (6 communities, no start time, not cancelled); oracle and observation policy unset.
+- **Allowlist (D35).** DAO proposals 17 to 21 (CASHCAT, WALLET, GOOD, VLAD, DEGEN; `set_lifecycle_joinable_asset`) by council1, approved by council2 and council3; all `Approved`. `get_lifecycle_joinable_assets` lists the five backings.
+- **AI untrusted.** `set_lifecycle_representation_trusted(backing-ai..., false)`: tx `2UHo85bPAgkJFYK5WNQDE3ceZanLTERgv7gFSbUkwvA8`; trusted flags read back true for the five and false for AI.
+
+**Not done.** Oracle account, `set_lifecycle_oracle` (permanent) and the observation policy wait for the owner's approval and the confirmed terms; the GeckoTerminal live source and the collector are not built; no open arena battle has been created, locked, played, cancelled or refunded on testnet.

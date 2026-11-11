@@ -1,0 +1,51 @@
+{
+  "label": "Open arena testnet rollout, steps 1 to 3 of open-arena-rollout-runbook.md (live NEAR testnet, 2026-11-11). Owner-approved action by action. Mock assets only; nothing here proves a played round, a refund or a payout.",
+  "network": "near-testnet",
+  "arena": "arena.valtrum-owner-b694.testnet",
+  "dao": "valtrum-protocol.sputnikv2.testnet",
+  "redeploy": {
+    "source_commit": "87185c5 (main after PRs #185 to #189)",
+    "wasm": "valtrum_arena.wasm, cargo near build non-reproducible-wasm (host build, not reproducible)",
+    "bytes": 727107,
+    "sha256": "332cbeb6c251af8a743ddc1f93663196722a683459098da43fec9ff351032af8",
+    "signer": "arena.valtrum-owner-b694.testnet with the owner's deploy key (code only, no init)",
+    "failed_attempts": [
+      { "tx": "HVFz6ewdWJK4SGeVXMZ7tx4wCJZtjMQyLKXsdUd5dhHJ", "error": "ActorNoPermission: the script signed as the owner account; a deploy must be signed by the arena account itself (script fixed)" },
+      { "tx": "8cqgonKa1FYKShmVPcHDHtjcyVqyh6DnDfMjWaJADutA", "error": "ActorNoPermission (same, repeated to read the error)" },
+      { "tx": "FbUEckubCQjKytSwZejWkaMKiLSLu6GS9oBeNBbGCaFY", "error": "LackBalanceForState: the arena needed about 0.3136 NEAR more for the larger code" }
+    ],
+    "storage_top_up": { "from": "valtrum-council3-b694.testnet", "to": "arena.valtrum-owner-b694.testnet", "amount": "0.5 NEAR", "tx": "X4jGJvxXCekh6vf4QuHCFvxgs35QVxXrwzTe46WoCzR", "note": "the owner account had only 0.32 NEAR available; an earlier top-up attempt from the owner never reached the chain" },
+    "tx": "CFve6fmmEnF4H1HeEjs2EPgy9m47KtQtP7oEyuTGJc7u",
+    "read_back": {
+      "get_lifecycle_joinable_assets": "[] (new method present)",
+      "get_lifecycle_battle_count_v1": "1",
+      "battle_1": { "locked": false, "communities": 6, "start_at_ms": null, "cancelled": false, "note": "state kept; battle 1 keeps the earlier rules and can never be cancelled" },
+      "readiness": { "activated": true, "paused": false, "protocol": "valtrum-protocol.sputnikv2.testnet", "oracle": null, "observation_policy": null }
+    }
+  },
+  "allowlist_proposals": {
+    "proposer": "valtrum-council1-b694.testnet",
+    "bond": "1 NEAR each",
+    "method": "set_lifecycle_joinable_asset (deposit 1 yocto, 100 Tgas)",
+    "identity_common": { "chain_id": "46630", "custody_domain": "0xb994dcab6ad9a042e7bbec3ba104ec5e6b797798", "reference_chain_id": "4663" },
+    "proposals": [
+      { "id": 17, "symbol": "CASHCAT", "add_tx": "3hRKfF6Z5Pv64STy7DGC5Esr357bBHPYnr1qsSBjxSTu", "council2_tx": "HEjtxwjnbxHfzQnDyjVX8QepF1G6GUEApKwimWfwVDQA", "council3_tx": "HTrE9j21np1VtxGNZge6xtY8w5M2U6rif5LHzbGJvf22", "status": "Approved" },
+      { "id": 18, "symbol": "WALLET", "add_tx": "BHch6QLTrNzSdGKzE4qxGFVHWCFnE91aAKWyYLyzPVMN", "council2_tx": "FmiiQ3jvwKGb4n7TRgkg3nX9VJZL9E6roxc6UvQDnJy4", "council3_tx": "7ngK48AwEmdwEFowgz6bag3RtxnYXDiAfJMnwVSejwBv", "status": "Approved" },
+      { "id": 19, "symbol": "GOOD", "add_tx": "2vgNVimNUWFcETPYmaweigKEZ12zrx2VFrp4NjNX4QKU", "council2_tx": "6SuSYPwBD343XkbAuanza826h8LjmqXdEnbo5kv1xfWQ", "council3_tx": "H9NgXh7GFoPVXpvQBB3fCan6i7S2B3NVuDTcBtz8sh3u", "status": "Approved" },
+      { "id": 20, "symbol": "VLAD", "add_tx": "9X12GCwe5nS4cupU8qiFgmJm3oXJrJueqqSEfvXmW5ur", "council2_tx": "21NBoQbTyiNMpXFCCJ2x2Ba1Drw7v2BvWeTTW5GftNua", "council3_tx": "4eWjqHWJ6bcAgSrc3PggtU42iSjb7mtK6nX8b4n8KUkh", "status": "Approved" },
+      { "id": 21, "symbol": "DEGEN", "add_tx": "bEBcasD74GFePWQRgbVrB1p2TFmdawQ8eTU1kDQ7A2s", "council2_tx": "6eCrPEgQWoEvr5rL6kbThnctYjvduquhyAD2WuMCCes4", "council3_tx": "8hEtvsh6SzoBR3ekkDWWfVDb5Z43oYJ9tECwXv5E49fE", "status": "Approved" }
+    ],
+    "read_back": ["backing-cashcat.valtrum-owner-b694.testnet", "backing-wallet.valtrum-owner-b694.testnet", "backing-good.valtrum-owner-b694.testnet", "backing-vlad.valtrum-owner-b694.testnet", "backing-degen.valtrum-owner-b694.testnet"]
+  },
+  "untrust_ai": {
+    "signer": "valtrum-owner-b694.testnet",
+    "call": "set_lifecycle_representation_trusted {representation: backing-ai.valtrum-owner-b694.testnet, trusted: false}, 1 yocto",
+    "tx": "2UHo85bPAgkJFYK5WNQDE3ceZanLTERgv7gFSbUkwvA8",
+    "read_back": { "cashcat": true, "wallet": true, "good": true, "ai": false, "vlad": true, "degen": true }
+  },
+  "not_done": [
+    "oracle account, set_lifecycle_oracle (permanent) and set_lifecycle_observation_policy: wait for the owner's approval and the confirmed observation terms",
+    "GeckoTerminal live observation source and collector process: not built",
+    "live run with a start-time arena and the cancel-and-refund drill"
+  ]
+}
