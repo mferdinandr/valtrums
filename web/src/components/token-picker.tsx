@@ -10,6 +10,7 @@ import { useApplicationSearch } from "@/hooks/use-application-search";
 import type { ApplicationPage, Namespace } from "@/lib/arena-read/application";
 import { shortAccount } from "@/lib/arena-read/lifecycle-presentation";
 import { accentFor, displaySymbol } from "@/lib/arena-read/token-style";
+import { isHiddenAsset } from "@/lib/arena-read/hidden-assets";
 
 export interface RegistryAsset {
   chainId: string;
@@ -61,10 +62,11 @@ export function TokenPicker({
 }) {
   const [q, setQ] = useState("");
   const { result, loading, error } = useApplicationSearch<ApplicationPage<RegistryAsset>>(namespace, "assets", { q, limit: 24 });
-  const items = result?.data.items ?? [];
+  // Assets the app no longer offers (AI, D35) are never listed.
+  const items = (result?.data.items ?? []).filter((a) => !isHiddenAsset(a));
   // The total is only known from an unfiltered, complete list; a search narrows the list and must not change it.
   useEffect(() => {
-    if (q === "" && result && !loading) onAvailable?.(result.data.nextCursor ? null : result.data.items.length);
+    if (q === "" && result && !loading) onAvailable?.(result.data.nextCursor ? null : result.data.items.filter((a) => !isHiddenAsset(a)).length);
   }, [q, result, loading, onAvailable]);
   const grid = useRef<HTMLUListElement>(null);
   const seen = useRef<Set<string>>(new Set());
