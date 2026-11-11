@@ -27,3 +27,17 @@ export async function readMyPositions(
   );
   return all.filter((p) => p.registered || p.amount !== "0");
 }
+
+export interface CreatorEscrow {
+  creator: string;
+  representation: string;
+  /** Base units held in escrow until the creator's community is approved. */
+  amount: string;
+}
+
+/** The creator escrow of a battle while it is held; null once converted, after a refund and for earlier battles. */
+export async function readCreatorEscrow(rpcUrl: string, arena: string, battleId: number, doFetch?: FetchLike): Promise<CreatorEscrow | null> {
+  const view = await rpcView<{ creator?: string; representation?: string; amount?: string }>(rpcUrl, arena, "get_lifecycle_creator_escrow", { battle_id: battleId }, doFetch);
+  if (!view || typeof view.creator !== "string" || typeof view.representation !== "string" || typeof view.amount !== "string") return null;
+  return { creator: view.creator, representation: view.representation, amount: view.amount };
+}

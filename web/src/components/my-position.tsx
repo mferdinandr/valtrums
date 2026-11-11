@@ -5,7 +5,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { useWallet } from "@/components/providers";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
-import { readMyPositions, type MyPosition } from "@/lib/arena-read/positions";
+import { readCreatorEscrow, readMyPositions, type CreatorEscrow, type MyPosition } from "@/lib/arena-read/positions";
 import { config } from "@/lib/config";
 
 const POLL_MS = 5_000;
@@ -21,6 +21,7 @@ export function MyPosition({
 }) {
   const { accountId } = useWallet();
   const [positions, setPositions] = useState<MyPosition[] | null>(null);
+  const [escrow, setEscrow] = useState<CreatorEscrow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,8 +31,11 @@ export function MyPosition({
     }
     let live = true;
     const read = () =>
-      readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount)
-        .then((p) => live && (setPositions(p), setError(null)))
+      Promise.all([
+        readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount),
+        readCreatorEscrow(config.rpcUrl, arena, battleId),
+      ])
+        .then(([p, e]) => live && (setPositions(p), setEscrow(e), setError(null)))
         .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)));
     void read();
     const timer = setInterval(() => void read(), POLL_MS);
@@ -42,17 +46,25 @@ export function MyPosition({
   }, [accountId, arena, battleId, communityCount]);
 
   if (!accountId) return null;
+  // Only the creator's own escrow is shown as theirs.
+  const mine = escrow && escrow.creator === accountId ? escrow : null;
   return (
     <Card aria-label="Your position">
       <CardTitle>Your position</CardTitle>
       {error && <p role="alert" className="text-xs text-neon-amber">Could not read your position: {error}</p>}
       {positions === null ? (
         !error && <p role="status" className="text-xs text-mute">Reading your position…</p>
-      ) : positions.length === 0 ? (
+      ) : positions.length === 0 && !mine ? (
         <p className="text-sm text-mute">You have no deposit in this battle yet.</p>
       ) : (
         <ul className="space-y-1 text-sm">
-          {positions.map((p) => (
+          {mine && (
+            <li>
+              <strong>{nameOf(0)}</strong>: {formatUnits(BigInt(mine.amount), TOKEN_DECIMALS, 4)} held in escrow, waiting for
+              the audit and backing approvals. It becomes your position when both are in.
+            </li>
+          )}
+          {positions.filter((p) => !(mine && p.community === 0 && p.amount === "0")).map((p) => (
             <li key={p.community}>
               <strong>{nameOf(p.community)}</strong>:{" "}
               {p.amount === "0"

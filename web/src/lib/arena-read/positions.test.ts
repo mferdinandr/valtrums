@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: a fake RPC. Nothing here touches a chain.
 import { describe, expect, it } from "vitest";
-import { readMyPositions } from "./positions";
+import { readCreatorEscrow, readMyPositions } from "./positions";
 
 const enc = (v: unknown) => Array.from(new TextEncoder().encode(JSON.stringify(v)));
 const rpc = (byCommunity: Record<number, { registered: boolean; amount: string }>) => async (_u: string, init: RequestInit) => {
@@ -19,5 +19,17 @@ describe("readMyPositions", () => {
   });
   it("is empty when the account has no position", async () => {
     expect(await readMyPositions("https://rpc", "arena.testnet", 9, "alice.testnet", 2, rpc({}))).toEqual([]);
+  });
+});
+
+describe("readCreatorEscrow", () => {
+  const view = (value: unknown) => async () =>
+    new Response(JSON.stringify({ result: { result: enc(value) } }), { status: 200 });
+  it("returns the held escrow", async () => {
+    const f = view({ creator: "alice.testnet", representation: "a.testnet", amount: "100", credited: false });
+    expect(await readCreatorEscrow("https://rpc", "arena.testnet", 9, f)).toEqual({ creator: "alice.testnet", representation: "a.testnet", amount: "100" });
+  });
+  it("is null once converted, after a refund and for a battle made before the escrow existed", async () => {
+    expect(await readCreatorEscrow("https://rpc", "arena.testnet", 9, view(null))).toBeNull();
   });
 });
