@@ -63,3 +63,14 @@ The system SHALL record a verified foreign deposit that arrives after a battle l
 #### Scenario: Refund through payout
 - **WHEN** the beneficiary or the payout operator requests a late refund for a beneficiary
 - **THEN** only the bound address is reserved, signed for and confirmable; any other caller or address is rejected
+
+### Requirement: Cancelled battle refunds the representation
+A refund from a cancelled battle SHALL return the depositor's credited NEP-141 representation units on NEAR and SHALL NOT release, reserve or pay any Robinhood custody. The returned units stay backed one to one and are redeemed through the normal payout path. A joinable allowlist entry SHALL NOT make a representation trusted; backing approval still needs an owner-trusted representation (D35, D36).
+
+#### Scenario: Refund after cancel
+- **WHEN** a depositor claims a refund of 100 units from a cancelled battle
+- **THEN** the arena transfers 100 representation units back to that depositor, and the backing ledger and custody are unchanged
+
+#### Scenario: Allowlisted but untrusted
+- **WHEN** a representation is on the joinable allowlist but not in the arena's trusted-representation list
+- **THEN** no backing approval is stored for it and deposits to its community are refused

@@ -35,3 +35,4 @@ Check tasks only after implementation and verification. Player authorization and
 - [x] Unit tests (parsers, hostile model output, amount edges, 2 to 16 communities, unresolved assets, mapping, route with a fake model fetch) and a Brave e2e on the fixture service (`web/e2e/arena.spec.ts`, no action request before the user asks for a preview).
 - [ ] Remove the legacy A/B terminal panel, `/api/terminal/parse` and `/api/terminal/funding`, funding adapters and session keys once the legacy battle page and providers no longer import them (owned by the legacy cleanup).
 - [ ] Link the terminal from the navigation (navbar is outside this change).
+- [ ] Open arena intents: create with a start time and no communities, join with an allowlisted token, cancel and claim refund, with parser unit tests (D34 to D36).
