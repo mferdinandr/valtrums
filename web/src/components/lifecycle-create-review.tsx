@@ -12,7 +12,6 @@ import { STAGE_NAME, STAGE_TEXT, useCreateAndDeposit } from "@/hooks/use-create-
 import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
 import { config } from "@/lib/config";
-import { CarnivalScene } from "@/components/carnival/scene";
 import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
@@ -29,9 +28,9 @@ import "@/components/lifecycle/lifecycle.css";
 const DEFAULT_LEAD_MS = 15 * 60 * 1000;
 
 /**
- * Review and, on a deployment that enables a wallet, signing of `create_lifecycle_battle`. The reviewed
- * arguments are compared with the service's canonical preview before any authorization is requested; the
- * session token is memory-only; a wallet rejection leaves the review intact for a retry.
+ * Creates a battle with the creator's first deposit (D41) in one form. The reviewed arguments are compared with
+ * the service's canonical preview before any authorization is requested; the session token is memory-only; a
+ * wallet rejection leaves the form intact for a retry.
  */
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>(config.createModes[0] ?? "PriceGain");
@@ -76,240 +75,125 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
     if (run.state.step === "done") router.push(`/arena/${run.state.battleId}`);
   }, [run.state, router]);
   const touched = now > 0 && startInput !== "";
+  const label = chosen && amountBase ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}` : null;
+  const problems = [...(review.ok ? [] : touched ? review.problems : []), ...depositProblems.filter((p) => touched && !(review.ok ? [] : review.problems).includes(p))];
   return (
     <div className="lifecycle-page">
       <Link href="/arena" className="text-xs text-neon-green">
         ← Back to battles
       </Link>
-      <section className="lifecycle-hero">
-        <div>
-          <span className="lifecycle-pill">THE RIVALRY WORKSHOP</span>
-          <h1>
-            Bring your crews.
-            <br />
-            Make a little rivalry.
-          </h1>
-          <p className="text-sm text-mute">
-            Choose a challenge and a start time. Any approved token community
-            can join until the start. Review every detail before your wallet
-            signs.
-          </p>
-          <div className="lifecycle-facts">
-            <span>Open to approved tokens</span>
-            <span>30-second rounds</span>
-            <span>No proposal bond</span>
-          </div>
-        </div>
-        <CarnivalScene
-          mode="create"
-          caption="A little assembly required"
-        />
+      <section>
+        <h1 className="text-2xl">Create a battle</h1>
+        <p className="mt-2 text-sm text-mute">
+          Pick a challenge, a start time and the first token you deposit. Anyone can join until it starts.
+        </p>
       </section>
 
-      <fieldset
-        disabled={run.state.step === "running"}
-        className="space-y-6 min-w-0"
-      >
-        <Card>
-          <CardTitle>01 / Choose your challenge</CardTitle>
-          <div
-            className="lifecycle-mode-grid"
-            role="group"
-            aria-label="Scoring mode"
-          >
-            {SCORING_MODES.map((m) => {
-              return (
-                <button
-                  key={m}
-                  className="lifecycle-mode"
-                  type="button"
-                  aria-pressed={mode === m}
-                  onClick={() => {
-                    setMode(m);
-                  }}
-                >
+      <Card aria-label="Transaction review" className="space-y-6">
+        <fieldset disabled={run.state.step === "running"} className="min-w-0 space-y-6">
+          <div className="space-y-2">
+            <CardTitle>Challenge</CardTitle>
+            <div className="lifecycle-mode-grid" role="group" aria-label="Scoring mode">
+              {SCORING_MODES.map((m) => (
+                <button key={m} className="lifecycle-mode" type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
                   <strong>{MODE_COPY[m].name}</strong>
                   <span>{MODE_COPY[m].description}</span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
-          <p className="mt-3 text-xs text-mute">
-            Pick the challenge your battle is scored by.
-          </p>
-        </Card>
 
-        <Card className="space-y-4">
-          <CardTitle>02 / Set the start time</CardTitle>
           <Label>
             Start time (your local time)
-            <Input
-              type="datetime-local"
-              value={startInput}
-              onChange={(e) => {
-                setStartInput(e.target.value);
-              }}
-              aria-describedby="start-help"
-            />
+            <Input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} aria-describedby="start-help" />
           </Label>
-          <p id="start-help" className="text-xs leading-6 text-mute">
-            {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}
-            Between 1 minute and 7 days from now. Until then any approved token
-            community can join and deposit. At the start the battle needs at
-            least two funded communities; otherwise anyone can cancel it and
-            every depositor claims a refund.
+          <p id="start-help" className="-mt-4 text-xs text-mute">
+            {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}1 minute to 7 days from now.
           </p>
-        </Card>
-        <Card className="space-y-4">
-          <CardTitle>03 / Your first deposit</CardTitle>
-          <p className="text-xs leading-6 text-mute">
-            Your deposit creates the battle: you send this token to the arena in the same transaction. The arena holds
-            it in escrow until the token&apos;s audit and backing approvals exist, then it becomes your position.
-          </p>
-          {owned.length === 0 ? (
-            <p role="status" className="text-xs text-neon-amber">
-              {balances === null || joinable.items === null
-                ? "Reading your tokens…"
-                : "You hold no token this arena accepts. Claim some from the faucet first."}
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Token to deposit">
-              {owned.map((t) => (
-                <button
-                  key={t.token}
-                  type="button"
-                  className="lifecycle-mode"
-                  aria-pressed={token === t.token}
-                  onClick={() => setToken(t.token)}
-                >
-                  <strong>{t.symbol}</strong>
-                  <span>Balance {formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 4)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <Label>
-            Amount to deposit
-            <Input
-              inputMode="decimal"
-              autoComplete="off"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value.trim())}
-            />
-          </Label>
-        </Card>
-      </fieldset>
 
-      <Card aria-label="Transaction review">
-        <CardTitle>04 / Review before you sign</CardTitle>
-        {!review.ok ? (
-          touched ? (
-            <ul
-              role="status"
-              className="list-disc pl-4 text-sm text-neon-amber"
-            >
-              {review.problems.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-mute">
-              Choose a challenge and a start time.
-            </p>
-          )
-        ) : (
-          <>
-            <ul className="space-y-1 text-sm">
-              <li>
-                <span className="text-mute">Challenge: </span>
-                {MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}
-              </li>
-              <li>
-                <span className="text-mute">Starts: </span>
-                {startAtMs ? utc(Number(startAtMs)) : "-"}
-              </li>
-              <li>
-                <span className="text-mute">Your first deposit: </span>
-                {chosen && amountBase
-                  ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
-                  : "choose a token and an amount above"}
-              </li>
-            </ul>
-            <p className="mt-3 text-xs leading-6 text-mute">
-              Creating the battle sends your tokens to the arena in one
-              transaction. On your first battle you first prepay a small amount
-              of NEAR (0.05, withdrawable) that pays the battle's storage. A
-              small network fee is charged.
-            </p>
-            <details className="lifecycle-tech">
-              <summary>Technical details</summary>
-              <dl className="mt-3 space-y-1 text-xs">
-                {review.lines.map((l) => (
-                  <div key={l.label} className="flex flex-col gap-0 sm:flex-row sm:gap-4">
-                    <dt className="w-48 shrink-0 text-mute">{l.label}</dt>
-                    <dd className="break-all">{l.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <pre
-                className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs"
-                aria-label="Exact arguments"
-              >
-                {JSON.stringify(review.args, null, 2)}
-              </pre>
-            </details>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              {run.connected ? (
-                <Button
-                  type="button"
-                  onClick={run.run}
-                  disabled={depositProblems.length > 0 || run.state.step === "running" || run.state.step === "done"}
-                >
-                  {run.state.step === "failed"
-                    ? "Continue"
-                    : chosen && amountBase
-                      ? `Create battle & deposit ${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
-                      : "Create battle & deposit"}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => void signIn()}
-                >
-                  Connect wallet to continue
-                </Button>
-              )}
-            </div>
-            {depositProblems.length > 0 && (
-              <ul role="status" className="mt-2 list-disc pl-4 text-xs text-neon-amber">
-                {depositProblems.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
-              </ul>
-            )}
-            {!run.connected && (
-              <p className="mt-2 text-xs text-mute">
-                Connect your wallet to create the battle.
+          <div className="space-y-2">
+            <CardTitle>Your deposit</CardTitle>
+            {owned.length === 0 ? (
+              <p role="status" className="text-xs text-neon-amber">
+                {balances === null || joinable.items === null
+                  ? "Reading your tokens…"
+                  : "You hold no token this arena accepts. Claim some from the faucet first."}
               </p>
-            )}
-            {run.state.step === "running" && (
-              <p role="status" className="mt-3 text-xs text-mute">
-                {STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.
-              </p>
-            )}
-            {run.state.step === "failed" && (
-              <div role="alert" className="mt-3 space-y-1 text-xs text-neon-amber">
-                <p>{STAGE_NAME[run.state.stage]} failed: {run.state.message}</p>
-                <p>Press Continue to try again, or change your choices above.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Token to deposit">
+                {owned.map((t) => (
+                  <button key={t.token} type="button" className="lifecycle-mode" aria-pressed={token === t.token} onClick={() => setToken(t.token)}>
+                    <strong>{t.symbol}</strong>
+                    <span>Balance {formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 4)}</span>
+                  </button>
+                ))}
               </div>
             )}
-            {run.state.step === "done" && (
-              <p role="status" className="mt-3 text-xs text-neon-green">
-                Done. Opening your battle…
-              </p>
-            )}
-          </>
+            <Label>
+              Amount
+              <Input inputMode="decimal" autoComplete="off" value={amount} onChange={(e) => setAmount(e.target.value.trim())} />
+            </Label>
+            <p className="text-xs text-mute">
+              Your deposit creates the battle. It is held in escrow until the token is approved, then becomes your position.
+              First battle: a one-time 0.05 NEAR prepayment for storage (withdrawable, not a bond).
+            </p>
+          </div>
+        </fieldset>
+
+        {problems.length > 0 && (
+          <ul role="status" className="list-disc pl-4 text-sm text-neon-amber">
+            {problems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          {run.connected ? (
+            <Button
+              type="button"
+              onClick={run.run}
+              disabled={!review.ok || depositProblems.length > 0 || run.state.step === "running" || run.state.step === "done"}
+            >
+              {run.state.step === "failed" ? "Continue" : label ? `Create battle & deposit ${label}` : "Create battle & deposit"}
+            </Button>
+          ) : (
+            <Button type="button" variant="ghost" onClick={() => void signIn()}>
+              Connect wallet to continue
+            </Button>
+          )}
+        </div>
+        {run.state.step === "running" && (
+          <p role="status" className="text-xs text-mute">
+            {STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.
+          </p>
+        )}
+        {run.state.step === "failed" && (
+          <p role="alert" className="text-xs text-neon-amber">
+            {STAGE_NAME[run.state.stage]} failed: {run.state.message} Press Continue to try again.
+          </p>
+        )}
+        {run.state.step === "done" && (
+          <p role="status" className="text-xs text-neon-green">
+            Done. Opening your battle…
+          </p>
+        )}
+
+        {review.ok && (
+          <details className="lifecycle-tech">
+            <summary>Technical details</summary>
+            <dl className="mt-3 space-y-1 text-xs">
+              {review.lines.map((l) => (
+                <div key={l.label} className="flex flex-col gap-0 sm:flex-row sm:gap-4">
+                  <dt className="w-48 shrink-0 text-mute">{l.label}</dt>
+                  <dd className="break-all">{l.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs" aria-label="Exact arguments">
+              {JSON.stringify(review.args, null, 2)}
+            </pre>
+          </details>
         )}
       </Card>
     </div>
