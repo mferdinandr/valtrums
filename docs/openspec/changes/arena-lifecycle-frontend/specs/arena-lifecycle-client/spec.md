@@ -2,12 +2,31 @@
 
 ### Requirement: Multi-community asset-bound lifecycle UX
 
-Lifecycle selection and creation SHALL support at least two communities up to verified deployment limits, with chain/token/representation/custody/reference identities and actual mode wire values. Asset discovery SHALL use backend search. Legacy A/B economics SHALL remain a separate protocol adapter.
+Lifecycle detail SHALL show every community up to verified deployment limits, with chain/token/representation/custody/reference identities and actual mode wire values. Asset discovery SHALL use backend search. Legacy A/B economics SHALL remain a separate protocol adapter.
 
 #### Scenario: Three communities are supported
 
-- **WHEN** a verified deployment supports three selected asset identities
-- **THEN** the create/detail UI retains all three identities without flattening them into token A/token B
+- **WHEN** a battle holds three asset identities
+- **THEN** the detail UI retains all three identities without flattening them into token A/token B
+
+### Requirement: Open arena create, join and cancel
+
+Creation SHALL take one mode and a start time between now + 60 s and now + 7 days, without choosing communities. Before the start the client SHALL let a user join with an allowlisted token, then deposit, and SHALL show a countdown and entered versus pending communities. A cancelled battle SHALL offer each depositor a refund; cancel SHALL be offered only when allowed (D34 to D36).
+
+#### Scenario: Join then deposit
+
+- **WHEN** a user picks an allowlisted token on an open battle before its start
+- **THEN** the client previews the join first and offers the deposit only after the join is confirmed and the community is approved
+
+#### Scenario: Start time passes with one funded community
+
+- **WHEN** the start has passed, the battle is unlocked and fewer than two communities are funded
+- **THEN** the client offers cancel, and after a confirmed cancel shows the battle as cancelled with a refund action for each funded position
+
+#### Scenario: Battle without a start time
+
+- **WHEN** a battle has no start time
+- **THEN** the client shows no countdown, cancel or refund action
 
 ### Requirement: Capability-gated wallet preparation
 
