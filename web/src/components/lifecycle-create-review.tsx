@@ -41,7 +41,6 @@ const DEFAULT_LEAD_MS = 15 * 60 * 1000;
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>(config.createModes[0] ?? "PriceGain");
   const [startInput, setStartInput] = useState("");
-  const [copied, setCopied] = useState(false);
   const [token, setToken] = useState("");
   const [amount, setAmount] = useState("");
   const { balances } = useBalances();
@@ -115,30 +114,24 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             aria-label="Scoring mode"
           >
             {SCORING_MODES.map((m) => {
-              const available = config.createModes.includes(m);
               return (
                 <button
                   key={m}
                   className="lifecycle-mode"
                   type="button"
-                  aria-pressed={available && mode === m}
-                  disabled={!available}
+                  aria-pressed={mode === m}
                   onClick={() => {
                     setMode(m);
-                    setCopied(false);
                   }}
                 >
-                  <strong>
-                    {MODE_COPY[m].name}
-                    {!available && <em className="lifecycle-mode-soon">Coming soon</em>}
-                  </strong>
+                  <strong>{MODE_COPY[m].name}</strong>
                   <span>{MODE_COPY[m].description}</span>
                 </button>
               );
             })}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Challenges marked "Coming soon" are not live on this arena yet.
+            Pick the challenge your battle is scored by.
           </p>
         </Card>
 
@@ -151,7 +144,6 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
               value={startInput}
               onChange={(e) => {
                 setStartInput(e.target.value);
-                setCopied(false);
               }}
               aria-describedby="start-help"
             />
@@ -224,24 +216,37 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           )
         ) : (
           <>
-            <dl className="space-y-1 text-sm">
-              {review.lines.map((l) => (
-                <div
-                  key={l.label}
-                  className="flex flex-col gap-0 sm:flex-row sm:gap-4"
-                >
-                  <dt className="w-48 shrink-0 text-mute">{l.label}</dt>
-                  <dd className="break-all">{l.value}</dd>
-                </div>
-              ))}
-            </dl>
-            {review.notes.map((n) => (
-              <p key={n} className="mt-2 text-xs text-mute">
-                {n}
-              </p>
-            ))}
+            <ul className="space-y-1 text-sm">
+              <li>
+                <span className="text-mute">Challenge: </span>
+                {MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}
+              </li>
+              <li>
+                <span className="text-mute">Starts: </span>
+                {startAtMs ? utc(Number(startAtMs)) : "-"}
+              </li>
+              <li>
+                <span className="text-mute">Your first deposit: </span>
+                {chosen && amountBase
+                  ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
+                  : "choose a token and an amount above"}
+              </li>
+            </ul>
+            <p className="mt-3 text-xs leading-6 text-mute">
+              Your wallet asks you to confirm three times: create the battle,
+              join with your token, then deposit it. A small network fee is
+              charged and the unused part is refunded.
+            </p>
             <details className="lifecycle-tech">
-              <summary>Exact transaction arguments</summary>
+              <summary>Technical details</summary>
+              <dl className="mt-3 space-y-1 text-xs">
+                {review.lines.map((l) => (
+                  <div key={l.label} className="flex flex-col gap-0 sm:flex-row sm:gap-4">
+                    <dt className="w-48 shrink-0 text-mute">{l.label}</dt>
+                    <dd className="break-all">{l.value}</dd>
+                  </div>
+                ))}
+              </dl>
               <pre
                 className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs"
                 aria-label="Exact arguments"
@@ -249,40 +254,37 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 {JSON.stringify(review.args, null, 2)}
               </pre>
             </details>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={async () => {
-                  await navigator.clipboard?.writeText(
-                    JSON.stringify(review.args),
-                  );
-                  setCopied(true);
-                }}
-              >
-                {copied ? "Copied" : "Copy exact arguments"}
-              </Button>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               {create.connected ? (
-                <Button
-                  type="button"
-                  onClick={create.preview}
-                  disabled={
-                    depositProblems.length > 0 ||
-                    create.flow.step === "previewing" ||
-                    create.flow.step === "signing"
-                  }
-                >
-                  {create.flow.step === "previewing"
-                    ? "Checking your review…"
-                    : "Check transaction preview"}
-                </Button>
+                create.flow.step === "previewed" ? (
+                  <Button type="button" onClick={create.execute}>
+                    Confirm in wallet
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={create.preview}
+                    disabled={
+                      depositProblems.length > 0 ||
+                      create.flow.step === "previewing" ||
+                      create.flow.step === "signing" ||
+                      create.flow.step === "done"
+                    }
+                  >
+                    {create.flow.step === "previewing"
+                      ? "Preparing…"
+                      : chosen && amountBase
+                        ? `Create battle & deposit ${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
+                        : "Create battle & deposit"}
+                  </Button>
+                )
               ) : (
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => void signIn()}
                 >
-                  Connect wallet to sign
+                  Connect wallet to continue
                 </Button>
               )}
             </div>
@@ -295,9 +297,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             )}
             {!create.connected && (
               <p className="mt-2 text-xs text-mute">
-                Signing needs a connected wallet on a deployment that enables it
-                (NEXT_PUBLIC_APPLICATION_WALLET). Without one this page stays
-                review-only and nothing is sent.
+                Connect your wallet to create the battle.
               </p>
             )}
             {create.flow.step === "blocked" && (
@@ -306,8 +306,8 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 className="mt-3 list-disc pl-4 text-xs text-neon-red"
               >
                 <li>
-                  Stopped before any authorization: the service's preview is not
-                  the call you reviewed.
+                  Stopped: the prepared transaction does not match what you
+                  reviewed. Nothing was signed.
                 </li>
                 {create.flow.reasons.map((r) => (
                   <li key={r}>{r}</li>
@@ -315,26 +315,13 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
               </ul>
             )}
             {create.flow.step === "previewed" && (
-              <div className="mt-3 space-y-2" role="status">
-                <p className="text-xs text-neon-green">
-                  Your request is ready to review in your wallet.
-                  Nothing is signed yet.
-                </p>
-                <p className="break-all text-xs text-mute">
-                  Preview {create.flow.previewed.record.previewHash}
-                </p>
-                <Button type="button" onClick={create.execute}>
-                  Authorize and sign with wallet
-                </Button>
-                <p className="text-xs text-mute">
-                  Your wallet will ask you to approve this exact preview, then
-                  to sign the transaction.
-                </p>
-              </div>
+              <p role="status" className="mt-3 text-xs text-neon-green">
+                Ready. Confirm in your wallet to create the battle.
+              </p>
             )}
             {create.flow.step === "signing" && (
               <p role="status" className="mt-3 text-xs text-mute">
-                Waiting for the wallet and the verified receipt…
+                Waiting for your wallet…
               </p>
             )}
             {create.flow.step === "done" && (
@@ -347,7 +334,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 }
               >
                 {create.flow.result.ok
-                  ? `Confirmed with a verified receipt. Transaction ${create.flow.result.txHash}.`
+                  ? "Battle created. Now join and deposit below."
                   : `Not confirmed (${create.flow.result.status}): ${create.flow.result.reason}${create.flow.result.txHash ? ` Transaction ${create.flow.result.txHash} was submitted; it is not a created battle until the receipt is verified.` : ""}`}
                 {create.flow.result.fixture
                   ? ` ${create.flow.result.fixture}`

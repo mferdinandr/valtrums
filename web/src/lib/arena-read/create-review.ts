@@ -86,7 +86,7 @@ export function buildCreateReview(
   const problems: string[] = [];
   if (!(SCORING_MODES as readonly string[]).includes(mode)) problems.push("choose a scoring mode");
   else if (!(allowedModes as readonly string[]).includes(mode)) {
-    problems.push(`this deployment only runs ${allowedModes.join(", ")} battles: rounds of another mode could not start and deposits would stay locked`);
+    problems.push("this challenge is not live on this arena yet, so a battle with it could never start. Pick a live challenge");
   }
   problems.push(...startTimeProblems(startAtMs, nowMs));
   if (assets.length > MAX_COMMUNITIES) problems.push(`a battle has at most ${MAX_COMMUNITIES} communities`);

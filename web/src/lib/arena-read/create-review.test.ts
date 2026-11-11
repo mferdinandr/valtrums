@@ -46,7 +46,7 @@ describe("create_lifecycle_battle review", () => {
     expect(parseCreateModes(" VolumeRatio , PriceGain,TWAP,PriceGain")).toEqual(["VolumeRatio", "PriceGain"]);
     expect(parseCreateModes("TWAP")).toEqual(["PriceGain"]);
     const refused = buildCreateReview("arena.testnet", [], "VolumeRatio", START, NOW, ["PriceGain"]);
-    expect(!refused.ok && refused.problems[0]).toMatch(/only runs PriceGain battles/);
+    expect(!refused.ok && refused.problems[0]).toMatch(/not live on this arena yet/);
     expect(buildCreateReview("arena.testnet", [], "PriceGain", START, NOW, ["PriceGain"]).ok).toBe(true);
   });
 
