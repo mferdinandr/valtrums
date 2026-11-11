@@ -7,6 +7,9 @@ use near_sdk::{
 };
 
 pub mod application_views;
+pub mod creator_escrow;
+#[cfg(test)]
+mod creator_escrow_tests;
 pub mod credit;
 pub mod dao_api;
 pub mod escrow_api;
@@ -94,6 +97,9 @@ enum StorageKey {
     // Per-mode observation policies (D40). Appended at the end: existing prefixes must not move.
     LifecycleModePolicy,
     LifecycleModePolicyEnabled,
+    // Creator escrow and prepaid creation storage (D41). Appended at the end: existing prefixes must not move.
+    LifecycleCreatorEscrow,
+    LifecycleStorageBalance,
 }
 
 #[ext_contract(ext_ft)]
@@ -116,6 +122,11 @@ enum TransferMsg {
         token_a: AccountId,
         token_b: AccountId,
         duration_secs: u64,
+    },
+    /// D41: creates a battle with the sender's deposit held in escrow until the community is approved.
+    LifecycleCreate {
+        mode: lifecycle::ScoringMode,
+        start_at_ms: U64,
     },
     DepositUsdc {
         battle_id: u64,
@@ -555,80 +566,26 @@ impl Arena {
                 "expires_at_ms": expires_at_ms.map(|v| v.0.to_string()),
             }),
         );
+        // D41: a creator escrow becomes the creator's position once both approvals exist.
+        if matches!(result, lifecycle::AuditResult::Pass) {
+            self.lifecycle_convert_creator_escrow(battle_id);
+        }
     }
 
-    /// Create an audit-pending battle without a proposal bond. The attached
-    /// NEAR pays for the record's actual storage; excess is returned. No token
-    /// deposit can be credited until the backing and audit adapters are wired.
+    /// Removed (D41). A battle exists only together with its creator's deposit: send a representation token
+    /// to the arena with `ft_transfer_call` and a `lifecycle_create` message. The method keeps its name so
+    /// the ABI does not change, but it creates nothing.
     #[payable]
+    #[allow(unused_variables)]
     pub fn create_lifecycle_battle(
         &mut self,
         assets: Vec<lifecycle::AssetInput>,
         mode: lifecycle::ScoringMode,
         start_at_ms: Option<U64>,
     ) -> u64 {
-        require!(!self.paused, "Arena is paused");
-        require!(self.lifecycle_exclusive, "Lifecycle is not activated");
-        // D40: once per-mode policies are enabled, a mode without a policy could lock but never start its rounds.
-        self.lifecycle_assert_mode_offered(mode);
-        if let Some(start) = start_at_ms {
-            Self::lifecycle_check_start(start.0);
-        }
-        require!(
-            assets.iter().all(|asset| asset.representation != self.usdc),
-            "USDC cannot be a lifecycle representation"
-        );
-        let protocol = self
-            .lifecycle_protocol
-            .clone()
-            .unwrap_or_else(|| env::panic_str("Lifecycle protocol is not configured"));
-        let creator = env::predecessor_account_id();
-        let fee = lifecycle::FeePolicy {
-            fee_bps: self.lifecycle_fee_bps,
-            creator_share_bps: self.lifecycle_creator_share_bps,
-            protocol_created: creator == protocol,
-            creator: creator.clone(),
-            protocol,
-        };
-        let assets: Vec<lifecycle::AssetIdentity> = assets.into_iter().map(Into::into).collect();
-        // A reference pair is accepted only when it equals the protocol registry entry.
-        self.assert_registered_references(&assets);
-        let battle = lifecycle::Battle::new(assets, mode, fee)
-            .unwrap_or_else(|_| env::panic_str("Invalid lifecycle battle"));
-        let before = env::storage_usage();
-        let id = self
-            .lifecycle_insert(battle)
-            .unwrap_or_else(|_| env::panic_str("Battle count overflow"));
-        if let Some(start) = start_at_ms {
-            self.lifecycle_set_start(id, start.0);
-        }
-        // The DAO vote window is frozen with the battle; a later change applies
-        // only to battles created afterwards. Unset means no vote (stays escrowed).
-        if let Some(window) = self.lifecycle_dao_window_ns {
-            self.lifecycle_dao_windows.insert(id, window);
-            self.lifecycle_dao_windows.flush();
-        }
-        self.lifecycle_battles.flush();
-        let bytes = env::storage_usage()
-            .checked_sub(before)
-            .unwrap_or_else(|| env::panic_str("Storage accounting failed"));
-        let cost = env::storage_byte_cost()
-            .as_yoctonear()
-            .checked_mul(u128::from(bytes))
-            .unwrap_or_else(|| env::panic_str("Storage cost overflow"));
-        let attached = env::attached_deposit().as_yoctonear();
-        require!(attached >= cost, "Insufficient storage deposit");
-        let refund = attached - cost;
-        if refund > 0 {
-            Promise::new(creator.clone())
-                .transfer(NearToken::from_yoctonear(refund))
-                .detach();
-        }
-        events::emit(
-            "lifecycle_battle_created",
-            json!({ "battle_id": id, "creator": creator }),
-        );
-        id
+        env::panic_str(
+            "Battles are created by a creator deposit: call ft_transfer_call on the representation token with a lifecycle_create message",
+        )
     }
 
     /// Read the lifecycle state; evidence references are not proof of live backing.
@@ -1451,6 +1408,18 @@ impl Arena {
                 };
                 self.handle_deposit(sender_id, token, amount.0, battle_id, side, routed)
             }
+            Ok(TransferMsg::LifecycleCreate { mode, start_at_ms }) => match self
+                .lifecycle_create_with_escrow(&sender_id, &token, amount.0, mode, start_at_ms.0)
+            {
+                Ok(_) => 0,
+                Err(reason) => {
+                    events::emit(
+                        "lifecycle_create_refused",
+                        json!({ "account_id": sender_id, "representation": token, "reason": reason }),
+                    );
+                    amount.0
+                }
+            },
             Ok(TransferMsg::LifecycleDeposit {
                 battle_id,
                 community,
@@ -2282,6 +2251,8 @@ impl Arena {
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture backing rejected"));
+        // Same as the approval calls: a creator escrow becomes the creator's position (D41).
+        self.lifecycle_convert_creator_escrow(battle_id);
     }
 
     /// Synthetic accounting credit for gas tests only; no token moves.

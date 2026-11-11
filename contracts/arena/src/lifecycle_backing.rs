@@ -229,6 +229,10 @@ impl Arena {
                 .transfer(NearToken::from_yoctonear(attached - charged))
                 .detach();
         }
+        // D41: a creator escrow becomes the creator's position once both approvals exist.
+        if approved {
+            self.lifecycle_convert_creator_escrow(battle_id);
+        }
         events::emit(
             "backing_updated",
             json!({

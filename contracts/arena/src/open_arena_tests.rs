@@ -14,17 +14,17 @@ use near_sdk::json_types::{U128, U64};
 use near_sdk::test_utils::{get_logs, VMContextBuilder};
 use near_sdk::{testing_env, AccountId, NearToken, PromiseError, PromiseOrValue, PromiseResult};
 
-const NOW_MS: u64 = 1_000_000;
-const MINUTE_MS: u64 = 60_000;
-const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
+pub(crate) const NOW_MS: u64 = 1_000_000;
+pub(crate) const MINUTE_MS: u64 = 60_000;
+pub(crate) const DAY_MS: u64 = 24 * 60 * 60 * 1_000;
 const ROUND: u64 = 30_000_000_000;
-const FAR: u64 = u64::MAX / 4;
+pub(crate) const FAR: u64 = u64::MAX / 4;
 
-fn account(name: &str) -> AccountId {
+pub(crate) fn account(name: &str) -> AccountId {
     name.parse().expect("account")
 }
 
-fn ctx(caller: &str, deposit: NearToken, now_ms: u64) {
+pub(crate) fn ctx(caller: &str, deposit: NearToken, now_ms: u64) {
     testing_env!(VMContextBuilder::new()
         .predecessor_account_id(account(caller))
         .attached_deposit(deposit)
@@ -32,7 +32,7 @@ fn ctx(caller: &str, deposit: NearToken, now_ms: u64) {
         .build());
 }
 
-fn panics<F: FnOnce()>(f: F) -> bool {
+pub(crate) fn panics<F: FnOnce()>(f: F) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
 }
 
@@ -66,7 +66,7 @@ fn terms() -> ObservationTermsInput {
 }
 
 /// Activated arena: protocol, worker (agent), oracle and a policy that matches `terms()`.
-fn setup() -> Arena {
+pub(crate) fn setup() -> Arena {
     ctx("owner.testnet", NearToken::from_yoctonear(0), NOW_MS);
     let mut arena = Arena::new(
         account("owner.testnet"),
@@ -87,22 +87,22 @@ fn setup() -> Arena {
     arena
 }
 
-fn list(arena: &mut Arena, index: u32) {
+pub(crate) fn list(arena: &mut Arena, index: u32) {
     ctx("protocol.testnet", NearToken::from_yoctonear(1), NOW_MS);
     arena.set_lifecycle_joinable_asset(input(index));
 }
 
 fn create(arena: &mut Arena, creator: &str, assets: Vec<AssetInput>, start: Option<u64>) -> u64 {
     ctx(creator, NearToken::from_near(1), NOW_MS);
-    arena.create_lifecycle_battle(assets, ScoringMode::PriceGain, start.map(U64))
+    arena.create_lifecycle_battle_for_tests(assets, ScoringMode::PriceGain, start.map(U64))
 }
 
-fn join(arena: &mut Arena, who: &str, id: u64, index: u32, now_ms: u64) -> u32 {
+pub(crate) fn join(arena: &mut Arena, who: &str, id: u64, index: u32, now_ms: u64) -> u32 {
     ctx(who, NearToken::from_near(1), now_ms);
     arena.join_lifecycle_battle(id, account(&format!("token{index}.testnet")))
 }
 
-fn approve(arena: &mut Arena, id: u64, community: u32) {
+pub(crate) fn approve(arena: &mut Arena, id: u64, community: u32) {
     let asset = arena
         .lifecycle_battles
         .get(&id)
@@ -134,7 +134,7 @@ fn approve(arena: &mut Arena, id: u64, community: u32) {
 }
 
 /// A representation transfer into the arena; returns the unused amount.
-fn deposit(
+pub(crate) fn deposit(
     arena: &mut Arena,
     who: &str,
     id: u64,
@@ -156,12 +156,12 @@ fn deposit(
     }
 }
 
-fn lock(arena: &mut Arena, id: u64, expected: Option<u32>, now_ms: u64) {
+pub(crate) fn lock(arena: &mut Arena, id: u64, expected: Option<u32>, now_ms: u64) {
     ctx("worker.testnet", NearToken::from_near(1), now_ms);
     arena.lock_lifecycle_battle(id, expected);
 }
 
-fn vault(arena: &Arena, id: u64, community: usize) -> u128 {
+pub(crate) fn vault(arena: &Arena, id: u64, community: usize) -> u128 {
     arena.get_lifecycle_battle(id).expect("battle").communities[community]
         .vault
         .0
@@ -228,7 +228,11 @@ fn start_times_outside_the_window_are_refused() {
         ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
         assert!(
             panics(|| {
-                arena.create_lifecycle_battle(vec![], ScoringMode::PriceGain, Some(U64(start)));
+                arena.create_lifecycle_battle_for_tests(
+                    vec![],
+                    ScoringMode::PriceGain,
+                    Some(U64(start)),
+                );
             }),
             "{start} accepted"
         );
@@ -256,7 +260,7 @@ fn more_than_sixteen_seeded_communities_are_still_refused() {
     ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
     let assets: Vec<AssetInput> = (1..=17).map(input).collect();
     assert!(panics(|| {
-        arena.create_lifecycle_battle(assets, ScoringMode::PriceGain, None);
+        arena.create_lifecycle_battle_for_tests(assets, ScoringMode::PriceGain, None);
     }));
     let sixteen: Vec<AssetInput> = (1..=16).map(input).collect();
     let id = create(&mut arena, "creator.testnet", sixteen, None);
@@ -1014,7 +1018,11 @@ fn without_mode_policies_every_mode_is_created_and_the_legacy_policy_locks() {
     let mut arena = setup();
     assert!(!arena.is_lifecycle_mode_policy_enabled());
     ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
-    arena.create_lifecycle_battle(vec![], ScoringMode::VolumeRatio, Some(U64(NOW_MS + DAY_MS)));
+    arena.create_lifecycle_battle_for_tests(
+        vec![],
+        ScoringMode::VolumeRatio,
+        Some(U64(NOW_MS + DAY_MS)),
+    );
     let (mut arena, id, start) = open_arena();
     join(&mut arena, "creator.testnet", id, 1, NOW_MS);
     join(&mut arena, "alice.testnet", id, 2, NOW_MS);
@@ -1059,7 +1067,11 @@ fn mode_policies_refuse_unoffered_modes_and_the_lock_freezes_the_mode_policy() {
     // A mode without its own policy can no longer be created: it could lock and never start its rounds.
     ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
     assert!(panics(|| {
-        arena.create_lifecycle_battle(vec![], ScoringMode::VolumeRatio, Some(U64(NOW_MS + DAY_MS)));
+        arena.create_lifecycle_battle_for_tests(
+            vec![],
+            ScoringMode::VolumeRatio,
+            Some(U64(NOW_MS + DAY_MS)),
+        );
     }));
     // The PriceGain battle created before still locks, and freezes the PriceGain policy, not the legacy one.
     join(&mut arena, "creator.testnet", id, 1, NOW_MS);
@@ -1089,7 +1101,7 @@ fn clearing_a_mode_policy_stops_new_battles_of_that_mode() {
         Some("drawdown-policy"),
     );
     ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
-    arena.create_lifecycle_battle(
+    arena.create_lifecycle_battle_for_tests(
         vec![],
         ScoringMode::LowestDrawdown,
         Some(U64(NOW_MS + DAY_MS)),
@@ -1103,7 +1115,7 @@ fn clearing_a_mode_policy_stops_new_battles_of_that_mode() {
     );
     ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
     assert!(panics(|| {
-        arena.create_lifecycle_battle(
+        arena.create_lifecycle_battle_for_tests(
             vec![],
             ScoringMode::LowestDrawdown,
             Some(U64(NOW_MS + DAY_MS)),

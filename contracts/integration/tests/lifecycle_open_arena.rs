@@ -130,28 +130,16 @@ async fn list(env: &common::Env, index: u32, representation: &str) -> anyhow::Re
     Ok(())
 }
 
+/// Creates a battle by the creator's deposit of `amount` pepe (D41); `None` when the arena refuses it.
 async fn create(
     env: &common::Env,
     creator: &Account,
-    assets: Vec<Value>,
-    start_at_ms: Option<u64>,
+    amount: u128,
+    start_at_ms: u64,
 ) -> anyhow::Result<Option<u64>> {
-    let result = creator
-        .call(env.arena.id(), "create_lifecycle_battle")
-        .args_json(json!({
-            "assets": assets,
-            "mode": "PriceGain",
-            "start_at_ms": start_at_ms.map(|v| v.to_string()),
-        }))
-        .deposit(NearToken::from_near(1))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result();
-    Ok(match result {
-        Ok(done) => Some(done.json()?),
-        Err(_) => None,
-    })
+    let pepe = env.pepe.id().to_string();
+    env.create_with_deposit(creator, &env.pepe, asset(1, &pepe), amount, start_at_ms)
+        .await
 }
 
 async fn join(
@@ -270,16 +258,21 @@ async fn open_arena_from_creation_to_lock_with_an_excluded_community() -> anyhow
     let alice = env.user("open-alice").await?;
     // Start times outside 1 minute to 7 days are refused; a valid one is stored.
     let now = now_ms(&env).await?;
-    assert!(create(&env, &creator, vec![], Some(now + 10_000))
-        .await?
-        .is_none());
-    assert!(create(&env, &creator, vec![], Some(now + 8 * 86_400_000))
+    assert!(create(&env, &creator, 10, now + 10_000).await?.is_none());
+    assert!(create(&env, &creator, 10, now + 8 * 86_400_000)
         .await?
         .is_none());
     let start = now + 150_000;
-    let id = create(&env, &creator, vec![], Some(start))
+    let id = create(&env, &creator, 10, start)
         .await?
         .expect("open arena");
+    // The creation deposit is held in escrow, not in the vault, until the community is approved.
+    assert_eq!(view(&env, id).await?["communities"][0]["vault"], "0");
+    assert_eq!(
+        env.arena_view("get_lifecycle_creator_escrow", json!({"battle_id": id}))
+            .await?["amount"],
+        "10"
+    );
     assert_eq!(view(&env, id).await?["start_at_ms"], start.to_string());
     assert_eq!(view(&env, id).await?["cancelled"], false);
     assert_eq!(
@@ -307,11 +300,15 @@ async fn open_arena_from_creation_to_lock_with_an_excluded_community() -> anyhow
     // Only approved communities take deposits; the third stays unapproved and empty.
     approve(&env, id, 0).await?;
     approve(&env, id, 1).await?;
-    env.mint(&env.pepe, creator.id(), 100).await?;
     env.mint(&env.shib, alice.id(), 100).await?;
     env.mint(&third, alice.id(), 100).await?;
     env.register(&third, alice.id()).await.ok();
-    deposit(&env, &creator, &env.pepe, id, 0, 10).await?;
+    // The approval converted the creator's escrow into the creator's position and vault.
+    assert_eq!(view(&env, id).await?["communities"][0]["vault"], "10");
+    assert!(env
+        .arena_view("get_lifecycle_creator_escrow", json!({"battle_id": id}))
+        .await?
+        .is_null());
     deposit(&env, &alice, &env.shib, id, 1, 20).await?;
     deposit(&env, &alice, &third, id, 2, 30).await?;
     assert_eq!(
@@ -347,15 +344,12 @@ async fn cancel_then_refund_pays_once_and_a_failed_transfer_restores_the_positio
     let alice = env.user("refund-alice").await?;
     let now = now_ms(&env).await?;
     let start = now + 120_000;
-    let id = create(&env, &creator, vec![], Some(start))
+    let id = create(&env, &creator, 10, start)
         .await?
         .expect("open arena");
-    join(&env, &creator, id, &pepe).await?;
     join(&env, &alice, id, &pepe).await?;
     approve(&env, id, 0).await?;
-    env.mint(&env.pepe, creator.id(), 10).await?;
     env.mint(&env.pepe, alice.id(), 7).await?;
-    deposit(&env, &creator, &env.pepe, id, 0, 10).await?;
     deposit(&env, &alice, &env.pepe, id, 0, 7).await?;
     // Cancel is refused early and while two communities are funded is irrelevant here.
     let early = env
@@ -428,12 +422,14 @@ async fn gas_for_the_sixteenth_join_lock_and_settlement_with_sixteen_funded_comm
 ) -> anyhow::Result<()> {
     let env = fixture_env().await?;
     let creator = env.user("gas-open-creator").await?;
-    let reps: Vec<String> = (0..16).map(|i| format!("rep-{i}.test.near")).collect();
+    // Community 0 is the creator's pepe, the other fifteen are fake representations.
+    let mut reps: Vec<String> = vec![env.pepe.id().to_string()];
+    reps.extend((1..16).map(|i| format!("rep-{i}.test.near")));
     for (i, rep) in reps.iter().enumerate() {
         list(&env, i as u32 + 1, rep).await?;
     }
     let start = now_ms(&env).await? + 100_000;
-    let id = create(&env, &creator, vec![], Some(start))
+    let id = create(&env, &creator, 10, start)
         .await?
         .expect("open arena");
     let mut sixteenth = None;
@@ -621,17 +617,54 @@ async fn previous_main_state_survives_a_redeploy_of_the_new_code() -> anyhow::Re
         .into_result()?
         .json()?;
     assert_eq!(reused, 0, "the old battle's community is reused");
-    let start = now_ms(&env).await? + 200_000;
-    let new_id: u64 = creator
+    // A battle made before the change has no creator escrow.
+    let no_escrow: Value = arena
+        .view("get_lifecycle_creator_escrow")
+        .args_json(json!({"battle_id": old_id}))
+        .await?
+        .json()?;
+    assert!(no_escrow.is_null());
+    // The old creation method creates nothing any more; creation is a deposit (D41).
+    let refused = creator
         .call(arena.id(), "create_lifecycle_battle")
-        .args_json(json!({"assets": [], "mode": "PriceGain", "start_at_ms": start.to_string()}))
+        .args_json(json!({"assets": [], "mode": "PriceGain"}))
         .deposit(NearToken::from_near(1))
         .max_gas()
         .transact()
         .await?
-        .into_result()?
-        .json()?;
+        .into_result();
+    assert!(refused.is_err());
+    env.register(&env.pepe, arena.id()).await?;
+    creator
+        .call(arena.id(), "lifecycle_storage_deposit")
+        .args_json(json!({}))
+        .deposit(NearToken::from_millinear(100))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    env.mint(&env.pepe, creator.id(), 25).await?;
+    let start = now_ms(&env).await? + 200_000;
+    creator
+        .call(env.pepe.id(), "ft_transfer_call")
+        .args_json(json!({
+            "receiver_id": arena.id(),
+            "amount": "25",
+            "msg": json!({"action": "lifecycle_create", "mode": "PriceGain", "start_at_ms": start.to_string()}).to_string(),
+        }))
+        .deposit(yocto())
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let new_id: u64 = arena.view("get_lifecycle_battle_count").await?.json()?;
     assert_eq!(new_id, 2);
+    let escrow: Value = arena
+        .view("get_lifecycle_creator_escrow")
+        .args_json(json!({"battle_id": new_id}))
+        .await?
+        .json()?;
+    assert_eq!(escrow["amount"], "25");
     let start_view: Value = arena
         .view("get_lifecycle_start")
         .args_json(json!({"battle_id": new_id}))
