@@ -62,6 +62,24 @@ Development self-review with the NEAR contract checklist, not an external audit.
 
 The current /attestation endpoint reports operator metadata, not cryptographic remote attestation. A target TEE service needs verified workload/hardware evidence, image identity and bound secret release. NEAR AI inference verification is separate from verification of the entire custody/scheduler service. Neither authenticates market data or grants spending permission.
 
+## Creator escrow self-review (D41, 2026-11-11)
+
+Scope: `contracts/arena/src/creator_escrow.rs` and its wiring (`ft_on_transfer` message `lifecycle_create`, the conversion hooks in `submit_lifecycle_audit` and the backing refresh, the cancel rule in `open_arena.rs`). This is a manual review of the diff against the NEAR detector list (non-private callback, reentrancy, unsaved changes, owner check, one yocto, storage collision, gas griefing, storage cost, unsafe math). It is **not an external audit**; no NEAR-specific static analyser was run, only `cargo clippy -D warnings` and the unit tests. It was done before the sandbox tests of the new path exist, so items marked "to prove" are not yet exercised on a sandbox.
+
+| ID | Severity | Finding and disposition |
+| --- | --- | --- |
+| E1 | Checked, no finding | `on_lifecycle_escrow_refund` is `#[private]`; the escrow is removed before the `ft_transfer` and restored by the callback on failure, so a repeated claim cannot pay twice (unit tests). `lifecycle_storage_withdraw` reduces the balance before the transfer |
+| E2 | Checked, no finding | Entry points: storage withdraw and escrow claim need one yocto and the caller to be the owner or creator; conversion is internal and reachable only from the two agent-authenticated approval calls. `ft_on_transfer` trusts `predecessor` as the token only if it is on the protocol allowlist |
+| E3 | Checked, no finding | New storage keys are appended at the end of `StorageKey`; no field of `Arena`, `Battle`, `Community` or `Snapshot` changed. Maps written by the new code are flushed. To prove: the redeploy-over-old-state sandbox test |
+| E4 | Medium, accepted with mitigation | The escrow holds user tokens before any approval. Only conversion and a refund to the creator release it; both remove the record first. A battle whose creator community is never approved can be cancelled by anyone after the start, so other depositors are not locked in. To prove: sandbox test of that cancel with two funded communities |
+| E5 | Low | A creator cannot take the escrow back before the start (up to 7 days) even by mistake; the only exit is conversion or cancel plus refund. Accepted: an early exit would allow a battle with no creator deposit. |
+| E6 | Low | Storage freed when the escrow record is deleted at conversion stays with the contract; the participant index entry added at conversion is also contract-paid. Both are small and the net is about neutral. Not refunded to the creator |
+| E7 | Low | A validation failure after state writes (short prepaid storage, a mode without an observation policy) panics, which reverts the call and makes the token return the whole transfer. This relies on the token's `ft_resolve_transfer` treating a failed receiver as a full refund (true for NEP-141). The unit-test mock keeps writes of a panicking call, so this is only proven on a sandbox |
+| E8 | Low | Conversion silently stays undone when the participant index is full (`TooManyParticipants`); it is retried at the next approval call. The battle cannot lock without the creator position, so it fails closed |
+| E9 | Informational | Prepaid storage can be credited to any account (`lifecycle_storage_deposit` beneficiary). It only adds NEAR to that account's own balance |
+
+Not covered: gas of the creation call on a sandbox (must fit the 100 Tgas the token forwards), a malicious allowlisted token, and any interaction with the agent audit pass. Open before the contract PR is merged: the sandbox tests behind E3, E4 and E7.
+
 ## Required work before target live acceptance
 
 - Specify/review custody proofs, finality, reorg recovery, reservations and upgrade controls.
