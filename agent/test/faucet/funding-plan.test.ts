@@ -1,5 +1,6 @@
 // Reads the recorded deploy evidence. Builds text only; nothing is sent.
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { run } from "../../src/faucet/funding-plan-cli.js";
 import { attestArgsFromVerifyOutput, attestCommand, buildPlan, loadFundingFacts } from "../../src/faucet/funding-plan.js";
@@ -108,12 +109,12 @@ describe("attest call", () => {
 
 describe("funding plan cli", () => {
   it("prints a plan that says nothing was sent, with all six tokens by default", () => {
-    const text = run(["plan", "--faucet", "valtrum-faucet.testnet", "--operator", "valtrum-operator.testnet", "--battle", "7", "--depositor", "0x1111111111111111111111111111111111111111", "--evidence-dir", new URL(".", dir).pathname]);
+    const text = run(["plan", "--faucet", "valtrum-faucet.testnet", "--operator", "valtrum-operator.testnet", "--battle", "7", "--depositor", "0x1111111111111111111111111111111111111111", "--evidence-dir", fileURLToPath(new URL(".", dir))]);
     expect(text).toMatch(/NOTHING HAS BEEN SENT/);
     for (const s of ["CASHCAT", "WALLET", "GOOD", "AI", "VLAD", "DEGEN"]) expect(text).toContain(`${s}: mint 1000000 mock tokens`);
   });
   it("needs its inputs", () => {
-    expect(() => run(["plan", "--evidence-dir", new URL(".", dir).pathname])).toThrow(/needs --faucet/);
-    expect(() => run(["wat", "--evidence-dir", new URL(".", dir).pathname])).toThrow(/usage/);
+    expect(() => run(["plan", "--evidence-dir", fileURLToPath(new URL(".", dir))])).toThrow(/needs --faucet/);
+    expect(() => run(["wat", "--evidence-dir", fileURLToPath(new URL(".", dir))])).toThrow(/usage/);
   });
 });
