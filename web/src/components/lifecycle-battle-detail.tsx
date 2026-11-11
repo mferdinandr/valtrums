@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
+import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
@@ -247,6 +248,15 @@ export function LifecycleBattleDetail({
             </ul>
           </details>
         </div>
+      )}
+
+      {safeBattleId !== null && (
+        <MyPosition
+          arena={namespace.arenaContract}
+          battleId={safeBattleId}
+          communityCount={rows.length}
+          nameOf={name}
+        />
       )}
 
       <OpenArenaPanel
