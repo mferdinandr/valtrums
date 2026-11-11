@@ -60,5 +60,19 @@
     "read_back": { "cancelled": true, "vault": "0" }
   },
   "processes": "agent (agent/dist on main), oracle and collector (feat/onchain-observation-source builds), relay scripts/rpc-relay.py on 127.0.0.1:18546; all stopped after the run",
-  "not_done": ["settlement and payout of battle 2", "arena storage registration on GOOD, VLAD and DEGEN", "indexer model of lifecycle_round_reopened_v1"]
+  "follow_up_same_day": {
+    "battle_2_settlement": {
+      "call": "settle_lifecycle_battle {battle_id: 2, max_entitlements: 3} by valtrum-user1-b694.testnet, 0.03 NEAR (0.01 per entitlement, excess refunded)",
+      "tx": "GwFeyxXMWtDn47fgeAWkBSz63zdY1VFnwhvt4CEV3hK",
+      "progress": { "recorded": 3, "total": 3 },
+      "entitlements_on_backing_wallet": { "valtrum-user1-b694.testnet": "49.975 WALLET (49.95 winner share + 0.025 creator share)", "valtrum-protocol.sputnikv2.testnet": "0.025 WALLET", "valtrum-user2-b694.testnet": "0" }
+    },
+    "battle_2_escrow": {
+      "call": "reserve_lifecycle_escrow {battle_id: 2} by valtrum-user1-b694.testnet, 0.01 NEAR",
+      "tx": "6g44FjxHR4RaxMtXoTk2QxV12oaWxYwNk3bUTNjGcm1u",
+      "read_back": { "community": 0, "representation": "backing-cashcat.valtrum-owner-b694.testnet", "amount": "50 CASHCAT", "reserved": true }
+    },
+    "arena_storage_registration": { "payer": "valtrum-council1-b694.testnet", "good": "5jxMvZNsqc43pMvHwmZuyaWVyhDJsxHpCieQ1YH8adWg", "vlad": "31wK9kxDcZYDLkTDWa3r231rtXgYC2FkNtM4xYxDKTYA", "degen": "BBNsRuDMRGhXraA6yPgfcWewPLS99LBkXtDsxmXtJd9w", "note": "all five joinable backings now register the arena" }
+  },
+  "not_done": ["payout of the WALLET entitlements to Robinhood (MPC-signed transfer, live custody proof plan)", "DAO vote and disposition of the escrowed 50 CASHCAT (the vote window is 30 s on this arena)"]
 }
