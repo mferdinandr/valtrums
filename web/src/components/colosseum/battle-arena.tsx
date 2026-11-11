@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { Crosshair, Eye, Expand, Pause, Play } from "lucide-react";
+import { TokenIcon } from "@/components/token-icon";
 import { useNow } from "@/hooks/use-now";
 import type { BattleView, TokenMeta } from "@/lib/arena/types";
 import { battleRoster, recordedRuntime } from "./battle-runtime";
@@ -84,6 +85,8 @@ export function RecordedArena({
   leaderToken,
   provenance,
   waitingText,
+  scoreboard,
+  leaderboard,
 }: {
   battleId: string;
   tokens: Array<{ id: string; symbol: string }>;
@@ -95,6 +98,8 @@ export function RecordedArena({
   leaderToken?: string | null;
   provenance: string;
   waitingText: string;
+  scoreboard?: ReactNode;
+  leaderboard?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null),
     clock = useRef(0);
@@ -205,9 +210,11 @@ export function RecordedArena({
   return (
     <section
       ref={host}
-      className="battle-arena"
+      className={`battle-arena${scoreboard ? " battle-arena--match" : ""}`}
       aria-label={`3D arena for battle ${battleId}`}
     >
+      {scoreboard && <div className="battle-arena-scoreboard">{scoreboard}</div>}
+      {leaderboard}
       <div className="battle-arena-toolbar">
         <div>
           <span className="eyebrow">
@@ -230,15 +237,11 @@ export function RecordedArena({
           >
             <Crosshair size={17} />
           </button>
-          <button
-            aria-label={
-              paused ? "Resume cosmetic animation" : "Pause cosmetic animation"
-            }
+          {!scoreboard && <button
+            aria-label={paused ? "Resume cosmetic animation" : "Pause cosmetic animation"}
             aria-pressed={paused}
             onClick={() => setPaused((v) => !v)}
-          >
-            {paused ? <Play size={17} /> : <Pause size={17} />}
-          </button>
+          >{paused ? <Play size={17} /> : <Pause size={17} />}</button>}
           <button aria-label="Toggle arena fullscreen" onClick={fullscreen}>
             <Expand size={17} />
           </button>
@@ -281,7 +284,7 @@ export function RecordedArena({
             : "Community arena · awaiting the recorded battle state"}
         </p>
       </div>
-      <div
+      {!scoreboard && <div
         className="battle-arena-roster"
         role="group"
         aria-label="Highlight a battle community without changing your deposit"
@@ -293,6 +296,7 @@ export function RecordedArena({
             onClick={() => onSelect(tokens[index]!.id)}
             style={{ "--community": c.color } as React.CSSProperties}
           >
+            {scoreboard && <TokenIcon symbol={c.name} size={32} />}
             <strong>{c.name}</strong>
             <span>
               {round.winner === index
@@ -303,7 +307,7 @@ export function RecordedArena({
             </span>
           </button>
         ))}
-      </div>
+      </div>}
       {chart && <div className="battle-arena-chart">{chart}</div>}
       <p className="battle-arena-note">
         Animation is for show only. It never assigns scores or a winner.

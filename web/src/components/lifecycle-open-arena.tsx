@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { TransactionLink } from "@/components/transaction-link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Step } from "@/components/lifecycle-participate";
 import { useWallet } from "@/components/providers";
@@ -95,6 +96,7 @@ function CancelStep({ namespace, battleId }: { namespace: Namespace; battleId: n
 function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespace; battleId: number; detail: LifecycleDetail; name: (i: number) => string }) {
   const { signIn } = useWallet();
   const refund = useRefund(namespace.arenaContract, battleId, detail.battle.communities.length, name);
+  const transactions = refund.txHashes?.length > 0 ? <div className="space-y-1">{refund.txHashes.map((hash, i) => <div key={hash} className="text-xs"><span>Refund transaction {i + 1}</span><TransactionLink hash={hash} /></div>)}</div> : null;
   const amount = (units: string) => formatUnits(BigInt(units), TOKEN_DECIMALS, 4);
   if (!refund.connected) {
     return (
@@ -106,9 +108,9 @@ function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespac
   if (refund.claims === null) return <p role="status" className="text-xs text-mute">Checking what you can get back…</p>;
   if (refund.claims.length === 0) {
     return (
-      <p role="status" className="text-sm text-mute">
+      <div><p role="status" className="text-sm text-mute">
         {refund.state.step === "done" ? "Refunded. Check your wallet." : "You have nothing to refund in this battle."}
-      </p>
+      </p>{transactions}</div>
     );
   }
   const list = refund.claims
@@ -126,6 +128,7 @@ function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespac
           Refund failed: {st.message} Press the button to continue.
         </p>
       )}
+      {transactions}
     </div>
   );
 }

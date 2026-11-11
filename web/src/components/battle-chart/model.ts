@@ -16,19 +16,18 @@ export interface ChartSeries {
  * can be magnified on their own axis. A time with fewer than two values has no average and is left out.
  */
 export function relativeToField(series: readonly ChartSeries[]): ChartSeries[] {
-  const key = (x: number) => x.toFixed(3);
-  const at = new Map<string, number[]>();
+  const at = new Map<number, number[]>();
   for (const s of series) {
     for (const p of s.points) {
       if (p.value === null || !Number.isFinite(p.value)) continue;
-      at.set(key(p.x), [...(at.get(key(p.x)) ?? []), p.value]);
+      at.set(p.x, [...(at.get(p.x) ?? []), p.value]);
     }
   }
   return series.map((s) => ({
     ...s,
     points: s.points.flatMap((p): ChartPoint[] => {
       if (p.value === null || !Number.isFinite(p.value)) return [p];
-      const values = at.get(key(p.x)) ?? [];
+      const values = at.get(p.x) ?? [];
       if (values.length < 2) return [{ x: p.x, value: null }];
       return [{ x: p.x, value: p.value - values.reduce((a, b) => a + b, 0) / values.length }];
     }),
@@ -56,16 +55,17 @@ export function displayStandings(
   series: readonly ChartSeries[],
   lowerIsBetter: boolean,
 ) {
-  const values = series
-    .filter((s) => !s.inactive)
-    .flatMap((s) => {
-      const last = s.points.at(-1);
-      return last?.value !== null &&
-        last?.value !== undefined &&
-        Number.isFinite(last.value)
-        ? [{ id: s.id, name: s.name, value: last.value }]
-        : [];
-    })
+  const active = series.filter((s) => !s.inactive);
+  const latest = active.map((s) => ({
+    series: s,
+    point: s.points.findLast((p) => p.value !== null && Number.isFinite(p.value)),
+  }));
+  // Never compare one token's new observation against another token's older one.
+  if (latest.length < 2 || latest.some(({ point }) => !point) || latest.some(({ point }) => point!.x !== latest[0]!.point!.x)) {
+    return { leaders: [], gap: null };
+  }
+  const values = latest
+    .map(({ series: s, point }) => ({ id: s.id, name: s.name, value: point!.value! }))
     .sort((a, b) => (a.value - b.value) * (lowerIsBetter ? 1 : -1));
   if (!values.length) return { leaders: [], gap: null };
   const best = values[0]!;

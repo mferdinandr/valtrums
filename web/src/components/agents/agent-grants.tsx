@@ -150,8 +150,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
   if (!policy) {
     return (
       <Card role="alert">
-        The player-policy contract is not configured. Set <code>NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID</code> in{" "}
-        <code>web/.env.local</code> and restart the dev server.
+        Agents are currently unavailable. Please try again later.
       </Card>
     );
   }

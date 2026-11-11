@@ -51,7 +51,7 @@ function BalanceMenu({ accountId }: { accountId: string }) {
         {shorten(accountId)} ▾
       </button>
       {open && (
-        <div ref={panel} role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 space-y-2 rounded-xl border border-edge bg-void p-3 text-sm shadow-xl">
+        <div ref={panel} role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-xl border border-edge bg-void p-3 text-sm text-[#354358] shadow-xl">
           <p className="font-pixel text-xs text-mute">My balance</p>
           <p className="break-all text-xs text-mute">{accountId}</p>
           {error && <p role="alert" className="text-xs text-neon-red">Could not read balances. {error}</p>}

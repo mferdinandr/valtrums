@@ -272,6 +272,19 @@ function nearest(samples: StoredObservation[], target: bigint, tol: bigint): Sto
   return best;
 }
 
+/** Display projection only: these are not proof of which evidence was submitted on-chain. */
+export function projectedBoundaries(state: ObservationState, round: FrozenRound) {
+  const { mine } = roundSamples(state, round);
+  const tolerance = BigInt(round.boundaryToleranceMs);
+  return round.candidates.map((community) => {
+    const timed = mine.filter((s) => s.observation.community === community && s.observation.observedAtMs !== null && s.observation.inputs.kind === "price");
+    const start = nearest(timed, nsToMs(round.startNs), tolerance);
+    const end = nearest(timed, nsToMs(round.endNs), tolerance);
+    const describe = (s: StoredObservation | null) => s ? { id: s.id, observedAtMs: s.observation.observedAtMs } : null;
+    return { community, start: describe(start), end: describe(end) };
+  });
+}
+
 export function provisionalProjection(state: ObservationState, round: FrozenRound, qualified: QualifiedModes): ProvisionalProjection {
   const coverage = roundCoverage(state, round);
   const base = { authoritative: false as const, mode: round.mode, coverage };

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -23,9 +24,11 @@ import { formatUnits, parseUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
 import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
+import { TokenIcon } from "@/components/token-icon";
 import "@/components/lifecycle/lifecycle.css";
 
 const DEFAULT_LEAD_MS = 15 * 60 * 1000;
+const CreatePreview = dynamic(() => import("@/components/colosseum/create-preview"), { ssr: false, loading: () => <div className="setup-preview-fallback">Preparing your crew…</div> });
 
 /**
  * Creates a battle with the creator's first deposit (D41) in one form. The reviewed arguments are compared with
@@ -37,6 +40,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [startInput, setStartInput] = useState("");
   const [token, setToken] = useState("");
   const [amount, setAmount] = useState("");
+  const [step, setStep] = useState(0);
   const { balances } = useBalances();
   const joinable = useJoinableAssets(namespace.arenaContract);
   // Only tokens the creator holds and the arena lets anyone join with can back the first deposit.
@@ -78,19 +82,27 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const label = chosen && amountBase ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}` : null;
   const problems = [...(review.ok ? [] : touched ? review.problems : []), ...depositProblems.filter((p) => touched && !(review.ok ? [] : review.problems).includes(p))];
   return (
-    <div className="lifecycle-page">
+    <div className="lifecycle-page setup-page">
       <Link href="/arena" className="text-xs text-neon-green">
         ← Back to battles
       </Link>
-      <section>
-        <h1 className="text-2xl">Create a battle</h1>
-        <p className="mt-2 text-sm text-mute">
-          Pick a challenge, a start time and the first token you deposit. Anyone can join until it starts.
+      <section className="match-setup-heading">
+        <div>
+        <span className="arcade-kicker">MATCH SETUP</span>
+        <h1>Create a battle.</h1>
+        <p>
+          Choose the challenge, start time and your first crew. Others can join before it starts.
         </p>
+        </div>
       </section>
 
-      <Card aria-label="Transaction review" className="space-y-6">
+      <div className="setup-workspace">
+      <Card aria-label="Transaction review" className="match-setup-form space-y-6">
+        <ol className="setup-steps" aria-label="Battle setup steps">
+          {["Challenge", "Your crew", "Review"].map((name, i) => <li key={name} aria-current={step === i ? "step" : undefined}><span>{i + 1}</span>{name}</li>)}
+        </ol>
         <fieldset disabled={run.state.step === "running"} className="min-w-0 space-y-6">
+          <div hidden={step !== 0} className="space-y-6">
           <div className="space-y-2">
             <CardTitle>Challenge</CardTitle>
             <div className="lifecycle-mode-grid" role="group" aria-label="Scoring mode">
@@ -110,8 +122,9 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           <p id="start-help" className="-mt-4 text-xs text-mute">
             {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}1 minute to 7 days from now.
           </p>
+          </div>
 
-          <div className="space-y-2">
+          <div hidden={step !== 1} className="space-y-2">
             <CardTitle>Your deposit</CardTitle>
             {owned.length === 0 ? (
               <p role="status" className="text-xs text-neon-amber">
@@ -123,6 +136,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
               <div className="flex flex-wrap gap-2" role="group" aria-label="Token to deposit">
                 {owned.map((t) => (
                   <button key={t.token} type="button" className="lifecycle-mode" aria-pressed={token === t.token} onClick={() => setToken(t.token)}>
+                    <TokenIcon symbol={t.symbol} size={32} />
                     <strong>{t.symbol}</strong>
                     <span>Balance {formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 4)}</span>
                   </button>
@@ -140,7 +154,12 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           </div>
         </fieldset>
 
-        {problems.length > 0 && (
+        {step === 2 && <div className="setup-summary">
+          <h2>Ready to start a rivalry?</h2>
+          <dl><div><dt>Challenge</dt><dd>{MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}</dd></div><div><dt>Starts</dt><dd>{startAtMs ? utc(Number(startAtMs)) : "Choose a start time"}</dd></div><div><dt>Your deposit</dt><dd>{label ?? "Choose a crew and amount"}</dd></div></dl>
+          <p>Your deposit waits for approval. Your wallet will show each transaction before signing. Your first battle may require a one-time 0.05 NEAR storage prepayment, which is withdrawable.</p>
+        </div>}
+        {step === 2 && problems.length > 0 && (
           <ul role="status" className="list-disc pl-4 text-sm text-neon-amber">
             {problems.map((p) => (
               <li key={p}>{p}</li>
@@ -149,7 +168,8 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          {run.connected ? (
+          {step > 0 && <Button type="button" variant="ghost" disabled={run.state.step === "running"} onClick={() => setStep(step - 1)}>Back</Button>}
+          {step < 2 ? <Button type="button" onClick={() => setStep(step + 1)}>Continue</Button> : run.connected ? (
             <Button
               type="button"
               onClick={run.run}
@@ -179,7 +199,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           </p>
         )}
 
-        {review.ok && (
+        {step === 2 && review.ok && (
           <details className="lifecycle-tech">
             <summary>Technical details</summary>
             <dl className="mt-3 space-y-1 text-xs">
@@ -196,6 +216,18 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           </details>
         )}
       </Card>
+      <aside className="setup-preview" aria-label="Battle preparation preview">
+        <div className="setup-preview-heading"><span>YOUR STARTING CREW</span><strong>{chosen?.symbol ?? "Who’s stepping in?"}</strong></div>
+        <CreatePreview symbol={chosen?.symbol} />
+        <div className="setup-preview-caption">{chosen ? "Drag to look around your crew." : "Choose a token in step 2 to meet your crew."}</div>
+        <dl className="setup-preview-ticket">
+          <div><dt>Challenge</dt><dd>{MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}</dd></div>
+          <div><dt>Starts</dt><dd>{startAtMs ? new Date(Number(startAtMs)).toLocaleString() : "Not set"}</dd></div>
+          <div><dt>Opening deposit</dt><dd>{label ?? "Not selected"}</dd></div>
+        </dl>
+        <p className="setup-preview-note">Others can join before the battle starts.</p>
+      </aside>
+      </div>
     </div>
   );
 }

@@ -27,6 +27,7 @@ export function RouteFrame({ children }: { children: ReactNode }) {
     return () => context.revert();
   }, [pathname]);
   if (pathname === "/") return <>{children}</>;
+  if (/^\/arena\/[0-9]+$/.test(pathname)) return <div className="route-content">{children}</div>;
   return (
     <div ref={ref} className="route-content relative">
       <p className="mb-5 flex items-center gap-2 text-xs text-mute">

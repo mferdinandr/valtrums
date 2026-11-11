@@ -10,23 +10,14 @@ export default function AgentsPage() {
   const namespace = useApplicationDeployment();
   return (
     <div className="lifecycle-page">
-      <header className="lifecycle-hero">
+      <header className="arcade-heading arcade-heading--agents">
         <div>
-          <span className="lifecycle-pill">YOUR PLAYER AGENTS</span>
-          <h1>
-            Give an agent a budget.
-            <br />
-            Keep the keys.
-          </h1>
+          <span className="arcade-kicker">PLAYER AGENTS</span>
+          <h1>Your agents, your rules.</h1>
           <p className="text-sm text-mute">
             Set a token, spending limits and an end date for your agent. You can revoke access at any time.
             Your agent can suggest deposits, but cannot move tokens on its own.
           </p>
-          <div className="lifecycle-facts">
-            <span>Your wallet signs</span>
-            <span>Bounded budget</span>
-            <span>Revocable</span>
-          </div>
         </div>
         <CarnivalScene mode="terminal" caption="Your agent kiosk" />
       </header>

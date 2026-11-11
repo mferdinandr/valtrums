@@ -12,13 +12,12 @@ export default function TerminalPage() {
   const deployment = useApplicationDeployment();
   return (
     <div className="lifecycle-page">
-      <header className="lifecycle-hero">
+      <header className="arcade-heading arcade-heading--terminal">
         <div>
-        <span className="lifecycle-pill">THE HELP KIOSK / INTENT TERMINAL</span>
-        <h1>A little help with your next move.</h1>
+        <span className="arcade-kicker">TERMINAL</span>
+        <h1>What’s your next move?</h1>
         <p>
-          Say what you want in plain English or Bahasa Indonesia. You always see the exact call first; nothing is sent to the action service until you ask for
-          a preview, and only your wallet signs.
+          Ask in English or Bahasa Indonesia. Review your action before signing.
         </p>
         </div>
         <CarnivalScene mode="terminal" caption="Your command kiosk" />

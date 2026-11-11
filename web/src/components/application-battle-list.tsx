@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
-import { ArrowUpRight, Plus, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useApplicationSearch } from "@/hooks/use-application-search";
@@ -38,21 +38,17 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
     });
   return (
     <section className="lifecycle-page" aria-label="Application battles">
-      <header className="lifecycle-hero">
+      <header className="arcade-heading arcade-heading--arena">
         <div>
-          <span className="lifecycle-pill">THE COMMUNITY FAIRGROUND</span>
-          <h1>Find your next rivalry.</h1>
-          <p className="text-sm text-mute">
-            Meet the crews, pick your community and step into its 3D arena.
-            Watch the round unfold, then inspect the recorded result.
-          </p>
+          <span className="arcade-kicker">THE MATCH BOARD</span>
+          <h1>Pick your battle.</h1>
+          <p>Find a crew to cheer for, or start a rivalry of your own.</p>
           <div className="lifecycle-actions">
             <Button asChild>
               <Link href="/arena/new">
                 <Plus size={16} /> Create a battle
               </Link>
             </Button>
-            <span className="text-xs text-mute">Watching needs no wallet.</span>
           </div>
         </div>
         <CarnivalScene
@@ -61,8 +57,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         />
       </header>
       <div className="lifecycle-heading">
-        <h2>The battle line-up</h2>
-        <p className="text-xs text-mute">Every crew. One arena.</p>
+        <h2>Battle line-up</h2>
       </div>
       <label className="arena-search">
         <Search size={16} aria-hidden="true" />
@@ -186,13 +181,12 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                       : communityName(battle.winner)}
                   </p>
                 )}
-                <div className="lifecycle-actions battle-preview-enter">
+                <div className="battle-preview-enter grid gap-3">
                   <Button asChild variant="cyan">
                     <Link href={`/arena/${battle.battleId}`}>
-                      Enter arena <ArrowUpRight size={15} />
+                      Enter arena
                     </Link>
                   </Button>
-                </div>
                 {battle.status !== "open" && battle.status !== "cancelled" && (
                   <>
                     <Button
@@ -216,6 +210,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                     )}
                   </>
                 )}
+                </div>
               </Card>
             ))}
           </div>

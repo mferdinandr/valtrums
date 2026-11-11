@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Expand, X, TrendingUp } from "lucide-react";
 import { chartSegments, displayStandings, relativeToField, type ChartPoint, type ChartSeries } from "./model";
 import "./chart.css";
+import { TokenIcon } from "@/components/token-icon";
 
 /** Length in px of one colour stripe where several series coincide. */
 const STRIPE = 7;
@@ -16,12 +17,13 @@ interface Geometry {
 
 /**
  * Eases the axis range and each series' newest point toward their targets every animation frame
- * (about a third of a second to settle). Reduced-motion users get the targets at once.
+ * using elapsed time so updates feel consistent at different frame rates. Reduced-motion users get
+ * the targets at once; the animation stops when there is no new sample.
  */
 function useSmoothedGeometry(
   targetMin: number,
   targetMax: number,
-  targetHeads: Map<string, { x: number; v: number }>,
+  targetHeads: Map<string, { x: number; v: number; segmentStart: number }>,
 ): Geometry {
   const [, frame] = useState(0);
   const current = useRef<Geometry | null>(null);
@@ -38,24 +40,29 @@ function useSmoothedGeometry(
   useEffect(() => {
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     let raf = 0;
-    const step = () => {
+    let previousFrame: number | undefined;
+    const step = (now: number) => {
       const t = target.current;
       const c = current.current!;
-      const k = reduce ? 1 : 0.22;
+      const elapsed = previousFrame === undefined ? 16 : Math.min(now - previousFrame, 100);
+      previousFrame = now;
+      // A longer follow-through carries the motion between typical one-second updates without
+      // extrapolating beyond the newest observed point. Missing updates still settle and stop.
+      const k = reduce ? 1 : 1 - Math.exp(-elapsed / 230);
       let moving = false;
       const ease = (from: number, to: number, scale: number) => {
         const d = to - from;
-        if (Math.abs(d) <= Math.max(scale, 1e-9) * 0.002) return to;
+        if (Math.abs(d) <= Math.max(scale, Number.EPSILON * Math.abs(to), Number.MIN_VALUE) * 0.0001) return to;
         moving = true;
         return from + d * k;
       };
-      const scale = Math.max(t.max - t.min, 1e-9);
+      const scale = Math.max(t.max - t.min, Number.MIN_VALUE);
       c.min = ease(c.min, t.min, scale);
       c.max = ease(c.max, t.max, scale);
       for (const id of [...c.heads.keys()]) if (!t.heads.has(id)) c.heads.delete(id);
       for (const [id, h] of t.heads) {
         const shown = c.heads.get(id);
-        if (!shown) {
+        if (!shown || shown.x < h.segmentStart) {
           c.heads.set(id, { x: h.x, v: h.v });
           continue;
         }
@@ -89,6 +96,8 @@ interface Props {
   range?: [number, number];
   signed?: boolean;
   resetKey?: string | number;
+  closingTimes?: number[];
+  ranks?: { community: number; rank: number }[];
 }
 const score = (value: number, signed = true, digits = 2) =>
   `${signed && value > 0 ? "+" : ""}${value.toFixed(digits)}%`;
@@ -114,7 +123,7 @@ export function gapText(gap: number): string {
 }
 
 function Plot({
-  series,
+  series: allSeries,
   selected,
   onSelect,
   duration,
@@ -123,6 +132,9 @@ function Plot({
   signed = true,
   deviation = false,
   legendSeries,
+  result,
+  closingTimes,
+  ranks,
 }: {
   series: ChartSeries[];
   selected: string;
@@ -135,10 +147,21 @@ function Plot({
   deviation?: boolean;
   /** The real scores shown in the legend when `series` is a derived view. */
   legendSeries?: ChartSeries[];
+  result?: string;
+  closingTimes?: number[];
+  ranks?: { community: number; rank: number }[];
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600),
     [sample, setSample] = useState<number | null>(null);
+  useEffect(() => { if (result) setSample(null); }, [result]);
+  const start = 0, end = duration;
+  // A symmetric logarithmic scale keeps tiny gaps legible across the whole round while compressing spikes.
+  const magnitudes = allSeries.flatMap((s) => s.points.flatMap((p) => p.value !== null && Number.isFinite(p.value) && p.value !== 0 ? [Math.abs(p.value)] : [])).sort((a, b) => a - b);
+  const linearScale = magnitudes[Math.floor(magnitudes.length / 2)] ?? 1;
+  const transform = (v: number) => deviation ? Math.asinh(v / linearScale) : v;
+  const inverse = (v: number) => deviation ? Math.sinh(v) * linearScale : v;
+  const series = deviation ? allSeries.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, value: p.value === null ? null : transform(p.value) })) })) : allSeries;
   const description = useId();
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -158,19 +181,21 @@ function Plot({
   const hasValues = values.length > 0;
   const dataLow = hasValues ? Math.min(...values) : 0,
     dataHigh = hasValues ? Math.max(...values) : 0,
-    fitSpan = Math.max(dataHigh - dataLow, deviation ? 1e-16 : 0.000002),
+    fitSpan = Math.max(dataHigh - dataLow, deviation ? 0.1 : 0.000002),
     mid = (dataHigh + dataLow) / 2,
     pad = fitSpan * 0.15;
   const targetMin = range?.[0] ?? mid - fitSpan / 2 - pad,
     targetMax = range?.[1] ?? mid + fitSpan / 2 + pad;
   // Presentation only: the axis and the newest point glide to their true values. No value is invented;
   // when the motion ends every drawn point sits exactly on its recorded sample.
-  const heads = new Map<string, { point: ChartPoint; x: number; v: number }>();
+  const heads = new Map<string, { point: ChartPoint; x: number; v: number; segmentStart: number }>();
   for (const s of series) {
+    const segments = chartSegments(s.points);
+    const lastSegment = segments.at(-1);
     for (let i = s.points.length - 1; i >= 0; i--) {
       const p = s.points[i]!;
       if (p.value !== null && Number.isFinite(p.value)) {
-        heads.set(s.id, { point: p, x: p.x, v: p.value });
+        heads.set(s.id, { point: p, x: p.x, v: p.value, segmentStart: lastSegment?.[0]?.x ?? p.x });
         break;
       }
     }
@@ -181,7 +206,7 @@ function Plot({
   const fingerprint = (s: ChartSeries) =>
     s.points.length === 0
       ? null
-      : s.points.map((p) => (p.value === null ? "gap" : `${p.x.toFixed(2)}:${p.value.toFixed(9)}`)).join("|");
+      : s.points.map((p) => (p.value === null ? `gap:${p.x}` : `${p.x}:${p.value}`)).join("|");
   const sameLine = new Map<string, ChartSeries[]>();
   for (const s of series) {
     const f = fingerprint(s);
@@ -199,13 +224,13 @@ function Plot({
     span = max - min,
     // Enough decimals that neighbouring gridlines never print the same number.
     decimals = span > 0 && Number.isFinite(span) ? Math.min(16, Math.max(1, Math.ceil(-Math.log10(span)) + 2)) : 2,
-    height = 200,
+    height = 260,
     left = 88,
     right = 22,
     top = 16,
     bottom = 30;
   const x = (t: number) =>
-    left + (t / Math.max(1, duration)) * (width - left - right);
+    left + ((t - start) / Math.max(1, end - start)) * (width - left - right);
   const y = (v: number) =>
     top + ((max - v) / (max - min)) * (height - top - bottom);
   const times = [
@@ -217,7 +242,7 @@ function Plot({
   const legendRows = legendSeries ?? series;
   const legendDigits = scoreDigits(
     legendRows.flatMap((s) => {
-      const p = inspected === null ? s.points.at(-1) : s.points.find((q) => q.x === inspected);
+      const p = inspected === null ? s.points.findLast((q) => q.value !== null && Number.isFinite(q.value)) : s.points.find((q) => q.x === inspected);
       return p?.value !== null && p?.value !== undefined && Number.isFinite(p.value) ? [p.value] : [];
     }),
   );
@@ -232,7 +257,7 @@ function Plot({
           const time =
             ((((e.clientX - rect.left) / rect.width) * width - left) /
               (width - left - right)) *
-            duration;
+            (end - start) + start;
           if (times.length)
             setSample(
               times.reduce(
@@ -264,7 +289,7 @@ function Plot({
                 strokeDasharray="3 5"
               />
               <text x={left - 8} y={y(value) + 4} textAnchor="end">
-                {value.toFixed(decimals)}%
+                {deviation ? `${inverse(value).toExponential(2)}%` : `${value.toFixed(decimals)}%`}
               </text>
             </g>
           );
@@ -278,15 +303,21 @@ function Plot({
             stroke="#aebbb3"
           />
         )}
+        {[...new Set(closingTimes ?? [])].filter((t) => t >= start && t <= end).map((t) => (
+          <g key={`close-${t}`}>
+            <line x1={x(t)} x2={x(t)} y1={top} y2={height - bottom} stroke="#9b6d36" strokeDasharray="4 4" />
+            <title>Estimated closing sample at {t.toFixed(1)}s</title>
+          </g>
+        ))}
         {[0, 0.5, 1].map((t) => (
           <text
             key={t}
-            x={x(t * duration)}
+            x={x(start + t * (end - start))}
             y={height - 6}
             textAnchor={t === 0 ? "start" : t === 1 ? "end" : "middle"}
           >
             {connected
-              ? `${Math.round(t * duration)}s`
+              ? `${Math.round(start + t * (end - start))}s`
               : t === 0
                 ? "Start"
                 : t === 1
@@ -355,7 +386,7 @@ function Plot({
                     style={{ cursor: "pointer" }}
                   >
                     <title>
-                      {s.name}: {score(p.value!, signed)}
+                      {s.name}: {deviation ? `${inverse(p.value!).toExponential(3)}% from field average` : score(p.value!, signed)}
                       {connected
                         ? ` at ${p.x.toFixed(1)}s`
                         : " · available snapshot"}
@@ -411,7 +442,7 @@ function Plot({
           />
           <span>
             {inspected === null || inspected === undefined
-              ? "Latest"
+              ? result ? "Latest · result recorded" : "Latest"
               : connected
                 ? `${inspected.toFixed(1)}s`
                 : inspected === 0
@@ -425,10 +456,10 @@ function Plot({
         role="group"
         aria-label="Highlight a community; selection does not place a deposit"
       >
-        {legendRows.map((s) => {
+        {[...legendRows].sort((a, b) => inspected === null ? (ranks?.find((r) => String(r.community) === a.id)?.rank ?? Infinity) - (ranks?.find((r) => String(r.community) === b.id)?.rank ?? Infinity) : 0).map((s) => {
           const point =
             inspected === null
-              ? s.points.at(-1)
+              ? s.points.findLast((p) => p.value !== null && Number.isFinite(p.value))
               : s.points.find((p) => p.x === inspected);
           return (
             <button
@@ -437,8 +468,10 @@ function Plot({
               onClick={() => onSelect(s.id)}
               style={{ "--line": s.color } as React.CSSProperties}
             >
+              {inspected === null && ranks?.some((r) => String(r.community) === s.id) && <span className="score-chart-rank">{ranks.find((r) => String(r.community) === s.id)!.rank}</span>}
+              <TokenIcon symbol={s.name} size={28} />
               <span className="score-chart-dot" />
-              <span>
+              <span className="score-chart-token">
                 {s.name}
                 {s.inactive ? " · out" : ""}
               </span>
@@ -461,7 +494,7 @@ export function ScoreChart(props: Props) {
   // The companion strip exists only for a connected round chart of two or more tokens whose scores differ at all.
   const diffs = props.connected !== false && !props.range && props.series.length >= 2 ? relativeToField(props.series) : null;
   const diffValues = diffs?.flatMap((s) => s.points.flatMap((p) => (p.value !== null && Number.isFinite(p.value) ? [p.value] : []))) ?? [];
-  const microDiff = diffs && diffValues.length > 0 && Math.max(...diffValues) - Math.min(...diffValues) > 1e-15 ? diffs : null;
+  const microDiff = diffs && diffValues.length > 0 && Math.max(...diffValues) > Math.min(...diffValues) ? diffs : null;
   const standings = displayStandings(props.series, !!props.lowerIsBetter);
   const unique = standings.leaders.length === 1 ? standings.leaders[0] : null;
   const headline =
@@ -469,10 +502,10 @@ export function ScoreChart(props: Props) {
     (props.pending
       ? "Awaiting evidence · no result assigned"
       : unique
-        ? `Latest · ${unique.name} leads${standings.gap !== null ? ` by ${gapText(standings.gap)} pts` : ""}`
+        ? `${unique.name} leads · ${standings.gap !== null ? `${gapText(standings.gap)} pts ahead` : "provisional"}`
         : standings.leaders.length > 1
           ? "Level scores · no unique leader"
-          : "Waiting for observations");
+          : "Waiting for matching observations");
   useEffect(() => {
     if (!expanded) return;
     modal.current?.showModal();
@@ -513,10 +546,8 @@ export function ScoreChart(props: Props) {
       </span>
       {microDiff && (
         <p className="score-chart-note">
-          <strong>Who is ahead.</strong> Each line is a token&apos;s distance from the average of all tokens (0 is the
-          average; {props.lowerIsBetter ? "lower" : "higher"} is ahead), zoomed until the gap is visible. The legend shows each token&apos;s real score.
-          Gaps below 0.000000000001% come from price rounding, not market movement; the contract still decides the
-          winner from the exact scores.
+          <strong>Race view.</strong> Lines show the gap from the field average; {props.lowerIsBetter ? "lower" : "higher"} is ahead.
+          The scale magnifies small gaps, which may reflect price precision.
         </p>
       )}
       <Plot

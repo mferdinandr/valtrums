@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { TransactionLink } from "@/components/transaction-link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useWallet } from "@/components/providers";
@@ -127,6 +128,7 @@ export function JoinDeposit({
           )}
         </div>
       )}
+      {flow.txHashes?.length > 0 && <div className="mt-3 space-y-1"><p className="text-xs text-mute">Transactions from this session</p>{flow.txHashes.map((hash, i) => <div key={hash} className="text-xs"><span>Transaction {i + 1}</span><TransactionLink hash={hash} /></div>)}</div>}
     </Card>
   );
 }

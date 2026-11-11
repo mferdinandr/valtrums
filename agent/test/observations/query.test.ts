@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ObservationJournal } from "../../src/observations/journal.js";
-import { ObservationQueryError, provisionalProjection, queryObservations, readerOver, roundCoverage } from "../../src/observations/query.js";
+import { ObservationQueryError, projectedBoundaries, provisionalProjection, queryObservations, readerOver, roundCoverage } from "../../src/observations/query.js";
 import { NS, START_MS, END_MS, frozen, price } from "./fixtures.js";
 
 let dir: string;
@@ -79,6 +79,17 @@ describe("coverage", () => {
 });
 
 describe("provisional exact scores", () => {
+  it("selects the nearest permitted boundary with the same sequence tie-break as the oracle", async () => {
+    await j.append(price(0, START_MS - 2_000n, "90"));
+    const start = await j.append(price(0, START_MS - 1_000n, "100"));
+    await j.append(price(0, START_MS + 1_000n, "101"));
+    const end = await j.append(price(0, END_MS + 1_000n, "110"));
+    expect(projectedBoundaries(j.state, frozen()).find((b) => b.community === 0)).toEqual({
+      community: 0,
+      start: { id: start.id, observedAtMs: (START_MS - 1_000n).toString() },
+      end: { id: end.id, observedAtMs: (END_MS + 1_000n).toString() },
+    });
+  });
   it("computes exact signed rationals and separates provisional leaders from results", async () => {
     await fill(0, [[START_MS, "300"], [START_MS + 15_000n, "310"], [END_MS, "310"]]); // +10/300
     await fill(1, [[START_MS, "200"], [START_MS + 15_000n, "190"], [END_MS, "190"]]); // -10/200

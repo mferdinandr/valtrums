@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Navbar />
           <main
             id="main-content"
-            className="site-main mx-auto min-h-[75vh] max-w-[1360px] px-5 py-7 lg:px-10 lg:py-9"
+            className="site-main mx-auto min-h-[75vh] max-w-[1680px] px-4 py-7 lg:px-8 lg:py-9"
           >
             <RouteFrame>{children}</RouteFrame>
           </main>

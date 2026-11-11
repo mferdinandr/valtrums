@@ -100,9 +100,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 2rem;
-  max-width: 1360px;
+  max-width: 1680px;
   margin: 4rem auto 0;
-  padding: 2rem 1.5rem;
+  padding: 2rem clamp(1rem, 2.2vw, 2rem);
   border-top: 1px solid #ded9cd;
   color: #718087;
   font-size: 12px;

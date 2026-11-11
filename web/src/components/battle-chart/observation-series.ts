@@ -56,14 +56,17 @@ export function observationSeries(data: ObservationData, names?: readonly string
   const series = candidates.map((community, index): ChartSeries => {
     const cov = data.coverage?.communities.find((c) => c.community === community);
     const timed = data.items
-      .filter((i) => i.community === community && i.observedAtMs !== null && price(i) !== null)
-      .sort((a, b) => (BigInt(a.observedAtMs as string) < BigInt(b.observedAtMs as string) ? -1 : 1));
+      .filter((i) => i.community === community && i.roundId === data.recorded?.roundId && i.mode === mode && i.observedAtMs !== null && price(i) !== null)
+      .sort((a, b) => BigInt(a.observedAtMs as string) < BigInt(b.observedAtMs as string) ? -1 : BigInt(a.observedAtMs as string) > BigInt(b.observedAtMs as string) ? 1 : BigInt(a.seq) < BigInt(b.seq) ? -1 : BigInt(a.seq) > BigInt(b.seq) ? 1 : 0);
     const points: ChartPoint[] = [];
     // Without a start sample there is no honest baseline: every value stays null.
-    const first = timed[0];
+    const boundary = data.boundaries?.find((b) => b.community === community);
+    const first = boundary?.start ? timed.find((i) => i.id === boundary.start!.id) : undefined;
     const base = mode === "PriceGain" && cov?.hasStart && first ? price(first) : null;
+    if (mode === "PriceGain" && !base) gapNotes.push(`${note(community)}: start sample unavailable`);
     let peak = 0n;
     for (const [n, item] of timed.entries()) {
+      if (first && item.policyHash !== first.policyHash) continue;
       const p = price(item)!;
       // A sample within the boundary tolerance but outside the window is evidence for the score, not a point
       // of this round's timeline: clamping it to the edge drew a false jump at 0s / 30s.

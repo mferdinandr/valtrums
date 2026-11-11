@@ -16,12 +16,16 @@ export function LifecycleArena({
   onSelect,
   fixture,
   chart,
+  scoreboard,
+  leaderboard,
 }: {
   detail: LifecycleDetail;
   selected: string;
   onSelect: (id: string) => void;
   fixture: boolean;
   chart?: ReactNode;
+  scoreboard?: ReactNode;
+  leaderboard?: ReactNode;
 }) {
   const roster = useMemo(
     () => lifecycleRoster(detail.battle.communities),
@@ -42,6 +46,8 @@ export function LifecycleArena({
       onSelect={onSelect}
       provenance={fixture ? "Fixture lifecycle" : "Recorded lifecycle"}
       chart={chart}
+      scoreboard={scoreboard}
+      leaderboard={leaderboard}
       waitingText={
         !detail.battle.locked
           ? "Meet the crews · deposits are still open"

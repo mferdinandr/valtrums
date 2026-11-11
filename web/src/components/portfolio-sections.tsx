@@ -16,7 +16,8 @@ function Failed({ title, message }: { title: string; message: string }) {
   return (
     <Card role="alert" className="space-y-2 p-4">
       <h2 className="text-lg text-neon-green">{title}</h2>
-      <p className="text-base text-neon-amber">Could not be read: {message}. Nothing is assumed about this section.</p>
+      <p className="text-base text-neon-amber">This section is unavailable. Please try again.</p>
+      <details className="lifecycle-tech"><summary>Details</summary><p>{message}</p></details>
     </Card>
   );
 }
@@ -38,10 +39,10 @@ export function PositionsSection({ part, nowMs }: { part: PortfolioData["positio
   const groups = normalizePositions(part.env.data);
   return (
     <Card className="space-y-3 p-4">
-      <h2 className="text-lg text-neon-green">Positions (deposits by original asset)</h2>
+      <h2 className="text-lg text-neon-green">Your positions</h2>
       <p className="text-sm text-mute">{envelopeLabel(part.env, nowMs)}</p>
       {groups.length === 0 ? (
-        <p className="text-base text-mute">No deposit was found in the inspected battles. Older battles are not scanned.</p>
+        <p className="text-base text-mute">No positions found in recent battles. Older battles are not scanned yet.</p>
       ) : (
         groups.map((g) => (
           <div key={g.asset} className="space-y-1">
@@ -54,7 +55,7 @@ export function PositionsSection({ part, nowMs }: { part: PortfolioData["positio
                 </li>
               ))}
             </ul>
-            <p className="text-sm text-mute">Subtotal of this asset only: {g.subtotal ?? "unavailable (a malformed amount)"}</p>
+            <p className="text-sm text-mute">Total for this asset: {g.subtotal ?? "unavailable"} base units</p>
           </div>
         ))
       )}
@@ -69,12 +70,13 @@ export function EntitlementAvailabilitySection({ part, nowMs }: { part: Portfoli
   const a = entitlementAvailability(part.env.data, part.env.limitations);
   return (
     <Card className="space-y-2 p-4">
-      <h2 className="text-lg text-neon-green">Per-account entitlements</h2>
+      <h2 className="text-lg text-neon-green">Rewards</h2>
       <p className="text-sm text-mute">{envelopeLabel(part.env, nowMs)}</p>
       {!a.available && (
         <div role="status" className="space-y-1">
-          <Badge tone="amber">not available from the contract yet</Badge>
-          <p className="text-base text-mute">{a.reason}. This is unknown, not zero.</p>
+          <Badge tone="amber">Status unavailable</Badge>
+          <p className="text-base text-mute">We can’t check these rewards yet. Your balance is not necessarily zero.</p>
+          <details className="lifecycle-tech"><summary>Details</summary><p>{a.reason}</p></details>
         </div>
       )}
     </Card>
@@ -88,7 +90,8 @@ export function TransfersSection({ part, nowMs }: { part: PortfolioData["payouts
   const note = historyNote(part.env.limitations);
   return (
     <Card className="space-y-3 p-4">
-      <h2 className="text-lg text-neon-green">Transfers (paid only when confirmed)</h2>
+      <h2 className="text-lg text-neon-green">Transfers</h2>
+      <p className="text-sm text-mute">A transfer is paid when confirmed.</p>
       <p className="text-sm text-mute">{envelopeLabel(part.env, nowMs)}</p>
       {rows.length === 0 ? (
         <p role="status" className="text-base text-mute">

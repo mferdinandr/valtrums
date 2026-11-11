@@ -34,19 +34,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function useJoinAndDeposit(arena: string, battleId: number) {
   const { act, accountId, connected } = useActionRunner();
   const [state, setState] = useState<JoinState>({ step: "idle" });
+  const scope = `${accountId}:${arena}:${battleId}`;
+  const [receipts, setReceipts] = useState<{ scope: string; hashes: string[] }>({ scope, hashes: [] });
   const busy = useRef(false);
 
   const run = useCallback(
     async (representation: string, label: string, amount: string) => {
       if (!accountId || busy.current) return;
       busy.current = true;
+      const remember = (hash?: string | null) => { if (hash) setReceipts((previous) => ({ scope, hashes: [...new Set([...(previous.scope === scope ? previous.hashes : []), hash])] })); };
       try {
         let current = await readCommunityState(config.rpcUrl, arena, battleId, representation);
         const registered = current.index !== null && (await readRegistered(config.rpcUrl, arena, battleId, current.index, accountId));
         if (!registered) {
           setState({ step: "running", stage: "join" });
           const review = buildJoinReview(arena, battleId, representation, label);
-          await act(joinRequest(battleId, representation), review.ok ? review : null);
+          const joined = await act(joinRequest(battleId, representation), review.ok ? review : null);
+          remember(joined.txHash);
           current = await readCommunityState(config.rpcUrl, arena, battleId, representation);
         }
         for (let i = 0; i < APPROVAL_TRIES && !(current.index !== null && current.approved); i++) {
@@ -59,7 +63,8 @@ export function useJoinAndDeposit(arena: string, battleId: number) {
         }
         setState({ step: "running", stage: "deposit" });
         const review = buildDepositReview({ arena, representation, battleId, community: current.index, amount });
-        await act(depositRequest(battleId, current.index, amount), review.ok ? review : null);
+        const deposited = await act(depositRequest(battleId, current.index, amount), review.ok ? review : null);
+        remember(deposited.txHash);
         setState({ step: "done" });
       } catch (e) {
         setState({ step: "failed", message: e instanceof Error ? e.message : String(e) });
@@ -67,8 +72,8 @@ export function useJoinAndDeposit(arena: string, battleId: number) {
         busy.current = false;
       }
     },
-    [accountId, act, arena, battleId],
+    [accountId, act, arena, battleId, scope],
   );
 
-  return { state, run, connected, reset: () => setState({ step: "idle" }) };
+  return { state, run, connected, txHashes: receipts.scope === scope ? receipts.hashes : [], reset: () => setState({ step: "idle" }) };
 }

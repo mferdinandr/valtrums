@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: synthetic evidence payloads. Not provider data.
 import { describe, expect, it } from "vitest";
-import { chartSegments } from "./model";
+import { chartSegments, displayStandings } from "./model";
 import { exactScoreText, observationSeries } from "./observation-series";
 import type { ObservationData, ObservationItem } from "@/lib/arena-read/observations";
 
@@ -16,10 +16,37 @@ const cov = (community: number, over: Partial<NonNullable<ObservationData["cover
 const data = (items: ObservationItem[], communities = [cov(0), cov(1)], over: Partial<ObservationData> = {}): ObservationData => ({
   battleId: "1", sourceKind: "fixture", sourceKinds: ["fixture"], items, nextCursor: null, truncated: false, revision: "0", retractedSinceCursor: [],
   recorded: { roundId: "1", winner: null, candidates: [0, 1], startNs: (START_MS * 1_000_000n).toString(), endNs: ((START_MS + 30_000n) * 1_000_000n).toString() },
-  coverage: { watermark: { seq: 1, headHash: "h" }, revision: 0, foreign: 0, communities }, projection: null, ...over,
+  coverage: { watermark: { seq: 1, headHash: "h" }, revision: 0, foreign: 0, communities }, projection: null,
+  boundaries: communities.map(({ community }) => {
+    const timed = items.filter((i) => i.community === community && i.observedAtMs !== null);
+    const nearest = (target: bigint) => timed.reduce<ObservationItem | null>((best, candidate) => {
+      const distance = (i: ObservationItem) => { const delta = BigInt(i.observedAtMs!) - target; return delta < 0n ? -delta : delta; };
+      return !best || distance(candidate) < distance(best) ? candidate : best;
+    }, null);
+    const start = nearest(START_MS), end = nearest(START_MS + 30_000n);
+    return { community, start: start ? { id: start.id, observedAtMs: start.observedAtMs } : null, end: end ? { id: end.id, observedAtMs: end.observedAtMs } : null };
+  }), ...over,
 });
 
 describe("observation chart adapter", () => {
+  it("uses the selected boundary as baseline rather than the earliest sample", () => {
+    const m = observationSeries(data([item(0, START_MS - 2_000n, "90"), item(0, START_MS - 1_000n, "100"), item(0, START_MS + 29_000n, "101")]));
+    expect(m.series[0]!.points.at(-1)?.value).toBe(1);
+  });
+
+  it("does not invent a baseline when the selected sample is not in the loaded page", () => {
+    const m = observationSeries(data([item(0, START_MS, "100")], [cov(0)], { boundaries: [{ community: 0, start: { id: "missing", observedAtMs: START_MS.toString() }, end: null }] }));
+    expect(m.series[0]!.points[0]?.value).toBeNull();
+  });
+  it("compares only observations from the same latest provider time", () => {
+    const series = [
+      { id: "0", name: "A", color: "red", points: [{ x: 1, value: 1 }, { x: 2, value: 2 }, { x: 30, value: null }] },
+      { id: "1", name: "B", color: "blue", points: [{ x: 1, value: 0 }] },
+    ];
+    expect(displayStandings(series, false).leaders).toEqual([]);
+    series[1]!.points.push({ x: 2, value: 1 });
+    expect(displayStandings(series, false)).toMatchObject({ leaders: [{ name: "A" }], gap: 1 });
+  });
   it("plots percent change from the start sample at its provider time, without interpolation", () => {
     const m = observationSeries(data([item(0, START_MS, "300"), item(0, START_MS + 15_000n, "310"), item(1, START_MS, "200")]));
     expect(m.drawable).toBe(true);

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { CrewCardSkeleton, Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
+import { BattleDetailSkeleton } from "@/components/lifecycle/battle-detail-skeleton";
 import gsap from "gsap";
 import Link from "next/link";
+import { WalletButton } from "@/components/wallet-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { JoinDeposit } from "@/components/lifecycle-join-deposit";
@@ -12,7 +13,8 @@ import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
-import { BattleStartLoader, startStage } from "@/components/lifecycle/battle-start-loader";
+import { startStage } from "@/components/lifecycle/battle-start-loader";
+import { ScoreChart } from "@/components/battle-chart/chart";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { lifecycleRoster } from "@/components/colosseum/lifecycle-runtime";
 import { useCreatorEscrow } from "@/hooks/use-creator-escrow";
@@ -24,7 +26,6 @@ import {
   battleStatus,
   communityRows,
   communityApproval,
-  nsToMs,
   roundPhase,
 } from "@/lib/arena-read/lifecycle";
 import {
@@ -38,9 +39,6 @@ import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
 import "@/components/lifecycle/lifecycle.css";
-
-const when = (ms: number) =>
-  new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 
 /** Why the deposit step is closed, or null while deposits are open. */
 function depositsClosed(open: OpenPhase): string | null {
@@ -69,6 +67,7 @@ export function LifecycleBattleDetail({
     battleId,
   );
   const [highlighted, setHighlighted] = useState("");
+  const [panelTab, setPanelTab] = useState<"chart" | "position">("chart");
   const escrow = useCreatorEscrow(
     namespace.arenaContract,
     /^[1-9][0-9]{0,15}$/.test(battleId) ? Number(battleId) : null,
@@ -88,22 +87,7 @@ export function LifecycleBattleDetail({
     return () => ctx.revert();
   }, [ready]);
   if (loading && !data)
-    return (
-      <SkeletonGroup label={`Preparing battle #${battleId}…`} className="lifecycle-page">
-        <div className="lifecycle-hero" aria-hidden="true">
-          <div className="space-y-4">
-            <Skeleton style={{ width: 150, height: 26, borderRadius: 999 }} />
-            <Skeleton style={{ width: 320, height: 44 }} />
-            <Skeleton style={{ width: 240, height: 16 }} />
-          </div>
-          <Skeleton style={{ height: 120, borderRadius: 18 }} />
-        </div>
-        <Skeleton style={{ height: 360, borderRadius: 24 }} />
-        <div className="lifecycle-crew-grid">
-          {[0, 1, 2].map((i) => <CrewCardSkeleton key={i} />)}
-        </div>
-      </SkeletonGroup>
-    );
+    return <BattleDetailSkeleton battleId={battleId} />;
   if (!data)
     return (
       <Card role="alert" className="border-neon-red text-neon-red">
@@ -144,103 +128,10 @@ export function LifecycleBattleDetail({
     BigInt(detail.battleId) <= BigInt(Number.MAX_SAFE_INTEGER)
       ? Number(detail.battleId)
       : null;
-  return (
-    <div ref={page} className="lifecycle-page">
-      <Link href="/arena" className="text-xs text-neon-green">
-        ← Back to battles
-      </Link>
-      <section className="lifecycle-hero">
-        <div>
-          <span className="lifecycle-pill">
-            BATTLE #{detail.battleId}
-          </span>
-          <h1>{modeName(detail.battle.mode)}</h1>
-        </div>
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Badge
-              tone={
-                status === "decided"
-                  ? "green"
-                  : status === "locked"
-                    ? "cyan"
-                    : "amber"
-              }
-            >
-              {status === "decided"
-                ? "Result recorded"
-                : status === "locked"
-                  ? "Crews locked in"
-                  : status === "cancelled"
-                    ? "Cancelled"
-                    : open.kind === "gathering" || open.kind === "no_start"
-                      ? "Open for deposits"
-                      : "Start time passed"}
-            </Badge>
-            {fixture && <Badge tone="amber">fixture data</Badge>}
-          </div>
-          <div role="status" aria-live="polite" className="text-sm leading-7">
-            {phase.kind === "not_started" &&
-              (status === "cancelled"
-                ? "No round was played."
-                : detail.battle.locked
-                  ? "Crews locked. Opening round 1…"
-                  : open.kind === "gathering" && now > 0
-                    ? `Starts in ${formatCountdown(open.msLeft)}. No round has started.`
-                    : open.kind === "awaiting_lock"
-                      ? "Starting… locking the crews and opening round 1."
-                      : "No round has started.")}
-            {phase.kind === "awaiting_open" &&
-              `Round ${detail.round!.round_id} is preparing its next window. ${phase.candidates.length} crews remain.`}
-            {phase.kind === "window_open" &&
-              (now === 0
-                ? "Round window recorded."
-                : `Round ${detail.round!.round_id} · ${formatCountdown(phase.msLeft)} left. The timer does not decide the winner.`)}
-            {phase.kind === "awaiting_resolution" &&
-              `Round ${detail.round!.round_id} ended at ${when(nsToMs(detail.round!.end_ns!))}. Awaiting resolution from recorded evidence.`}
-            {phase.kind === "decided" &&
-              `Recorded winner: ${name(phase.winner)}. Rewards and held principal remain separate.`}
-          </div>
-        </div>
-      </section>
+  const actionsContent = (
+      <div className="match-position-content">
 
-      {stale && (
-        <p role="alert" className="lifecycle-callout">
-          Refresh failed ({error}); showing the last read. The arena does not
-          invent a new result.
-        </p>
-      )}
-
-      {stage && <BattleStartLoader stage={stage} variant="sticky" />}
-
-      <LifecycleArena
-        detail={detail}
-        selected={selected}
-        onSelect={setHighlighted}
-        fixture={fixture}
-        chart={
-          stage ? (
-            <section>
-              <h2 className="my-3 text-lg">Round observations</h2>
-              <BattleStartLoader stage={stage} variant="panel" />
-            </section>
-          ) : detail.battle.locked ? (
-            <section>
-              <h2 className="my-3 text-lg">Round observations</h2>
-              <ObservationChart
-                namespace={namespace}
-                battleId={detail.battleId}
-                names={rows.map((_, i) => name(i))}
-              />
-            </section>
-          ) : (
-            <p className="py-3 text-sm text-mute">
-              The price chart appears when the battle starts.
-            </p>
-          )
-        }
-      />
-
+      <div>
       {blockers.length > 0 && (
         <div className="lifecycle-callout">
           <strong>Deposits are not open yet</strong>
@@ -254,7 +145,9 @@ export function LifecycleBattleDetail({
           </details>
         </div>
       )}
+      </div>
 
+      <div>
       {safeBattleId !== null && (
         <MyPosition
           arena={namespace.arenaContract}
@@ -263,7 +156,9 @@ export function LifecycleBattleDetail({
           nameOf={name}
         />
       )}
+      </div>
 
+      <div className="space-y-4">
       <OpenArenaPanel
         namespace={namespace}
         battleId={safeBattleId}
@@ -297,7 +192,9 @@ export function LifecycleBattleDetail({
           />
         )
       )}
+      </div>
 
+      <div className="space-y-4">
       <section aria-label="Communities">
         <div className="lifecycle-heading">
           <h2>Meet the competing crews</h2>
@@ -393,6 +290,68 @@ export function LifecycleBattleDetail({
           </ul>
         </Card>
       )}
+      </div>
+      </div>
+  );
+  return (
+    <div ref={page} className="lifecycle-page immersive-match">
+      <nav className="match-navigation" aria-label="Battle navigation">
+        <Link href="/arena">← Lobby</Link>
+        <span className="match-navigation-brand">VALTRUM <span>/ ARENA</span></span>
+        <WalletButton />
+      </nav>
+      {stale && (
+        <p role="alert" className="lifecycle-callout">
+          Refresh failed ({error}); showing the last read. The arena does not
+          invent a new result.
+        </p>
+      )}
+
+      <LifecycleArena
+        detail={detail}
+        selected={selected}
+        onSelect={setHighlighted}
+        fixture={fixture}
+        scoreboard={
+          <>
+            <div className="match-identity">
+              <span>BATTLE #{detail.battleId}</span>
+              <h1>{modeName(detail.battle.mode)}</h1>
+              {fixture && <span>fixture data</span>}
+            </div>
+            <div className="match-clock" role="timer" aria-label={phase.kind === "window_open" ? "Time remaining in round" : "Battle status"}>
+              <span>{phase.kind === "window_open" ? `ROUND ${detail.round!.round_id} · TIME LEFT` : phase.kind === "not_started" && open.kind === "gathering" ? "BATTLE STARTS IN" : "BATTLE STATUS"}</span>
+              <strong>{phase.kind === "window_open" ? (now ? formatCountdown(phase.msLeft) : "—") : phase.kind === "not_started" && open.kind === "gathering" && now ? formatCountdown(open.msLeft) : phase.kind === "decided" ? "FINISHED" : phase.kind === "awaiting_resolution" ? "RESULT PENDING" : status === "cancelled" ? "CANCELLED" : "GET READY"}</strong>
+            </div>
+            <div className="match-status" role="status">
+              <span>{phase.kind === "decided" ? "WINNER" : phase.kind === "window_open" ? "LIVE ROUND" : "ARENA"}</span>
+              <strong>{phase.kind === "decided" ? name(phase.winner) : phase.kind === "awaiting_resolution" ? "Awaiting resolution" : status === "cancelled" ? "Cancelled" : detail.battle.locked ? "Crews locked" : open.kind === "gathering" || open.kind === "no_start" ? "Deposits open" : "Starting soon"}</strong>
+            </div>
+          </>
+        }
+        chart={
+          <div className="match-dock">
+          <div className="match-dock-tabs" role="group" aria-label="Arena panel views"><button type="button" aria-pressed={panelTab === "chart"} onClick={() => setPanelTab("chart")}>Race</button><button type="button" aria-pressed={panelTab === "position"} onClick={() => setPanelTab("position")}>Position & actions</button></div>
+          <div className="match-dock-panel" hidden={panelTab !== "chart"}>
+          {detail.battle.locked && detail.round?.start_ns ? (
+            <section>
+              <ObservationChart
+                namespace={namespace}
+                battleId={detail.battleId}
+                names={rows.map((_, i) => name(i))}
+                highlightedCommunity={String(rows.find((r) => r.representation === selected)?.index ?? 0)}
+                onHighlight={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }}
+              />
+            </section>
+          ) : (
+            <ScoreChart title="Race chart" source={stage?.title ?? "Waiting for the battle"} status="Not started" note="Prices will appear when the round begins." duration={30} pending selected={String(rows.find((r) => r.representation === selected)?.index ?? 0)} onSelect={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }} series={rows.map((r, i) => ({ id: String(r.index), name: name(r.index), color: ["#327f7d", "#ad5273", "#a8802f", "#5b6fb5", "#7c8f3a", "#8a5ca8"][i % 6]!, points: [] }))} />
+          )}
+          </div>
+          <div className="match-dock-panel" hidden={panelTab !== "position"}>{actionsContent}</div>
+          </div>
+        }
+      />
+
     </div>
   );
 }

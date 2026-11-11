@@ -2,7 +2,7 @@
   min-width: 0;
   border: 1px solid #d8dfd3;
   border-radius: 22px;
-  background: #fffaf0f2;
+  background: linear-gradient(145deg, #fffdf6, #f1f7ee);
   color: #354358;
   padding: 1rem;
   box-shadow: 0 7px 24px #6c8d7a12;
@@ -36,7 +36,13 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  width: fit-content;
   min-height: 32px;
+  margin: 0.45rem 0;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #e2f1e5;
+  color: #28765e;
   font-size: 12px;
   font-weight: 600;
   animation: score-lead-in 0.5s ease-out;
@@ -47,9 +53,11 @@
 .score-chart-plot svg {
   display: block;
   width: 100%;
-  height: 200px;
+  height: 260px;
   overflow: visible;
   touch-action: pan-y;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fffefa 0%, #ecf5ed 100%);
 }
 .score-chart-plot svg text {
   font:
@@ -72,10 +80,12 @@
   min-height: 44px;
   padding: 0.4rem 0.6rem;
   border: 1px solid #dddcd0;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 12px;
   background: #fffdf5;
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, border-color 200ms ease-out;
 }
+.score-chart-legend button:hover { transform: translateY(-2px); }
 .score-chart-legend button[aria-pressed="true"] {
   border-color: var(--line);
   box-shadow: inset 0 -2px var(--line);
@@ -84,11 +94,13 @@
   font-variant-numeric: tabular-nums;
 }
 .score-chart-dot {
-  width: 7px;
-  height: 7px;
+  width: 10px;
+  height: 10px;
+  flex: none;
   background: var(--line);
   border-radius: 50%;
 }
+.score-chart-token { font-weight: 700; }
 .score-chart-overlap {
   font-size: 12px;
   color: #526777;
@@ -153,4 +165,6 @@
   .score-chart-lead {
     animation: none;
   }
+  .score-chart-legend button { transition: none; }
+  .score-chart-legend button:hover { transform: none; }
 }

@@ -54,18 +54,18 @@ export default function PortfolioPage() {
   const busy = portfolio.state.step === "opening-session" || portfolio.state.step === "reading";
   return (
     <div className="lifecycle-page">
-      <header className="lifecycle-hero">
+      <header className="arcade-heading arcade-heading--portfolio">
         <div>
-          <span className="lifecycle-pill">YOUR COMMUNITY KEEPSAKES</span>
-          <h1>Your journey.<br />Every receipt.</h1>
-          <p>Follow your positions, review your entitlements and keep track of every transfer. Your wallet holds the keys.</p>
+          <span className="arcade-kicker">YOUR PORTFOLIO</span>
+          <h1>Your battles, all in one place.</h1>
+          <p>Follow your positions and see what’s ready to claim.</p>
         </div>
         <CarnivalScene mode="portfolio" caption="Your keepsake cabinet" />
       </header>
 
       {!portfolio.accountId ? (
         <Card className="space-y-2 p-4">
-          <p className="text-base">Connect a wallet to read your positions, entitlements, transfers and principal.</p>
+          <p className="text-base">Connect your wallet to see your positions and rewards.</p>
           <Button type="button" variant="ghost" onClick={() => void signIn()}>
             Connect wallet
           </Button>
@@ -74,8 +74,7 @@ export default function PortfolioPage() {
         <Card className="space-y-2 p-4">
           <p className="break-all text-base">Account {portfolio.accountId}</p>
           <p className="text-sm text-mute">
-            Reading your account needs one wallet signature that opens a read-only session. It cannot sign or spend, it is kept in memory only and is
-            dropped on sign-out or when you switch accounts.
+            Sign once to view your portfolio. This read-only request cannot move your funds.
           </p>
           <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>
             {busy ? "Loading…" : portfolio.state.step === "ready" ? "Refresh portfolio" : "Sign and view portfolio"}

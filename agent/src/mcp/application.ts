@@ -14,7 +14,7 @@ import {
 import { UnsafeReadBoundaryError, isFunded, type ArenaReadSource } from "./read-source.js";
 import { DEFAULT_LIMIT, MAX_SCAN, parseSearchParams, SearchValidationError } from "./search.js";
 import type { ObservationState } from "../observations/journal.js";
-import { ObservationQueryError, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
+import { ObservationQueryError, projectedBoundaries, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
 import type { Mode } from "../observations/schema.js";
 import type { OracleStatus } from "../lifecycle-oracle/status.js";
 import { assessCustody, type CustodyFacts } from "../custody-compat.js";
@@ -189,7 +189,7 @@ export class ApplicationReads {
       items: page.items.map((i) => ({ seq: integer(i.seq), id: i.id, ...i.observation })),
       nextCursor: page.nextCursor, truncated: page.truncated,
       revision: integer(page.revision), retractedSinceCursor: page.retractedSinceCursor,
-      recorded, coverage, projection,
+      recorded, coverage, projection, boundaries: frozen ? projectedBoundaries(state, frozen) : null,
     }, reasons, digest([namespaceOf(d), page.watermark, page.revision]), "market");
     response.provenance.watermark = integer(page.watermark.seq);
     response.provenance.sourceReferences = [d.abi.evidence, page.watermark.headHash];

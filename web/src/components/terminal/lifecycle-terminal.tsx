@@ -393,7 +393,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
   return (
     <div className="space-y-6">
       <Card>
-        <CardTitle>01 / Say what you want</CardTitle>
+        <CardTitle>Tell us what you want to do</CardTitle>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -424,7 +424,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="text-xs text-mute">
-            Reading a request sends nothing to your wallet or the action service. Communities are numbered from 1; amounts are exact whole numbers in token base units; a join only uses tokens on the arena&apos;s joinable allowlist.
+            Reading your request won’t submit a transaction. Community numbers start at 1; amounts use whole token base units.
           </p>
         </form>
       </Card>
@@ -438,13 +438,13 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
 
       {intent && (
         <Card aria-label="Understood request" key={runId}>
-          <CardTitle>02 / What I understood</CardTitle>
+          <CardTitle>Here’s what I understood</CardTitle>
           <p className="mb-1 text-sm" data-testid="intent-summary">
             {describeIntent(intent)}
             {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
           </p>
-          <p className="mb-4 text-xs text-mute">This is a reading of your words, not an approval. Review the exact call below before anything is checked or signed.</p>
-          <p className="eyebrow mb-3 text-neon-green">03 / REVIEW BEFORE YOU SIGN</p>
+          <p className="mb-4 text-xs text-mute">Review the action below before signing.</p>
+          <p className="eyebrow mb-3 text-neon-green">REVIEW YOUR ACTION</p>
           {intent.kind === "payout" ? (
             <PayoutPlan intent={intent} />
           ) : intent.kind === "create_battle" ? (

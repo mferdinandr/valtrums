@@ -34,6 +34,8 @@ export function useRefund(arena: string, battleId: number, communityCount: numbe
   const getWallet = useActionWallet();
   const [claims, setClaims] = useState<Claim[] | null>(null);
   const [state, setState] = useState<RefundState>({ step: "idle" });
+  const scope = `${accountId}:${arena}:${battleId}`;
+  const [receipts, setReceipts] = useState<{ scope: string; hashes: string[] }>({ scope, hashes: [] });
   const session = useRef<{ account: string; value: ActionSession } | null>(null);
   const busy = useRef(false);
 
@@ -93,6 +95,7 @@ export function useRefund(arena: string, battleId: number, communityCount: numbe
         const outcome = await previewCreate(request, review, accountId, deps);
         if (outcome.step === "blocked") throw new Error(`the prepared transaction does not match what you reviewed (${outcome.reasons.join("; ")}). Nothing was signed.`);
         const result = await executeTerminalAction(outcome.previewed, deps);
+        if (result.txHash) { const hash = result.txHash; setReceipts((previous) => ({ scope, hashes: [...new Set([...(previous.scope === scope ? previous.hashes : []), hash])] })); }
         if (!result.ok) throw new Error(`${result.reason}${result.txHash ? ` (transaction ${result.txHash})` : ""}`);
         setState({ step: "running", done: i + 1, total: todo.length });
       }
@@ -103,7 +106,7 @@ export function useRefund(arena: string, battleId: number, communityCount: numbe
     } finally {
       busy.current = false;
     }
-  }, [accountId, getWallet, read, arena, battleId, nameOf]);
+  }, [accountId, getWallet, read, arena, battleId, nameOf, scope]);
 
-  return { claims, state, run, connected: !!accountId && !!getWallet };
+  return { claims, state, run, txHashes: receipts.scope === scope ? receipts.hashes : [], connected: !!accountId && !!getWallet };
 }

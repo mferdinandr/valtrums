@@ -38,6 +38,8 @@ export interface ObservationData {
   retractedSinceCursor: string[];
   recorded: { roundId: string; winner: number | null; candidates: number[]; startNs: string | null; endNs: string | null } | null;
   coverage: { watermark: { seq: number; headHash: string }; revision: number; foreign: number; communities: CommunityCoverage[] } | null;
+  /** Boundary candidates from current persisted evidence, not proof of the transaction's submitted samples. */
+  boundaries?: { community: number; start: { id: string; observedAtMs: string | null } | null; end: { id: string; observedAtMs: string | null } | null }[] | null;
   projection: { status: "provisional" | "incomplete" | "unavailable"; authoritative: false; mode: string; reasons: string[]; scores: (ExactScore | null)[]; provisionalLeaders: number[] } | null;
 }
 export type ObservationEnvelope = ApplicationEnvelope<ObservationData>;

@@ -32,7 +32,7 @@ export function Navbar() {
           : "site-header sticky top-0 z-40"
       }
     >
-      <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 lg:px-10">
+      <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 lg:px-8">
         <Link
           href="/"
           className="flex items-center gap-2.5 font-pixel text-xl font-bold tracking-[-.06em]"

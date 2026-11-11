@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { useObservationChart } from "@/hooks/use-observation-chart";
 import type { Namespace } from "@/lib/arena-read/application";
@@ -17,14 +17,34 @@ export function ObservationChart({
   namespace,
   battleId,
   names,
+  highlightedCommunity,
+  onHighlight,
+  onStandings,
 }: {
   namespace: Namespace;
   battleId: string;
   /** Token name per community index; falls back to "Community N" when absent. */
   names?: readonly string[];
+  highlightedCommunity?: string;
+  onHighlight?: (id: string) => void;
+  onStandings?: (rows: { community: number; rank: number }[]) => void;
 }) {
   const view = useObservationChart(namespace, battleId, true);
   const [selected, setSelected] = useState("0");
+  const [ranks, setRanks] = useState<{ community: number; rank: number }[]>([]);
+  useEffect(() => {
+    const projection = view.latest?.data.projection;
+    if (view.stale || projection?.status !== "provisional") { setRanks([]); onStandings?.([]); return; }
+    const scores = projection.scores.filter((s) => s !== null);
+    const compare = (a: typeof scores[number], b: typeof scores[number]) => {
+      const delta = BigInt(a.numerator) * (a.negative ? -1n : 1n) * BigInt(b.denominator) - BigInt(b.numerator) * (b.negative ? -1n : 1n) * BigInt(a.denominator);
+      return (delta > 0n ? -1 : delta < 0n ? 1 : 0) * (projection.mode === "LowestDrawdown" ? -1 : 1);
+    };
+    scores.sort(compare);
+    let rank = 1;
+    const rows = scores.map((s, i) => { if (i && compare(s, scores[i - 1]!) !== 0) rank = i + 1; return { community: s.community, rank }; });
+    setRanks(rows); onStandings?.(rows);
+  }, [view.latest, view.stale, onStandings]);
   if (view.state === "loading")
     return (
       <SkeletonGroup label="Loading observations…">
@@ -34,8 +54,7 @@ export function ObservationChart({
   if (view.state === "unavailable" || !view.latest) {
     return (
       <p role="alert" className="text-xs text-neon-red">
-        Observation evidence unavailable: {view.error ?? "no response"}. No
-        sample data is shown in its place.
+        Price chart unavailable. Please try again later.
       </p>
     );
   }
@@ -46,12 +65,10 @@ export function ObservationChart({
   const projection = data.projection;
   const recorded = data.recorded;
   const provisional = projection?.status === "provisional";
-  const sourceLabel = `Persisted observations · ${data.sourceKind}${data.sourceKinds.length > 1 ? ` (${data.sourceKinds.join(", ")})` : ""} · watermark ${env.provenance.watermark ?? "none"}`;
+  const sourceLabel = view.stale ? "Updates delayed" : recorded?.winner != null ? "Round complete" : "Round in progress";
   const status = view.stale
-    ? "Stale · refresh failed, showing the last read"
-    : projection
-      ? `Provisional score ${projection.status}`
-      : "Coverage and scores withheld";
+    ? "Last available update"
+    : provisional ? "Live standings are provisional" : "Waiting for price data";
   return (
     <section
       className="space-y-3"
@@ -60,24 +77,26 @@ export function ObservationChart({
       {!model.drawable || model.series.length === 0 ? (
         <p role="status" className="text-xs text-mute">
           {data.items.length === 0
-            ? "No samples persisted for this battle yet."
-            : "This mode has no chart from the available evidence."}
+            ? "Waiting for price data."
+            : "The chart is not available for this round."}
         </p>
       ) : (
         <ScoreChart
-          title={`Round observations · ${modeName(projection?.mode ?? data.items[0]?.mode ?? "mode")}`}
+          title={`Race chart · ${modeName(projection?.mode ?? data.items[0]?.mode ?? "mode")}`}
           source={sourceLabel}
           status={status}
-          note={`Chart coordinates are display-only. Exact values are listed below; the contract's recorded outcome is separate. Refresh cadence is not the provider's observation cadence.`}
+          note="Standings are provisional until the result is confirmed."
           series={model.series}
-          selected={selected}
-          onSelect={setSelected}
+          ranks={ranks}
+          selected={highlightedCommunity ?? selected}
+          onSelect={(id) => { setSelected(id); onHighlight?.(id); }}
           duration={model.duration}
           lowerIsBetter={model.lowerIsBetter}
           pending={!provisional}
+          closingTimes={recorded?.winner != null && recorded.startNs ? data.boundaries?.flatMap((b) => b.end?.observedAtMs ? [Number(BigInt(b.end.observedAtMs) - BigInt(recorded.startNs!) / 1_000_000n) / 1000] : []) : undefined}
           result={
             recorded?.winner != null
-              ? `Recorded result · ${who(recorded.winner)}`
+              ? `Winner · ${who(recorded.winner)}`
               : undefined
           }
           resetKey={`${data.battleId}:${recorded?.roundId ?? ""}`}
@@ -85,7 +104,7 @@ export function ObservationChart({
       )}
       {view.stale && (
         <p role="alert" className="text-xs text-neon-amber">
-          Refresh failed ({view.error}); these samples may be out of date.
+          Updates are delayed. Showing the last available prices.
         </p>
       )}
       {view.partial && (
@@ -93,10 +112,16 @@ export function ObservationChart({
           More samples exist than this view loads; the chart is partial.
         </p>
       )}
-      {view.reconciledAtRevision !== null && (
+      {model.drawable && <p className="px-3 text-xs text-mute">Round timeline: 0–{model.duration}s · latest plotted price at {Math.max(0, ...model.series.flatMap((s) => s.points.filter((p) => p.value !== null).map((p) => p.x))).toFixed(1)}s</p>}
+      {(view.reconciledAtRevision !== null || model.gapNotes.length > 0 || projection?.status === "incomplete") && <p className="text-xs text-neon-amber">Some price data is missing or has changed.</p>}
+      <details className="chart-details">
+      <summary>Price details</summary>
+      {recorded?.winner != null && data.boundaries && recorded.startNs && (
         <p className="text-xs text-mute">
-          Evidence was retracted at revision {view.reconciledAtRevision}; the
-          chart was reloaded.
+          Estimated closing samples: {data.boundaries.map((b) => {
+            const time = b.end?.observedAtMs;
+            return `${who(b.community)} ${time ? `${(Number(BigInt(time) - BigInt(recorded.startNs!) / 1_000_000n) / 1000).toFixed(1)}s` : "unavailable"}`;
+          }).join(" · ")}. The recorded result is authoritative; submitted sample identities are not available here.
         </p>
       )}
       {projection && projection.scores.some(Boolean) && (
@@ -122,6 +147,7 @@ export function ObservationChart({
           {withNames(r, names)}
         </p>
       ))}
+      </details>
     </section>
   );
 }
