@@ -23,6 +23,8 @@ import {
   toActionRequest,
   type AssetDraft,
 } from "@/lib/arena-read/create-review";
+import { formatUnits, parseUnits } from "@/lib/amounts";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
 import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
 import "@/components/lifecycle/lifecycle.css";
@@ -53,7 +55,9 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
     [balances, joinable.items],
   );
   const chosen = owned.find((t) => t.token === token) ?? null;
-  const depositProblems = firstDepositProblems(token, amount, chosen ? chosen.balance : null);
+  // The creator types whole tokens ("100"); the chain and the review use base units.
+  const amountBase = parseUnits(amount, TOKEN_DECIMALS)?.toString() ?? "";
+  const depositProblems = firstDepositProblems(token, amountBase, chosen ? chosen.balance : null);
   const now = useNow(1000);
   // Default start: 15 minutes from the first client clock read (the server render has no clock).
   useEffect(() => {
@@ -177,23 +181,20 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                   onClick={() => setToken(t.token)}
                 >
                   <strong>{t.symbol}</strong>
-                  <span>Balance {t.balance} base units</span>
+                  <span>Balance {formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 4)}</span>
                 </button>
               ))}
             </div>
           )}
           <Label>
-            Amount to deposit (smallest unit)
+            Amount to deposit
             <Input
-              inputMode="numeric"
+              inputMode="decimal"
               autoComplete="off"
               value={amount}
               onChange={(e) => setAmount(e.target.value.trim())}
             />
           </Label>
-          <p className="text-xs leading-6 text-mute">
-            Faucet tokens have 18 decimals, so 1 token is 1000000000000000000.
-          </p>
         </Card>
       </fieldset>
 
@@ -369,7 +370,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           txHash={create.flow.result.txHash}
           representation={chosen.token}
           label={chosen.symbol}
-          amount={amount}
+          amount={amountBase}
         />
       )}
     </div>

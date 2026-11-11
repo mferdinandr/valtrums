@@ -9,6 +9,8 @@ import { applicationKey, type Namespace } from "@/lib/arena-read/application";
 import { readCommunityIndex, readCreatedBattleId } from "@/lib/arena-read/create-deposit";
 import { buildDepositReview, depositRequest } from "@/lib/arena-read/deposit-flow";
 import { buildJoinReview, joinRequest } from "@/lib/arena-read/open-arena";
+import { formatUnits } from "@/lib/amounts";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { config } from "@/lib/config";
 
 type Phase =
@@ -111,7 +113,7 @@ export function CreatorFirstDeposit({
               namespaceKey={applicationKey(namespace)}
               onSigningChange={setDepositBusy}
               busyElsewhere={joinBusy}
-              title={`Deposit ${amount} base units of ${label}`}
+              title={`Deposit ${formatUnits(BigInt(amount), TOKEN_DECIMALS, 4)} ${label}`}
               review={depositReview}
               request={depositReq}
             />
