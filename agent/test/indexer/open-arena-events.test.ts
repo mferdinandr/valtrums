@@ -106,6 +106,16 @@ describe("open arena events: projection", () => {
     expect(arena.joinableRepresentations).toEqual({ "cashcat.rep.testnet": true, "ai.rep.testnet": false });
     expect(arena.trustedRepresentations).toEqual({}); // joinable never implies trusted
   });
+  it("records an abandoned round window and quarantines a malformed one", () => {
+    const reopened = emitLog("lifecycle_round_reopened_v1", { battle_id: 2, round_id: "1", protocol: "lifecycle-v2", abandoned_start_ns: "1794407306000000000", abandoned_end_ns: "1794407336000000000" });
+    const { accepted, diagnostics } = parse(created(2, "alice.testnet"), reopened);
+    expect(diagnostics).toEqual([]);
+    const b = Object.values(buildProjection(accepted, { finalizedHeight: 7n, reducerVersion: "projection-v1" }).battles)[0]!;
+    expect(b.roundReopens).toEqual([expect.objectContaining({ roundId: "1", abandonedStartNs: "1794407306000000000", abandonedEndNs: "1794407336000000000" })]);
+    const bad = parse(emitLog("lifecycle_round_reopened_v1", { battle_id: 2, round_id: "1" }));
+    expect(bad.accepted).toEqual([]);
+    expect(bad.diagnostics).toHaveLength(1);
+  });
   it("quarantines malformed allowlist and failed-refund payloads", () => {
     for (const log of [
       emitLog("lifecycle_joinable_asset_set", {}),
