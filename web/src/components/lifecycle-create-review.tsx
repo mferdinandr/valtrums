@@ -103,7 +103,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             every detail before your wallet signs.
           </p>
           <div className="lifecycle-facts">
-            <span>{available === null ? "Choose at least 2 communities" : `${MIN_COMMUNITIES}–${pickerCapacity(available, MAX_COMMUNITIES)} communities`}</span>
+            <span>{available === null ? "Choose at least 2 communities" : `>${MIN_COMMUNITIES} communities`}</span>
             <span>30-second rounds</span>
             <span>No proposal bond</span>
           </div>
