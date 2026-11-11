@@ -43,6 +43,9 @@ export interface RunnerConfig {
 export class CollectorRunner {
   private readonly finished = new Set<string>();
   private readonly sources = new Map<string, SampleSource>();
+  /** A locked battle never changes its communities, mode or policy, so it is read once. */
+  private readonly lockedBattles = new Map<string, BattleView>();
+  private count: { value: number; atMs: number } | null = null;
   constructor(
     private readonly cfg: RunnerConfig,
     private readonly deps: {
@@ -65,27 +68,40 @@ export class CollectorRunner {
 
   async pass(signal?: AbortSignal): Promise<number> {
     const log = this.deps.log ?? silentLogger;
-    const now = BigInt((this.deps.now ?? Date.now)());
-    const count = Number(await this.deps.views.count());
+    const nowMs = (this.deps.now ?? Date.now)();
+    const now = BigInt(nowMs);
+    // The battle count is re-read every 30 s; between reads only rounds are read, to spare the NEAR RPC.
+    if (!this.count || nowMs - this.count.atMs >= 30_000) this.count = { value: Number(await this.deps.views.count()), atMs: nowMs };
     let sampled = 0;
-    for (let n = 1; n <= count; n++) {
+    for (let n = 1; n <= this.count.value; n++) {
       const id = String(n);
       if (this.finished.has(id)) continue;
       try {
-        const battle = await this.deps.views.battle(id);
-        if (!battle?.locked || !battle.observation_policy_hash) continue;
+        let battle = this.lockedBattles.get(id) ?? null;
+        if (!battle) {
+          battle = await this.deps.views.battle(id);
+          if (!battle?.locked || !battle.observation_policy_hash) continue;
+          this.lockedBattles.set(id, battle);
+        }
+        if (!battle.observation_policy_hash) continue;
         const round = await this.deps.views.round(id);
         if (!round) continue;
         if (round.winner !== null) {
           this.finished.add(id);
+          this.lockedBattles.delete(id);
           continue;
         }
-        if (!round.start_ns || !round.end_ns) continue;
         const terms = this.cfg.terms.get(battle.observation_policy_hash);
         if (!terms) continue;
         const tolMs = BigInt(terms.boundary_tolerance_ns) / 1_000_000n;
-        const startMs = BigInt(round.start_ns) / 1_000_000n;
-        const endMs = BigInt(round.end_ns) / 1_000_000n;
+        // No window yet (rounds just started, a tie, or a reopened round): sample anyway under a provisional window
+        // starting now, so a sample already sits next to the start the oracle is about to record. The oracle only
+        // uses samples within the tolerance of the recorded boundaries; the rest are never evidence.
+        const provisional = !round.start_ns || !round.end_ns;
+        const startNs = provisional ? (now * 1_000_000n).toString() : round.start_ns!;
+        const endNs = provisional ? ((now + 30_000n) * 1_000_000n).toString() : round.end_ns!;
+        const startMs = BigInt(startNs) / 1_000_000n;
+        const endMs = BigInt(endNs) / 1_000_000n;
         if (now < startMs - tolMs || now > endMs + tolMs) continue;
         const candidates = round.candidates.flatMap((c) => {
           const community = battle.communities[c];
@@ -97,7 +113,7 @@ export class CollectorRunner {
         });
         const collectRound: CollectRound = {
           namespace: this.cfg.scope, battleId: id, roundId: round.round_id, mode: battle.mode, policyHash: battle.observation_policy_hash,
-          mappingVersion: this.cfg.mappingVersion, candidates, startNs: round.start_ns, endNs: round.end_ns, boundaryToleranceMs: Number(tolMs),
+          mappingVersion: this.cfg.mappingVersion, candidates, startNs, endNs, boundaryToleranceMs: Number(tolMs),
         };
         const collector = new ObservationCollector(this.deps.journal, this.sourceOf(battle.observation_policy_hash, terms), {
           qualifiedModes: this.cfg.qualifiedModes, now: this.deps.now, log,

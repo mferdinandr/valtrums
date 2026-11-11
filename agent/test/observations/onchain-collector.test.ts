@@ -138,10 +138,21 @@ describe("collector runner", () => {
     expect(state.observations).toHaveLength(1);
     expect(state.observations[0]!.observation).toMatchObject({ battleId: "1", roundId: "1", community: 0, mappingVersion: "3" });
   });
-  it("skips unlocked battles, rounds not opened yet and windows long past", async () => {
+  it("skips unlocked battles and windows long past", async () => {
     expect(await runner(views({ locked: false })).pass()).toBe(0);
-    expect(await runner(views({ startMs: null })).pass()).toBe(0);
     expect(await runner(views({ startMs: NOW - 60_000 })).pass()).toBe(0);
+  });
+  it("samples a round whose window is not open yet, so the start the oracle records has a sample next to it", async () => {
+    expect(await runner(views({ startMs: null })).pass()).toBe(1);
+    expect((await loadObservationState(dir)).state.observations).toHaveLength(1);
+  });
+  it("reads a locked battle once and then only its round", async () => {
+    const v = views();
+    const r = runner(v);
+    await r.pass();
+    await r.pass();
+    await r.pass();
+    expect(v.battles).toBe(1);
   });
   it("stops reading a battle once its winner is recorded", async () => {
     const v = views({ winner: 0 });
