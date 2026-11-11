@@ -1,20 +1,18 @@
 "use client";
-import { TransactionLink } from "@/components/transaction-link";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
-import { CreatorFirstDeposit } from "@/components/creator-first-deposit";
 import { useBalances } from "@/hooks/use-balances";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
-import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
+import { STAGE_TEXT, useCreateAndDeposit } from "@/hooks/use-create-and-deposit";
 import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
 import { config } from "@/lib/config";
 import { CarnivalScene } from "@/components/carnival/scene";
-import { applicationKey } from "@/lib/arena-read/application";
 import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
@@ -65,12 +63,20 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const startAtMs = localInputToMs(startInput);
   const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now, config.createModes);
   const request = useMemo(() => toActionRequest(NO_ASSETS, mode, startAtMs), [mode, startAtMs]);
-  const { signIn, accountId } = useWallet();
-  const create = useLifecycleCreate(
-    request,
-    review.ok ? review : null,
-    applicationKey(namespace),
-  );
+  const { signIn } = useWallet();
+  const run = useCreateAndDeposit({
+    arena: namespace.arenaContract,
+    createRequest: request,
+    createReview: review.ok ? review : null,
+    representation: token,
+    label: chosen?.symbol ?? "",
+    amount: amountBase,
+  });
+  const router = useRouter();
+  // The battle and the first deposit are done: show the battle, where the creator's position is listed.
+  useEffect(() => {
+    if (run.state.step === "done") router.push(`/arena/${run.state.battleId}`);
+  }, [run.state, router]);
   const touched = now > 0 && startInput !== "";
   return (
     <div className="lifecycle-page">
@@ -103,7 +109,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
       </section>
 
       <fieldset
-        disabled={create.flow.step === "signing"}
+        disabled={run.state.step === "running"}
         className="space-y-6 min-w-0"
       >
         <Card>
@@ -255,29 +261,18 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
               </pre>
             </details>
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              {create.connected ? (
-                create.flow.step === "previewed" ? (
-                  <Button type="button" onClick={create.execute}>
-                    Confirm in wallet
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={create.preview}
-                    disabled={
-                      depositProblems.length > 0 ||
-                      create.flow.step === "previewing" ||
-                      create.flow.step === "signing" ||
-                      create.flow.step === "done"
-                    }
-                  >
-                    {create.flow.step === "previewing"
-                      ? "Preparing…"
-                      : chosen && amountBase
-                        ? `Create battle & deposit ${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
-                        : "Create battle & deposit"}
-                  </Button>
-                )
+              {run.connected ? (
+                <Button
+                  type="button"
+                  onClick={run.run}
+                  disabled={depositProblems.length > 0 || run.state.step === "running" || run.state.step === "done"}
+                >
+                  {run.state.step === "failed"
+                    ? "Continue"
+                    : chosen && amountBase
+                      ? `Create battle & deposit ${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}`
+                      : "Create battle & deposit"}
+                </Button>
               ) : (
                 <Button
                   type="button"
@@ -295,78 +290,39 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 ))}
               </ul>
             )}
-            {!create.connected && (
+            {!run.connected && (
               <p className="mt-2 text-xs text-mute">
                 Connect your wallet to create the battle.
               </p>
             )}
-            {create.flow.step === "blocked" && (
-              <ul
-                role="alert"
-                className="mt-3 list-disc pl-4 text-xs text-neon-red"
-              >
-                <li>
-                  Stopped: the prepared transaction does not match what you
-                  reviewed. Nothing was signed.
-                </li>
-                {create.flow.reasons.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-              </ul>
-            )}
-            {create.flow.step === "previewed" && (
-              <p role="status" className="mt-3 text-xs text-neon-green">
-                Ready. Confirm in your wallet to create the battle.
-              </p>
-            )}
-            {create.flow.step === "signing" && (
+            {run.state.step === "running" && (
               <p role="status" className="mt-3 text-xs text-mute">
-                Waiting for your wallet…
+                {STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.
               </p>
             )}
-            {create.flow.step === "done" && (
-              <p
-                role={create.flow.result.ok ? "status" : "alert"}
-                className={
-                  create.flow.result.ok
-                    ? "mt-3 text-xs text-neon-green"
-                    : "mt-3 text-xs text-neon-amber"
-                }
-              >
-                {create.flow.result.ok
-                  ? "Battle created. Now join and deposit below."
-                  : `Not confirmed (${create.flow.result.status}): ${create.flow.result.reason}${create.flow.result.txHash ? ` Transaction ${create.flow.result.txHash} was submitted; it is not a created battle until the receipt is verified.` : ""}`}
-                {create.flow.result.fixture
-                  ? ` ${create.flow.result.fixture}`
-                  : ""}
-                <TransactionLink hash={create.flow.result.txHash} />
-              </p>
+            {run.state.step === "failed" && (
+              <div role="alert" className="mt-3 space-y-1 text-xs text-neon-amber">
+                <p>{run.state.message}</p>
+                <p>
+                  {run.state.battleId !== null
+                    ? `Your battle #${run.state.battleId} already exists. Press Continue to finish the remaining steps, or `
+                    : "Nothing was created. Press Continue to try again, or "}
+                  {run.state.battleId !== null ? (
+                    <Link href={`/arena/${run.state.battleId}`} className="underline">open the battle</Link>
+                  ) : (
+                    "change your choices above."
+                  )}
+                </p>
+              </div>
             )}
-            {create.flow.step === "error" && (
-              <p role="alert" className="mt-3 text-xs text-neon-red">
-                {create.flow.message}{" "}
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={create.reset}
-                >
-                  Try again
-                </button>
+            {run.state.step === "done" && (
+              <p role="status" className="mt-3 text-xs text-neon-green">
+                Done. Opening your battle…
               </p>
             )}
           </>
         )}
       </Card>
-      {create.flow.step === "done" && create.flow.result.ok && chosen && (
-        <CreatorFirstDeposit
-          namespace={namespace}
-          creator={accountId ?? ""}
-          txHash={create.flow.result.txHash}
-          representation={chosen.token}
-          label={chosen.symbol}
-          amount={amountBase}
-        />
-      )}
     </div>
   );
 }
