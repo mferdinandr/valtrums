@@ -130,12 +130,16 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     let errors = 0;
     const registry = (await deps.refresh.registry.load()).entries;
     const total = await deps.source.count();
-    for (let id = 1; id <= total; id++) {
+    // Newly joined communities must not wait behind a cold audit of every old arena.
+    // Still visit the full set each pass so existing funded battles get renewed.
+    for (let id = total; id >= 1; id--) {
       try {
         const view = await deps.source.get(id);
         if (!view || view.locked || view.cancelled) continue;
+        log.info("lifecycle audit checking battle", { battleId: id, communities: view.communities.length });
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
+          log,
           registry,
           isLocked: async () => false,
         });
@@ -143,6 +147,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         for (let i = 0; i < view.communities.length; i++) {
           const record = deps.refresh.records.get(`${id}:${i}`);
           if (!record) continue;
+          log.info("lifecycle audit community evaluated", { battleId: id, community: i, result: record.result });
           const report = deps.reports ? deps.reports.put(record) : undefined;
           if (!deps.archive) continue;
           const built = report ?? buildAuditReport(record);
@@ -192,6 +197,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         let backingReady: boolean | undefined;
         if (deps.backing) {
           const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass");
+          log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length });
           errors += backed.failed.length;
           backingReady = funded.every((i) => backed.ready.has(i));
         }

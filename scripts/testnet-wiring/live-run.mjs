@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { pipeWorkerLog } from "../worker-log.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const check = process.argv.includes("--check");
@@ -110,10 +111,17 @@ for (const p of procs) {
   const missing = Object.entries(p.env).filter(([, v]) => v === undefined).map(([k]) => k);
   if (missing.length) { console.error(`${p.name}: missing ${missing.join(", ")} in .env or agent/.env.local`); continue; }
   const log = fs.openSync(path.join(STATE, `${p.name}.log`), "a");
-  const child = spawn("node", [path.join(REPO, p.script)], { env: p.env, stdio: ["ignore", log, log], cwd: path.join(REPO, "agent") });
+  const child = spawn("node", [path.join(REPO, p.script)], { env: p.env, stdio: ["ignore", "pipe", "pipe"], cwd: path.join(REPO, "agent") });
+  const secrets = Object.entries({ ...env, ...local, ...p.env }).filter(([key]) => /KEY|SECRET|TOKEN|PASSWORD/i.test(key)).map(([, value]) => value);
+  for (const stream of [child.stdout, child.stderr]) pipeWorkerLog(stream, {
+    name: p.name,
+    secrets,
+    archive: (line) => fs.writeSync(log, line),
+    write: (line) => process.stdout.write(line),
+  });
   children.push(child);
   console.log(`started ${p.name} pid ${child.pid}, log ${path.join(STATE, `${p.name}.log`)}`);
-  child.on("exit", (code) => console.log(`${p.name} exited with ${code}`));
+  child.on("close", (code) => { fs.closeSync(log); console.log(`[${p.name}] exited with ${code}`); });
 }
 const stop = () => { for (const c of children) c.kill("SIGTERM"); };
 process.on("SIGINT", stop);

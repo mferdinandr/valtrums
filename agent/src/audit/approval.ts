@@ -1,4 +1,5 @@
 import type { NearTransport } from "../near-client.js";
+import { silentLogger, type Logger } from "../logger.js";
 import {
   evaluateCommunity,
   goplusTarget,
@@ -134,6 +135,7 @@ export interface RefreshDeps {
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
   submitter: Pick<AuditSubmitter, "submit">;
   records: Map<string, AuditRecord>;
+  log?: Logger;
   /** True once the battle snapshot froze; audits are then never refreshed or submitted. */
   isLocked: (battleId: number) => Promise<boolean>;
 }
@@ -191,18 +193,25 @@ export async function refreshBattleAudit(
     new Date(deps.now().getTime() + (deps.refreshAheadMs ?? 0)),
   );
   for (const { index } of before.needsRefresh) {
+    const log = deps.log ?? silentLogger;
     const { asset, hold } = resolved[index]!;
     const target = goplusTarget(asset);
+    log.info("audit: checking token security", { battleId, community: index, representation: asset.representation });
+    const goplus = hold ? null : await deps.fetchGoPlus(target);
+    log.info("audit: checking liquidity", { battleId, community: index });
+    const lp = await deps.fetchLp(asset);
     const record = evaluateCommunity({
       asset,
-      goplus: hold ? null : await deps.fetchGoPlus(target),
-      lp: await deps.fetchLp(asset),
+      goplus,
+      lp,
       policy: deps.policy,
       now: deps.now(),
       ...(hold ? { referenceHold: hold } : {}),
     });
     deps.records.set(key(index), record);
+    log.info("audit: submitting outcome", { battleId, community: index, result: record.result });
     await deps.submitter.submit(battleId, index, record);
+    log.info("audit: outcome submitted", { battleId, community: index, result: record.result });
   }
   const after = lockReadiness(
     assets,
