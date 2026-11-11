@@ -1,0 +1,18 @@
+{
+  "policy_version": 1,
+  "source": "geckoterminal-v2:robinhood:pools",
+  "quote_currency": "USD",
+  "eligible_pools": [
+    "0xa70fc67c9f69da90b63a0e4c05d229954574e313",
+    "0x9501a20bedb8bea0798fe5d4c411f5e270965d49",
+    "0x8ea7c66395fd7e25e9713edd0b297d4abe05c304",
+    "0x8a3ae9184141c085bad6abfefcc626de288be3d3",
+    "0x5408ad4b4f1d5091b99953af963500a792f47bc3"
+  ],
+  "finality": "aggregator-unfinalized",
+  "price_decimals": 18,
+  "supply_decimals": 18,
+  "volume_decimals": 18,
+  "boundary_tolerance_ns": "5000000000",
+  "max_gap_ns": "15000000000"
+}
