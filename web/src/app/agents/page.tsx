@@ -28,7 +28,7 @@ export default function AgentsPage() {
             <span>Revocable</span>
           </div>
         </div>
-        <CarnivalScene mode="terminal" caption="Your agent kiosk · decoration, not an agent's balance" />
+        <CarnivalScene mode="terminal" caption="Your agent kiosk" />
       </header>
       {namespace ? <AgentGrants namespace={namespace} /> : <Card role="alert">Agents are currently unavailable. Please try again later.</Card>}
     </div>

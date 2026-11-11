@@ -1,0 +1,248 @@
+// FIXTURE-ONLY: battles, balances and views are synthetic. Not live evidence.
+import { describe, expect, it } from "vitest";
+import { ActionError, buildPreview, validateRequest, type ActionRequest } from "../../src/mcp/actions/preview.js";
+import { FixtureActionReadSource, type JoinableAssetView } from "../../src/mcp/actions/source.js";
+import type { DispositionView, ReleaseView } from "../../src/mcp/account-state.js";
+import { FixtureStateSource } from "../../src/mcp/account-state.js";
+import { callReadTool } from "../../src/mcp/tools.js";
+import { battle, makeDeps, NOW } from "./fixtures.js";
+
+const ctx = { network: "near-testnet", arena: "arena.testnet", payout: "payout.testnet", policy: null };
+const key = FixtureActionReadSource.key;
+const REP = "pepe.rep.testnet";
+const TOKEN = "0x" + "a".repeat(40);
+const SINK = "0x000000000000000000000000000000000000dead";
+const ID = "ab".repeat(32);
+const START = NOW + 3_600_000;
+
+const joinable: JoinableAssetView = {
+  chain_id: "46630", token_address: TOKEN, representation: "wallet.rep.testnet", custody_domain: "custody-v1", reference_chain_id: null, reference_address: null,
+};
+
+const disposition = (over: Partial<DispositionView> = {}): DispositionView => ({
+  status: "voting", closes_at_ns: String(BigInt(NOW + 60_000) * 1_000_000n), burn_weight: "0", return_weight: "0", escrow_reserved: true, escrow_id: "cd".repeat(32),
+  window_secs: "60", opens_at_ns: String(BigInt(NOW - 60_000) * 1_000_000n), burn_total: "0", return_total: "0", released: 0, total_releases: 0, ...over,
+});
+
+function mk(data: Partial<ConstructorParameters<typeof FixtureActionReadSource>[1]> = {}) {
+  return new FixtureActionReadSource("near-testnet", { battles: new Map(), ...data });
+}
+const prev = (request: unknown, source: FixtureActionReadSource, caller = "alice.testnet", now = NOW) =>
+  buildPreview(validateRequest(request) as ActionRequest, caller, source, ctx, now);
+const code = async (p: Promise<unknown>) => {
+  try { await p; } catch (e) { if (e instanceof ActionError) return e.code; throw e; }
+  return "ok";
+};
+const funded = (b: ReturnType<typeof battle>, ...idx: number[]) => {
+  idx.forEach((i) => { b.communities[i] = { ...b.communities[i]!, vault: "100" }; });
+  return b;
+};
+
+describe("create_battle with a start time and 0 to 16 assets", () => {
+  it("accepts an open arena and shows the start time and the creator warning", async () => {
+    const p = await prev({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs: String(START) }, mk());
+    const call = p.transaction.actions[0]!;
+    expect(call.methodName).toBe("create_lifecycle_battle");
+    expect(call.args).toEqual({ assets: [], mode: "PriceGain", start_at_ms: String(START) });
+    expect(p.binding.startAtMs).toBe(String(START));
+    expect(p.costs.notes.join(" ")).toContain(new Date(START).toISOString());
+    expect(p.costs.notes.join(" ")).toContain("creator must deposit");
+    expect(p.limitations.join(" ")).toContain("open arena");
+  });
+  it("without a start time warns that it can never be cancelled and omits the argument", async () => {
+    const p = await prev({ kind: "create_battle", assets: [], mode: "PriceGain" }, mk());
+    expect(p.transaction.actions[0]!.args).toEqual({ assets: [], mode: "PriceGain" });
+    expect(p.limitations.join(" ")).toContain("never be cancelled");
+  });
+  it("rejects a start outside now+60s..now+7d and malformed starts", async () => {
+    for (const startAtMs of [String(NOW + 30_000), String(NOW + 8 * 24 * 3_600_000), String(NOW - 1)]) {
+      expect(await code(prev({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs }, mk()))).toBe("invalid_request");
+    }
+    for (const startAtMs of ["0", "-5", "1.5", "abc", "18446744073709551616", 1.5, {}]) {
+      expect(() => validateRequest({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs })).toThrow(ActionError);
+    }
+  });
+  it("accepts 16 assets and refuses 17", () => {
+    const asset = (i: number) => ({ chainId: "46630", tokenAddress: "0x" + i.toString(16).padStart(40, "0"), representation: `t${i}.rep.testnet`, custodyDomain: "c" });
+    expect(validateRequest({ kind: "create_battle", mode: "PriceGain", assets: Array.from({ length: 16 }, (_, i) => asset(i)) })).toMatchObject({ kind: "create_battle" });
+    expect(() => validateRequest({ kind: "create_battle", mode: "PriceGain", assets: Array.from({ length: 17 }, (_, i) => asset(i)) })).toThrow(ActionError);
+  });
+});
+
+describe("join_battle", () => {
+  const open = () => battle({ communities: [], start_at_ms: String(START), cancelled: false });
+  it("binds the joinable asset identity and the storage budget and names no index", async () => {
+    const source = mk({ battles: new Map([[1, open()]]), joinable: new Map([["wallet.rep.testnet", joinable]]) });
+    const p = await prev({ kind: "join_battle", battleId: 1, representation: "wallet.rep.testnet" }, source);
+    const call = p.transaction.actions[0]!;
+    expect(p.transaction.receiverId).toBe("arena.testnet");
+    expect(call).toMatchObject({ methodName: "join_lifecycle_battle", args: { battle_id: 1, representation: "wallet.rep.testnet" }, deposit: "20000000000000000000000" });
+    expect(p.binding.asset).toMatchObject({ tokenAddress: TOKEN, representation: "wallet.rep.testnet", chainId: "46630" });
+    expect(p.limitations.join(" ")).toContain("adds a new community");
+    expect(() => validateRequest({ kind: "join_battle", battleId: 1, representation: "wallet.rep.testnet", community: 0 })).toThrow(ActionError);
+  });
+  it("refuses a token that is not on the allowlist, a started, locked or cancelled battle and a full one", async () => {
+    const joinableMap = new Map([["wallet.rep.testnet", joinable]]);
+    const request = { kind: "join_battle", battleId: 1, representation: "wallet.rep.testnet" };
+    expect(await code(prev({ ...request, representation: "ai.rep.testnet" }, mk({ battles: new Map([[1, open()]]), joinable: joinableMap })))).toBe("not_joinable");
+    expect(await code(prev(request, mk({ battles: new Map([[1, open()]]), joinable: joinableMap }), "alice.testnet", START))).toBe("battle_started");
+    expect(await code(prev(request, mk({ battles: new Map([[1, { ...open(), locked: true }]]), joinable: joinableMap })))).toBe("battle_locked");
+    expect(await code(prev(request, mk({ battles: new Map([[1, { ...open(), cancelled: true }]]), joinable: joinableMap })))).toBe("battle_cancelled");
+    expect(await code(prev(request, mk({ battles: new Map(), joinable: joinableMap })))).toBe("battle_not_found");
+    const full = battle({ start_at_ms: String(START) });
+    full.communities = Array.from({ length: 16 }, (_, i) => ({ ...full.communities[0]!, representation: `t${i}.rep.testnet` }));
+    expect(await code(prev(request, mk({ battles: new Map([[1, full]]), joinable: joinableMap })))).toBe("battle_full");
+  });
+  it("reuses an existing community and is refused for an account that already joined", async () => {
+    const b = battle({ start_at_ms: String(START) });
+    b.communities[0] = { ...b.communities[0]!, representation: "wallet.rep.testnet" };
+    const source = mk({ battles: new Map([[1, b]]), joinable: new Map([["wallet.rep.testnet", joinable]]), positions: new Map([[key(1, 0, "bob.testnet"), { registered: true, amount: "0" }]]) });
+    const p = await prev({ kind: "join_battle", battleId: 1, representation: "wallet.rep.testnet" }, source);
+    expect(p.limitations.join(" ")).toContain("existing community 0");
+    expect(await code(prev({ kind: "join_battle", battleId: 1, representation: "wallet.rep.testnet" }, source, "bob.testnet"))).toBe("already_registered");
+  });
+});
+
+describe("cancel_battle and claim_refund", () => {
+  const cancellable = () => funded(battle({ start_at_ms: String(NOW - 1000), cancelled: false }), 0);
+  it("prepares a no-deposit cancel only when the start passed, unlocked, below two funded communities", async () => {
+    const p = await prev({ kind: "cancel_battle", battleId: 1 }, mk({ battles: new Map([[1, cancellable()]]) }));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "cancel_lifecycle_battle", args: { battle_id: 1 }, deposit: "0" });
+    const refused = async (b: ReturnType<typeof battle>) => code(prev({ kind: "cancel_battle", battleId: 1 }, mk({ battles: new Map([[1, b]]) })));
+    expect(await refused(battle({ start_at_ms: String(START) }))).toBe("battle_not_started");
+    expect(await refused(battle())).toBe("not_cancellable");
+    expect(await refused(funded(battle({ start_at_ms: String(NOW - 1000) }), 0, 1))).toBe("not_cancellable");
+    expect(await refused({ ...cancellable(), locked: true })).toBe("battle_locked");
+    expect(await refused({ ...cancellable(), cancelled: true })).toBe("battle_cancelled");
+  });
+  it("prepares a refund of the caller's own deposit with exactly one yocto", async () => {
+    const b = { ...cancellable(), cancelled: true };
+    const source = mk({ battles: new Map([[1, b]]), positions: new Map([[key(1, 0, "alice.testnet"), { registered: true, amount: "100" }]]) });
+    const p = await prev({ kind: "claim_refund", battleId: 1, community: 0 }, source);
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "claim_lifecycle_refund", args: { battle_id: 1, community: 0 }, deposit: "1" });
+    expect(p.binding).toMatchObject({ amount: "100", representation: REP });
+    expect(await code(prev({ kind: "claim_refund", battleId: 1, community: 0 }, source, "bob.testnet"))).toBe("nothing_to_refund");
+    expect(await code(prev({ kind: "claim_refund", battleId: 1, community: 7 }, source))).toBe("invalid_request");
+    expect(await code(prev({ kind: "claim_refund", battleId: 1, community: 0 }, mk({ battles: new Map([[1, cancellable()]]) })))).toBe("not_cancelled");
+    expect(() => validateRequest({ kind: "claim_refund", battleId: 1, community: 16 })).toThrow(ActionError);
+  });
+  it("closes deposits and registration after a cancel or the start time", async () => {
+    const b = battle({ start_at_ms: String(NOW - 1000) });
+    b.communities = b.communities.map((c) => ({ ...c, audit_evidence_hash: "a", audit_expires_at_ms: String(NOW + 1e6), backing_evidence_hash: "b" }));
+    const source = mk({ battles: new Map([[1, b], [2, { ...b, start_at_ms: String(START), cancelled: true }]]), balances: new Map([[key(REP, "alice.testnet"), 10n]]) });
+    expect(await code(prev({ kind: "deposit", battleId: 1, community: 0, amount: "5" }, source))).toBe("battle_started");
+    expect(await code(prev({ kind: "deposit", battleId: 2, community: 0, amount: "5" }, source))).toBe("battle_cancelled");
+    expect(await code(prev({ kind: "register_position", battleId: 1, community: 0 }, source))).toBe("battle_started");
+  });
+});
+
+describe("settle_battle", () => {
+  const source = (recorded: number, total: number) => mk({ battles: new Map([[1, battle({ locked: true })]]), settlement: new Map([[1, { recorded, total }]]) });
+  it("sizes the batch and the deposit from the progress and repeats until done", async () => {
+    const first = await prev({ kind: "settle_battle", battleId: 1 }, source(0, 20));
+    expect(first.transaction.actions[0]).toMatchObject({ methodName: "settle_lifecycle_battle", args: { battle_id: "1", max_entitlements: 15 }, deposit: (15n * 10n ** 22n).toString() });
+    const second = await prev({ kind: "settle_battle", battleId: 1 }, source(15, 20));
+    expect(second.transaction.actions[0]).toMatchObject({ args: { battle_id: "1", max_entitlements: 5 }, deposit: (5n * 10n ** 22n).toString() });
+    expect(first.binding).not.toEqual(second.binding);
+    expect(await code(prev({ kind: "settle_battle", battleId: 1 }, source(20, 20)))).toBe("already_settled");
+  });
+  it("refuses before a winner is recorded or for an unknown battle", async () => {
+    expect(await code(prev({ kind: "settle_battle", battleId: 1 }, mk({ battles: new Map([[1, battle()]]) })))).toBe("winner_not_resolved");
+    expect(await code(prev({ kind: "settle_battle", battleId: 9 }, mk()))).toBe("battle_not_found");
+  });
+});
+
+describe("vote, escrow, execute and burn", () => {
+  const winning = (over: Record<string, unknown> = {}) => battle({ locked: true, principal_community: 0, principal_amount: "100", ...over });
+  const withD = (d: DispositionView | null, releases: ReleaseView[] = [], extra: Partial<ConstructorParameters<typeof FixtureActionReadSource>[1]> = {}) =>
+    mk({
+      battles: new Map([[1, winning()]]),
+      dispositions: d ? new Map([[1, d]]) : undefined,
+      releases: new Map([[1, releases]]),
+      positions: new Map([[key(1, 0, "alice.testnet"), { registered: true, amount: "60" }]]),
+      sinks: new Map([[REP, SINK]]),
+      ...extra,
+    });
+  it("prepares a vote for a winning participant inside the window and refuses others", async () => {
+    const p = await prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "vote_lifecycle_disposition", args: { battle_id: "1", burn: true } });
+    expect(p.binding).toMatchObject({ choice: "burn", weight: "60" });
+    const back = await prev({ kind: "vote_disposition", battleId: 1, choice: "return" }, withD(disposition()));
+    expect(back.transaction.actions[0]!.args).toEqual({ battle_id: "1", burn: false });
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()), "bob.testnet"))).toBe("not_a_winner");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "decided" }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "no_vote" }))))).toBe("vote_not_open");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ closes_at_ns: String(BigInt(NOW) * 1_000_000n) }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(null)))).toBe("winner_not_resolved");
+    expect(() => validateRequest({ kind: "vote_disposition", battleId: 1, choice: "maybe" })).toThrow(ActionError);
+  });
+  it("reserves the escrow once", async () => {
+    const p = await prev({ kind: "reserve_escrow", battleId: 1 }, withD(disposition({ escrow_reserved: false })));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "reserve_lifecycle_escrow", args: { battle_id: "1" }, deposit: "10000000000000000000000" });
+    expect(await code(prev({ kind: "reserve_escrow", battleId: 1 }, withD(disposition())))).toBe("already_done");
+  });
+  it("executes batches of at most 10 releases and refuses the unfinished states", async () => {
+    const decided = (released: number, total: number, over: Partial<DispositionView> = {}) => disposition({ status: "decided", released, total_releases: total, ...over });
+    const a = await prev({ kind: "execute_disposition", battleId: 1 }, withD(decided(0, 25)));
+    expect(a.transaction.actions[0]).toMatchObject({ methodName: "execute_lifecycle_disposition", args: { battle_id: "1", max_releases: 10 }, deposit: (10n * 10n ** 22n).toString() });
+    const c = await prev({ kind: "execute_disposition", battleId: 1 }, withD(decided(20, 25)));
+    expect(c.transaction.actions[0]!.args).toEqual({ battle_id: "1", max_releases: 5 });
+    expect(await code(prev({ kind: "execute_disposition", battleId: 1 }, withD(decided(25, 25))))).toBe("already_done");
+    expect(await code(prev({ kind: "execute_disposition", battleId: 1 }, withD(decided(0, 3, { escrow_reserved: false }))))).toBe("escrow_not_reserved");
+    expect(await code(prev({ kind: "execute_disposition", battleId: 1 }, withD(disposition())))).toBe("vote_not_open");
+    expect(await code(prev({ kind: "execute_disposition", battleId: 1 }, withD(disposition({ status: "undecided_escrowed" }))))).toBe("nothing_to_execute");
+    expect(await code(prev({ kind: "execute_disposition", battleId: 1 }, withD(disposition({ status: "no_winner" }))))).toBe("winner_not_resolved");
+  });
+  it("derives the burn request from the recorded burn release and the backing's frozen sink", async () => {
+    const burn: ReleaseView = { id: ID, kind: "burn", beneficiary: null, amount: "40", recorded: true };
+    const d = disposition({ status: "decided", released: 2, total_releases: 2 });
+    const p = await prev({ kind: "request_dao_burn", battleId: 1 }, withD(d, [burn]));
+    expect(p.transaction.receiverId).toBe("payout.testnet");
+    expect(p.transaction.actions[0]).toMatchObject({
+      methodName: "request_dao_burn", deposit: "30000000000000000000000",
+      args: { backing: REP, holder: "arena.testnet", request_id: Array.from(Buffer.from(ID, "hex")), destination: Array.from(Buffer.from(SINK.slice(2), "hex")) },
+    });
+    expect(() => validateRequest({ kind: "request_dao_burn", battleId: 1, destination: SINK })).toThrow(ActionError);
+    expect(await code(prev({ kind: "request_dao_burn", battleId: 1 }, withD(d, [{ ...burn, recorded: false }])))).toBe("release_not_recorded");
+    expect(await code(prev({ kind: "request_dao_burn", battleId: 1 }, withD(d, [])))).toBe("nothing_to_execute");
+    expect(await code(prev({ kind: "request_dao_burn", battleId: 1 }, withD(d, [burn], { sinks: new Map() })))).toBe("sink_not_set");
+    expect(await code(buildPreview({ kind: "request_dao_burn", battleId: 1 }, "alice.testnet", withD(d, [burn]), { ...ctx, payout: null }, NOW))).toBe("not_configured");
+  });
+  it("prepares a late refund to a validated 20-byte address and never from a hash alone", async () => {
+    const request = { kind: "late_refund", backing: "wallet.rep.testnet", amount: "7", destination: "0x" + "AB".repeat(20), requestId: ID };
+    const p = await prev(request, mk());
+    expect(p.transaction.actions[0]).toMatchObject({
+      methodName: "request_late_refund",
+      args: { backing: "wallet.rep.testnet", beneficiary: "alice.testnet", amount: "7", request_id: Array.from(Buffer.from(ID, "hex")), refund_address: Array.from(Buffer.from("ab".repeat(20), "hex")) },
+    });
+    for (const bad of [{ amount: "0" }, { amount: "1.5" }, { destination: "0x" + "0".repeat(40) }, { destination: "0x12" }, { requestId: "00".repeat(32) }, { requestId: "ab" }]) {
+      expect(() => validateRequest({ ...request, ...bad })).toThrow(ActionError);
+    }
+  });
+});
+
+describe("inspect_endgame read tool", () => {
+  it("shows settlement progress, the vote window, tally, escrow and execution progress", async () => {
+    const deps = await makeDeps();
+    const state = new FixtureStateSource("near-testnet", {
+      settlement: new Map([[2, { recorded: 15, total: 20 }]]),
+      dispositions: new Map([[2, disposition({ burn_weight: "40", return_weight: "20", released: 1, total_releases: 3, burn_total: "40", return_total: "20" })]]),
+      releases: new Map([[2, [{ id: ID, kind: "burn" as const, beneficiary: null, amount: "40", recorded: true }]]]),
+    });
+    const out = await callReadTool("inspect_endgame", { battleId: 2 }, { ...deps, state });
+    expect(out.data).toMatchObject({
+      battleId: 2,
+      settlement: { recorded: 15, total: 20, complete: false },
+      vote: { status: "voting", open: true, burnWeight: "40", returnWeight: "20", windowSecs: "60" },
+      escrow: { reserved: true },
+      execution: { released: 1, total: 3, burnTotal: "40" },
+      releases: [{ kind: "burn", recorded: true }],
+    });
+    expect(out.limitations.join(" ")).toContain("not a confirmed source burn");
+  });
+  it("needs a battle id and a configured state source", async () => {
+    const deps = await makeDeps();
+    await expect(callReadTool("inspect_endgame", {}, { ...deps, state: new FixtureStateSource("near-testnet", {}) })).rejects.toThrow("battleId");
+    await expect(callReadTool("inspect_endgame", { battleId: 2 }, deps)).rejects.toThrow("not configured");
+  });
+});

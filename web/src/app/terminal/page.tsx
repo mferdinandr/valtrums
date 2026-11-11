@@ -21,7 +21,7 @@ export default function TerminalPage() {
           a preview, and only your wallet signs.
         </p>
         </div>
-        <CarnivalScene mode="terminal" caption="Your command kiosk · you review, your wallet signs" />
+        <CarnivalScene mode="terminal" caption="Your command kiosk" />
       </header>
       {deployment ? (
         <LifecycleTerminal namespace={deployment} />

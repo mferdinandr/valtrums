@@ -11,7 +11,7 @@ import {
   APPLICATION_SCHEMA, integer, manifestSchema, namespaceKey, namespaceOf, safeId,
   type ApplicationBattleSummary, type ApplicationEnvelope, type Capability, type Deployment, type Namespace, type ResolvedCapabilities,
 } from "./application-contract.js";
-import { UnsafeReadBoundaryError, type ArenaReadSource } from "./read-source.js";
+import { UnsafeReadBoundaryError, isFunded, type ArenaReadSource } from "./read-source.js";
 import { DEFAULT_LIMIT, MAX_SCAN, parseSearchParams, SearchValidationError } from "./search.js";
 import type { ObservationState } from "../observations/journal.js";
 import { ObservationQueryError, provisionalProjection, queryObservations as queryMarketObservations, roundCoverage, type FrozenRound } from "../observations/query.js";
@@ -274,9 +274,12 @@ export class ApplicationReads {
         if (!b) continue;
         const round = b.locked ? binding.versioned ? await binding.versioned.round(String(id)) : await readApplicationRound(source, String(id)) : null;
         const winner = round?.winner ?? null;
-        const status = !b.locked ? "open" : winner === null ? "locked" : "decided";
-        items.push({ battleId: String(id), creator: b.creator, mode: b.mode, status, winner,
-          communities: b.communities.map((c, index) => ({ index, representation: c.representation, tokenAddress: c.token_address, chainId: c.chain_id, label: labelFor(c.chain_id, c.token_address) })) });
+        const cancelled = b.cancelled === true;
+        const status = cancelled ? "cancelled" : !b.locked ? "open" : winner === null ? "locked" : "decided";
+        const enteredCount = b.communities.filter(isFunded).length;
+        items.push({ battleId: String(id), creator: b.creator, mode: b.mode, status, winner, startAtMs: b.start_at_ms ?? null, cancelled,
+          enteredCount, pendingCount: b.communities.length - enteredCount,
+          communities: b.communities.map((c, index) => ({ index, funded: isFunded(c), representation: c.representation, tokenAddress: c.token_address, chainId: c.chain_id, label: labelFor(c.chain_id, c.token_address) })) });
       }
       const filtered = items.filter((b) => (!q.mode || b.mode === q.mode) && (!q.status || b.status === q.status) &&
         (!q.community || b.communities.some((c) => c.representation === q.community)) &&
@@ -311,7 +314,7 @@ export class ApplicationReads {
     if (capability === "audits") {
       const query = parseSearchParams({ limit: params.limit });
       const community = params.community === undefined ? undefined : Number(params.community);
-      if (community !== undefined && (!/^(0|[1-9][0-9]*)$/.test(params.community!) || !Number.isInteger(community) || community > 255)) invalid("invalid community index");
+      if (community !== undefined && (!/^(0|[1-9][0-9]*)$/.test(params.community!) || !Number.isInteger(community) || community > 15)) invalid("invalid community index");
       const observations = await binding.audits!.archive.snapshot();
       const selected = observations.filter((o) => o.domain.arena === d.arenaContract && o.attribution.battleId === safeId(id) &&
         (community === undefined || o.attribution.community === community));

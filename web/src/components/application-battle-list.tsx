@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { ArrowUpRight, Plus, Search } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
+import { utc } from "@/lib/arena-read/open-arena";
 import {
   communityName,
   modeName,
@@ -55,7 +57,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         </div>
         <CarnivalScene
           mode="arena"
-          caption="Your fairground hosts · decorative, not battle evidence"
+          caption="Your fairground hosts"
         />
       </header>
       <div className="lifecycle-heading">
@@ -80,7 +82,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         role="group"
         aria-label="Filter by battle status"
       >
-        {["", "open", "locked", "decided"].map((value) => (
+        {["", "open", "locked", "decided", "cancelled"].map((value) => (
           <button
             key={value}
             aria-pressed={status === value}
@@ -99,7 +101,19 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           </button>
         ))}
       </div>
-      {loading && <p role="status">Loading battles…</p>}
+      {loading && result && <p role="status">Loading battles…</p>}
+      {loading && !result && (
+        <SkeletonGroup label="Loading battles…" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="lifecycle-crew skeleton-card space-y-4" aria-hidden="true">
+              <div className="flex justify-between"><Skeleton style={{ width: 120, height: 12 }} /><Skeleton style={{ width: 70, height: 24, borderRadius: 999 }} /></div>
+              <Skeleton style={{ width: 190, height: 22 }} />
+              <div className="grid grid-cols-3 gap-2">{[0, 1, 2, 3, 4, 5].map((n) => <Skeleton key={n} style={{ height: 64, borderRadius: 14 }} />)}</div>
+              <Skeleton style={{ height: 44, borderRadius: 14 }} />
+            </div>
+          ))}
+        </SkeletonGroup>
+      )}
       {error && (
         <Card role="alert" className="border-neon-red text-neon-red">
           Battle reads unavailable: {error}
@@ -113,6 +127,9 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         <>
           {(error || loading || !result.provenance.complete || result.provenance.health !== "healthy") && (
             <p role="status" className="text-xs text-mute">Battle information may be incomplete or out of date.</p>
+          )}
+          {result.provenance.kind === "fixture" && (
+            <p className="text-xs text-mute">Fixture data · not live battles</p>
           )}
           {!result.data.items.length && (
             <div className="lifecycle-empty">
@@ -129,18 +146,23 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                 key={`${namespace.deploymentId}:${battle.battleId}`}
               >
                 <div className="battle-preview-meta"><p className="eyebrow text-neon-green">
-                  BATTLE #{battle.battleId} · {battle.communities.length} CREWS
-                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : "In progress"}</span></div>
+                  BATTLE #{battle.battleId} · {battle.enteredCount ?? battle.communities.length} ENTERED
+                  {battle.pendingCount ? ` · ${battle.pendingCount} PENDING` : ""}
+                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
                 <h2 className="mt-3 text-xl">
                   <span className="sr-only">Battle #{battle.battleId}: </span>
                   {modeName(battle.mode)}
                 </h2>
                 <p className="mt-2 text-sm text-mute">
                   {battle.status === "open"
-                    ? "Ready to meet your crew"
+                    ? battle.startAtMs && /^[0-9]+$/.test(battle.startAtMs)
+                      ? `Starts ${utc(Number(battle.startAtMs))}`
+                      : "Ready to meet your crew"
                     : battle.status === "decided"
                       ? "The result is recorded"
-                      : "Crews locked in"}
+                      : battle.status === "cancelled"
+                        ? "Cancelled · depositors can claim a refund"
+                        : "Crews locked in"}
                 </p>
                 <div className="battle-preview-roster">
                   {battle.communities.map((c) => (
@@ -171,7 +193,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                     </Link>
                   </Button>
                 </div>
-                {battle.status !== "open" && (
+                {battle.status !== "open" && battle.status !== "cancelled" && (
                   <>
                     <Button
                       variant="ghost"

@@ -43,7 +43,8 @@ financial behavior or backend scoring integration is implied by this renderer.
 ## Token identity and visual source
 
 `characters.json` is the shared cosmetic definition used by the generator and UI.
-The visible roster is now CASHCAT, WALLET, GOOD, AI (Affair Inu), VLAD and DEGEN,
+The visible roster is now CASHCAT, WALLET, GOOD, VLAD and DEGEN (AI, Affair Inu, is hidden
+since it left the joinable allowlist, D35),
 matching the reference identities in the existing testnet registry. Lifecycle
 matching uses chain/address, never ticker or roster position. WALLET is a stitched
 pocket explorer; GOOD a sunshine pal; AI an Inu with a heart scarf; VLAD a forest

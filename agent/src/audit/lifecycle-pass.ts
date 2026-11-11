@@ -2,6 +2,8 @@ import type { NearTransport } from "../near-client.js";
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
 import type { ReferenceRegistrySource } from "../reference-registry.js";
 import { refreshBattleAudit, type CommittedAsset, type RefreshDeps } from "./approval.js";
+import type { BackingRefresher } from "./backing-refresh.js";
+import type { LifecycleCanceller } from "./lifecycle-cancel.js";
 import type { LifecycleLocker } from "./lifecycle-lock.js";
 import type { ArchiveProvenance, ReportArchive } from "./report-archive.js";
 import { summarizeReasons } from "./reason-summary.js";
@@ -10,7 +12,13 @@ import { AuditReportStore, buildAuditReport } from "./report.js";
 /** Subset of the arena's `LifecycleView` this pass reads. */
 export interface LifecycleBattleView {
   locked: boolean;
+  /** Start time in ms (decimal string); null or absent for a battle created without one. */
+  start_at_ms?: string | null;
+  /** True after `cancel_lifecycle_battle`; a cancelled battle is never audited, backed or locked. */
+  cancelled?: boolean;
   communities: {
+    /** Vault amount (decimal string). A community with a zero vault is pending: audited and backed, but not funded. Absent on an older view: treated as funded. */
+    vault?: string;
     chain_id: string | number;
     token_address: string;
     representation: string;
@@ -46,6 +54,15 @@ export class NearLifecycleAuditSource implements LifecycleAuditSource {
   }
 }
 
+/** Indices of the communities with a deposit. A community without a `vault` field (older view) counts as funded. */
+export function fundedIndices(view: LifecycleBattleView): number[] {
+  const out: number[] = [];
+  view.communities.forEach((c, i) => {
+    if (c.vault === undefined || (/^[0-9]+$/.test(c.vault) && BigInt(c.vault) > 0n)) out.push(i);
+  });
+  return out;
+}
+
 export function assetsOf(view: LifecycleBattleView): CommittedAsset[] {
   return view.communities.map((c) => ({
     chainId: String(c.chain_id),
@@ -79,6 +96,10 @@ export interface LifecycleAuditPassDeps {
   provenance?: ArchiveProvenance;
   /** Optional lock step (see lifecycle-lock.ts); runs only after a refresh that left every community ready. */
   lock?: Pick<LifecycleLocker, "tryLock">;
+  /** Optional backing step: keeps every community's backing approval fresh (see backing-refresh.ts). */
+  backing?: Pick<BackingRefresher, "refresh">;
+  /** Optional cancel step (AUDIT_CANCEL_ENABLED): cancels a battle whose start passed with fewer than two funded communities. */
+  cancel?: Pick<LifecycleCanceller, "tryCancel">;
   log?: Logger;
 }
 
@@ -112,7 +133,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     for (let id = 1; id <= total; id++) {
       try {
         const view = await deps.source.get(id);
-        if (!view || view.locked) continue;
+        if (!view || view.locked || view.cancelled) continue;
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
           registry,
@@ -164,7 +185,33 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         }
         checked++;
         if (result.ready) ready++;
-        if (deps.lock && (await deps.lock.tryLock(id, view.communities.length, result.ready)).status === "failed") errors++;
+        // Every community (funded or not) is audited and backed so a deposit can open it; the lock and
+        // the cancel decision look only at the funded ones.
+        const funded = fundedIndices(view);
+        const fundedSet = new Set(funded);
+        let backingReady: boolean | undefined;
+        if (deps.backing) {
+          const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass");
+          errors += backed.failed.length;
+          backingReady = funded.every((i) => backed.ready.has(i));
+        }
+        const fundedReady = result.needsRefresh.every((n) => !fundedSet.has(n.index));
+        const startAtMs = view.start_at_ms ? Number(view.start_at_ms) : null;
+        let lockStatus: string | undefined;
+        if (deps.lock) {
+          const outcome = await deps.lock.tryLock(id, view.communities.length, fundedReady, {
+            fundedIndices: funded,
+            startAtMs,
+            cancelled: false,
+            ...(backingReady !== undefined ? { backingReady } : {}),
+          });
+          lockStatus = outcome.status;
+          if (outcome.status === "failed") errors++;
+        }
+        if (deps.cancel && lockStatus !== "locked" && lockStatus !== "failed") {
+          const outcome = await deps.cancel.tryCancel(id, { startAtMs, locked: false, cancelled: false, funded: funded.length });
+          if (outcome.status === "failed") errors++;
+        }
       } catch (err) {
         errors++;
         log.error("lifecycle audit failed", { battleId: id, error: errorMessage(err) });

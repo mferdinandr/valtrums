@@ -171,3 +171,14 @@ A testnet faucet contract SHALL give the caller small amounts of already backed 
 #### Scenario: Not the owner
 - **WHEN** an account other than the owner sets a token, pauses the faucet or withdraws stock
 - **THEN** the call fails
+
+### Requirement: Open arena testnet rollout
+The open arena code SHALL be redeployed in place on the existing testnet arena only with the owner's approval of each chain action, keeping state. The protocol DAO SHALL register the joinable tokens CASHCAT, WALLET, GOOD, VLAD and DEGEN by proposal, and AI SHALL be neither joinable nor trusted. Battles created before the redeploy keep their rules. Acceptance SHALL record one start-time arena and one cancel-and-refund drill as evidence.
+
+#### Scenario: Allowlist proposals
+- **WHEN** a council proposal calling `set_lifecycle_joinable_asset` passes 2 of 3
+- **THEN** the token's exact asset identity is joinable and the indexer projects the `lifecycle_joinable_asset_set` event without reporting degraded
+
+#### Scenario: Drill evidence
+- **WHEN** the cancel-and-refund drill runs
+- **THEN** the evidence records the cancel transaction and each refund event with its receipt, and claims nothing about rounds or payouts

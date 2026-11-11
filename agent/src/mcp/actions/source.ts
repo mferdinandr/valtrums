@@ -1,4 +1,5 @@
 import type { SourceInfo } from "../envelope.js";
+import type { DispositionView, ReleaseView } from "../account-state.js";
 import type { LifecycleBattleView, RoundView, ViewFn } from "../read-source.js";
 
 /**
@@ -36,6 +37,22 @@ export interface ReservationView {
   expires_ns?: string;
 }
 
+/** `arena.get_lifecycle_joinable_asset` (an `AssetInput`; the chain id is a string). */
+export interface JoinableAssetView {
+  chain_id: string;
+  token_address: string;
+  representation: string;
+  custody_domain: string;
+  reference_chain_id: string | null;
+  reference_address: string | null;
+}
+
+/** `arena.get_settlement_progress`. */
+export interface SettlementProgressView {
+  recorded: number;
+  total: number;
+}
+
 export interface ActionReadSource {
   readonly info: SourceInfo;
   battle(battleId: number): Promise<LifecycleBattleView | null>;
@@ -48,6 +65,16 @@ export interface ActionReadSource {
   grant(user: string, localId: number[]): Promise<GrantView | null>;
   budget(user: string, localId: number[]): Promise<BudgetView | null>;
   reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null>;
+  /** `get_lifecycle_joinable_asset`: the identity the arena (not the joiner) supplies for a token. */
+  joinableAsset(representation: string): Promise<JoinableAssetView | null>;
+  /** `get_settlement_progress`; null until a final winner is recorded. */
+  settlementProgress(battleId: number): Promise<SettlementProgressView | null>;
+  /** `get_lifecycle_disposition`: vote window, tally and execution progress. */
+  disposition(battleId: number): Promise<DispositionView | null>;
+  /** `get_lifecycle_disposition_releases`: decided releases in execution order. */
+  releases(battleId: number): Promise<ReleaseView[]>;
+  /** `get_dao_sink` on a backing: the frozen EVM sink address of DAO burns, or null while unset. */
+  daoSink(backing: string): Promise<string | null>;
 }
 
 const big = (value: unknown, what: string): bigint => {
@@ -96,6 +123,22 @@ export class NearActionReadSource implements ActionReadSource {
     return ((await this.view(this.contracts.policy, "get_reservation", { user, local_id: localId, request_id: requestId })) ??
       null) as ReservationView | null;
   }
+  async joinableAsset(representation: string): Promise<JoinableAssetView | null> {
+    return ((await this.view(this.contracts.arena, "get_lifecycle_joinable_asset", { representation })) ?? null) as JoinableAssetView | null;
+  }
+  async settlementProgress(battleId: number): Promise<SettlementProgressView | null> {
+    return ((await this.view(this.contracts.arena, "get_settlement_progress", { battle_id: String(battleId) })) ?? null) as SettlementProgressView | null;
+  }
+  async disposition(battleId: number): Promise<DispositionView | null> {
+    return ((await this.view(this.contracts.arena, "get_lifecycle_disposition", { battle_id: String(battleId) })) ?? null) as DispositionView | null;
+  }
+  async releases(battleId: number): Promise<ReleaseView[]> {
+    return ((await this.view(this.contracts.arena, "get_lifecycle_disposition_releases", { battle_id: String(battleId) })) ?? []) as ReleaseView[];
+  }
+  async daoSink(backing: string): Promise<string | null> {
+    const sink = await this.view(backing, "get_dao_sink", {});
+    return typeof sink === "string" ? sink : null;
+  }
 }
 
 /** In-memory source for tests and demos; `info.kind` is always `fixture`. */
@@ -112,6 +155,11 @@ export class FixtureActionReadSource implements ActionReadSource {
       grants?: Map<string, GrantView>;
       budgets?: Map<string, BudgetView>;
       reservations?: Map<string, ReservationView>;
+      joinable?: Map<string, JoinableAssetView>;
+      settlement?: Map<number, SettlementProgressView>;
+      dispositions?: Map<number, DispositionView>;
+      releases?: Map<number, ReleaseView[]>;
+      sinks?: Map<string, string>;
     },
   ) {
     this.info = { network, kind: "fixture", name: "fixture-actions" };
@@ -142,5 +190,20 @@ export class FixtureActionReadSource implements ActionReadSource {
   }
   async reservation(user: string, localId: number[], requestId: number[]) {
     return this.data.reservations?.get(FixtureActionReadSource.key(user, localId.join(","), requestId.join(","))) ?? null;
+  }
+  async joinableAsset(representation: string) {
+    return this.data.joinable?.get(representation) ?? null;
+  }
+  async settlementProgress(battleId: number) {
+    return this.data.settlement?.get(battleId) ?? null;
+  }
+  async disposition(battleId: number) {
+    return this.data.dispositions?.get(battleId) ?? null;
+  }
+  async releases(battleId: number) {
+    return this.data.releases?.get(battleId) ?? [];
+  }
+  async daoSink(backing: string) {
+    return this.data.sinks?.get(backing) ?? null;
   }
 }

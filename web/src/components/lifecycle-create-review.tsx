@@ -1,40 +1,31 @@
 "use client";
 import { TransactionLink } from "@/components/transaction-link";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
+import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
-import { pickerCapacity, pickerSummary } from "@/lib/arena-read/picker-summary";
-import { TokenChip, TokenPicker, assetSymbol, type RegistryAsset } from "@/components/token-picker";
+import { config } from "@/lib/config";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { applicationKey } from "@/lib/arena-read/application";
-import {
-  MODE_COPY,
-  shortAccount,
-} from "@/lib/arena-read/lifecycle-presentation";
-import type { ApplicationPage, Namespace } from "@/lib/arena-read/application";
+import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
+import type { Namespace } from "@/lib/arena-read/application";
 import {
   buildCreateReview,
-  MAX_COMMUNITIES,
-  MIN_COMMUNITIES,
   SCORING_MODES,
   toActionRequest,
   type AssetDraft,
 } from "@/lib/arena-read/create-review";
+import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
 import "@/components/lifecycle/lifecycle.css";
 
-const empty = (): AssetDraft => ({
-  chainId: "",
-  tokenAddress: "",
-  representation: "",
-  custodyDomain: "",
-  referenceChainId: "",
-  referenceAddress: "",
-});
+/** An open arena lists no community at creation (D34): communities join before the start time. */
+const NO_ASSETS: readonly AssetDraft[] = [];
+const DEFAULT_LEAD_MS = 15 * 60 * 1000;
 
 /**
  * Review and, on a deployment that enables a wallet, signing of `create_lifecycle_battle`. The reviewed
@@ -42,49 +33,24 @@ const empty = (): AssetDraft => ({
  * session token is memory-only; a wallet rejection leaves the review intact for a retry.
  */
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
-  const [mode, setMode] = useState<string>("PriceGain");
-  const [assets, setAssets] = useState<AssetDraft[]>([]);
+  const [mode, setMode] = useState<string>(config.createModes[0] ?? "PriceGain");
+  const [startInput, setStartInput] = useState("");
   const [copied, setCopied] = useState(false);
-  const [available, setAvailable] = useState<number | null>(null);
-  const review = buildCreateReview(namespace.arenaContract, assets, mode);
-  const request = useMemo(() => toActionRequest(assets, mode), [assets, mode]);
+  const now = useNow(1000);
+  // Default start: 15 minutes from the first client clock read (the server render has no clock).
+  useEffect(() => {
+    if (now > 0 && startInput === "") setStartInput(msToLocalInput(now + DEFAULT_LEAD_MS));
+  }, [now, startInput]);
+  const startAtMs = localInputToMs(startInput);
+  const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now, config.createModes);
+  const request = useMemo(() => toActionRequest(NO_ASSETS, mode, startAtMs), [mode, startAtMs]);
   const { signIn } = useWallet();
   const create = useLifecycleCreate(
     request,
     review.ok ? review : null,
     applicationKey(namespace),
   );
-  const set = (i: number, patch: Partial<AssetDraft>) => {
-    setCopied(false);
-    setAssets((all) => all.map((a, j) => (j === i ? { ...a, ...patch } : a)));
-  };
-  const chosen = useMemo(() => new Set(assets.map((a) => `${a.chainId}:${a.tokenAddress.toLowerCase()}`)), [assets]);
-  const add = (p: RegistryAsset) => {
-    setCopied(false);
-    setAssets((all) =>
-      all.length >= MAX_COMMUNITIES || all.some((a) => a.chainId === p.chainId && a.tokenAddress.toLowerCase() === p.token.toLowerCase())
-        ? all
-        : [
-            ...all,
-            {
-              ...empty(),
-              chainId: p.chainId,
-              tokenAddress: p.token,
-              referenceChainId: p.referenceChainId,
-              referenceAddress: p.referenceToken,
-              label: assetSymbol(p),
-            },
-          ],
-    );
-  };
-  const remove = (i: number) => {
-    setCopied(false);
-    setAssets((all) => all.filter((_, j) => j !== i));
-  };
-  // Hide "nothing picked yet" noise until at least one field has been touched.
-  const touched = assets.some(
-    (a) => a.tokenAddress || a.representation || a.custodyDomain,
-  );
+  const touched = now > 0 && startInput !== "";
   return (
     <div className="lifecycle-page">
       <Link href="/arena" className="text-xs text-neon-green">
@@ -99,18 +65,19 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             Make a little rivalry.
           </h1>
           <p className="text-sm text-mute">
-            Choose a challenge and invite at least two token communities. Review
-            every detail before your wallet signs.
+            Choose a challenge and a start time. Any approved token community
+            can join until the start. Review every detail before your wallet
+            signs.
           </p>
           <div className="lifecycle-facts">
-            <span>{available === null ? "Choose at least 2 communities" : `>${MIN_COMMUNITIES} communities`}</span>
+            <span>Open to approved tokens</span>
             <span>30-second rounds</span>
             <span>No proposal bond</span>
           </div>
         </div>
         <CarnivalScene
           mode="create"
-          caption="A little assembly required · decorative workshop"
+          caption="A little assembly required"
         />
       </section>
 
@@ -125,7 +92,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             role="group"
             aria-label="Scoring mode"
           >
-            {SCORING_MODES.map((m) => (
+            {SCORING_MODES.filter((m) => config.createModes.includes(m)).map((m) => (
               <button
                 key={m}
                 className="lifecycle-mode"
@@ -142,54 +109,32 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Whether a mode can run live depends on provider qualification; the
-            arena and oracle report that, this page does not.
+            Only the challenges this arena can run live are offered.
           </p>
         </Card>
 
         <Card className="space-y-4">
-          <CardTitle>02 / Choose your communities</CardTitle>
-          <p className="text-xs text-mute">
-            {pickerSummary(assets.length, available, MIN_COMMUNITIES, MAX_COMMUNITIES)}
+          <CardTitle>02 / Set the start time</CardTitle>
+          <Label>
+            Start time (your local time)
+            <Input
+              type="datetime-local"
+              value={startInput}
+              onChange={(e) => {
+                setStartInput(e.target.value);
+                setCopied(false);
+              }}
+              aria-describedby="start-help"
+            />
+          </Label>
+          <p id="start-help" className="text-xs leading-6 text-mute">
+            {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}
+            Between 1 minute and 7 days from now. Until then any approved token
+            community can join and deposit. You must deposit in one community
+            before the start. At the start the battle needs at least two funded
+            communities; otherwise anyone can cancel it and every depositor
+            claims a refund.
           </p>
-          <div className="token-chips" aria-label="Chosen communities">
-            {assets.map((a, i) => (
-              <TokenChip key={`${a.chainId}:${a.tokenAddress}`} symbol={a.label || shortAccount(a.tokenAddress)} onRemove={() => remove(i)} />
-            ))}
-            {assets.length === 0 && <span className="text-xs text-mute">Nothing chosen yet. Pick tokens below.</span>}
-          </div>
-          <TokenPicker
-            namespace={namespace}
-            chosen={chosen}
-            full={assets.length >= pickerCapacity(available, MAX_COMMUNITIES)}
-            onPick={add}
-            onAvailable={setAvailable}
-          />
-          {assets.map((a, i) => (
-            <details
-              key={`${a.chainId}:${a.tokenAddress}`}
-              className="lifecycle-tech"
-              open={!a.representation || !a.custodyDomain}
-            >
-              <summary>Required token setup for {a.label || shortAccount(a.tokenAddress)} · advanced</summary>
-              <p className="mb-3">
-                The registry does not provide a trusted representation or custody domain yet. Use values from your
-                deployment operator; they are never guessed from a token name.
-              </p>
-              <Label>
-                Representation (NEAR account of the NEP-141 token)
-                <Input
-                  value={a.representation}
-                  maxLength={64}
-                  onChange={(e) => set(i, { representation: e.target.value.trim().toLowerCase() })}
-                />
-              </Label>
-              <Label>
-                Custody domain
-                <Input value={a.custodyDomain} maxLength={64} onChange={(e) => set(i, { custodyDomain: e.target.value })} />
-              </Label>
-            </details>
-          ))}
         </Card>
       </fieldset>
 
@@ -207,8 +152,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             </ul>
           ) : (
             <p className="text-sm text-mute">
-              Pick at least two assets and fill their representation and custody
-              domain.
+              Choose a challenge and a start time.
             </p>
           )
         ) : (

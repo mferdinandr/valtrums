@@ -47,6 +47,8 @@ export interface PassReport {
 }
 
 const ONE_YOCTO = "1 yocto";
+/** The arena's REOPEN_GRACE_NS (120 s) plus a margin so the contract never refuses the reopen as early. */
+export const REOPEN_AFTER_NS = 130_000_000_000n;
 const WRITE_GAS = "100 Tgas";
 /** Newest battles scanned per pass, like the read service. Older locked battles need the indexer (#144). */
 export const MAX_SCAN = 200;
@@ -169,7 +171,8 @@ export class LifecycleOracle {
       if (!this.cfg.roundsStorageDepositYocto) {
         return this.row(battleId, "needs_rounds_started", null, ["rounds are not started; a funded caller must call start_lifecycle_rounds (the oracle spends no storage deposit unless ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO is set)"], []);
       }
-      const a = await this.write(battleId, "start_lifecycle_rounds", "start_lifecycle_rounds", { battle_id: battleId, terms }, this.cfg.roundsStorageDepositYocto);
+      // The config holds a bare yocto integer; near-kit refuses a unitless amount, so the unit is explicit here.
+      const a = await this.write(battleId, "start_lifecycle_rounds", "start_lifecycle_rounds", { battle_id: battleId, terms }, `${this.cfg.roundsStorageDepositYocto} yocto`);
       return this.row(battleId, "needs_rounds_started", null, ["terms reveal sent; waiting for the contract to show the rounds"], [a]);
     }
     if (!round.start_ns || !round.end_ns) {
@@ -193,7 +196,16 @@ export class LifecycleOracle {
       boundaryToleranceMs: Number(BigInt(terms.boundary_tolerance_ns) / 1_000_000n), maxGapMs: Number(BigInt(terms.max_gap_ns) / 1_000_000n),
     };
     const built = buildSubmission(state, frozen, terms, { kinds: this.cfg.evidenceKinds, qualified: this.cfg.qualifiedModes });
-    if (!built.ok) return this.row(battleId, "pending_evidence", round.round_id, [`${built.hold}: ${built.reason}`], []);
+    if (!built.ok) {
+      // Evidence for this window never completed (for example a missed boundary sample) and the contract's reopen
+      // grace has passed: abandon the window so a fresh one can open. Complete evidence is always submitted instead,
+      // however late; this decides nothing and moves no funds.
+      if (nowNs >= BigInt(round.end_ns) + REOPEN_AFTER_NS && (built.hold === "coverage_incomplete" || built.hold === "no_allowed_evidence")) {
+        const a = await this.write(battleId, "reopen_lifecycle_round", "reopen_lifecycle_round", { battle_id: battleId, round_id: round.round_id }, ONE_YOCTO);
+        return this.row(battleId, "needs_open", round.round_id, [`${built.hold}: ${built.reason}; the reopen grace passed, abandoning the window for a fresh one`], [a]);
+      }
+      return this.row(battleId, "pending_evidence", round.round_id, [`${built.hold}: ${built.reason}`], []);
+    }
     const a = await this.write(battleId, "submit_lifecycle_observations", "submit_lifecycle_observations",
       { battle_id: battleId, round_id: round.round_id, observations: built.observations }, ONE_YOCTO);
     return this.row(battleId, "ready_to_resolve", round.round_id, [`submitted evidence for ${built.observations.length} candidate(s); the contract's recorded outcome decides`], [a]);

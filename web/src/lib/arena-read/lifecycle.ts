@@ -35,7 +35,12 @@ export interface LifecycleBattle {
   observation_policy_hash: string | null;
   principal_community: number | null;
   principal_amount: string | null;
+  /** Zero to sixteen; an open battle starts empty and grows by joins. */
   communities: LifecycleCommunity[];
+  /** Open arena start time (u64 ms as a decimal string); null or absent for a battle without one. */
+  start_at_ms?: string | null;
+  /** Absent on an older service; true once the battle was cancelled. */
+  cancelled?: boolean;
 }
 export interface LifecycleRound {
   round_id: string;
@@ -170,7 +175,8 @@ export function communityRows(detail: LifecycleDetail, nowMs: number): Community
   });
 }
 
-export function battleStatus(detail: LifecycleDetail): "open" | "locked" | "decided" {
+export function battleStatus(detail: LifecycleDetail): "open" | "locked" | "decided" | "cancelled" {
+  if (detail.battle.cancelled === true) return "cancelled";
   if (!detail.battle.locked) return "open";
   return detail.round?.winner != null ? "decided" : "locked";
 }

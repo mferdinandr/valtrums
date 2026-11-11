@@ -19,8 +19,11 @@ const config: Config = {
         mute: "#66747e",
       },
       fontFamily: {
-        pixel: ['"Space Grotesk"', "sans-serif"],
-        term: ["Inter", "sans-serif"],
+        pixel: ['"Bricolage Grotesque"', "sans-serif"],
+        term: ["Figtree", "sans-serif"],
+      },
+      fontSize: {
+        sm: ["15px", "1.6"],
       },
       boxShadow: {
         "glow-green": "0 0 12px rgba(208,245,112,0.2)",

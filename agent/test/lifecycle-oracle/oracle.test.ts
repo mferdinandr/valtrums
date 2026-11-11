@@ -39,7 +39,8 @@ describe("round lifecycle", () => {
     const o = oracle();
     await o.pass();
     expect(methods()).toEqual(["start_lifecycle_rounds"]);
-    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", terms: TERMS }, deposit: "10000000000000000000000" });
+    // An explicit unit: near-kit refuses a bare integer amount as ambiguous (found in the 2026-11-11 live run).
+    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", terms: TERMS }, deposit: "10000000000000000000000 yocto" });
     await o.pass();
     expect(methods()).toEqual(["start_lifecycle_rounds", "open_lifecycle_round"]);
     expect(arena.calls[1]?.args.start_ns).toBe((BigInt(nowMs) * 1_000_000n).toString());
@@ -68,7 +69,7 @@ describe("round lifecycle", () => {
   it("never resolves from the clock: missing or gapped evidence holds pending and submits nothing", async () => {
     arena.lockedBattle("1", { round: { id: 1, candidates: [0, 1, 2], start: BigInt(START_MS) * 1_000_000n, end: (BigInt(START_MS) + 30_000n) * 1_000_000n, winner: null } });
     const o = oracle();
-    nowMs = Number(START_MS) + 600_000; // far past the end
+    nowMs = Number(START_MS) + 120_000; // past the end, still inside the reopen grace
     await o.pass();
     expect(o.status().battles["1"]).toMatchObject({ phase: "pending_evidence" });
     expect(o.status().battles["1"]?.reasons[0]).toMatch(/no_allowed_evidence/);
@@ -78,6 +79,21 @@ describe("round lifecycle", () => {
     await o.pass();
     expect(o.status().battles["1"]?.reasons[0]).toMatch(/coverage_incomplete: community 2: no closing sample/);
     expect(methods()).toEqual([]);
+    expect(winnerOf()).toBeNull();
+  });
+
+  it("abandons a window whose evidence never completed once the reopen grace has passed, and never picks a winner", async () => {
+    arena.lockedBattle("1", { round: { id: 1, candidates: [0, 1, 2], start: BigInt(START_MS) * 1_000_000n, end: (BigInt(START_MS) + 30_000n) * 1_000_000n, winner: null } });
+    for (const c of [0, 1, 2]) await sample(c, "1", Number(START_MS) + 30_000, "310"); // closing samples only: the start was missed
+    const o = oracle();
+    nowMs = Number(START_MS) + 30_000 + 129_000; // 1 s before the oracle's margin
+    await o.pass();
+    expect(methods()).toEqual([]);
+    nowMs = Number(START_MS) + 30_000 + 131_000;
+    await o.pass();
+    expect(methods()).toEqual(["reopen_lifecycle_round"]);
+    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", round_id: "1" }, deposit: "1 yocto" });
+    expect(o.status().battles["1"]?.reasons[0]).toMatch(/coverage_incomplete/);
     expect(winnerOf()).toBeNull();
   });
 

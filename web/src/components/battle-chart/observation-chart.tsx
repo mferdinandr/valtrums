@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { useObservationChart } from "@/hooks/use-observation-chart";
 import type { Namespace } from "@/lib/arena-read/application";
 import { ScoreChart } from "./chart";
@@ -23,9 +24,9 @@ export function ObservationChart({
   const [selected, setSelected] = useState("0");
   if (view.state === "loading")
     return (
-      <p role="status" className="text-xs text-mute">
-        Loading observations…
-      </p>
+      <SkeletonGroup label="Loading observations…">
+        <Skeleton style={{ height: 220, borderRadius: 16 }} />
+      </SkeletonGroup>
     );
   if (view.state === "unavailable" || !view.latest) {
     return (

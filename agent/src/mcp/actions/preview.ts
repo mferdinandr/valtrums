@@ -2,6 +2,7 @@ import type { DataOrigin } from "../envelope.js";
 import type { ScoringMode } from "../read-source.js";
 import { FIXTURE_LABEL, FIXTURE_ROUTE } from "../../intents-fixture/label.js";
 import { hashCanonical } from "./canonical.js";
+import { buildLifecyclePreview } from "./lifecycle-actions.js";
 import type { ActionReadSource } from "./source.js";
 
 /**
@@ -20,18 +21,47 @@ export const ACTION_POLICY_VERSION = "action-preview-v1";
 /** A preview must be authorized and prepared within this time (owner decision for #76). */
 export const PREVIEW_TTL_MS = 5 * 60 * 1000;
 
-const TGAS = 1_000_000_000_000n;
-const ONE_YOCTO = "1";
+export const TGAS = 1_000_000_000_000n;
+export const ONE_YOCTO = "1";
 /** Upper bound attached to battle creation; the arena charges actual storage and refunds the rest. */
 const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
 /** `request_payout` storage deposit (payout `REQUEST_DEPOSIT`, 30 mNEAR); unused part refunded. */
-const PAYOUT_REQUEST_DEPOSIT_YOCTO = "30000000000000000000000";
+export const PAYOUT_REQUEST_DEPOSIT_YOCTO = "30000000000000000000000";
 /** `reserve` storage deposit for a grant reservation; unused part refunded. */
 const RESERVE_DEPOSIT_YOCTO = "10000000000000000000000";
+/** `join_lifecycle_battle` storage deposit upper bound (0.02 NEAR: a community plus a position); the arena charges measured storage and refunds the rest. */
+export const JOIN_DEPOSIT_YOCTO = "20000000000000000000000";
+/** `vote_lifecycle_disposition` storage deposit upper bound (0.01 NEAR); the arena refunds the rest. */
+export const VOTE_DEPOSIT_YOCTO = "10000000000000000000000";
+/** `reserve_lifecycle_escrow` deposit (arena ESCROW_DEPOSIT, 10 mNEAR); the arena refunds the excess. */
+export const ESCROW_DEPOSIT_YOCTO = "10000000000000000000000";
+/** Per entitlement or release forwarded to a backing (arena ENTITLEMENT_DEPOSIT, 10 mNEAR). */
+export const ENTITLEMENT_DEPOSIT = 10_000_000_000_000_000_000_000n;
+/** Contract batch bounds: `settle_lifecycle_battle` 15, `execute_lifecycle_disposition` 10. */
+export const MAX_SETTLE_BATCH = 15;
+export const MAX_EXECUTE_BATCH = 10;
+/** Contract bounds of a start time: now + 60 s to now + 7 days. */
+export const MIN_START_LEAD_MS = 60_000;
+export const MAX_START_LEAD_MS = 7 * 24 * 60 * 60 * 1000;
+/** Maximum communities in a battle. */
+const MAX_COMMUNITIES = 16;
 /** `register_lifecycle_position` storage deposit upper bound (0.01 NEAR); the arena charges actual storage and refunds the rest. */
 const REGISTER_DEPOSIT_YOCTO = "10000000000000000000000";
 
-export type ActionKind = "create_battle" | "register_position" | "deposit" | "payout";
+export type ActionKind =
+  | "create_battle"
+  | "register_position"
+  | "deposit"
+  | "payout"
+  | "join_battle"
+  | "cancel_battle"
+  | "claim_refund"
+  | "settle_battle"
+  | "reserve_escrow"
+  | "vote_disposition"
+  | "execute_disposition"
+  | "request_dao_burn"
+  | "late_refund";
 export const SUPPORTED_FUNDING_ROUTES = ["direct"] as const;
 
 /**
@@ -62,7 +92,31 @@ export interface GrantRequest {
 }
 
 export type ActionRequest =
-  | { kind: "create_battle"; assets: AssetRequest[]; mode: ScoringMode }
+  | {
+      kind: "create_battle";
+      /** 0 to 16 communities; an open arena starts empty and communities appear on deposit. */
+      assets: AssetRequest[];
+      mode: ScoringMode;
+      /** Start time in ms (decimal string). Without it the battle can never be cancelled or refunded. */
+      startAtMs?: string;
+    }
+  | { kind: "join_battle"; battleId: number; /** NEAR representation of an allowlisted token; never a community index. */ representation: string }
+  | { kind: "cancel_battle"; battleId: number }
+  | { kind: "claim_refund"; battleId: number; community: number }
+  | { kind: "settle_battle"; battleId: number }
+  | { kind: "reserve_escrow"; battleId: number }
+  | { kind: "vote_disposition"; battleId: number; choice: "burn" | "return" }
+  | { kind: "execute_disposition"; battleId: number }
+  | { kind: "request_dao_burn"; battleId: number }
+  | {
+      kind: "late_refund";
+      backing: string;
+      amount: string;
+      /** EVM address on the source chain bound to the caller's own late deposit, 0x + 40 hex. */
+      destination: string;
+      /** 32-byte request id, hex; assigned at preview when absent and then fixed. */
+      requestId?: string;
+    }
   | { kind: "register_position"; battleId: number; community: number }
   | {
       kind: "deposit";
@@ -127,6 +181,24 @@ export type ActionErrorCode =
   | "audit_missing"
   | "audit_expired"
   | "backing_missing"
+  | "battle_cancelled"
+  | "battle_started"
+  | "battle_not_started"
+  | "battle_full"
+  | "not_joinable"
+  | "not_cancellable"
+  | "not_cancelled"
+  | "nothing_to_refund"
+  | "winner_not_resolved"
+  | "already_settled"
+  | "already_done"
+  | "vote_not_open"
+  | "vote_closed"
+  | "not_a_winner"
+  | "escrow_not_reserved"
+  | "nothing_to_execute"
+  | "release_not_recorded"
+  | "sink_not_set"
   | "not_registered"
   | "already_registered"
   | "insufficient_balance"
@@ -159,15 +231,15 @@ const HEX32 = /^[0-9a-f]{64}$/;
 const AMOUNT = /^[1-9][0-9]{0,38}$/;
 const MODES: readonly ScoringMode[] = ["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"];
 
-const fail = (code: ActionErrorCode, message: string): never => {
+export const fail = (code: ActionErrorCode, message: string): never => {
   throw new ActionError(code, message);
 };
 const account = (value: unknown, what: string): string =>
   typeof value === "string" && ACCOUNT.test(value) ? value : fail("invalid_request", `${what} must be a NEAR account id`);
 const amount = (value: unknown): string =>
   typeof value === "string" && AMOUNT.test(value) ? value : fail("invalid_request", "amount must be a positive integer string");
-const hexBytes = (hex: string): number[] => Array.from(Buffer.from(hex, "hex"));
-const gas = (tgas: bigint): string => (tgas * TGAS).toString();
+export const hexBytes = (hex: string): number[] => Array.from(Buffer.from(hex, "hex"));
+export const gas = (tgas: bigint): string => (tgas * TGAS).toString();
 
 function validateGrant(grant: unknown): GrantRequest {
   const g = grant as Partial<GrantRequest> | null;
@@ -184,17 +256,67 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== "object" || Array.isArray(r)) return fail("invalid_request", "request must be an object");
   const allowed: Record<string, string[]> = {
-    create_battle: ["kind", "assets", "mode"],
+    create_battle: ["kind", "assets", "mode", "startAtMs"],
     register_position: ["kind", "battleId", "community"],
     deposit: ["kind", "battleId", "community", "amount", "route", "grant", "requestId"],
     payout: ["kind", "backing", "amount", "destination", "requestId", "grant"],
+    join_battle: ["kind", "battleId", "representation"],
+    cancel_battle: ["kind", "battleId"],
+    claim_refund: ["kind", "battleId", "community"],
+    settle_battle: ["kind", "battleId"],
+    reserve_escrow: ["kind", "battleId"],
+    vote_disposition: ["kind", "battleId", "choice"],
+    execute_disposition: ["kind", "battleId"],
+    request_dao_burn: ["kind", "battleId"],
+    late_refund: ["kind", "backing", "amount", "destination", "requestId"],
   };
-  const keys = allowed[String(r.kind)];
-  if (!keys) return fail("invalid_request", "kind must be create_battle, register_position, deposit or payout");
+  const keys = Object.hasOwn(allowed, String(r.kind)) ? allowed[String(r.kind)] : undefined;
+  if (!keys) return fail("invalid_request", `kind must be one of ${Object.keys(allowed).join(", ")}`);
   for (const k of Object.keys(r)) if (!keys.includes(k)) fail("invalid_request", `unknown field: ${k}`);
+  const battleIdOf = (): number => {
+    const battleId = Number(r.battleId);
+    if (!Number.isSafeInteger(battleId) || battleId < 1) fail("invalid_request", "battleId must be a positive integer");
+    return battleId;
+  };
+  if (r.kind === "join_battle") return { kind: "join_battle", battleId: battleIdOf(), representation: account(r.representation, "representation") };
+  if (r.kind === "cancel_battle" || r.kind === "settle_battle" || r.kind === "reserve_escrow" || r.kind === "execute_disposition" || r.kind === "request_dao_burn") {
+    return { kind: r.kind, battleId: battleIdOf() };
+  }
+  if (r.kind === "claim_refund") {
+    const community = Number(r.community);
+    if (!Number.isSafeInteger(community) || community < 0 || community > MAX_COMMUNITIES - 1) fail("invalid_request", "community must be 0 to 15");
+    return { kind: "claim_refund", battleId: battleIdOf(), community };
+  }
+  if (r.kind === "vote_disposition") {
+    if (r.choice !== "burn" && r.choice !== "return") return fail("invalid_request", "choice must be burn or return");
+    return { kind: "vote_disposition", battleId: battleIdOf(), choice: r.choice };
+  }
+  if (r.kind === "late_refund") {
+    if (typeof r.destination !== "string" || !EVM.test(r.destination) || /^0x0{40}$/i.test(r.destination)) {
+      fail("invalid_request", "destination must be a non-zero 20-byte hex address");
+    }
+    if (r.requestId !== undefined && (typeof r.requestId !== "string" || !HEX32.test(r.requestId) || /^0{64}$/.test(r.requestId))) {
+      fail("invalid_request", "requestId must be 32 non-zero bytes of lowercase hex");
+    }
+    return {
+      kind: "late_refund",
+      backing: account(r.backing, "backing"),
+      amount: amount(r.amount),
+      destination: (r.destination as string).toLowerCase(),
+      ...(r.requestId !== undefined ? { requestId: r.requestId as string } : {}),
+    };
+  }
   if (r.kind === "create_battle") {
-    if (!Array.isArray(r.assets) || r.assets.length < 2 || r.assets.length > 16) {
-      fail("invalid_request", "assets must list 2 to 16 communities");
+    if (!Array.isArray(r.assets) || r.assets.length > MAX_COMMUNITIES) {
+      fail("invalid_request", `assets must list 0 to ${MAX_COMMUNITIES} communities`);
+    }
+    let startAtMs: string | undefined;
+    if (r.startAtMs !== undefined) {
+      const raw = typeof r.startAtMs === "number" && Number.isSafeInteger(r.startAtMs) ? String(r.startAtMs) : r.startAtMs;
+      if (typeof raw !== "string" || !/^[1-9][0-9]{0,18}$/.test(raw) || BigInt(raw) >= 2n ** 64n) {
+        fail("invalid_request", "startAtMs must be a positive integer number of milliseconds");
+      }
+      startAtMs = raw as string;
     }
     if (!MODES.includes(r.mode as ScoringMode)) fail("invalid_request", "mode is not a scoring mode");
     const assets = (r.assets as Record<string, unknown>[]).map((a) => {
@@ -216,7 +338,7 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
         ...(hasRef ? { referenceChainId: a.referenceChainId as string, referenceAddress: (a.referenceAddress as string).toLowerCase() } : {}),
       };
     });
-    return { kind: "create_battle", assets, mode: r.mode as ScoringMode };
+    return { kind: "create_battle", assets, mode: r.mode as ScoringMode, ...(startAtMs !== undefined ? { startAtMs } : {}) };
   }
   if (r.kind === "register_position") {
     const battleId = Number(r.battleId);
@@ -316,27 +438,51 @@ export async function buildPreview(
       reference_address: a.referenceAddress ?? null,
     }));
     const gasUnits = gas(100n);
+    const notes = ["deposit is an upper bound: the arena keeps actual storage and refunds the rest"];
+    const extra: string[] = [];
+    if (request.startAtMs !== undefined) {
+      const start = BigInt(request.startAtMs);
+      if (start < BigInt(nowMs) + BigInt(MIN_START_LEAD_MS) || start > BigInt(nowMs) + BigInt(MAX_START_LEAD_MS)) {
+        fail("invalid_request", "startAtMs must be between 1 minute and 7 days from now");
+      }
+      notes.push(`the war starts at ${new Date(Number(start)).toISOString()}; the creator must deposit into a community before then, or the arena cannot lock`);
+      extra.push("the arena re-checks the 1 minute to 7 day start window when the transaction executes");
+      extra.push("with a start time the arena can be cancelled and deposits refunded when fewer than 2 communities are funded at the start");
+    } else {
+      extra.push("created without a start time: this battle can never be cancelled or refunded");
+    }
+    if (assets.length === 0) extra.push("an open arena: a community appears when its first token is deposited by a joining account");
     return {
       ...base,
       kind: "create_battle",
       accountId: caller,
       signerId: caller,
       authorization: "user_signature",
-      binding: { arena: ctx.arena, assets, mode: request.mode },
-      costs: { attachedDepositYocto: CREATE_DEPOSIT_YOCTO, gasTgas: "100", notes: ["deposit is an upper bound: the arena keeps actual storage and refunds the rest"] },
+      binding: { arena: ctx.arena, assets, mode: request.mode, startAtMs: request.startAtMs ?? null },
+      costs: { attachedDepositYocto: CREATE_DEPOSIT_YOCTO, gasTgas: "100", notes },
       transaction: {
         signerId: caller,
         receiverId: ctx.arena,
-        actions: [{ type: "FunctionCall", methodName: "create_lifecycle_battle", args: { assets, mode: request.mode }, gas: gasUnits, deposit: CREATE_DEPOSIT_YOCTO }],
+        actions: [
+          {
+            type: "FunctionCall",
+            methodName: "create_lifecycle_battle",
+            args: { assets, mode: request.mode, ...(request.startAtMs !== undefined ? { start_at_ms: request.startAtMs } : {}) },
+            gas: gasUnits,
+            deposit: CREATE_DEPOSIT_YOCTO,
+          },
+        ],
       },
-      limitations: [...limitations, "the arena still validates the assets and the reference registry at creation"],
+      limitations: [...limitations, "the arena still validates the assets and the reference registry at creation", ...extra],
     };
   }
 
   if (request.kind === "register_position") {
     const battle = await source.battle(request.battleId);
     if (!battle) return fail("battle_not_found", `battle ${request.battleId} not found`);
+    if (battle.cancelled) fail("battle_cancelled", "the battle was cancelled; positions can no longer be registered");
     if (battle.locked) fail("battle_locked", "the battle is locked; positions can no longer be registered");
+    if (battle.start_at_ms && BigInt(battle.start_at_ms) <= BigInt(nowMs)) fail("battle_started", "the start time has passed; positions can no longer be registered");
     const community = battle.communities[request.community];
     if (!community) return fail("invalid_request", `battle ${request.battleId} has no community ${request.community}`);
     const position = await source.position(request.battleId, request.community, caller);
@@ -358,13 +504,19 @@ export async function buildPreview(
     };
   }
 
+  const lifecycle = await buildLifecyclePreview(request, caller, source, ctx, nowMs, base, limitations);
+  if (lifecycle) return lifecycle;
+
+  if (request.kind !== "deposit" && request.kind !== "payout") return fail("invalid_request", "unsupported action kind");
   const user = request.grant ? request.grant.user : caller;
   const value = BigInt(request.amount);
 
   if (request.kind === "deposit") {
     const battle = await source.battle(request.battleId);
     if (!battle) return fail("battle_not_found", `battle ${request.battleId} not found`);
+    if (battle.cancelled) fail("battle_cancelled", "the battle was cancelled; deposits are closed (claim a refund instead)");
     if (battle.locked) fail("battle_locked", "the battle is locked; deposits are closed");
+    if (battle.start_at_ms && BigInt(battle.start_at_ms) <= BigInt(nowMs)) fail("battle_started", "the start time has passed; deposits are closed");
     const community = battle.communities[request.community];
     if (!community) return fail("invalid_request", `battle ${request.battleId} has no community ${request.community}`);
     if (request.route === FIXTURE_ROUTE) {

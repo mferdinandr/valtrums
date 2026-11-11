@@ -7,7 +7,7 @@
 //! and mode data. A unique winner found by `Rounds` is recorded as the held
 //! principal automatically; no caller-supplied winner label is accepted.
 use crate::rounds::{
-    CandidateObservation, ModeData, ObservationTerms, PendingReason, Resolution, Rounds,
+    CandidateObservation, ModeData, ObservationTerms, PendingReason, Resolution, RoundError, Rounds,
 };
 use crate::scoring::{ObservationEvidence, RoundTrade};
 use crate::{Arena, ArenaExt};
@@ -17,6 +17,9 @@ use near_sdk::{env, near, require, NearToken, Promise};
 
 /// How far a round's start may lie from the block time, in either direction.
 const MAX_WINDOW_SKEW_NS: u64 = 300_000_000_000;
+/// How long after a round's recorded end its evidence may still complete
+/// before the oracle may abandon that window and open a fresh one.
+pub const REOPEN_GRACE_NS: u64 = 120_000_000_000;
 
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -232,6 +235,7 @@ impl Arena {
             &ObservationTerms::from(terms),
             battle.asset_labels(),
         )
+        .and_then(|rounds| rounds.with_funded_candidates(battle.funded_indices()))
         .unwrap_or_else(|error| env::panic_str(&format!("Rounds rejected: {error:?}")));
         let before = env::storage_usage();
         self.lifecycle_rounds.insert(battle_id.0, rounds);
@@ -272,6 +276,40 @@ impl Arena {
                 }),
             );
         }
+    }
+
+    /// Oracle only, exactly one yocto. Abandons the current round's window when
+    /// it is still unresolved `REOPEN_GRACE_NS` after its recorded end, so the
+    /// oracle can open a fresh window for the same round and candidates with
+    /// `open_lifecycle_round`. Recovers a battle whose boundary evidence was
+    /// missed (it can never be cancelled once locked); it decides nothing.
+    #[payable]
+    pub fn reopen_lifecycle_round(&mut self, battle_id: U64, round_id: U64) {
+        near_sdk::assert_one_yocto();
+        self.assert_oracle();
+        require!(!self.paused, "Arena is paused");
+        let rounds = self
+            .lifecycle_rounds
+            .get_mut(&battle_id.0)
+            .unwrap_or_else(|| env::panic_str("Rounds not started"));
+        let (start, end) = rounds
+            .abandon_window(round_id.0, env::block_timestamp(), REOPEN_GRACE_NS)
+            .unwrap_or_else(|error| {
+                env::panic_str(match error {
+                    RoundError::AlreadyOpen => "The round is still within its grace period",
+                    RoundError::NotOpen => "The round has no open window",
+                    RoundError::Finished => "The round is already resolved",
+                    RoundError::WrongRound => "Not the current round",
+                    _ => "Round cannot be reopened",
+                })
+            });
+        crate::events::emit(
+            "lifecycle_round_reopened_v1",
+            json!({
+                "battle_id": battle_id, "round_id": round_id, "protocol": "lifecycle-v2",
+                "abandoned_start_ns": U64(start), "abandoned_end_ns": U64(end)
+            }),
+        );
     }
 
     /// Oracle only, and only after the round's recorded end. A unique winner is
@@ -449,7 +487,7 @@ impl Arena {
 
     /// Charge the storage added since `before` to the attached deposit and
     /// refund the rest.
-    fn charge_storage(&self, before: u64) {
+    pub(crate) fn charge_storage(&self, before: u64) {
         let cost = env::storage_byte_cost()
             .as_yoctonear()
             .checked_mul(u128::from(env::storage_usage().saturating_sub(before)))
@@ -563,7 +601,7 @@ pub(crate) mod tests {
                 )
                 .expect("backing");
         }
-        // Credits are accepted only once every community is approved.
+        // A credit is accepted once its target community is approved.
         for index in 0..3usize {
             let identity = asset(index as u8 + 1);
             let sender = account(if index == 0 {

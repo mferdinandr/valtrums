@@ -1,3 +1,5 @@
+import { parseCreateModes } from "@/lib/arena-read/create-review";
+
 export type NearNetwork = "testnet" | "mainnet";
 
 const network: NearNetwork = process.env.NEXT_PUBLIC_NEAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
@@ -20,6 +22,8 @@ export const config = {
   policyContract: process.env.NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID?.trim() ?? "",
   /** The faucet contract that hands out test tokens. Optional: without it the faucet page explains what to set. */
   faucetContract: process.env.NEXT_PUBLIC_FAUCET_CONTRACT_ID?.trim() ?? "",
+  /** Scoring modes a new battle may use (comma-separated; default PriceGain). Must match the arena's observation policy. */
+  createModes: parseCreateModes(process.env.NEXT_PUBLIC_LIFECYCLE_CREATE_MODES),
   /** The only protocol this application speaks. */
   protocol: (process.env.NEXT_PUBLIC_ARENA_READ_PROTOCOL?.trim() || "lifecycle-v2") as string,
   explorerUrl: network === "mainnet" ? "https://nearblocks.io" : "https://testnet.nearblocks.io",

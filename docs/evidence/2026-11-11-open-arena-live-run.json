@@ -1,0 +1,78 @@
+{
+  "label": "Open arena live run on NEAR testnet (2026-11-11, times UTC). Owner-approved action by action. Mock assets (faucet tokens backed 1:1 by testnet custody deposits); reference prices are real Robinhood mainnet (4663) slot0 reads at the latest, unfinalized block. Nothing here proves a payout or settlement.",
+  "network": "near-testnet",
+  "arena": "arena.valtrum-owner-b694.testnet",
+  "setup": {
+    "oracle_account": { "account": "valtrum-oracle-b694.testnet", "created_via": "testnet helper (faucet), key only in the git-ignored .env", "balance_after_create": "9.99 NEAR" },
+    "set_lifecycle_oracle": { "signer": "valtrum-owner-b694.testnet", "oracle": "valtrum-oracle-b694.testnet", "tx_from_output": "Cf77Ph4F9Nf8bRQXmVYbudixaZ5r9jXRXyEcxPU9fSnB", "note": "permanent" },
+    "set_lifecycle_observation_policy": { "version": "1", "policy_hash": "3d54cbd5a4421eb7f1a09ef8cc249c5be7d525e52bd9f805bf17e9c7085d9dee", "mode": "PriceGain", "terms": "open-arena-observation-terms.draft.json (on-chain slot0 terms, 5 s tolerance, 15 s max gap, 18 decimals)", "tx_from_output": "G6b6hSYcpzc7iQyK5tNQrjfbt2RwU6hJjKzavMBeH3Wo" },
+    "funding": [
+      { "from": "valtrum-council1-b694.testnet", "to": "valtrum-user1-b694.testnet", "amount": "2 NEAR", "tx": "5xQ1AJRnhc9hgZAnSf9UgnWRdUztjHysNRzkpbyoKwTx" },
+      { "from": "valtrum-council1-b694.testnet", "to": "valtrum-user2-b694.testnet", "amount": "2 NEAR", "tx": "G7zYn7euQh1H8KhNLN65P2uahqe9fzxbnpm49fUE4zya" },
+      { "from": "valtrum-council1-b694.testnet", "to": "valtrum-agent-b694.testnet", "amount": "2 NEAR", "tx": "6bwUjuZUraHZFpodgkRyY1Xdjfi7DeQeQPBqnf9AMYtV" }
+    ],
+    "faucet_claims": [
+      { "who": "valtrum-user1-b694.testnet", "token": "backing-cashcat.valtrum-owner-b694.testnet", "balance_after": "100 tokens" },
+      { "who": "valtrum-user2-b694.testnet", "token": "backing-wallet.valtrum-owner-b694.testnet", "balance_after": "100 tokens" }
+    ],
+    "arena_storage_registration": {
+      "finding": "the first deposits failed with 'The account arena... is not registered': every joinable backing must register the arena account (NEP-145) before deposits; this was missing from the runbook",
+      "payer": "valtrum-council1-b694.testnet",
+      "registered": { "cashcat": "Df1aPGnL98yGisdUBNhPo6cTPG4zWUY6BDNYVLmPQvkH", "wallet": "8WvLL3wT76vvmiYtNvmqEcETRZEC59hHNqTmxmzwSS5s" },
+      "not_registered_yet": ["good", "vlad", "degen (rate limited, HTTP 429)"]
+    }
+  },
+  "battle_2": {
+    "created_by": "valtrum-user1-b694.testnet",
+    "mode": "PriceGain",
+    "start_at": "14:33:55",
+    "joins": [
+      { "who": "valtrum-user1-b694.testnet", "community": 0, "token": "CASHCAT", "tx": "FryksyWq7YWRTYKs2R5mojFEhR81CVkWjNPjhwfHTG6p" },
+      { "who": "valtrum-user2-b694.testnet", "community": 1, "token": "WALLET", "tx": "CMnexXHnKnZrNcrjpaCoXihWj756rcVusm9EQoYLQ8gx" }
+    ],
+    "deposits": [
+      { "who": "valtrum-user2-b694.testnet", "community": 1, "amount": "50 WALLET", "tx": "CnpPJxma1RYitx9syHH63yptYWHLwyx5r9vmG1aRGeE5" },
+      { "who": "valtrum-user1-b694.testnet", "community": 0, "amount": "50 CASHCAT", "tx": "2sC8ehPmkjvqHMmyqWD1VgFPxGGPhYfcKV921QYTqyWT" }
+    ],
+    "lock": { "by": "valtrum-agent-b694.testnet", "at": "14:35:39", "note": "agent audit and backing approvals for both communities, lock after the start over two funded communities" },
+    "first_round_1_window": {
+      "window": "14:41:46 to 14:42:16",
+      "first_sample": "14:41:56",
+      "result": "could not resolve: the start boundary had no sample within the 5 s tolerance (the collector learned of the window late because the NEAR RPC answered HTTP 429), and the contract had no way to reopen a round",
+      "also_found": "the oracle's rounds storage deposit was sent without a unit and refused by near-kit before reaching the chain (fixed)"
+    },
+    "recovery_redeploy": { "branch": "feat/reopen-lifecycle-round", "bytes": 729982, "sha256": "0469d24978a45b798d7b63d234616f9b16b8ef32519dd9f625d10ea7071410ad", "tx": "HBUuw7ouYdmzn9HqsF1PwQFhFW2pFmpq56ykVMaMwWZG", "adds": "oracle-only reopen_lifecycle_round after a 120 s grace" },
+    "reopened_round_1": {
+      "reopen_sent": "14:54:56",
+      "fresh_window": "14:55:00 to 14:55:30",
+      "boundary_prices_usd": { "CASHCAT": { "start": "0.0603132", "end": "0.0603090", "change": "-0.0068%" }, "WALLET": { "start": "0.0155304", "end": "0.0155293", "change": "-0.0069%" } },
+      "winner": "community 0 (CASHCAT)",
+      "note": "both reference prices moved with the WETH price; the winner fell slightly less. Samples persisted: 58 in total over the run"
+    }
+  },
+  "battle_3_cancel_refund_drill": {
+    "created_by": "valtrum-user1-b694.testnet", "start_at": "14:59:18", "create_tx": "HidnFm62Fzq4rnrFX55zh4ybNmnaZkfYb6vLVufCe8yF",
+    "join_tx": "Ak4dJSFpMsXC1JYz4xJciv5nooMZicQa9M6m93VXmwQm",
+    "deposit": { "amount": "10 CASHCAT", "tx": "EfLppRskmGmd6cJvjeZdY8DqgudzRfoC8F74dU3hhLUN" },
+    "early_cancel_refused": "Start time has not been reached (no state change)",
+    "cancel": { "by": "valtrum-user2-b694.testnet", "tx": "3tA86WjJUiY2mR2rp7yErwcsoAvZX3CkW1FS59p5yPgd" },
+    "refund": { "by": "valtrum-user1-b694.testnet", "tx": "3f5kGpwt5cVJeP55zLArg5v65qwfjipySdvpMvHtZcyg", "event": "lifecycle_refund 10 CASHCAT", "balance_before": "40", "balance_after": "50" },
+    "read_back": { "cancelled": true, "vault": "0" }
+  },
+  "processes": "agent (agent/dist on main), oracle and collector (feat/onchain-observation-source builds), relay scripts/rpc-relay.py on 127.0.0.1:18546; all stopped after the run",
+  "follow_up_same_day": {
+    "battle_2_settlement": {
+      "call": "settle_lifecycle_battle {battle_id: 2, max_entitlements: 3} by valtrum-user1-b694.testnet, 0.03 NEAR (0.01 per entitlement, excess refunded)",
+      "tx": "GwFeyxXMWtDn47fgeAWkBSz63zdY1VFnwhvt4CEV3hK",
+      "progress": { "recorded": 3, "total": 3 },
+      "entitlements_on_backing_wallet": { "valtrum-user1-b694.testnet": "49.975 WALLET (49.95 winner share + 0.025 creator share)", "valtrum-protocol.sputnikv2.testnet": "0.025 WALLET", "valtrum-user2-b694.testnet": "0" }
+    },
+    "battle_2_escrow": {
+      "call": "reserve_lifecycle_escrow {battle_id: 2} by valtrum-user1-b694.testnet, 0.01 NEAR",
+      "tx": "6g44FjxHR4RaxMtXoTk2QxV12oaWxYwNk3bUTNjGcm1u",
+      "read_back": { "community": 0, "representation": "backing-cashcat.valtrum-owner-b694.testnet", "amount": "50 CASHCAT", "reserved": true }
+    },
+    "arena_storage_registration": { "payer": "valtrum-council1-b694.testnet", "good": "5jxMvZNsqc43pMvHwmZuyaWVyhDJsxHpCieQ1YH8adWg", "vlad": "31wK9kxDcZYDLkTDWa3r231rtXgYC2FkNtM4xYxDKTYA", "degen": "BBNsRuDMRGhXraA6yPgfcWewPLS99LBkXtDsxmXtJd9w", "note": "all five joinable backings now register the arena" }
+  },
+  "not_done": ["payout of the WALLET entitlements to Robinhood (MPC-signed transfer, live custody proof plan)", "DAO vote and disposition of the escrowed 50 CASHCAT (the vote window is 30 s on this arena)"]
+}

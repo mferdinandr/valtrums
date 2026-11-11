@@ -257,7 +257,7 @@ export class ActionService {
     const battleId = typeof binding.battleId === "number" ? binding.battleId : null;
     const community = typeof binding.community === "number" ? binding.community : null;
     const position =
-      (record.preview.kind === "deposit" || record.preview.kind === "register_position") && battleId !== null && community !== null
+      (record.preview.kind === "deposit" || record.preview.kind === "register_position" || record.preview.kind === "claim_refund") && battleId !== null && community !== null
         ? await this.deps.source.position(battleId, community, record.preview.accountId)
         : null;
     const grant = await this.grantState(record);
@@ -303,7 +303,7 @@ export class ActionService {
   }
 
   private assignIds(request: ActionRequest): ActionRequest {
-    if (request.kind === "payout" && !request.requestId) return { ...request, requestId: bytesToHex(randomBytes(32)) };
+    if ((request.kind === "payout" || request.kind === "late_refund") && !request.requestId) return { ...request, requestId: bytesToHex(randomBytes(32)) };
     if (request.kind === "deposit" && request.grant && !request.requestId) return { ...request, requestId: bytesToHex(randomBytes(32)) };
     return request;
   }

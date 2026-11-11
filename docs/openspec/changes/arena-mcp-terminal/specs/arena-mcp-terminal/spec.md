@@ -46,8 +46,12 @@ The web terminal SHALL turn a plain-language prompt (English or Bahasa Indonesia
 - **THEN** the terminal shows a deposit of exactly 250 base units, builds the reviewed `ft_transfer_call` from the battle's recorded community representation and refuses amounts that are not positive integers of at most 39 digits (decimals, signs, exponents, zero)
 
 #### Scenario: Create battle
-- **WHEN** the user asks for a battle with a scoring mode and 2 to 16 community tokens
-- **THEN** each token reference is resolved through the backend asset search; the intent is refused for fewer than 2 or more than 16 communities, for an unknown mode and for duplicate assets
+- **WHEN** the user asks for a battle with a scoring mode and a start time
+- **THEN** the terminal builds a create intent with no communities and the start time as exact milliseconds; it refuses an unknown mode and a start time under 60 seconds or over 7 days away
+
+#### Scenario: Join, cancel and refund
+- **WHEN** the user asks to join battle 7 with a token, to cancel battle 7, or to claim a refund from battle 7 community 2
+- **THEN** the terminal builds a `join_battle` request naming the allowlisted representation (refused when the token is not allowlisted), a `cancel_battle` request, or a `claim_refund` request for community index 1
 
 #### Scenario: Unresolved asset
 - **WHEN** a token reference matches no registry asset or more than one

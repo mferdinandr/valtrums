@@ -75,7 +75,7 @@ export async function proxyApplicationRead(
   if (search.has("limit") && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(search.get("limit")!)) return fail(400, "invalid_query", "limit must be 1 to 50");
   if ((search.get("q") ?? "").trim().length > 64) return fail(400, "invalid_query", "query too long");
   if (search.has("mode") && !["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"].includes(search.get("mode")!)) return fail(400, "invalid_query", "unknown scoring mode");
-  if (search.has("status") && !["open", "locked", "decided"].includes(search.get("status")!)) return fail(400, "invalid_query", "unknown battle status");
+  if (search.has("status") && !["open", "locked", "decided", "cancelled"].includes(search.get("status")!)) return fail(400, "invalid_query", "unknown battle status");
   if (search.has("cursor") && !/^[A-Za-z0-9_-]{1,1024}$/.test(search.get("cursor")!)) return fail(400, "invalid_query", "malformed cursor");
   if (path.endsWith("/observations")) {
     const ok = (k: string, re: RegExp) => !search.has(k) || re.test(search.get(k)!);

@@ -60,7 +60,7 @@ export default function PortfolioPage() {
           <h1>Your journey.<br />Every receipt.</h1>
           <p>Follow your positions, review your entitlements and keep track of every transfer. Your wallet holds the keys.</p>
         </div>
-        <CarnivalScene mode="portfolio" caption="Your keepsake cabinet · decoration, not wallet balances" />
+        <CarnivalScene mode="portfolio" caption="Your keepsake cabinet" />
       </header>
 
       {!portfolio.accountId ? (

@@ -170,7 +170,7 @@ Audit reports SHALL be persistable as immutable historical observations with val
 - **THEN** it answers with a safe 400, 404 or 405 and performs no provider call, RPC read, signing, mutation or filesystem escape
 
 ### Requirement: Lock refuses expired or changed approvals
-The arena SHALL store, with each audit pass, an expiry taken only from the whitelisted `submit_lifecycle_audit` call, and `lock_lifecycle_battle` SHALL refuse unless every community's approval exists, is before its expiry, binds the committed asset and matches the pinned policy hash when one is set. The agent SHALL send the lock only when every community is approved and fresh.
+The arena SHALL store, with each audit pass, an expiry taken only from the whitelisted `submit_lifecycle_audit` call, and `lock_lifecycle_battle` SHALL refuse unless every funded community's approval exists, is before its expiry, binds the committed asset and matches the pinned policy hash when one is set. The agent SHALL audit every community so deposits can open, and SHALL lock only from the start time with two or more funded communities, all approved and fresh (D37).
 
 #### Scenario: Expired approval
 - **WHEN** block time is at or after one community's approval expiry
@@ -193,8 +193,16 @@ The arena SHALL store, with each audit pass, an expiry taken only from the white
 - **THEN** the call is harmless and a locked snapshot is unchanged, including after the expiry has passed
 
 #### Scenario: Agent lock
-- **WHEN** every record is a pass with enough life left
+- **WHEN** the start time has passed and every funded community's record is a pass with enough life left
 - **THEN** the agent sends the lock once with a deposit of at least 1 yocto plus storage, and a failure is retried after a backoff with a bounded error
+
+#### Scenario: Empty community has no approval
+- **WHEN** a community with an empty vault has no passing approval at the lock
+- **THEN** it does not block the lock and is excluded from the rounds
+
+#### Scenario: Backing approval nears expiry
+- **WHEN** a community's backing approval is missing, withdrawn or has under 3 minutes left and its audit passes
+- **THEN** the agent, with backing refresh on (default when audit is on), calls `refresh_lifecycle_backing` for it, at most once per 30 seconds per community
 
 ### Requirement: Runnable audit archive handoff
 An archive-enabled lifecycle audit process SHALL durably publish attributed reports to its configured archive with explicit provenance and failure health. The passive reader SHALL consume the same persisted format; a RAM report store or demo seed SHALL NOT establish live publication.

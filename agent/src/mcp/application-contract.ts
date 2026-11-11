@@ -78,8 +78,14 @@ export interface ApplicationBattleSummary {
   battleId: string;
   creator: string;
   mode: string;
-  status: "open" | "locked" | "decided";
+  status: "open" | "locked" | "decided" | "cancelled";
   winner: number | null;
-  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string; /** Display name only; identity is chainId + tokenAddress. */ label: TokenLabel | null }>;
+  /** Start time in ms, or null when the battle was created without one. */
+  startAtMs: string | null;
+  cancelled: boolean;
+  /** Communities with a deposit (entered) and communities still at a zero vault (pending). */
+  enteredCount: number;
+  pendingCount: number;
+  communities: Array<{ index: number; funded: boolean; representation: string; tokenAddress: string; chainId: string; /** Display name only; identity is chainId + tokenAddress. */ label: TokenLabel | null }>;
 }
 export interface ApplicationPage<T> { items: T[]; nextCursor: string | null; truncated: boolean }

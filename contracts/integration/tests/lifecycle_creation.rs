@@ -57,7 +57,7 @@ async fn activate(env: &common::Env) -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn two_and_three_communities_are_created_and_invalid_identities_are_rejected(
+async fn zero_to_sixteen_communities_are_created_and_invalid_identities_are_rejected(
 ) -> anyhow::Result<()> {
     let env = common::Env::new(60, false).await?;
     activate(&env).await?;
@@ -77,7 +77,13 @@ async fn two_and_three_communities_are_created_and_invalid_identities_are_reject
     )
     .await?
     .expect("three communities");
-    for (id, count) in [(two, 2), (three, 3)] {
+    // The minimum of two communities now applies at lock, so an open arena
+    // (no assets) and a single seeded community are valid creations.
+    let open = create(&env, &creator, vec![]).await?.expect("open arena");
+    let one = create(&env, &creator, vec![asset(1, &pepe)])
+        .await?
+        .expect("one community");
+    for (id, count) in [(two, 2), (three, 3), (open, 0), (one, 1)] {
         let view = env
             .arena_view("get_lifecycle_battle", json!({ "battle_id": id }))
             .await?;
@@ -94,8 +100,6 @@ async fn two_and_three_communities_are_created_and_invalid_identities_are_reject
     let mut blank_domain = asset(2, &shib);
     blank_domain["custody_domain"] = json!(" ");
     let invalid: Vec<(&str, Vec<Value>)> = vec![
-        ("no community", vec![]),
-        ("one community", vec![asset(1, &pepe)]),
         (
             "duplicate token address",
             vec![asset(1, &pepe), asset(1, &shib)],
@@ -127,9 +131,9 @@ async fn two_and_three_communities_are_created_and_invalid_identities_are_reject
             "{name} was accepted"
         );
     }
-    // Only the two valid battles exist.
+    // Only the four valid battles exist.
     assert!(env
-        .arena_view("get_lifecycle_battle", json!({ "battle_id": three + 1 }))
+        .arena_view("get_lifecycle_battle", json!({ "battle_id": one + 1 }))
         .await?
         .is_null());
     Ok(())
@@ -208,7 +212,8 @@ async fn vault(env: &common::Env, id: u64, community: usize) -> anyhow::Result<S
 }
 
 #[tokio::test]
-async fn fixture_lock_requires_approvals_nonempty_vaults_and_creator_stake() -> anyhow::Result<()> {
+async fn fixture_lock_requires_two_funded_approved_communities_and_creator_stake(
+) -> anyhow::Result<()> {
     let env = common::Env::new(60, false).await?;
     env.arena
         .as_account()
@@ -258,10 +263,10 @@ async fn fixture_lock_requires_approvals_nonempty_vaults_and_creator_stake() -> 
     env.mint(&third, player.id(), 100).await?;
     env.mint(&env.shib, creator.id(), 100).await?;
 
-    // Missing approvals: with none, or only some, a transfer is returned and
-    // nothing can lock.
+    // No approval at all: the transfer is returned and nothing can lock.
     deposit(&env, &creator, &env.pepe, id, 0, 7).await?;
     assert_eq!(env.balance(&env.pepe, creator.id()).await?, 100);
+    assert!(!lock(&env, id).await?);
     for community in [0u32, 1] {
         env.arena
             .call("fixture_approve_lifecycle")
@@ -271,23 +276,27 @@ async fn fixture_lock_requires_approvals_nonempty_vaults_and_creator_stake() -> 
             .await?
             .into_result()?;
     }
+    // Only the target community's approvals gate a deposit: community 0 is
+    // approved, community 2 is not, and the deposit to 2 still comes back.
     deposit(&env, &creator, &env.pepe, id, 0, 7).await?;
-    assert_eq!(env.balance(&env.pepe, creator.id()).await?, 100);
-    assert!(!lock(&env, id).await?);
-    env.arena
-        .call("fixture_approve_lifecycle")
-        .args_json(json!({"battle_id": id, "community": 2}))
-        .max_gas()
-        .transact()
-        .await?
-        .into_result()?;
-
-    // Empty vaults: only the creator's community has funds.
-    deposit(&env, &creator, &env.pepe, id, 0, 7).await?;
+    assert_eq!(env.balance(&env.pepe, creator.id()).await?, 93);
     assert_eq!(vault(&env, id, 0).await?, "7");
+    deposit(&env, &player, &third, id, 2, 13).await?;
+    assert_eq!(env.balance(&third, player.id()).await?, 100);
+    assert_eq!(vault(&env, id, 2).await?, "0");
+    // One funded community is not enough to lock.
     assert!(!lock(&env, id).await?);
+    // A second funded community locks; the empty, unapproved third is excluded
+    // and keeps its index.
     deposit(&env, &player, &env.shib, id, 1, 11).await?;
-    assert!(!lock(&env, id).await?, "community 2 is still empty");
+    assert!(lock(&env, id).await?);
+    let view = env
+        .arena_view("get_lifecycle_battle", json!({ "battle_id": id }))
+        .await?;
+    assert_eq!(view["locked"], true);
+    assert_eq!(view["communities"].as_array().map(Vec::len), Some(3));
+    assert_eq!(vault(&env, id, 1).await?, "11");
+    assert_eq!(vault(&env, id, 2).await?, "0");
 
     // Absent creator stake: a second battle where only the player deposits.
     let other = create(
@@ -348,9 +357,5 @@ async fn fixture_lock_requires_approvals_nonempty_vaults_and_creator_stake() -> 
         .await?;
     assert_eq!(view["locked"], true);
 
-    // Finally the first battle locks with all vaults filled.
-    deposit(&env, &player, &third, id, 2, 13).await?;
-    assert!(lock(&env, id).await?);
-    assert_eq!(vault(&env, id, 2).await?, "13");
     Ok(())
 }

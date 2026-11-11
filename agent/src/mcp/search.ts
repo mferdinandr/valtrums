@@ -1,4 +1,4 @@
-import type { ArenaReadSource, LifecycleBattleView, ScoringMode } from "./read-source.js";
+import { isFunded, type ArenaReadSource, type LifecycleBattleView, type ScoringMode } from "./read-source.js";
 
 /**
  * Backend search and filtering for battle lists and dropdowns. Clients never download the whole
@@ -6,7 +6,7 @@ import type { ArenaReadSource, LifecycleBattleView, ScoringMode } from "./read-s
  */
 
 export const SCORING_MODES: readonly ScoringMode[] = ["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"];
-export const BATTLE_STATUSES = ["open", "locked", "decided"] as const;
+export const BATTLE_STATUSES = ["open", "locked", "decided", "cancelled"] as const;
 export type BattleStatus = (typeof BATTLE_STATUSES)[number];
 
 export const MAX_QUERY_LENGTH = 64;
@@ -88,7 +88,11 @@ export interface BattleSummary {
   protocolCreated: boolean;
   status: BattleStatus;
   winner: number | null;
-  communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string }>;
+  startAtMs: string | null;
+  cancelled: boolean;
+  enteredCount: number;
+  pendingCount: number;
+  communities: Array<{ index: number; funded: boolean; representation: string; tokenAddress: string; chainId: string }>;
 }
 
 export interface SearchPage {
@@ -122,7 +126,8 @@ export async function searchBattles(source: ArenaReadSource, params: SearchParam
     // The round is read only for locked battles: an open battle has no decided winner.
     const round = b.locked ? await source.round(id) : null;
     const winner = round?.winner ?? null;
-    const status: BattleStatus = !b.locked ? "open" : winner === null ? "locked" : "decided";
+    const cancelled = b.cancelled === true;
+    const status: BattleStatus = cancelled ? "cancelled" : !b.locked ? "open" : winner === null ? "locked" : "decided";
     if (params.status && status !== params.status) continue;
     items.push({
       battleId: id,
@@ -131,8 +136,13 @@ export async function searchBattles(source: ArenaReadSource, params: SearchParam
       protocolCreated: b.protocol_created,
       status,
       winner,
+      startAtMs: b.start_at_ms ?? null,
+      cancelled,
+      enteredCount: b.communities.filter(isFunded).length,
+      pendingCount: b.communities.filter((c) => !isFunded(c)).length,
       communities: b.communities.map((c, index) => ({
         index,
+        funded: isFunded(c),
         representation: c.representation,
         tokenAddress: c.token_address,
         chainId: c.chain_id,

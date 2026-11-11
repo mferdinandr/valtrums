@@ -16,7 +16,11 @@ pub mod lifecycle_backing;
 #[cfg(test)]
 mod lifecycle_guards;
 pub mod math;
+pub mod mode_policy;
 pub mod mpc;
+pub mod open_arena;
+#[cfg(test)]
+mod open_arena_tests;
 pub mod reference_registry;
 pub mod rounds;
 pub mod rounds_api;
@@ -82,6 +86,14 @@ enum StorageKey {
     LifecycleDaoVotes,
     LifecycleDaoTally,
     LifecycleDaoProgress,
+    // Open arena state. Appended at the end: existing prefixes must not move.
+    LifecycleStart,
+    LifecycleJoinable,
+    LifecycleJoinableIndex,
+    LifecycleCancelled,
+    // Per-mode observation policies (D40). Appended at the end: existing prefixes must not move.
+    LifecycleModePolicy,
+    LifecycleModePolicyEnabled,
 }
 
 #[ext_contract(ext_ft)]
@@ -382,7 +394,12 @@ impl Arena {
     /// Freeze the credited positions and policy. A repeated call preserves the
     /// original snapshot. Starting rounds remains the scoring integration's job.
     #[payable]
-    pub fn lock_lifecycle_battle(&mut self, battle_id: u64) {
+    ///
+    /// `expected_communities`, when given, must equal the number of communities
+    /// the battle has now, so a lock decided on a stale list cannot succeed after
+    /// a new community joined. At least two FUNDED communities are required; a
+    /// community without a deposit is excluded (inactive) and needs no approval.
+    pub fn lock_lifecycle_battle(&mut self, battle_id: u64, expected_communities: Option<u32>) {
         self.assert_agent();
         // A deposit cannot be attached by a function-call key, so this keeps a
         // limited key from locking a battle even when the lock is a repeat.
@@ -391,11 +408,27 @@ impl Arena {
             "Requires an attached deposit of at least 1 yoctoNEAR"
         );
         require!(!self.paused, "Arena is paused");
+        let mode = self
+            .lifecycle_battles
+            .get(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Unknown battle"))
+            .mode();
+        // D40: the battle's own mode policy once per-mode policies are enabled, else the legacy single policy.
         let policy = self
-            .lifecycle_observation_policy
-            .clone()
+            .lifecycle_policy_for(mode)
             .unwrap_or_else(|| env::panic_str("Observation policy is not configured"));
         let caller = env::predecessor_account_id();
+        if let Some(expected) = expected_communities {
+            let count = self
+                .lifecycle_battles
+                .get(&battle_id)
+                .unwrap_or_else(|| env::panic_str("Unknown battle"))
+                .community_count();
+            require!(
+                usize::try_from(expected) == Ok(count),
+                "Community count does not match the expected count"
+            );
+        }
         let before = env::storage_usage();
         self.lifecycle_lock(battle_id, policy)
             .unwrap_or_else(|_| env::panic_str("Lifecycle battle cannot be locked"));
@@ -532,9 +565,15 @@ impl Arena {
         &mut self,
         assets: Vec<lifecycle::AssetInput>,
         mode: lifecycle::ScoringMode,
+        start_at_ms: Option<U64>,
     ) -> u64 {
         require!(!self.paused, "Arena is paused");
         require!(self.lifecycle_exclusive, "Lifecycle is not activated");
+        // D40: once per-mode policies are enabled, a mode without a policy could lock but never start its rounds.
+        self.lifecycle_assert_mode_offered(mode);
+        if let Some(start) = start_at_ms {
+            Self::lifecycle_check_start(start.0);
+        }
         require!(
             assets.iter().all(|asset| asset.representation != self.usdc),
             "USDC cannot be a lifecycle representation"
@@ -560,6 +599,9 @@ impl Arena {
         let id = self
             .lifecycle_insert(battle)
             .unwrap_or_else(|_| env::panic_str("Battle count overflow"));
+        if let Some(start) = start_at_ms {
+            self.lifecycle_set_start(id, start.0);
+        }
         // The DAO vote window is frozen with the battle; a later change applies
         // only to battles created afterwards. Unset means no vote (stays escrowed).
         if let Some(window) = self.lifecycle_dao_window_ns {
@@ -591,9 +633,12 @@ impl Arena {
 
     /// Read the lifecycle state; evidence references are not proof of live backing.
     pub fn get_lifecycle_battle(&self, battle_id: u64) -> Option<lifecycle::LifecycleView> {
-        self.lifecycle_battles
-            .get(&battle_id)
-            .map(lifecycle::Battle::view)
+        self.lifecycle_battles.get(&battle_id).map(|battle| {
+            let mut view = battle.view();
+            view.start_at_ms = self.lifecycle_start_of(battle_id).map(U64);
+            view.cancelled = self.lifecycle_is_cancelled(battle_id);
+            view
+        })
     }
 
     /// Number of lifecycle battles created so far; ids run from 1 to this value.

@@ -28,9 +28,10 @@ Schema (pick one): ${JSON.stringify(LIFECYCLE_INTENT_JSON_SCHEMA)}
 Rules:
 - Communities are numbered from 1 by the user: write that number as communityNumber.
 - Amounts are digits only, in token base units. Never use decimals, separators or exponents; if the user gave any, output {"clarify":"<one short question>"}.
-- For create_battle copy each token exactly as the user wrote it into assetRefs. Never invent, complete or guess an address.
+- create_battle lists no communities: communities join later. Convert the user's start ("in 2 hours") into whole minutes as startInMinutes; if no start was given, output {"clarify":"<one short question>"}.
+- For join_battle copy the token exactly as the user wrote it into tokenRef. Never invent, complete or guess an address.
 - Never add fields. Never output a receiver, signer, account or funding route other than what the schema lists.
-- If the request is not one of these four actions, or something required is missing, output {"clarify":"<one short question>"}.`;
+- If the request is not one of these actions, or something required is missing, output {"clarify":"<one short question>"}.`;
 
 /** Pulls a JSON object out of a model reply, tolerating a markdown fence. Returns undefined if none parses. */
 export function extractJson(content: string): unknown {

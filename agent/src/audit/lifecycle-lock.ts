@@ -13,20 +13,36 @@ export const LOCK_DEPOSIT = "0.1 NEAR";
 export const DEFAULT_MIN_REMAINING_MS = 60_000;
 /** After a failed attempt wait this long before sending the same battle again. */
 export const DEFAULT_RETRY_AFTER_MS = 30_000;
+/** The contract locks only with at least this many funded communities. */
+export const MIN_FUNDED_COMMUNITIES = 2;
 const MAX_ERROR_CHARS = 300;
 
 export type LockOutcome =
   | { status: "locked" }
   | { status: "already_locked" }
+  | { status: "cancelled" }
+  | { status: "not_started"; startAtMs: number }
   | { status: "not_ready"; reason: string }
   | { status: "backoff" }
   | { status: "unconfirmed" }
   | { status: "failed"; error: string };
 
+/** What the pass read from the battle view. Everything is optional so a caller that knows nothing more gets the plain rule. */
+export interface LockContext {
+  /** Communities with a deposit. Zero-vault communities are excluded from the lock and need no fresh record. Default: all. */
+  fundedIndices?: number[];
+  /** Start time in ms; the lock waits until the agent's clock reaches it. Null or absent: no start time. */
+  startAtMs?: number | null;
+  /** A cancelled battle is never locked. */
+  cancelled?: boolean;
+  /** False when a funded community's backing approval is missing or about to lapse; the contract would refuse the lock. */
+  backingReady?: boolean;
+}
+
 export interface LifecycleLockDeps {
   contractId: string;
   transport: Pick<NearTransport, "call">;
-  /** The records map the refresh step writes; the lock re-checks every community against it. */
+  /** The records map the refresh step writes; the lock re-checks every funded community against it. */
   records: ReadonlyMap<string, AuditRecord>;
   now: () => Date;
   /** Reads the on-chain `locked` flag; used to stay idempotent and to confirm the lock landed. */
@@ -39,11 +55,14 @@ export interface LifecycleLockDeps {
 }
 
 /**
- * Sends `lock_lifecycle_battle` only when every community holds a passing record that still has at
- * least `minRemainingMs` of life. The contract repeats the check against block time and refuses an
- * expired, missing or changed approval, so this is a second line and never the only one.
- * Idempotent: a locked battle is never called again, a failure backs off, and a retry after an
- * unknown outcome re-reads the chain first. Errors are returned bounded, never thrown.
+ * Sends `lock_lifecycle_battle` only when the start time (if any) has passed, at least two
+ * communities are funded and every FUNDED community holds a passing record that still has at least
+ * `minRemainingMs` of life; zero-vault communities are ignored. It passes `expected_communities`
+ * (the total count) so the contract refuses the lock if a community was appended meanwhile. A
+ * cancelled battle is never locked. The contract repeats every check against block time, so this
+ * is a second line and never the only one. Idempotent: a locked battle is never called again, a
+ * failure backs off, and a retry after an unknown outcome re-reads the chain first. Errors are
+ * returned bounded, never thrown.
  */
 export class LifecycleLocker {
   private readonly locked = new Set<number>();
@@ -54,12 +73,21 @@ export class LifecycleLocker {
     this.log = deps.log ?? silentLogger;
   }
 
-  /** `ready` is the refresh result for this battle; `communities` is its community count. */
-  async tryLock(battleId: number, communities: number, ready: boolean): Promise<LockOutcome> {
+  /** `ready` is the refresh result for this battle's funded communities; `communities` is the total community count. */
+  async tryLock(battleId: number, communities: number, ready: boolean, context: LockContext = {}): Promise<LockOutcome> {
     if (this.locked.has(battleId)) return { status: "already_locked" };
+    if (context.cancelled) return { status: "cancelled" };
     if (!ready) return { status: "not_ready", reason: "refresh_not_ready" };
-    const stale = this.firstStale(battleId, communities);
+    if (context.startAtMs != null && this.deps.now().getTime() < context.startAtMs) {
+      return { status: "not_started", startAtMs: context.startAtMs };
+    }
+    const all = Number.isInteger(communities) && communities > 0 ? Array.from({ length: communities }, (_, i) => i) : [];
+    const funded = context.fundedIndices ?? all;
+    if (funded.length === 0) return { status: "not_ready", reason: "no_communities" };
+    if (funded.length < MIN_FUNDED_COMMUNITIES) return { status: "not_ready", reason: "too_few_funded" };
+    const stale = this.firstStale(battleId, funded);
     if (stale) return { status: "not_ready", reason: stale };
+    if (context.backingReady === false) return { status: "not_ready", reason: "backing_not_ready" };
     const wait = this.retryAt.get(battleId);
     if (wait !== undefined && this.deps.now().getTime() < wait) return { status: "backoff" };
     try {
@@ -70,7 +98,7 @@ export class LifecycleLocker {
       await this.deps.transport.call(
         this.deps.contractId,
         "lock_lifecycle_battle",
-        { battle_id: battleId },
+        { battle_id: battleId, expected_communities: communities },
         this.deps.gas ?? LOCK_GAS,
         this.deps.deposit ?? LOCK_DEPOSIT,
       );
@@ -95,11 +123,10 @@ export class LifecycleLocker {
     this.retryAt.set(battleId, this.deps.now().getTime() + (this.deps.retryAfterMs ?? DEFAULT_RETRY_AFTER_MS));
   }
 
-  /** Reason code of the first community without a passing record that still has enough life. */
-  private firstStale(battleId: number, communities: number): string | undefined {
-    if (!Number.isInteger(communities) || communities < 1) return "no_communities";
+  /** Reason code of the first funded community without a passing record that still has enough life. */
+  private firstStale(battleId: number, funded: number[]): string | undefined {
     const needed = this.deps.now().getTime() + (this.deps.minRemainingMs ?? DEFAULT_MIN_REMAINING_MS);
-    for (let i = 0; i < communities; i++) {
+    for (const i of funded) {
       const record = this.deps.records.get(`${battleId}:${i}`);
       if (!record) return `community_${i}_missing`;
       if (record.result !== "pass") return `community_${i}_not_passed`;

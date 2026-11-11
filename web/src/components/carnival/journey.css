@@ -87,7 +87,7 @@ body:has(.landing-journey) > .site-footer {
 .journey-panel h1,
 .journey-panel h2 {
   color: #46526b;
-  letter-spacing: -0.065em;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 .journey-panel h2 {
@@ -107,11 +107,10 @@ body:has(.landing-journey) > .site-footer {
   gap: 0.5rem;
   color: #8b6474;
   font:
-    600 10px/1.5 "Space Grotesk",
+    600 12px/1.5 "Bricolage Grotesque",
     sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
+  text-transform: none;
+  letter-spacing: 0.02em;
   border-bottom: 1px solid #8b647466;
   padding: 0.5rem 0;
 }
@@ -155,7 +154,7 @@ body:has(.landing-journey) > .site-footer {
   min-height: 44px;
   margin-top: 0.9rem;
   color: #6e7b80;
-  font-size: 11px;
+  font-size: 12px;
 }
 .journey-panel-1,
 .journey-panel-2,
@@ -201,15 +200,15 @@ body:has(.landing-journey) > .site-footer {
   color: #526775;
   text-decoration: underline;
   text-underline-offset: 4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .journey-panel .journey-endnote {
-  font-size: 9px;
+  font-size: 12px;
   color: #526775;
 }
 .journey-panel .journey-small {
   color: #5d6d77;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
 }
 .journey-crew {
@@ -226,7 +225,7 @@ body:has(.landing-journey) > .site-footer {
   background: #fffaf0;
   color: var(--crew);
   font:
-    600 10px/1.4 "Space Grotesk",
+    600 12px/1.4 "Bricolage Grotesque",
     sans-serif;
 }
 .journey-crew button[aria-pressed="true"] {
@@ -246,7 +245,7 @@ body:has(.landing-journey) > .site-footer {
   color: #6e8392;
   text-decoration: underline;
   text-underline-offset: 4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .journey-bottom-bar {
   position: absolute;
@@ -269,7 +268,7 @@ body:has(.landing-journey) > .site-footer {
   padding: 0.3rem;
   border: 0;
   border-radius: 0;
-  background: #fffaf0e8;
+  background: #fffaf0f5;
   backdrop-filter: blur(8px);
   max-width: calc(100% - 190px);
   overflow-x: auto;
@@ -283,15 +282,15 @@ body:has(.landing-journey) > .site-footer {
   min-height: 44px;
   padding: 0.5rem 0.8rem;
   border-radius: 0;
-  color: #7a8688;
+  color: #4f5f66;
   font:
-    10px/1.4 "Space Grotesk",
+    13px/1.4 "Bricolage Grotesque",
     sans-serif;
   flex-shrink: 0;
 }
 .journey-chapters button span {
-  color: #a9ada3;
-  font: 8px monospace;
+  color: #6b767a;
+  font: 12px Figtree, sans-serif;
 }
 .journey-chapters button[aria-current="step"] {
   color: #584153;
@@ -315,7 +314,7 @@ body:has(.landing-journey) > .site-footer {
   border-radius: 99px;
   background: #fffaf0d9;
   color: #718082;
-  font-size: 10px;
+  font-size: 12px;
 }
 .journey-controls .journey-pause {
   width: 44px;
@@ -327,7 +326,7 @@ body:has(.landing-journey) > .site-footer {
   left: 2.5rem;
   bottom: 0.7rem;
   color: #728480;
-  font-size: 8px;
+  font-size: 12px;
   pointer-events: none;
   padding: 0.2rem 0.4rem;
   background: #fffaf0aa;
@@ -382,7 +381,7 @@ body:has(.landing-journey) > .site-footer {
   margin-top: 1.4rem;
   font-size: clamp(1.8rem, 4vw, 2.7rem);
   line-height: 1.1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
 }
 .journey-dialog p,
 .journey-dialog li {
@@ -397,7 +396,7 @@ body:has(.landing-journey) > .site-footer {
 }
 .journey-dialog .journey-note-label {
   color: #8b546a;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 .landing-journey :is(a, button):focus-visible {
@@ -483,7 +482,7 @@ body:has(.landing-journey) > .site-footer {
   }
   .journey-panel-0 h1 {
     font-size: clamp(2.4rem, 10.5vw, 3.5rem);
-    letter-spacing: -0.055em;
+    letter-spacing: -0.02em;
   }
   .journey-panel-0 > p {
     font-size: 12px;
@@ -495,11 +494,11 @@ body:has(.landing-journey) > .site-footer {
   }
   .journey-actions a {
     padding: 0.85rem 1rem;
-    font-size: 11px;
+    font-size: 12px;
   }
   .journey-scroll-cue {
     margin-top: 0.5rem;
-    font-size: 10px;
+    font-size: 12px;
   }
   .journey-shade-0 {
     background: linear-gradient(
@@ -536,17 +535,17 @@ body:has(.landing-journey) > .site-footer {
     margin-top: 0.7rem;
   }
   .journey-panel .journey-small {
-    font-size: 11px;
+    font-size: 12px;
   }
   .journey-tag {
-    font-size: 9px;
+    font-size: 12px;
   }
   .journey-crew {
     gap: 0.3rem;
     margin-top: 0.6rem;
   }
   .journey-crew button {
-    font-size: 10px;
+    font-size: 12px;
     padding: 0.4rem 0.6rem;
   }
   .journey-destinations {
@@ -554,7 +553,7 @@ body:has(.landing-journey) > .site-footer {
     gap: 0.2rem 0.8rem;
   }
   .journey-destinations a {
-    font-size: 10px;
+    font-size: 12px;
   }
   .journey-bottom-bar {
     inset: auto 0.7rem 2.4rem;
@@ -571,20 +570,20 @@ body:has(.landing-journey) > .site-footer {
     justify-content: center;
     gap: 0.15rem;
     padding: 0.4rem 0.35rem;
-    font-size: 8px;
+    font-size: 12px;
   }
   .journey-chapters button span {
-    font-size: 7px;
+    font-size: 12px;
   }
   .journey-controls {
     gap: 0.3rem;
   }
   .journey-controls a {
     padding: 0.4rem 0.6rem;
-    font-size: 8px;
+    font-size: 12px;
   }
   .journey-controls .journey-skip {
-    font-size: 8px;
+    font-size: 12px;
     padding: 0.4rem 0.5rem;
   }
   .journey-controls .journey-pause {
@@ -594,7 +593,7 @@ body:has(.landing-journey) > .site-footer {
     left: 1rem;
     right: 1rem;
     bottom: 0.6rem;
-    font-size: 7px;
+    font-size: 12px;
   }
   .landing-journey[data-reduced="true"] .journey-panel-0 {
     padding-top: 145px;
@@ -634,7 +633,7 @@ body:has(.landing-journey) > .site-footer {
     font-size: 2.35rem;
   }
   .journey-panel-0 > p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .journey-scroll-cue {
     display: none;
@@ -651,7 +650,7 @@ body:has(.landing-journey) > .site-footer {
     font-size: 1.65rem;
   }
   .journey-panel > p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .journey-panel-2 > p:not(.journey-small) {
     display: none;
@@ -715,4 +714,26 @@ body:has(.landing-journey) > .site-footer {
     inset: auto;
     margin: 0 1rem;
   }
+}
+
+/* Copy stays readable over the 3D scene without a box: a soft light halo follows the letters. */
+.journey-panel h1,
+.journey-panel h2,
+.journey-panel > p,
+.journey-panel .journey-tag,
+.journey-panel .journey-text-link,
+.journey-panel .journey-small,
+.journey-endnote {
+  text-shadow:
+    0 0 14px #fffaf0f2,
+    0 0 6px #fffaf0cc,
+    0 1px 0 #fffaf0b3;
+}
+.journey-panel-0 > p {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.journey-panel:not(.journey-panel-0) > p {
+  font-size: 15px;
+  line-height: 1.6;
 }

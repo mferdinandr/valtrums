@@ -4,7 +4,7 @@ Status: **planned**. These rules implement the decisions in [product-spec.md](pr
 
 ## Fixed inputs and intervals
 
-A battle has at least two distinct, audited token communities. All communities, backed deposits and creator participation are fixed before round 1. The creator selects one mode for the entire battle, including overtime. Every round lasts exactly **30 seconds**: record start `t0` and end `t1 = t0 + 30 seconds`. Price observations are points, **not TWAPs**.
+A battle has at least two distinct, audited, funded token communities. Communities join an open battle with an allowlisted token before the creator's start time; joining and deposits close at the start, and empty communities are excluded at the lock (D34, D37). All funded communities, backed deposits and creator participation are fixed before round 1. Below two funded communities after the start, the battle can be cancelled and depositors refunded (D36). The creator selects one mode for the entire battle, including overtime. Every round lasts exactly **30 seconds**: record start `t0` and end `t1 = t0 + 30 seconds`. Price observations are points, **not TWAPs**.
 
 A versioned observation policy must be committed before lock. It specifies chain/token identity, quote currency (USD), price/supply/volume sources, eligible pools, sampling cadence, boundary selection tolerance, freshness and finality. It must use a consistent interval for every candidate. These provider/cadence choices are OPEN; the policy cannot be invented after seeing the outcome. Scheduler delay never moves a recorded boundary.
 

@@ -26,6 +26,8 @@ import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
 import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
 import type { AuditRecord } from "./audit/decision.js";
 import { LifecycleLocker } from "./audit/lifecycle-lock.js";
+import { LifecycleCanceller } from "./audit/lifecycle-cancel.js";
+import { BackingRefresher, NearBackingStatusSource } from "./audit/backing-refresh.js";
 import { createLpFetcher } from "./audit/lp-fetcher.js";
 import { buildAuditPolicy } from "./audit/policy.js";
 import { AuditReportStore } from "./audit/report.js";
@@ -123,6 +125,30 @@ async function main(): Promise<void> {
                 records: auditRecords,
                 now: () => new Date(),
                 isLocked: async (id) => (await auditSource.get(id))?.locked === true,
+                log,
+              }),
+            }
+          : {}),
+        // Backing approvals (10 minute life) are refreshed by the agent, the whitelisted caller; on unless disabled.
+        ...(auditCfg.backingRefreshEnabled
+          ? {
+              backing: new BackingRefresher({
+                contractId: cfg.arenaContractId,
+                transport,
+                source: new NearBackingStatusSource(cfg.arenaContractId, transport),
+                now: () => new Date(),
+                log,
+              }),
+            }
+          : {}),
+        // The cancel step is separate (lifecycle-cancel.ts) and off unless AUDIT_CANCEL_ENABLED=true.
+        ...(auditCfg.cancelEnabled
+          ? {
+              cancel: new LifecycleCanceller({
+                contractId: cfg.arenaContractId,
+                transport,
+                now: () => new Date(),
+                isCancelled: async (id) => (await auditSource.get(id))?.cancelled === true,
                 log,
               }),
             }

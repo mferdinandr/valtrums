@@ -75,6 +75,47 @@ async function resolveName(ref: string, name: string, search: AssetSearch): Prom
   return { ok: false, question: `I could not find "${ref}" in the asset registry. Use a registered token name such as ${found.length ? shown(found[0]!) : "CASHCAT"}, or give the token's 0x address (optionally chainId:0x…).` };
 }
 
+/** One entry of the arena's joinable-asset allowlist (only the fields the match needs). */
+export interface AllowlistEntry {
+  chain_id: string;
+  token_address: string;
+  representation: string;
+  reference_chain_id: string | null;
+  reference_address: string | null;
+}
+
+export type JoinTokenResult =
+  | { ok: true; representation: string; symbol: string | null }
+  | { ok: false; question: string };
+
+const NEAR_ACCOUNT_REF = /^[a-z0-9][a-z0-9_-]*(\.[a-z0-9_-]+)+$/;
+
+/**
+ * Resolves the token of a join request to an allowlisted representation. A NEAR account is accepted only when it is
+ * on the allowlist; a name or address goes through the registry first and must then equal an allowlist entry by
+ * chain and token (or by its reference pair). The representation always comes from the arena's allowlist.
+ */
+export async function resolveJoinToken(ref: string, allowlist: readonly AllowlistEntry[], search: AssetSearch): Promise<JoinTokenResult> {
+  const known = (): string => {
+    const n = allowlist.length;
+    return n === 0 ? "The arena has no joinable tokens yet." : `${n} token${n === 1 ? " is" : "s are"} joinable on this arena.`;
+  };
+  const trimmed = ref.trim().replace(/^\$/, "");
+  if (NEAR_ACCOUNT_REF.test(trimmed.toLowerCase())) {
+    const hit = allowlist.find((a) => a.representation === trimmed.toLowerCase());
+    return hit ? { ok: true, representation: hit.representation, symbol: null } : { ok: false, question: `${trimmed} is not on the arena's joinable-token allowlist. ${known()}` };
+  }
+  const resolved = await resolveAssetRefs([ref], search);
+  if (!resolved.ok) return { ok: false, question: resolved.question };
+  const asset = resolved.assets[0]!.asset;
+  const same = (chain: string | null, token: string | null, c: string, t: string) => chain === c && !!token && token.toLowerCase() === t.toLowerCase();
+  const hit = allowlist.find((a) =>
+    same(a.chain_id, a.token_address, asset.chainId, asset.token) ||
+    (!!asset.referenceToken && same(a.reference_chain_id, a.reference_address, asset.referenceChainId, asset.referenceToken)));
+  if (!hit) return { ok: false, question: `${shown(asset)} is in the registry but not on this arena's joinable-token allowlist. ${known()}` };
+  return { ok: true, representation: hit.representation, symbol: asset.label?.symbol ?? asset.referenceLabel?.symbol ?? null };
+}
+
 export async function resolveAssetRefs(refs: readonly string[], search: AssetSearch): Promise<ResolveResult> {
   const out: ResolvedAsset[] = [];
   for (const ref of refs) {

@@ -1,4 +1,5 @@
 import type { ScoringMode } from "./lifecycle";
+import { startTimeProblems, utc } from "./open-arena";
 
 /**
  * Review of a `create_lifecycle_battle` call (issue #149). The arguments are exactly the wire shape the
@@ -6,12 +7,29 @@ import type { ScoringMode } from "./lifecycle";
  * would be asked to sign. There is no legacy bond, no USDC and no round duration: a lifecycle round is
  * 30 seconds and set by the contract. Eligibility is NOT decided here: the arena validates the assets
  * and the reference registry at creation, and a cosmetic symbol or model never makes a token eligible.
+ *
+ * Open arena (D34): the creator sets a start time and normally lists no community; communities join
+ * before the start. A start time is required here so that every battle made from the UI can be
+ * cancelled and refunded when fewer than two communities are funded.
  */
 
-export const MIN_COMMUNITIES = 2;
+/** Communities listed at creation; the two-community minimum applies at the lock. */
+export const MIN_COMMUNITIES = 0;
 /** Mirrors `MAX_COMMUNITIES` in contracts/arena/src/lifecycle.rs. */
 export const MAX_COMMUNITIES = 16;
 export const SCORING_MODES: readonly ScoringMode[] = ["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"];
+
+/**
+ * Modes a new battle may use on this deployment. The arena keeps one observation policy and its hash binds one
+ * mode, so a battle of another mode could lock and then never start its rounds, keeping its deposits locked.
+ * Read from a comma-separated list (NEXT_PUBLIC_LIFECYCLE_CREATE_MODES); unknown names are ignored; the default
+ * is PriceGain, the mode of the draft testnet policy.
+ */
+export function parseCreateModes(raw: string | undefined): ScoringMode[] {
+  const picked = (raw ?? "").split(",").map((m) => m.trim()).filter((m): m is ScoringMode => (SCORING_MODES as readonly string[]).includes(m));
+  const unique = [...new Set(picked)];
+  return unique.length > 0 ? unique : ["PriceGain"];
+}
 /** Upper bound of the storage deposit the agent previews; the arena keeps actual storage and refunds the rest. */
 export const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
 export const CREATE_GAS_TGAS = "100";
@@ -38,6 +56,7 @@ export interface CreateArgs {
     reference_address: string | null;
   }>;
   mode: ScoringMode;
+  start_at_ms: string;
 }
 
 /** What a wallet will be asked to sign, in the shape the preview comparison needs (create, register and deposit). */
@@ -60,10 +79,16 @@ const validAccount = (s: string): boolean => s.length >= 2 && s.length <= 64 && 
 const U64 = /^(0|[1-9][0-9]*)$/;
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 
-export function buildCreateReview(arenaContract: string, assets: readonly AssetDraft[], mode: string): ReviewResult {
+export function buildCreateReview(
+  arenaContract: string, assets: readonly AssetDraft[], mode: string, startAtMs: string | null, nowMs: number,
+  allowedModes: readonly ScoringMode[] = SCORING_MODES,
+): ReviewResult {
   const problems: string[] = [];
   if (!(SCORING_MODES as readonly string[]).includes(mode)) problems.push("choose a scoring mode");
-  if (assets.length < MIN_COMMUNITIES) problems.push(`a battle needs at least ${MIN_COMMUNITIES} communities`);
+  else if (!(allowedModes as readonly string[]).includes(mode)) {
+    problems.push(`this deployment only runs ${allowedModes.join(", ")} battles: rounds of another mode could not start and deposits would stay locked`);
+  }
+  problems.push(...startTimeProblems(startAtMs, nowMs));
   if (assets.length > MAX_COMMUNITIES) problems.push(`a battle has at most ${MAX_COMMUNITIES} communities`);
   const seen = new Set<string>();
   const seenReps = new Set<string>();
@@ -92,6 +117,7 @@ export function buildCreateReview(arenaContract: string, assets: readonly AssetD
       reference_chain_id: a.referenceChainId.trim() ? a.referenceChainId : null, reference_address: a.referenceAddress.trim() ? a.referenceAddress : null,
     })),
     mode: mode as ScoringMode,
+    start_at_ms: startAtMs as string,
   };
   return {
     ok: true, args, method: "create_lifecycle_battle", receiver: arenaContract, depositYocto: CREATE_DEPOSIT_YOCTO, gasTgas: CREATE_GAS_TGAS,
@@ -99,7 +125,8 @@ export function buildCreateReview(arenaContract: string, assets: readonly AssetD
       { label: "Contract", value: arenaContract },
       { label: "Method", value: "create_lifecycle_battle" },
       { label: "Mode", value: mode },
-      { label: "Communities", value: String(assets.length) },
+      { label: "Start time", value: `${utc(Number(startAtMs))} (${startAtMs} ms)` },
+      { label: "Communities at creation", value: assets.length === 0 ? "none: communities join before the start" : String(assets.length) },
       ...args.assets.map((a, i) => ({ label: `Community ${i + 1}`, value: `${a.chain_id}:${a.token_address} · ${a.representation} · custody ${a.custody_domain}${a.reference_chain_id ? ` · reference ${a.reference_chain_id}:${a.reference_address}` : " · no reference"}` })),
       { label: "Storage deposit (upper bound)", value: `${CREATE_DEPOSIT_YOCTO} yoctoNEAR` },
       { label: "Gas", value: `${CREATE_GAS_TGAS} Tgas` },
@@ -107,13 +134,14 @@ export function buildCreateReview(arenaContract: string, assets: readonly AssetD
     notes: [
       "The deposit is storage payment, not a stake: the arena keeps the actual storage cost and refunds the rest.",
       "There is no bond and no round duration: rounds are 30 seconds and set by the contract.",
-      "The arena validates these assets and the protocol's reference registry when the transaction runs; this review does not prove eligibility.",
+      "You must deposit in one community before the start; the battle needs at least two funded communities at the start or anyone can cancel it and every depositor can claim a refund.",
+      "The arena validates assets and the protocol's registry when the transaction runs; this review does not prove eligibility.",
     ],
   };
 }
 
 /** The request body the action service expects for `create_battle` (same shape as the agent's `AssetRequest`). */
-export function toActionRequest(assets: readonly AssetDraft[], mode: string): Record<string, unknown> {
+export function toActionRequest(assets: readonly AssetDraft[], mode: string, startAtMs: string | null): Record<string, unknown> {
   return {
     kind: "create_battle",
     assets: assets.map((a) => ({
@@ -122,6 +150,7 @@ export function toActionRequest(assets: readonly AssetDraft[], mode: string): Re
       ...(a.referenceAddress.trim() ? { referenceAddress: a.referenceAddress } : {}),
     })),
     mode,
+    ...(startAtMs ? { startAtMs } : {}),
   };
 }
 

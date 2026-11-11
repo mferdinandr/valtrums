@@ -15,9 +15,11 @@ const assets: AssetDraft[] = [1, 2].map((i) => ({
   referenceChainId: "",
   referenceAddress: "",
 }));
-const review = buildCreateReview("arena.testnet", assets, "PriceGain");
+const NOW = 1_800_000_000_000;
+const START = String(NOW + 15 * 60_000);
+const review = buildCreateReview("arena.testnet", assets, "PriceGain", START, NOW);
 if (!review.ok) throw new Error("fixture review");
-const request = toActionRequest(assets, "PriceGain");
+const request = toActionRequest(assets, "PriceGain", START);
 
 describe("reviewed action scope", () => {
   it("binds exact request, transaction, wallet account and deployment rather than display labels", () => {

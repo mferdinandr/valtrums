@@ -39,7 +39,7 @@ export function Navbar() {
         >
           <Brand />
         </Link>
-        <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-[9px] uppercase tracking-wider text-mute sm:inline-flex">
+        <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-xs uppercase tracking-wider text-mute sm:inline-flex">
           <span className="status-dot" />
           {config.network}
         </span>
@@ -58,7 +58,7 @@ export function Navbar() {
                 href={l.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "site-nav-link flex min-h-11 shrink-0 items-center gap-1.5 px-3 py-2 font-pixel text-[11px] transition-colors md:gap-2 md:px-4 md:text-xs",
+                  "site-nav-link flex min-h-11 shrink-0 items-center gap-1.5 px-3 py-2 font-pixel text-xs transition-colors md:gap-2 md:px-4 md:text-xs",
                   active
                     ? "site-nav-active"
                     : "text-mute hover:bg-white/60 hover:text-ink",

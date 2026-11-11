@@ -25,7 +25,7 @@ export default function FaucetPage() {
             <span>Testnet only</span>
           </div>
         </div>
-        <CarnivalScene mode="welcome" caption="The token stand · decoration, not your balance" />
+        <CarnivalScene mode="welcome" caption="The token stand" />
       </header>
       <FaucetPanel />
     </div>
