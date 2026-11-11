@@ -65,6 +65,8 @@ export interface ActionReadSource {
   grant(user: string, localId: number[]): Promise<GrantView | null>;
   budget(user: string, localId: number[]): Promise<BudgetView | null>;
   reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null>;
+  /** `get_lifecycle_storage_balance`: NEAR (yocto) the account prepaid on the arena for battle storage. */
+  storageBalance(account: string): Promise<bigint>;
   /** `get_lifecycle_joinable_asset`: the identity the arena (not the joiner) supplies for a token. */
   joinableAsset(representation: string): Promise<JoinableAssetView | null>;
   /** `get_settlement_progress`; null until a final winner is recorded. */
@@ -123,6 +125,9 @@ export class NearActionReadSource implements ActionReadSource {
     return ((await this.view(this.contracts.policy, "get_reservation", { user, local_id: localId, request_id: requestId })) ??
       null) as ReservationView | null;
   }
+  async storageBalance(account: string): Promise<bigint> {
+    return big(await this.view(this.contracts.arena, "get_lifecycle_storage_balance", { account_id: account }), "storage balance");
+  }
   async joinableAsset(representation: string): Promise<JoinableAssetView | null> {
     return ((await this.view(this.contracts.arena, "get_lifecycle_joinable_asset", { representation })) ?? null) as JoinableAssetView | null;
   }
@@ -156,6 +161,8 @@ export class FixtureActionReadSource implements ActionReadSource {
       budgets?: Map<string, BudgetView>;
       reservations?: Map<string, ReservationView>;
       joinable?: Map<string, JoinableAssetView>;
+      /** Prepaid arena storage balance (yocto) per account. */
+      storage?: Map<string, bigint>;
       settlement?: Map<number, SettlementProgressView>;
       dispositions?: Map<number, DispositionView>;
       releases?: Map<number, ReleaseView[]>;
@@ -190,6 +197,9 @@ export class FixtureActionReadSource implements ActionReadSource {
   }
   async reservation(user: string, localId: number[], requestId: number[]) {
     return this.data.reservations?.get(FixtureActionReadSource.key(user, localId.join(","), requestId.join(","))) ?? null;
+  }
+  async storageBalance(account: string) {
+    return this.data.storage?.get(account) ?? 0n;
   }
   async joinableAsset(representation: string) {
     return this.data.joinable?.get(representation) ?? null;

@@ -38,34 +38,66 @@ const funded = (b: ReturnType<typeof battle>, ...idx: number[]) => {
   return b;
 };
 
-describe("create_battle with a start time and 0 to 16 assets", () => {
-  it("accepts an open arena and shows the start time and the creator warning", async () => {
-    const p = await prev({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs: String(START) }, mk());
+describe("create_battle is a creator deposit (D41)", () => {
+  const rep: JoinableAssetView = { ...joinable, representation: REP };
+  const fundedSource = (over: Partial<ConstructorParameters<typeof FixtureActionReadSource>[1]> = {}) =>
+    mk({
+      joinable: new Map([[REP, rep]]),
+      balances: new Map([[key(REP, "alice.testnet"), 500n]]),
+      storage: new Map([["alice.testnet", 10n ** 23n]]),
+      ...over,
+    });
+  const request = (over: Record<string, unknown> = {}) => ({ kind: "create_battle", representation: REP, amount: "100", mode: "PriceGain", startAtMs: String(START), ...over });
+
+  it("is one ft_transfer_call of the creator's token with a lifecycle_create message", async () => {
+    const p = await prev(request(), fundedSource());
     const call = p.transaction.actions[0]!;
-    expect(call.methodName).toBe("create_lifecycle_battle");
-    expect(call.args).toEqual({ assets: [], mode: "PriceGain", start_at_ms: String(START) });
-    expect(p.binding.startAtMs).toBe(String(START));
-    expect(p.costs.notes.join(" ")).toContain(new Date(START).toISOString());
-    expect(p.costs.notes.join(" ")).toContain("creator must deposit");
-    expect(p.limitations.join(" ")).toContain("open arena");
+    expect(p.transaction.receiverId).toBe(REP);
+    expect(call.methodName).toBe("ft_transfer_call");
+    expect(call.deposit).toBe("1");
+    expect(call.args).toEqual({
+      receiver_id: "arena.testnet",
+      amount: "100",
+      msg: JSON.stringify({ action: "lifecycle_create", mode: "PriceGain", start_at_ms: String(START) }),
+    });
+    expect(p.binding).toMatchObject({ arena: "arena.testnet", representation: REP, amount: "100", startAtMs: String(START) });
+    expect(p.limitations.join(" ")).toContain(new Date(START).toISOString());
+    expect(p.limitations.join(" ")).toContain("held in escrow");
   });
-  it("without a start time warns that it can never be cancelled and omits the argument", async () => {
-    const p = await prev({ kind: "create_battle", assets: [], mode: "PriceGain" }, mk());
-    expect(p.transaction.actions[0]!.args).toEqual({ assets: [], mode: "PriceGain" });
-    expect(p.limitations.join(" ")).toContain("never be cancelled");
+  it("refuses a token that is not joinable, a short balance and a short prepaid storage balance", async () => {
+    expect(await code(prev(request(), fundedSource({ joinable: new Map() })))).toBe("not_joinable");
+    expect(await code(prev(request({ amount: "501" }), fundedSource()))).toBe("insufficient_balance");
+    expect(await code(prev(request(), fundedSource({ storage: new Map() })))).toBe("storage_balance_low");
   });
-  it("rejects a start outside now+60s..now+7d and malformed starts", async () => {
+  it("rejects a start outside now+60s..now+7d and a missing or malformed start", async () => {
     for (const startAtMs of [String(NOW + 30_000), String(NOW + 8 * 24 * 3_600_000), String(NOW - 1)]) {
-      expect(await code(prev({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs }, mk()))).toBe("invalid_request");
+      expect(await code(prev(request({ startAtMs }), fundedSource()))).toBe("invalid_request");
     }
-    for (const startAtMs of ["0", "-5", "1.5", "abc", "18446744073709551616", 1.5, {}]) {
-      expect(() => validateRequest({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs })).toThrow(ActionError);
+    for (const startAtMs of [undefined, "0", "-5", "1.5", "abc", "18446744073709551616", 1.5, {}]) {
+      expect(() => validateRequest(request({ startAtMs }))).toThrow(ActionError);
     }
   });
-  it("accepts 16 assets and refuses 17", () => {
-    const asset = (i: number) => ({ chainId: "46630", tokenAddress: "0x" + i.toString(16).padStart(40, "0"), representation: `t${i}.rep.testnet`, custodyDomain: "c" });
-    expect(validateRequest({ kind: "create_battle", mode: "PriceGain", assets: Array.from({ length: 16 }, (_, i) => asset(i)) })).toMatchObject({ kind: "create_battle" });
-    expect(() => validateRequest({ kind: "create_battle", mode: "PriceGain", assets: Array.from({ length: 17 }, (_, i) => asset(i)) })).toThrow(ActionError);
+  it("needs a positive base-unit amount, a representation and no assets list", () => {
+    for (const amount of [undefined, "0", "-1", "1.5", "abc", 5]) expect(() => validateRequest(request({ amount }))).toThrow(ActionError);
+    expect(() => validateRequest(request({ representation: "Not An Account" }))).toThrow(ActionError);
+    expect(() => validateRequest(request({ assets: [] }))).toThrow(ActionError);
+  });
+});
+
+describe("prepay_storage", () => {
+  it("is one payable lifecycle_storage_deposit on the arena", async () => {
+    const p = await prev({ kind: "prepay_storage", amountYocto: "50000000000000000000000" }, mk());
+    const call = p.transaction.actions[0]!;
+    expect(p.transaction.receiverId).toBe("arena.testnet");
+    expect(call.methodName).toBe("lifecycle_storage_deposit");
+    expect(call.args).toEqual({});
+    expect(call.deposit).toBe("50000000000000000000000");
+    expect(p.costs.notes.join(" ")).toContain("not a bond");
+  });
+  it("refuses zero, a malformed amount and more than 10 NEAR", () => {
+    for (const amountYocto of [undefined, "0", "-1", "1.5", 5, "10000000000000000000000001"]) {
+      expect(() => validateRequest({ kind: "prepay_storage", amountYocto })).toThrow(ActionError);
+    }
   });
 });
 

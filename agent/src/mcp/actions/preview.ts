@@ -23,8 +23,15 @@ export const PREVIEW_TTL_MS = 5 * 60 * 1000;
 
 export const TGAS = 1_000_000_000_000n;
 export const ONE_YOCTO = "1";
-/** Upper bound attached to battle creation; the arena charges actual storage and refunds the rest. */
-const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
+/**
+ * A battle is created by a creator deposit (D41): one `ft_transfer_call` of the creator's token with a
+ * `lifecycle_create` message. The creation storage comes from NEAR the creator prepaid on the arena
+ * (`lifecycle_storage_deposit`), so the preview checks the prepaid balance against this heads-up bound; the
+ * arena measures the real cost and refuses the creation (returning the tokens) when the balance is short.
+ */
+export const CREATE_STORAGE_MIN_YOCTO = "10000000000000000000000";
+/** Largest prepayment one `prepay_storage` action may carry (10 NEAR), so a typo cannot lock a large amount. */
+export const PREPAY_STORAGE_MAX_YOCTO = "10000000000000000000000000";
 /** `request_payout` storage deposit (payout `REQUEST_DEPOSIT`, 30 mNEAR); unused part refunded. */
 export const PAYOUT_REQUEST_DEPOSIT_YOCTO = "30000000000000000000000";
 /** `reserve` storage deposit for a grant reservation; unused part refunded. */
@@ -50,6 +57,7 @@ const REGISTER_DEPOSIT_YOCTO = "10000000000000000000000";
 
 export type ActionKind =
   | "create_battle"
+  | "prepay_storage"
   | "register_position"
   | "deposit"
   | "payout"
@@ -94,12 +102,15 @@ export interface GrantRequest {
 export type ActionRequest =
   | {
       kind: "create_battle";
-      /** 0 to 16 communities; an open arena starts empty and communities appear on deposit. */
-      assets: AssetRequest[];
+      /** NEAR representation of an allowlisted token the creator deposits; it becomes the first community. */
+      representation: string;
+      /** Base units of the representation, a positive decimal string. */
+      amount: string;
       mode: ScoringMode;
-      /** Start time in ms (decimal string). Without it the battle can never be cancelled or refunded. */
-      startAtMs?: string;
+      /** Start time in ms (decimal string). Required: a battle without one could never be cancelled or refunded. */
+      startAtMs: string;
     }
+  | { kind: "prepay_storage"; /** yoctoNEAR the creator prepays on the arena for battle storage. */ amountYocto: string }
   | { kind: "join_battle"; battleId: number; /** NEAR representation of an allowlisted token; never a community index. */ representation: string }
   | { kind: "cancel_battle"; battleId: number }
   | { kind: "claim_refund"; battleId: number; community: number }
@@ -179,6 +190,7 @@ export type ActionErrorCode =
   | "battle_not_found"
   | "battle_locked"
   | "audit_missing"
+  | "storage_balance_low"
   | "audit_expired"
   | "backing_missing"
   | "battle_cancelled"
@@ -256,7 +268,8 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
   const r = raw as Record<string, unknown> | null;
   if (!r || typeof r !== "object" || Array.isArray(r)) return fail("invalid_request", "request must be an object");
   const allowed: Record<string, string[]> = {
-    create_battle: ["kind", "assets", "mode", "startAtMs"],
+    create_battle: ["kind", "representation", "amount", "mode", "startAtMs"],
+    prepay_storage: ["kind", "amountYocto"],
     register_position: ["kind", "battleId", "community"],
     deposit: ["kind", "battleId", "community", "amount", "route", "grant", "requestId"],
     payout: ["kind", "backing", "amount", "destination", "requestId", "grant"],
@@ -307,38 +320,28 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
     };
   }
   if (r.kind === "create_battle") {
-    if (!Array.isArray(r.assets) || r.assets.length > MAX_COMMUNITIES) {
-      fail("invalid_request", `assets must list 0 to ${MAX_COMMUNITIES} communities`);
-    }
-    let startAtMs: string | undefined;
-    if (r.startAtMs !== undefined) {
-      const raw = typeof r.startAtMs === "number" && Number.isSafeInteger(r.startAtMs) ? String(r.startAtMs) : r.startAtMs;
-      if (typeof raw !== "string" || !/^[1-9][0-9]{0,18}$/.test(raw) || BigInt(raw) >= 2n ** 64n) {
-        fail("invalid_request", "startAtMs must be a positive integer number of milliseconds");
-      }
-      startAtMs = raw as string;
+    const raw = typeof r.startAtMs === "number" && Number.isSafeInteger(r.startAtMs) ? String(r.startAtMs) : r.startAtMs;
+    if (typeof raw !== "string" || !/^[1-9][0-9]{0,18}$/.test(raw) || BigInt(raw) >= 2n ** 64n) {
+      fail("invalid_request", "startAtMs is required: a positive integer number of milliseconds");
     }
     if (!MODES.includes(r.mode as ScoringMode)) fail("invalid_request", "mode is not a scoring mode");
-    const assets = (r.assets as Record<string, unknown>[]).map((a) => {
-      if (!a || typeof a !== "object") return fail("invalid_request", "asset must be an object");
-      if (typeof a.chainId !== "string" || !/^[1-9][0-9]{0,19}$/.test(a.chainId)) fail("invalid_request", "asset.chainId must be a decimal string");
-      if (typeof a.tokenAddress !== "string" || !EVM.test(a.tokenAddress)) fail("invalid_request", "asset.tokenAddress must be a 20-byte hex address");
-      if (typeof a.custodyDomain !== "string" || !a.custodyDomain.trim() || a.custodyDomain.length > 256) {
-        fail("invalid_request", "asset.custodyDomain is required");
-      }
-      const hasRef = a.referenceChainId !== undefined || a.referenceAddress !== undefined;
-      if (hasRef && (typeof a.referenceChainId !== "string" || typeof a.referenceAddress !== "string" || !EVM.test(a.referenceAddress))) {
-        fail("invalid_request", "a reference pair needs both referenceChainId and a 20-byte referenceAddress");
-      }
-      return {
-        chainId: a.chainId as string,
-        tokenAddress: (a.tokenAddress as string).toLowerCase(),
-        representation: account(a.representation, "asset.representation"),
-        custodyDomain: a.custodyDomain as string,
-        ...(hasRef ? { referenceChainId: a.referenceChainId as string, referenceAddress: (a.referenceAddress as string).toLowerCase() } : {}),
-      };
-    });
-    return { kind: "create_battle", assets, mode: r.mode as ScoringMode, ...(startAtMs !== undefined ? { startAtMs } : {}) };
+    if (typeof r.amount !== "string" || !/^[1-9][0-9]{0,38}$/.test(r.amount)) {
+      fail("invalid_request", "amount must be a positive integer in base units");
+    }
+    return {
+      kind: "create_battle",
+      representation: account(r.representation, "representation"),
+      amount: r.amount as string,
+      mode: r.mode as ScoringMode,
+      startAtMs: raw as string,
+    };
+  }
+  if (r.kind === "prepay_storage") {
+    if (typeof r.amountYocto !== "string" || !/^[1-9][0-9]{0,38}$/.test(r.amountYocto)) {
+      fail("invalid_request", "amountYocto must be a positive integer number of yoctoNEAR");
+    }
+    if (BigInt(r.amountYocto as string) > BigInt(PREPAY_STORAGE_MAX_YOCTO)) fail("invalid_request", "amountYocto is above 10 NEAR");
+    return { kind: "prepay_storage", amountYocto: r.amountYocto as string };
   }
   if (r.kind === "register_position") {
     const battleId = Number(r.battleId);
@@ -428,52 +431,66 @@ export async function buildPreview(
   ];
   const base: Pick<Preview, "version" | "network" | "createdAtMs" | "expiresAtMs" | "source"> = { version: ACTION_POLICY_VERSION, network: ctx.network, createdAtMs: nowMs, expiresAtMs: nowMs + PREVIEW_TTL_MS, source: source.info.kind };
 
+  if (request.kind === "prepay_storage") {
+    const prepayGas = gas(30n);
+    return {
+      ...base,
+      kind: "prepay_storage",
+      accountId: caller,
+      signerId: caller,
+      authorization: "user_signature",
+      binding: { arena: ctx.arena, amountYocto: request.amountYocto },
+      costs: { attachedDepositYocto: request.amountYocto, gasTgas: "30", notes: ["prepaid NEAR pays the storage of battles you create; it is not a bond and you can withdraw the unused part"] },
+      transaction: {
+        signerId: caller,
+        receiverId: ctx.arena,
+        actions: [{ type: "FunctionCall", methodName: "lifecycle_storage_deposit", args: {}, gas: prepayGas, deposit: request.amountYocto }],
+      },
+      limitations: [...limitations, "nothing in the prepaid balance is slashed; the arena deducts only the measured storage of battles you create"],
+    };
+  }
+
   if (request.kind === "create_battle") {
-    const assets = request.assets.map((a) => ({
-      chain_id: a.chainId,
-      token_address: a.tokenAddress,
-      representation: a.representation,
-      custody_domain: a.custodyDomain,
-      reference_chain_id: a.referenceChainId ?? null,
-      reference_address: a.referenceAddress ?? null,
-    }));
-    const gasUnits = gas(100n);
-    const notes = ["deposit is an upper bound: the arena keeps actual storage and refunds the rest"];
-    const extra: string[] = [];
-    if (request.startAtMs !== undefined) {
-      const start = BigInt(request.startAtMs);
-      if (start < BigInt(nowMs) + BigInt(MIN_START_LEAD_MS) || start > BigInt(nowMs) + BigInt(MAX_START_LEAD_MS)) {
-        fail("invalid_request", "startAtMs must be between 1 minute and 7 days from now");
-      }
-      notes.push(`the war starts at ${new Date(Number(start)).toISOString()}; the creator must deposit into a community before then, or the arena cannot lock`);
-      extra.push("the arena re-checks the 1 minute to 7 day start window when the transaction executes");
-      extra.push("with a start time the arena can be cancelled and deposits refunded when fewer than 2 communities are funded at the start");
-    } else {
-      extra.push("created without a start time: this battle can never be cancelled or refunded");
+    const start = BigInt(request.startAtMs);
+    if (start < BigInt(nowMs) + BigInt(MIN_START_LEAD_MS) || start > BigInt(nowMs) + BigInt(MAX_START_LEAD_MS)) {
+      fail("invalid_request", "startAtMs must be between 1 minute and 7 days from now");
     }
-    if (assets.length === 0) extra.push("an open arena: a community appears when its first token is deposited by a joining account");
+    const asset = await source.joinableAsset(request.representation);
+    if (!asset) return fail("not_joinable", `${request.representation} is not on the joinable-asset allowlist`);
+    const balance = await source.tokenBalance(request.representation, caller);
+    if (balance < BigInt(request.amount)) fail("insufficient_balance", "the representation balance is lower than the amount");
+    const prepaid = await source.storageBalance(caller);
+    if (prepaid < BigInt(CREATE_STORAGE_MIN_YOCTO)) {
+      fail("storage_balance_low", "prepay storage on the arena first (prepay_storage): the prepaid balance cannot cover a new battle");
+    }
+    const msg = JSON.stringify({ action: "lifecycle_create", mode: request.mode, start_at_ms: request.startAtMs });
+    const transferGas = 100n * TGAS;
     return {
       ...base,
       kind: "create_battle",
       accountId: caller,
       signerId: caller,
       authorization: "user_signature",
-      binding: { arena: ctx.arena, assets, mode: request.mode, startAtMs: request.startAtMs ?? null },
-      costs: { attachedDepositYocto: CREATE_DEPOSIT_YOCTO, gasTgas: "100", notes },
+      binding: {
+        arena: ctx.arena,
+        representation: request.representation,
+        amount: request.amount,
+        mode: request.mode,
+        startAtMs: request.startAtMs,
+        asset: { chainId: asset.chain_id, tokenAddress: asset.token_address, representation: asset.representation, custodyDomain: asset.custody_domain },
+      },
+      costs: { attachedDepositYocto: ONE_YOCTO, gasTgas: "100", notes: ["one yocto is required by ft_transfer_call", "the creation storage is paid from your prepaid arena balance"] },
       transaction: {
         signerId: caller,
-        receiverId: ctx.arena,
-        actions: [
-          {
-            type: "FunctionCall",
-            methodName: "create_lifecycle_battle",
-            args: { assets, mode: request.mode, ...(request.startAtMs !== undefined ? { start_at_ms: request.startAtMs } : {}) },
-            gas: gasUnits,
-            deposit: CREATE_DEPOSIT_YOCTO,
-          },
-        ],
+        receiverId: request.representation,
+        actions: [{ type: "FunctionCall", methodName: "ft_transfer_call", args: { receiver_id: ctx.arena, amount: request.amount, msg }, gas: transferGas.toString(), deposit: ONE_YOCTO }],
       },
-      limitations: [...limitations, "the arena still validates the assets and the reference registry at creation", ...extra],
+      limitations: [
+        ...limitations,
+        "the arena re-checks the allowlist, the start window and the prepaid storage when the transaction executes; a refused creation returns your tokens",
+        `the battle starts at ${new Date(Number(start)).toISOString()}; your deposit is held in escrow until the audit and backing approvals of your token exist, and the battle cannot lock before then`,
+        "with a start time the arena can be cancelled and deposits refunded when fewer than 2 communities are funded at the start",
+      ],
     };
   }
 
