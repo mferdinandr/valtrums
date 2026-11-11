@@ -910,7 +910,7 @@ impl crate::Arena {
     /// Add an account to a community's participant index the first time it
     /// holds a credited deposit. Registering a position alone adds nothing, so
     /// accounts that never deposit cannot enlarge the settlement workload.
-    fn lifecycle_index_participant(
+    pub(crate) fn lifecycle_index_participant(
         &mut self,
         id: u64,
         community: u32,
@@ -1742,7 +1742,7 @@ mod tests {
             .predecessor_account_id(account("creator.testnet"))
             .attached_deposit(NearToken::from_near(1));
         testing_env!(context.build());
-        let id = arena.create_lifecycle_battle(
+        let id = arena.create_lifecycle_battle_for_tests(
             vec![asset(1).into(), asset(2).into()],
             ScoringMode::PriceGain,
             None,
@@ -1871,7 +1871,7 @@ mod tests {
         assert_eq!(arena.get_lifecycle_fee(), (10, 5_000));
         let create = |arena: &mut crate::Arena| {
             caller("creator.testnet", NearToken::from_near(1));
-            arena.create_lifecycle_battle(
+            arena.create_lifecycle_battle_for_tests(
                 vec![asset(1).into(), asset(2).into()],
                 ScoringMode::PriceGain,
                 None,
@@ -1934,7 +1934,7 @@ mod tests {
             .predecessor_account_id(account("creator.testnet"))
             .attached_deposit(NearToken::from_yoctonear(0));
         testing_env!(context.build());
-        arena.create_lifecycle_battle(
+        arena.create_lifecycle_battle_for_tests(
             vec![asset(1).into(), asset(2).into()],
             ScoringMode::PriceGain,
             None,

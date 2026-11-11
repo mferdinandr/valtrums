@@ -337,7 +337,7 @@ fn approved_battle(creator: &str) -> (Arena, u64) {
     arena.activate_lifecycle();
     arena.set_lifecycle_protocol(account("protocol.testnet"));
     context(creator, NearToken::from_near(1), 0);
-    let id = arena.create_lifecycle_battle(
+    let id = arena.create_lifecycle_battle_for_tests(
         vec![asset(1).into(), asset(2).into(), asset(3).into()],
         crate::lifecycle::ScoringMode::PriceGain,
         None,

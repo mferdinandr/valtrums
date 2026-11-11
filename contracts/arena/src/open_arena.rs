@@ -60,6 +60,7 @@ impl Arena {
     }
 
     /// Checks a start time before any state changes.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn lifecycle_check_start(start_at_ms: u64) {
         let now = env::block_timestamp_ms();
         require!(
@@ -67,6 +68,14 @@ impl Arena {
                 && start_at_ms <= now.saturating_add(MAX_START_LEAD_MS),
             "Start time must be 1 minute to 7 days ahead"
         );
+    }
+
+    /// The allowlisted asset identity of a representation, if the protocol lists it.
+    pub(crate) fn lifecycle_joinable_asset_of(
+        &self,
+        representation: &AccountId,
+    ) -> Option<AssetIdentity> {
+        joinable_map().get(representation).cloned()
     }
 
     fn assert_protocol_caller(&self) {
@@ -256,8 +265,10 @@ impl Arena {
             !self.lifecycle_is_cancelled(battle_id),
             "Battle is already cancelled"
         );
+        // D41: a held creator escrow means the creator has no credited position, so the battle can never
+        // lock; anyone may cancel it so other depositors are not locked in.
         require!(
-            battle.funded_indices().len() < 2,
+            battle.funded_indices().len() < 2 || self.lifecycle_has_held_escrow(battle_id),
             "At least two communities are funded"
         );
         let mut map = cancelled_map();
