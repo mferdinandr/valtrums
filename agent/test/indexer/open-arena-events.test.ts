@@ -15,6 +15,10 @@ const added = (battleId: number, community: number, representation: string, acco
 const cancelled = (battleId: number) => emitLog("lifecycle_battle_cancelled", { battle_id: battleId });
 const refund = (battleId: number, community: number, accountId: string, amount: string) =>
   emitLog("lifecycle_refund", { battle_id: battleId, community, account_id: accountId, amount });
+const refundFailed = (battleId: number, community: number, accountId: string, amount: string) =>
+  emitLog("lifecycle_refund_failed", { battle_id: battleId, community, account_id: accountId, amount });
+const joinableSet = (representation: string) => emitLog("lifecycle_joinable_asset_set", { representation });
+const joinableRemoved = (representation: string) => emitLog("lifecycle_joinable_asset_removed", { representation });
 
 const parse = (...logs: string[]) =>
   parseBlock(block({ height: "7", outcomes: logs.map((l, i) => outcome(`r${i}`, [l])) }), config());
@@ -82,6 +86,37 @@ describe("open arena events: projection", () => {
     expect(b!.creditedByCommunity).toEqual({ "2": "100" });
     expect(b!.activity).toHaveLength(7);
   });
+  it("records a failed refund apart from paid refunds and tracks the joinable allowlist per arena", () => {
+    const { accepted, diagnostics } = parse(
+      created(4, "alice.testnet"),
+      deposit(4, 2, "bob.testnet", "100"),
+      cancelled(4),
+      refundFailed(4, 2, "bob.testnet", "100"),
+      joinableSet("cashcat.rep.testnet"),
+      joinableSet("ai.rep.testnet"),
+      joinableRemoved("ai.rep.testnet"),
+    );
+    expect(diagnostics).toEqual([]);
+    const projection = buildProjection(accepted, { finalizedHeight: 7n, reducerVersion: "projection-v1" });
+    const b = Object.values(projection.battles)[0]!;
+    expect(b.refundFailures!.map((r) => [r.community, r.accountId, r.amount])).toEqual([["2", "bob.testnet", "100"]]);
+    expect(b).not.toHaveProperty("refunds");
+    expect(b).not.toHaveProperty("refundedByCommunity");
+    const arena = Object.values(projection.contracts)[0]!;
+    expect(arena.joinableRepresentations).toEqual({ "cashcat.rep.testnet": true, "ai.rep.testnet": false });
+    expect(arena.trustedRepresentations).toEqual({}); // joinable never implies trusted
+  });
+  it("quarantines malformed allowlist and failed-refund payloads", () => {
+    for (const log of [
+      emitLog("lifecycle_joinable_asset_set", {}),
+      emitLog("lifecycle_joinable_asset_removed", { representation: 5 }),
+      emitLog("lifecycle_refund_failed", { battle_id: 1, community: 0, account_id: "bob.testnet", amount: "-1" }),
+    ]) {
+      const { accepted, diagnostics } = parse(log);
+      expect(accepted).toEqual([]);
+      expect(diagnostics).toHaveLength(1);
+    }
+  });
   it("leaves battles without these events unchanged and is deterministic across order and duplicates", () => {
     const [plain] = project(created(1, "alice.testnet"));
     expect(plain).not.toHaveProperty("communitiesAdded");
@@ -130,8 +165,23 @@ describe("open arena events: store and health", () => {
     expect(battle.communitiesAdded).toHaveLength(1);
     await engine.close();
   });
-  it("still degrades on an unknown or unmodelled event from the allowlisted emitter", async () => {
-    for (const event of ["mystery_event", "lifecycle_refund_failed", "lifecycle_joinable_asset_set", "lifecycle_joinable_asset_removed"]) {
+  it("stays healthy through allowlist proposals and a failed refund, and reloads them", async () => {
+    const first = await run([created(4, "alice.testnet"), cancelled(4), refundFailed(4, 2, "bob.testnet", "9"), joinableSet("cashcat.rep.testnet"), joinableRemoved("cashcat.rep.testnet")]);
+    expect(first.health.status).toBe("healthy");
+    const engine = new IndexerEngine(
+      new RecordedBlockSource(chainFile(linked([{ height: "1", outcomes: [outcome("r0", [created(4, "alice.testnet")])] }]), { finalizedHeight: "1" })),
+      new JsonFileIndexerStore(dir, { lockStaleMs: 10_000 }),
+      config(),
+      { now: () => 2000 },
+    );
+    await engine.open();
+    const projection = engine.projection();
+    expect(Object.values(projection.battles)[0]!.refundFailures).toHaveLength(1);
+    expect(Object.values(projection.contracts)[0]!.joinableRepresentations).toEqual({ "cashcat.rep.testnet": false });
+    await engine.close();
+  });
+  it("still degrades on an unknown event from the allowlisted emitter", async () => {
+    for (const event of ["mystery_event"]) {
       const d = await mkdtemp(join(tmpdir(), "indexer-open-arena-unknown-"));
       try {
         const chain = linked([{ height: "1", outcomes: [outcome("r1", [cancelled(1), emitLog(event, { battle_id: 1 })])] }]);

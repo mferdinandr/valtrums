@@ -62,8 +62,6 @@ describe("no event emitted on main is silently dropped", () => {
       "deposit", "claim", "refund", "deposit_usdc_refunded", "emergency_halt", "execution_reported", "signature_requested",
       "signature_ready", "signature_failed", "step_dispatch_failed", "withdraw_failed", "treasury_flushed", "treasury_flush_failed",
       "dao_vote_cast", "dao_disposition_released", "principal_escrowed", "reference_registry_updated", "burned", "burn_failed",
-      // Open-arena events the contract emits that the indexer does not model yet (still reported, never dropped).
-      "lifecycle_refund_failed", "lifecycle_joinable_asset_set", "lifecycle_joinable_asset_removed",
     ],
     valtrum_player_policy: ["grant_created", "grant_revoked", "budget_reserved"],
   };
