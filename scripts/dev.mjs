@@ -20,10 +20,8 @@ function stop(code = 0) {
   for (const child of children) {
     try { process.kill(-child.pid, "SIGTERM"); } catch {}
   }
-  setTimeout(() => {
-    for (const child of children) { try { process.kill(-child.pid, "SIGKILL"); } catch {} }
-    process.exit(code);
-  }, 2000);
+  process.exitCode = code;
+  console.log("[dev] Waiting for workers to finish in-flight work and release their locks…");
 }
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => stop());
 function start(name, command, args, childEnv = {}, cwd = root) {

@@ -175,6 +175,7 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
     round: (id) => source.round(id) as Promise<RoundView | null>,
   };
   const journal = await ObservationJournal.open(need("OBSERVATION_JOURNAL_DIR"));
+  try {
   const runner = new CollectorRunner(
     { scope, terms, qualifiedModes: qualified, mappingVersion: env.COLLECTOR_MAPPING_VERSION?.trim() || "3" },
     {
@@ -191,6 +192,10 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
   while (!stop.aborted) {
     try { await runner.pass(stop); } catch (err) { log.error("observation collector pass failed", { error: errorMessage(err) }); }
     await abortableSleep(intervalMs, stop);
+  }
+  } finally {
+    await journal.close();
+    log.info("observation collector stopped; journal released");
   }
 }
 

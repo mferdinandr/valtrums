@@ -136,10 +136,7 @@ const stop = () => {
   if (stopping) return;
   stopping = true;
   for (const c of children) c.kill("SIGTERM");
-  const timer = setTimeout(() => {
-    for (const c of children) { if (c.exitCode === null) c.kill("SIGKILL"); }
-  }, 5000);
-  timer.unref();
+  console.log("[workers] Shutdown requested; waiting for active passes and lock cleanup.");
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
