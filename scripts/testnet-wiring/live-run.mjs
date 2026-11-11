@@ -121,8 +121,25 @@ for (const p of procs) {
   });
   children.push(child);
   console.log(`started ${p.name} pid ${child.pid}, log ${path.join(STATE, `${p.name}.log`)}`);
-  child.on("close", (code) => { fs.closeSync(log); console.log(`[${p.name}] exited with ${code}`); });
+  child.on("close", (code) => {
+    fs.closeSync(log);
+    console.error(`[${p.name}] exited with ${code}`);
+    if (!stopping) {
+      console.error(`[workers] ${p.name} stopped unexpectedly; shutting down workers. Inspect its log before restarting pnpm dev.`);
+      process.exitCode = code || 1;
+      stop();
+    }
+  });
 }
-const stop = () => { for (const c of children) c.kill("SIGTERM"); };
+let stopping = false;
+const stop = () => {
+  if (stopping) return;
+  stopping = true;
+  for (const c of children) c.kill("SIGTERM");
+  const timer = setTimeout(() => {
+    for (const c of children) { if (c.exitCode === null) c.kill("SIGKILL"); }
+  }, 5000);
+  timer.unref();
+};
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
