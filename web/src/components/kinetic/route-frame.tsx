@@ -2,7 +2,6 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import gsap from "gsap";
-import { config } from "@/lib/config";
 export function RouteFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname(),
     ref = useRef<HTMLDivElement>(null);
@@ -30,10 +29,6 @@ export function RouteFrame({ children }: { children: ReactNode }) {
   if (/^\/arena\/[0-9]+$/.test(pathname)) return <div className="route-content">{children}</div>;
   return (
     <div ref={ref} className="route-content relative">
-      <p className="mb-5 flex items-center gap-2 text-xs text-mute">
-        <span className="status-dot" />
-        {config.network}
-      </p>
       <div key={pathname} className="route-reveal">
         {children}
       </div>

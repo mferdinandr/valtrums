@@ -248,12 +248,13 @@ export function LifecycleBattleDetail({
                     <Badge tone="mute">eliminated · recorded candidates</Badge>
                   )}
                   {/^\d+$/.test(r.vault) && BigInt(r.vault) > 0n && <Badge tone="green">Deposit received</Badge>}
-                  <Badge tone={approval.approved ? "green" : r.backing.known ? "amber" : "mute"}>
+                  {status !== "decided" && status !== "cancelled" && <Badge tone={approval.approved ? "green" : r.backing.known ? "amber" : "mute"}>
                     {approval.label}
-                  </Badge>
+                  </Badge>}
                 </div>
                 <details className="lifecycle-tech">
                   <summary>Token details</summary>
+                  {(status === "decided" || status === "cancelled") && <p>Current approval: {approval.label}</p>}
                   {r.label && (
                     <p>
                       Token label: {displaySymbol(r.label, "")} ({r.label.name}). A display name only; the identity is the chain
@@ -281,12 +282,15 @@ export function LifecycleBattleDetail({
         <Card>
           <CardTitle>Round history</CardTitle>
           <ul className="space-y-2 text-sm">
-            {detail.history.items.map((h) => (
-              <li key={h.round_id}>
-                Round {h.round_id}: {h.reason}{" "}
-                <Badge tone="amber">incomplete</Badge>
-              </li>
-            ))}
+            {detail.history.items.map((h) => {
+              const outcome = h.outcome && typeof h.outcome === "object" ? h.outcome as Record<string, unknown> : null;
+              const winner = outcome?.Winner && typeof outcome.Winner === "object" ? (outcome.Winner as { community?: unknown }).community : null;
+              const validWinner = typeof winner === "number" && Number.isInteger(winner) && winner >= 0 && winner < rows.length;
+              return <li key={h.round_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-edge py-3 last:border-0">
+                <strong>Round {h.round_id}</strong>
+                {validWinner ? <span className="text-neon-green">Finished · Winner: {name(winner)}</span> : outcome?.Overtime ? <span>Tied · Overtime</span> : outcome?.Pending ? <span>Result pending</span> : <span className="text-mute">Result unavailable</span>}
+              </li>;
+            })}
           </ul>
         </Card>
       )}

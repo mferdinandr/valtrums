@@ -43,13 +43,6 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           <span className="arcade-kicker">THE MATCH BOARD</span>
           <h1>Pick your battle.</h1>
           <p>Find a crew to cheer for, or start a rivalry of your own.</p>
-          <div className="lifecycle-actions">
-            <Button asChild>
-              <Link href="/arena/new">
-                <Plus size={16} /> Create a battle
-              </Link>
-            </Button>
-          </div>
         </div>
         <CarnivalScene
           mode="arena"
@@ -132,6 +125,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
               <p className="mt-2 text-sm text-mute">
                 Try another search or create a new rivalry.
               </p>
+              <Button asChild className="mt-4"><Link href="/arena/new"><Plus size={16} /> Create a battle</Link></Button>
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
