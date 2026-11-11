@@ -1,6 +1,6 @@
 # Valtrum — Project Guide
 
-A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain (testnets). Two or more communities compete in 30-second rounds; the final winners receive each losing token.
+A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain (testnets). Arenas are open: allowlisted token communities join before the creator's start time, and two or more funded communities compete in 30-second rounds; the final winners receive each losing token.
 
 ## Stack
 
@@ -22,7 +22,8 @@ web/         Frontend + AI prompt terminal
 
 ## Core mechanics (target, see docs/product-spec.md)
 
-- A creator (user or protocol) picks 2+ communities and one scoring mode: Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown. No bond. The creator must hold a real positive deposit before the snapshot locks.
+- A creator (user or protocol) picks one scoring mode (Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown) and a start time (now + 60 s to now + 7 days); communities are not invited. No bond. The creator must hold a real positive deposit before the snapshot locks.
+- Before the start, anyone joins with a protocol-allowlisted token (CASHCAT, WALLET, GOOD, VLAD, DEGEN; AI excluded) and deposits. The lock needs 2+ funded communities with fresh approvals; empty ones are excluded. Below 2 funded after the start, anyone cancels and depositors pull refunds (D34 to D38).
 - Rounds last 30 seconds, point observations, no TWAP. Tied leaders repeat with reset inputs, no overtime cap. Deposits stay closed and all original vaults stay locked until a final winner exists.
 - Each losing vault: 99.9% to winning participants proportionally, 0.05% creator, 0.05% protocol (protocol-created battles pay the full 0.1% to protocol). Rewards are the original losing tokens on Robinhood.
 - Winning principal goes to DAO escrow (burn or return); DAO mechanics are OPEN. NEP-141 representations are 1:1 backed by actual received assets with exclusive reservations.
