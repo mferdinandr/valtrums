@@ -119,7 +119,7 @@
       "researchNote": "Registry-matched Good In The Hood reference. Original positive-theme mascot, not verified logo artwork or approval."
     },
     {
-      "name": "AI", "asset": "ai", "demoTokenId": "ai.demo",
+      "name": "AI", "asset": "ai", "demoTokenId": "ai.demo", "hidden": true,
       "referenceChainId": 4663, "referenceAddress": "0x0d4a117dccce7ba3d0a475ec9068c20c35310fd8",
       "title": "The Heartfelt Inu", "type": "Affair Inu canine toy", "color": "#d76d8c",
       "description": "A peach Inu with triangular ears, cream muzzle, curled tail, rose scarf and a heart pendant. AI means Affair Inu here.",

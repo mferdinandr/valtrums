@@ -32,6 +32,7 @@ import {
 } from "@/lib/terminal/lifecycle-intent";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
 import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/lib/terminal/lifecycle-resolve";
+import { isHiddenAsset } from "@/lib/arena-read/hidden-assets";
 
 const EXAMPLES = [
   "join battle 7 with CASHCAT",
@@ -250,7 +251,7 @@ function ParticipationPlan({ namespace, intent }: { namespace: Namespace; intent
 
 async function searchAssets(namespace: Namespace, q: string): Promise<RegistryAsset[]> {
   const res = await fetchApplication<ApplicationPage<RegistryAsset>>(namespace, "assets", { q, limit: 8 }, new AbortController().signal);
-  return res.data.items;
+  return res.data.items.filter((a) => !isHiddenAsset(a)); // AI is no longer offered (D35)
 }
 
 /**

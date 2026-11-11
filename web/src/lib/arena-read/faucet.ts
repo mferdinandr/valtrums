@@ -1,4 +1,5 @@
 import { gasUnits, rpcView } from "./agent-grant";
+import { isHiddenSymbol } from "./hidden-assets";
 
 /**
  * Client of the faucet contract (`contracts/faucet`). Everything is read straight from the contract and the token
@@ -49,8 +50,9 @@ export async function readFaucet(rpcUrl: string, contract: string, account: stri
     rpcView<TokenView[]>(rpcUrl, contract, "get_tokens", {}, doFetch),
   ]);
   if (!config || !tokens) throw new Error("the faucet contract did not answer");
+  const offered = tokens.filter((t) => !isHiddenSymbol(t.symbol));
   const entries = await Promise.all(
-    tokens.map(async (t): Promise<FaucetEntry> => {
+    offered.map(async (t): Promise<FaucetEntry> => {
       const [balance, status] = await Promise.all([
         rpcView<string>(rpcUrl, t.token, "ft_balance_of", { account_id: contract }, doFetch),
         account ? rpcView<ClaimStatusView>(rpcUrl, contract, "get_claim_status", { account_id: account, token: t.token }, doFetch) : Promise.resolve(null),
