@@ -356,6 +356,39 @@ impl Rounds {
         Ok((start_ns, end))
     }
 
+    /// Abandon the open window of the current round when it is still unresolved
+    /// at least `grace_ns` after its recorded end (evidence never became
+    /// complete, for example a sampler outage at a boundary). The round keeps
+    /// its id and candidates and records nothing; the oracle then opens a fresh
+    /// 30-second window with `open_round`, which can never start before the
+    /// abandoned end. No winner, fee or principal can come from this call.
+    pub fn abandon_window(
+        &mut self,
+        round_id: u64,
+        now_ns: u64,
+        grace_ns: u64,
+    ) -> Result<(u64, u64), RoundError> {
+        if self.winner.is_some() {
+            return Err(RoundError::Finished);
+        }
+        if round_id != self.round_id {
+            return Err(RoundError::WrongRound);
+        }
+        let (start, end) = self.window.ok_or(RoundError::NotOpen)?;
+        if self.recorded_outcome(round_id).is_some() {
+            return Err(RoundError::Finished);
+        }
+        let earliest = end
+            .checked_add(grace_ns)
+            .ok_or(RoundError::InvalidConfiguration)?;
+        if now_ns < earliest {
+            return Err(RoundError::AlreadyOpen);
+        }
+        self.window = None;
+        self.last_end_ns = self.last_end_ns.max(end);
+        Ok((start, end))
+    }
+
     /// Score the open round. Any missing, conflicting or malformed evidence
     /// leaves the round open and records nothing. Resolving an already resolved
     /// round returns its recorded outcome.
@@ -670,6 +703,44 @@ mod tests {
         assert_eq!(r.winner(), None);
         let good = [price(&r, 1, 0, 100, 110), price(&r, 1, 1, 100, 100)];
         assert_eq!(r.resolve_round(1, &good), Ok(Resolution::Winner(0)));
+    }
+
+    #[test]
+    fn an_unresolved_window_can_be_abandoned_only_after_the_grace_and_reopened_later() {
+        const GRACE: u64 = 120_000_000_000;
+        let mut r = rounds(ScoringMode::PriceGain, 2);
+        assert_eq!(r.abandon_window(1, T0, GRACE), Err(RoundError::NotOpen));
+        r.open_round(1, T0).expect("open");
+        let end = T0 + ROUND_NS;
+        assert_eq!(
+            r.abandon_window(2, end + GRACE, GRACE),
+            Err(RoundError::WrongRound)
+        );
+        // Still inside the grace: evidence may yet complete, so nothing changes.
+        assert_eq!(
+            r.abandon_window(1, end + GRACE - 1, GRACE),
+            Err(RoundError::AlreadyOpen)
+        );
+        assert_eq!(r.window(), Some((T0, end)));
+        assert_eq!(r.abandon_window(1, end + GRACE, GRACE), Ok((T0, end)));
+        assert_eq!(r.window(), None);
+        assert_eq!(r.current_round(), 1);
+        assert_eq!(r.candidates(), &[0, 1]);
+        assert_eq!(r.winner(), None);
+        // A fresh window for the same round can never start before the abandoned end.
+        assert_eq!(
+            r.open_round(1, end - 1),
+            Err(RoundError::StartsBeforePreviousEnd)
+        );
+        let restart = end + GRACE;
+        assert_eq!(r.open_round(1, restart), Ok((restart, restart + ROUND_NS)));
+        // Evidence for the new window resolves as usual; a resolved round cannot be abandoned.
+        let good = [price(&r, 1, 0, 100, 110), price(&r, 1, 1, 100, 100)];
+        assert_eq!(r.resolve_round(1, &good), Ok(Resolution::Winner(0)));
+        assert_eq!(
+            r.abandon_window(1, u64::MAX, GRACE),
+            Err(RoundError::Finished)
+        );
     }
 
     #[test]
