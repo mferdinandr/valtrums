@@ -20,9 +20,9 @@ export type JoinState =
   | { step: "failed"; message: string }
   | { step: "done" };
 
-/** The agent audits on its own schedule (30 s by default), so wait for about two passes plus margin. */
-const APPROVAL_TRIES = 30;
-const APPROVAL_WAIT_MS = 3_000;
+/** Preserve the approval deadline while detecting completion sooner. One request at a time. */
+const APPROVAL_TIMEOUT_MS = 90_000;
+const APPROVAL_WAIT_MS = 1_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -53,7 +53,8 @@ export function useJoinAndDeposit(arena: string, battleId: number) {
           remember(joined.txHash);
           current = await readCommunityState(config.rpcUrl, arena, battleId, representation);
         }
-        for (let i = 0; i < APPROVAL_TRIES && !(current.index !== null && current.approved); i++) {
+        const approvalDeadline = Date.now() + APPROVAL_TIMEOUT_MS;
+        while (!(current.index !== null && current.approved) && Date.now() < approvalDeadline) {
           setState({ step: "running", stage: "approval" });
           await sleep(APPROVAL_WAIT_MS);
           current = await readCommunityState(config.rpcUrl, arena, battleId, representation).catch(() => current);

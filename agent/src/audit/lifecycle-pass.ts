@@ -149,15 +149,21 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
       !!v && !v.locked && !v.cancelled && v.communities.some((_, i) => !deps.refresh.records.has(`${id}:${i}`));
     const hot: number[] = [];
     const rest: number[] = [];
-    for (let id = total; id >= 1; id--) {
-      try {
-        const v = await deps.source.get(id);
-        views.set(id, v);
-        (hasUnaudited(id, v) ? hot : rest).push(id);
-      } catch {
-        rest.push(id); // the audit loop below retries the read and reports the error
+    const discoveryStarted = Date.now();
+    // Bound read concurrency; signatures and approval submissions below remain sequential.
+    for (let newest = total; newest >= 1; newest -= 3) {
+      const ids = Array.from({ length: Math.min(3, newest) }, (_, i) => newest - i);
+      const results = await Promise.allSettled(ids.map((id) => deps.source.get(id)));
+      for (const [i, result] of results.entries()) {
+        const id = ids[i]!;
+        if (result.status === "fulfilled") {
+          const v = result.value;
+          views.set(id, v);
+          (hasUnaudited(id, v) ? hot : rest).push(id);
+        } else rest.push(id); // retried and reported by the audit loop
       }
     }
+    log.info("lifecycle audit discovery complete", { battles: total, priorityBattles: hot.length, durationMs: Date.now() - discoveryStarted });
     const queue = [...hot, ...rest];
     // Unlocked, uncancelled battles can still receive a joining token, so they are re-checked
     // between steps instead of only once per sweep (locked and cancelled ones never change back).
@@ -266,12 +272,14 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         attempted.set(id, view.communities.length);
         visitedAt.set(id, deps.refresh.now().getTime());
         log.info("lifecycle audit checking battle", { battleId: id, communities: view.communities.length });
+        const auditStarted = Date.now();
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
           log,
           registry,
           isLocked: async () => false,
         });
+        log.info("lifecycle audit evaluation complete", { battleId: id, durationMs: Date.now() - auditStarted, ready: result.ready });
         // Attribution is bounded to the current view's communities and their trusted indices.
         for (let i = 0; i < view.communities.length; i++) {
           const record = deps.refresh.records.get(`${id}:${i}`);
@@ -325,8 +333,9 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         const fundedSet = new Set(funded);
         let backingReady: boolean | undefined;
         if (deps.backing) {
+          const backingStarted = Date.now();
           const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass");
-          log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length });
+          log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length, durationMs: Date.now() - backingStarted });
           errors += backed.failed.length;
           // The refresh just sent is not yet confirmed (ready was read before sending). Look again in a few
           // seconds so a deposit is not rejected with backing_missing until the next full sweep.
