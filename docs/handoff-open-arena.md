@@ -38,7 +38,7 @@ Open the PRs in that order, merge the contract first, then rebase or merge main 
 - A funded community whose audit or backing later lapses blocks the lock, and with 2 or more funded communities nobody can cancel; the agent refreshes backing about 3 minutes before it expires.
 - A battle created without a start time keeps the old behaviour and can never be cancelled or refunded.
 - Registered but unfunded positions leave small orphaned storage after a cancel.
-- The three new contract events `lifecycle_refund_failed`, `lifecycle_joinable_asset_set` and `lifecycle_joinable_asset_removed` are not modelled by the indexer yet, so it will report degraded when the allowlist proposals run.
+- The three contract events `lifecycle_refund_failed`, `lifecycle_joinable_asset_set` and `lifecycle_joinable_asset_removed` are now modelled by the indexer (update 2026-11-11), so the allowlist proposals keep it healthy.
 - Storage-deposit and gas constants in the agent actions are estimates; verify them in the live run.
 
 ## Rules of this project
