@@ -257,6 +257,23 @@ impl Rounds {
         })
     }
 
+    /// Narrows the candidates to the funded communities of an open arena. The
+    /// label list keeps every community so indices stay valid. At least two
+    /// distinct, ascending, known indices are required.
+    pub fn with_funded_candidates(mut self, funded: Vec<u32>) -> Result<Self, RoundError> {
+        let ascending = funded.windows(2).all(|pair| pair[0] < pair[1]);
+        if funded.len() < 2
+            || !ascending
+            || funded
+                .iter()
+                .any(|index| *index as usize >= self.assets.len())
+        {
+            return Err(RoundError::InvalidConfiguration);
+        }
+        self.candidates = funded;
+        Ok(self)
+    }
+
     pub fn mode(&self) -> ScoringMode {
         self.mode
     }

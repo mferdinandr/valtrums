@@ -232,6 +232,7 @@ impl Arena {
             &ObservationTerms::from(terms),
             battle.asset_labels(),
         )
+        .and_then(|rounds| rounds.with_funded_candidates(battle.funded_indices()))
         .unwrap_or_else(|error| env::panic_str(&format!("Rounds rejected: {error:?}")));
         let before = env::storage_usage();
         self.lifecycle_rounds.insert(battle_id.0, rounds);
@@ -449,7 +450,7 @@ impl Arena {
 
     /// Charge the storage added since `before` to the attached deposit and
     /// refund the rest.
-    fn charge_storage(&self, before: u64) {
+    pub(crate) fn charge_storage(&self, before: u64) {
         let cost = env::storage_byte_cost()
             .as_yoctonear()
             .checked_mul(u128::from(env::storage_usage().saturating_sub(before)))
@@ -563,7 +564,7 @@ pub(crate) mod tests {
                 )
                 .expect("backing");
         }
-        // Credits are accepted only once every community is approved.
+        // A credit is accepted once its target community is approved.
         for index in 0..3usize {
             let identity = asset(index as u8 + 1);
             let sender = account(if index == 0 {
