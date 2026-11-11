@@ -19,7 +19,7 @@ export interface BattleStatus {
   /** Specific, non-secret reasons the oracle is holding or blocked. */
   reasons: string[];
   /** Writes it performed this pass, or would perform when writes are disabled. */
-  actions: Array<{ action: "start_lifecycle_rounds" | "open_lifecycle_round" | "submit_lifecycle_observations"; executed: boolean; outcome: string | null }>;
+  actions: Array<{ action: "start_lifecycle_rounds" | "open_lifecycle_round" | "reopen_lifecycle_round" | "submit_lifecycle_observations"; executed: boolean; outcome: string | null }>;
   lastError: string | null;
   updatedAtMs: string;
 }
