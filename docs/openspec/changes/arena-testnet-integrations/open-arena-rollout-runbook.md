@@ -37,14 +37,14 @@ After each step, record the transaction hash, the read-back and anything unexpec
 
 ## Observation policy (step 6): owner decision needed
 
-The draft terms in `open-arena-observation-terms.draft.json` use GeckoTerminal (owner choice 2026-11-11) and the five allowlisted tokens' mainnet pools recorded in `docs/evidence/2026-11-09-market-data-verification.json`. The decimals, tolerance (5 s) and maximum gap (15 s) are proposals, not decisions. Offline hashes of the draft: PriceGain `fb1a382e885944c076e6b4fe62d2eb8686f2a07946acaaa1eaee775ccd09ece2`, VolumeRatio `78116165d12eab06b015bb37350043d62f5a901bd1a7bdae4a5baae99c8ec07d` (`policy-hash <terms.json> <Mode>`; the encoding mirrors `ObservationTerms::digest` and the sandbox helper `terms_digest`).
+The draft terms in `open-arena-observation-terms.draft.json` use on-chain `slot0` at the latest block through the relay (D39 as revised 2026-11-11) and the five allowlisted tokens' mainnet pools recorded in `docs/evidence/2026-11-09-market-data-verification.json`. The decimals (18, matching the collector's price scale), tolerance (5 s) and maximum gap (15 s) are proposals, not decisions. Offline PriceGain hash of the draft: `3d54cbd5a4421eb7f1a09ef8cc249c5be7d525e52bd9f805bf17e9c7085d9dee` (`policy-hash <terms.json> <Mode>`; the encoding mirrors `ObservationTerms::digest` and the sandbox helper `terms_digest`).
 
 **Risk found while preparing this:** the digest includes the scoring mode, but the arena stores one observation policy for every future lock. A battle whose mode differs from the policy's mode still locks, then `start_lifecycle_rounds` refuses its terms, so its deposits stay locked with no round and no cancel (cancel is refused once two communities are funded). Until this is resolved, either keep every demo battle on the policy's mode, or have the owner change the policy before each lock of another mode. The web create form currently offers all four modes.
 
 ## Runtime (step 7)
 
 - The oracle worker exists: `pnpm -C agent build && pnpm -C agent lifecycle:oracle` with `ORACLE_PRIVATE_KEY_FILE` (or `ORACLE_PRIVATE_KEY`), `ORACLE_TERMS_PATH` (map of policy hash to the terms above), `ARENA_APPLICATION_OBSERVATION_SCOPE`, `OBSERVATION_JOURNAL_DIR`, and `ORACLE_WRITES_ENABLED=true` only after a dry start.
-- The observation collector has no live sample source yet (`liveSourceUnavailable()` in `agent/src/observations/collector.ts`): a GeckoTerminal adapter and a collector process are still to be built. Without them no round can resolve.
+- The observation collector: `python3 scripts/rpc-relay.py 18546 rpc.mainnet.chain.robinhood.com` (relay), then `pnpm -C agent observations:collect` with `ARENA_CONTRACT_ID`, `ARENA_APPLICATION_OBSERVATION_SCOPE`, `ORACLE_TERMS_PATH` (the same terms map), `OBSERVATION_JOURNAL_DIR` (the same journal the oracle reads), `REFERENCE_RPC_URL=http://127.0.0.1:18546` and `OBSERVATION_QUALIFIED_MODES=PriceGain`. It reads views only, holds no key and samples every second (`COLLECTOR_INTERVAL_MS`) while a recorded round window is open.
 
 ## Not covered
 

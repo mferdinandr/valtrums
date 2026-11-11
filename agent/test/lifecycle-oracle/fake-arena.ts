@@ -62,6 +62,13 @@ export class FakeArena {
       if (String(a.round_id) !== String(r.id)) throw new Error("WrongRound");
       if (r.start !== null) { if (r.start !== start) throw new Error("AlreadyOpen"); return; }
       r.start = start; r.end = start + 30_000_000_000n;
+    } else if (method === "reopen_lifecycle_round") {
+      // Mirrors the arena: only an open, unresolved window at least 120 s past its end; the round keeps its id.
+      const r = b.round;
+      if (!r || r.start === null || r.end === null) throw new Error("The round has no open window");
+      if (r.winner !== null) throw new Error("The round is already resolved");
+      if (BigInt(this.clock()) * 1_000_000n < r.end + 120_000_000_000n) throw new Error("The round is still within its grace period");
+      r.start = null; r.end = null;
     } else if (method === "submit_lifecycle_observations") {
       const r = b.round;
       if (!r) throw new Error("Rounds not started");
