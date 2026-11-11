@@ -158,7 +158,10 @@ async function main(): Promise<void> {
           // The single protocol-controlled source of reference mappings, shared with scoring.
           registry: new NearReferenceRegistrySource(cfg.arenaContractId, transport),
           now: () => new Date(),
-          refreshAheadMs: rt.intervalSecs * 2000,
+          // Never below a minute: one long battle audit can delay the next visit by that much.
+          refreshAheadMs: Math.max(rt.intervalSecs * 2000, 60_000),
+          // A pending (not passed) community is not re-queried on every pass; its data rarely changes in minutes.
+          notPassedRetryMs: 300_000,
           fetchGoPlus: (q) =>
             fetchGoPlusTokenSecurity(
               q,

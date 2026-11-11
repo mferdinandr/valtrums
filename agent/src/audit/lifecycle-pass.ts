@@ -34,6 +34,14 @@ export interface LifecycleAuditSource {
   get(id: number): Promise<LifecycleBattleView | null>;
 }
 
+/** The contract locks only with at least this many funded communities. */
+const MIN_FUNDED = 2;
+
+/** An unlocked battle that is due to start is revisited at most this often within one sweep. */
+const LOCK_REVISIT_MS = 3_000;
+/** After a backing refresh is sent, the battle is looked at again after this long to confirm it. */
+const BACKING_RECHECK_MS = 4_000;
+
 /** The lifecycle asset identity has no separate version field; this label names that shape (v2 adds the optional reference pair). */
 export const ASSET_MAPPING_VERSION = "asset-identity-v2";
 
@@ -124,18 +132,139 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     throw new Error("lifecycle audit archive requires a non-empty arena label for attribution");
   }
   const provenance: ArchiveProvenance = deps.provenance ?? "recorded";
+  // Survives across passes: whether a battle's funded communities were all audit-ready at its last visit.
+  const lastFundedReady = new Map<number, boolean>();
   return async () => {
     let checked = 0;
     let ready = 0;
     let errors = 0;
     const registry = (await deps.refresh.registry.load()).entries;
-    const total = await deps.source.count();
+    let total = await deps.source.count();
     // Newly joined communities must not wait behind a cold audit of every old arena.
-    // Still visit the full set each pass so existing funded battles get renewed.
+    // Order: (1) battles with a community that has no audit record yet (a fresh battle or a token
+    // that just joined an older one), newest first; (2) everything else, newest first, so existing
+    // funded battles still get renewed. Views are read once up front and reused below.
+    const views = new Map<number, LifecycleBattleView | null>();
+    const hasUnaudited = (id: number, v: LifecycleBattleView | null | undefined): boolean =>
+      !!v && !v.locked && !v.cancelled && v.communities.some((_, i) => !deps.refresh.records.has(`${id}:${i}`));
+    const hot: number[] = [];
+    const rest: number[] = [];
     for (let id = total; id >= 1; id--) {
       try {
+        const v = await deps.source.get(id);
+        views.set(id, v);
+        (hasUnaudited(id, v) ? hot : rest).push(id);
+      } catch {
+        rest.push(id); // the audit loop below retries the read and reports the error
+      }
+    }
+    const queue = [...hot, ...rest];
+    // Unlocked, uncancelled battles can still receive a joining token, so they are re-checked
+    // between steps instead of only once per sweep (locked and cancelled ones never change back).
+    const open = new Set<number>();
+    const attempted = new Map<number, number>();
+    const hotSet = new Set(hot);
+    const visitedAt = new Map<number, number>();
+    const recheckAt = new Map<number, number>();
+    let forced = false;
+    for (const [id, v] of views) if (v && !v.locked && !v.cancelled) open.add(id);
+    for (let pos = 0; pos < queue.length; pos++) {
+      const id = queue[pos]!;
+      try {
+        // A token that joined an already-visited (or later-queued) open battle jumps the queue.
+        let jumped = false;
+        // The battle that just jumped is processed first; scanning again would let two new ones bounce forever.
+        const scan = forced ? [] : [...open].sort((a, b) => b - a);
+        forced = false;
+        for (const openId of scan) {
+          if (openId === id) continue;
+          const v = await deps.source.get(openId);
+          if (!v || v.locked || v.cancelled) {
+            open.delete(openId);
+            continue;
+          }
+          // A battle whose start has come (or has no start), with two funded communities, still unlocked:
+          // its lock waits on backing or audit transactions sent in an earlier visit, so look again soon
+          // instead of after the whole sweep.
+          const nowMs = deps.refresh.now().getTime();
+          const startMs = v.start_at_ms ? Number(v.start_at_ms) : null;
+          const due = recheckAt.get(openId);
+          if (due !== undefined && nowMs >= due) {
+            recheckAt.delete(openId);
+            const later = queue.indexOf(openId, pos + 1);
+            if (later >= 0) queue.splice(later, 1);
+            queue.splice(pos, 0, openId);
+            jumped = true;
+            forced = true;
+            break;
+          }
+          const lockDue =
+            fundedIndices(v).length >= 2 &&
+            // Only worth revisiting while the audits are not the blocker; a battle whose funded
+            // community stays pending would otherwise be re-audited every few seconds.
+            (lastFundedReady.get(openId) ?? true) &&
+            (startMs === null || startMs <= nowMs) &&
+            nowMs - (visitedAt.get(openId) ?? 0) >= LOCK_REVISIT_MS;
+          if (lockDue) {
+            const later = queue.indexOf(openId, pos + 1);
+            if (later >= 0) queue.splice(later, 1);
+            queue.splice(pos, 0, openId);
+            jumped = true;
+            forced = true;
+            break;
+          }
+          if (!hasUnaudited(openId, v)) continue;
+          // A failed audit leaves no record; only jump again when a new community has appeared since the attempt.
+          if ((attempted.get(openId) ?? 0) >= v.communities.length) continue;
+          // Hot battles not visited yet are already ordered by the queue; jumping them would ping-pong.
+          if (hotSet.has(openId) && !attempted.has(openId)) continue;
+          const later = queue.indexOf(openId, pos + 1);
+          if (later >= 0) queue.splice(later, 1);
+          queue.splice(pos, 0, openId);
+          jumped = true;
+          forced = true;
+          break;
+        }
+        if (jumped) {
+          pos--;
+          continue;
+        }
+        // A battle created or joined while this sweep runs jumps the queue instead of waiting for the next pass.
+        const latest = await deps.source.count();
+        if (latest > total) {
+          const fresh: number[] = [];
+          for (let n = latest; n > total; n--) fresh.push(n);
+          total = latest;
+          // The current id is re-queued right after the fresh ones.
+          queue.splice(pos, 1, ...fresh, id);
+          pos--;
+          continue;
+        }
+        // Always read fresh: the up-front view may predate a join that happened while earlier battles ran.
         const view = await deps.source.get(id);
-        if (!view || view.locked || view.cancelled) continue;
+        if (!view || view.locked || view.cancelled) {
+          open.delete(id);
+          continue;
+        }
+        // Start has passed with fewer than two funded communities: the battle can never lock, so
+        // auditing and backing it again is wasted provider time. Only the cancel step still applies.
+        const deadStart = view.start_at_ms ? Number(view.start_at_ms) : null;
+        if (deadStart !== null && deadStart <= deps.refresh.now().getTime() && fundedIndices(view).length < MIN_FUNDED) {
+          open.delete(id);
+          if (deps.cancel) {
+            const outcome = await deps.cancel.tryCancel(id, {
+              startAtMs: deadStart,
+              locked: false,
+              cancelled: false,
+              funded: fundedIndices(view).length,
+            });
+            if (outcome.status === "failed") errors++;
+          }
+          continue;
+        }
+        open.add(id);
+        attempted.set(id, view.communities.length);
+        visitedAt.set(id, deps.refresh.now().getTime());
         log.info("lifecycle audit checking battle", { battleId: id, communities: view.communities.length });
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
@@ -199,9 +328,13 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
           const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass");
           log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length });
           errors += backed.failed.length;
+          // The refresh just sent is not yet confirmed (ready was read before sending). Look again in a few
+          // seconds so a deposit is not rejected with backing_missing until the next full sweep.
+          if (backed.sent.length > 0) recheckAt.set(id, deps.refresh.now().getTime() + BACKING_RECHECK_MS);
           backingReady = funded.every((i) => backed.ready.has(i));
         }
         const fundedReady = result.needsRefresh.every((n) => !fundedSet.has(n.index));
+        lastFundedReady.set(id, fundedReady);
         const startAtMs = view.start_at_ms ? Number(view.start_at_ms) : null;
         let lockStatus: string | undefined;
         if (deps.lock) {
