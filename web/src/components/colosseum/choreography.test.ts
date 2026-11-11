@@ -41,7 +41,7 @@ describe("colosseum exhibition", () => {
     const first = roundAt({ ...state, time: 32 });
     expect(first.stage).toBe("overtime");
     expect(first.candidates).toEqual([0, 2]);
-    expect(first.eliminated).toEqual([1, 3, 4, 5]);
+    expect(first.eliminated).toEqual([1, 3, 4]);
     expect(roundAt({ ...state, time: 35 }).scores).toEqual([]);
     const second = roundAt({ ...state, time: 67 });
     expect(second.stage).toBe("overtime");
@@ -51,7 +51,7 @@ describe("colosseum exhibition", () => {
     const last = roundAt({ ...state, time: 102 });
     expect(last.winner).toBe(2);
     expect(last.history).toHaveLength(3);
-    expect(last.eliminated).toEqual([0, 1, 3, 4, 5]);
+    expect(last.eliminated).toEqual([0, 1, 3, 4]);
     for (let time = 35; time < 102; time += 0.3) {
       const beat = beatAt({ ...state, time });
       expect([0, 2]).toContain(beat.attacker);
@@ -101,17 +101,15 @@ describe("colosseum exhibition", () => {
       resolveScores([{ participant: 0, n: 1n, d: 0n }], "gain"),
     ).toThrow();
   });
-  it("resolves all modes and uses six registry mascots without a synthetic sixth slot", () => {
-    for (const count of [2, 3, 5, 6])
+  it("resolves all modes and uses the five joinable registry mascots (AI is hidden, D35)", () => {
+    for (const count of [2, 3, 5])
       for (const mode of Object.keys(MODES) as ScoreMode[]) {
         const state = { ...makeRuntime(rosterFor(count)), mode, time: 102 };
         expect(roundAt(state).winner).toBe(count > 2 ? 2 : 0);
       }
-    expect(rosterFor(6)[5]).toMatchObject({
-      synthetic: false,
-      demoTokenId: "degen.demo",
-      name: "DEGEN",
-    });
+    expect(rosterFor(5).map((c) => c.name)).toEqual(["CASHCAT", "WALLET", "GOOD", "VLAD", "DEGEN"]);
+    expect(rosterFor(5)[4]).toMatchObject({ synthetic: false, demoTokenId: "degen.demo", name: "DEGEN" });
+    expect(rosterFor(6)[5]).toMatchObject({ synthetic: true });
     expect(
       roundAt({ ...makeRuntime(), scenario: "clean", time: 32 }).history,
     ).toHaveLength(1);
@@ -131,7 +129,7 @@ describe("colosseum exhibition", () => {
       attackers.add(
         beatAt({ ...makeRuntime(), phase: "battle", time }).attacker,
       );
-    expect([...attackers].sort()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect([...attackers].sort()).toEqual([0, 1, 2, 3, 4]);
   });
   it("targets only personal arena stations and never applies damage to a rival", () => {
     for (const count of [2, 3, 5, 6])
@@ -198,7 +196,6 @@ describe("colosseum exhibition", () => {
       cashcat: ["Eyes", "Tail"],
       wallet: ["StitchedWallet", "BrassClasp"],
       good: ["SunshineRays", "ThumbsUp"],
-      ai: ["CurledTail", "HeartBadge"],
       vlad: ["ArcherHood", "ArcherBow"],
       degen: ["ShowmanHat", "StarWand"],
     };
@@ -224,8 +221,8 @@ describe("colosseum exhibition", () => {
           gltf.nodes.some((n: { name?: string }) => n.name === "Receipt"),
         ).toBe(false);
     }
-    expect(CONTENDERS.map((c) => c.name)).toEqual(["CASHCAT", "WALLET", "GOOD", "AI", "VLAD", "DEGEN"]);
-    for (const asset of ["btcethusdt", "oak", "rebate", "wif"]) {
+    expect(CONTENDERS.map((c) => c.name)).toEqual(["CASHCAT", "WALLET", "GOOD", "VLAD", "DEGEN"]);
+    for (const asset of ["ai", "btcethusdt", "oak", "rebate", "wif"]) {
       expect(CONTENDERS.some((c) => c.asset === asset)).toBe(false);
       expect(readFileSync(join(process.cwd(), `public/models/colosseum/${asset}.glb`)).readUInt32LE(0)).toBe(0x46546c67);
     }
