@@ -382,6 +382,9 @@ function validateState(state: StoreState): void {
     const hex64 = (v: unknown): boolean => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
     if (name === "lifecycle_battle_created") check(decimal(e.battleId) && acct(e.creator), "invalid creator");
     else if (name === "lifecycle_deposit") check(decimal(e.battleId) && decimal(e.community) && acct(e.accountId) && decimal(e.amount), "invalid deposit");
+    else if (name === "lifecycle_community_added") check(decimal(e.battleId) && decimal(e.community) && acct(e.representation) && acct(e.accountId), "invalid community added");
+    else if (name === "lifecycle_battle_cancelled") check(decimal(e.battleId), "invalid battle cancellation");
+    else if (name === "lifecycle_refund") check(decimal(e.battleId) && decimal(e.community) && acct(e.accountId) && decimal(e.amount), "invalid refund");
     else if (name === "audit_updated") check(decimal(e.battleId) && decimal(e.community) && ["pass", "reject", "pending"].includes(String(e.result)) && text(e.evidenceHash) && optDec(e.expiresAtMs), "invalid audit");
     else if (name === "backing_updated") check(decimal(e.battleId) && decimal(e.community) && typeof e.approved === "boolean" && (e.evidenceHash === null || text(e.evidenceHash)) && optDec(e.expiresAtMs), "invalid backing update");
     else if (name === "lifecycle_representation_trust_changed") check(acct(e.representation) && typeof e.trusted === "boolean", "invalid trust change");

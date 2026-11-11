@@ -109,6 +109,9 @@ export type SupportedEventName = RoundEventName
   | "lifecycle_battle_created"
   | "audit_updated"
   | "lifecycle_deposit"
+  | "lifecycle_community_added"
+  | "lifecycle_battle_cancelled"
+  | "lifecycle_refund"
   | "backing_updated"
   | "lifecycle_representation_trust_changed"
   | "late_deposit_recorded"
@@ -128,6 +131,9 @@ export const SUPPORTED_EVENTS: readonly SupportedEventName[] = [
   "lifecycle_battle_created",
   "audit_updated",
   "lifecycle_deposit",
+  "lifecycle_community_added",
+  "lifecycle_battle_cancelled",
+  "lifecycle_refund",
   "backing_updated",
   "lifecycle_representation_trust_changed",
   "late_deposit_recorded",
@@ -191,6 +197,9 @@ export type AcceptedEvent =
       accountId: string;
       amount: string;
     })
+  | (EventCommon & { name: "lifecycle_community_added"; battleId: string; community: string; representation: string; accountId: string })
+  | (EventCommon & { name: "lifecycle_battle_cancelled"; battleId: string })
+  | (EventCommon & { name: "lifecycle_refund"; battleId: string; community: string; accountId: string; amount: string })
   | (EventCommon & {
       name: "backing_updated";
       battleId: string;
