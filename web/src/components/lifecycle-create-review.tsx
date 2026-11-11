@@ -6,6 +6,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
+import { CreatorFirstDeposit } from "@/components/creator-first-deposit";
+import { useBalances } from "@/hooks/use-balances";
+import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
@@ -20,6 +23,7 @@ import {
   toActionRequest,
   type AssetDraft,
 } from "@/lib/arena-read/create-review";
+import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
 import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
 import "@/components/lifecycle/lifecycle.css";
 
@@ -36,6 +40,20 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [mode, setMode] = useState<string>(config.createModes[0] ?? "PriceGain");
   const [startInput, setStartInput] = useState("");
   const [copied, setCopied] = useState(false);
+  const [token, setToken] = useState("");
+  const [amount, setAmount] = useState("");
+  const { balances } = useBalances();
+  const joinable = useJoinableAssets(namespace.arenaContract);
+  // Only tokens the creator holds and the arena lets anyone join with can back the first deposit.
+  const owned = useMemo(
+    () =>
+      (balances?.tokens ?? []).filter(
+        (t) => BigInt(t.balance) > 0n && (joinable.items ?? []).some((a) => a.representation === t.token),
+      ),
+    [balances, joinable.items],
+  );
+  const chosen = owned.find((t) => t.token === token) ?? null;
+  const depositProblems = firstDepositProblems(token, amount, chosen ? chosen.balance : null);
   const now = useNow(1000);
   // Default start: 15 minutes from the first client clock read (the server render has no clock).
   useEffect(() => {
@@ -44,7 +62,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const startAtMs = localInputToMs(startInput);
   const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now, config.createModes);
   const request = useMemo(() => toActionRequest(NO_ASSETS, mode, startAtMs), [mode, startAtMs]);
-  const { signIn } = useWallet();
+  const { signIn, accountId } = useWallet();
   const create = useLifecycleCreate(
     request,
     review.ok ? review : null,
@@ -136,10 +154,51 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             claims a refund.
           </p>
         </Card>
+        <Card className="space-y-4">
+          <CardTitle>03 / Your first deposit</CardTitle>
+          <p className="text-xs leading-6 text-mute">
+            A battle needs a deposit from its creator before it can lock. After you sign the create transaction, you
+            join with this token and deposit it right away.
+          </p>
+          {owned.length === 0 ? (
+            <p role="status" className="text-xs text-neon-amber">
+              {balances === null || joinable.items === null
+                ? "Reading your tokens…"
+                : "You hold no token this arena accepts. Claim some from the faucet first."}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Token to deposit">
+              {owned.map((t) => (
+                <button
+                  key={t.token}
+                  type="button"
+                  className="lifecycle-mode"
+                  aria-pressed={token === t.token}
+                  onClick={() => setToken(t.token)}
+                >
+                  <strong>{t.symbol}</strong>
+                  <span>Balance {t.balance} base units</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <Label>
+            Amount to deposit (smallest unit)
+            <Input
+              inputMode="numeric"
+              autoComplete="off"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.trim())}
+            />
+          </Label>
+          <p className="text-xs leading-6 text-mute">
+            Faucet tokens have 18 decimals, so 1 token is 1000000000000000000.
+          </p>
+        </Card>
       </fieldset>
 
       <Card aria-label="Transaction review">
-        <CardTitle>03 / Review before you sign</CardTitle>
+        <CardTitle>04 / Review before you sign</CardTitle>
         {!review.ok ? (
           touched ? (
             <ul
@@ -200,6 +259,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                   type="button"
                   onClick={create.preview}
                   disabled={
+                    depositProblems.length > 0 ||
                     create.flow.step === "previewing" ||
                     create.flow.step === "signing"
                   }
@@ -218,6 +278,13 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
                 </Button>
               )}
             </div>
+            {depositProblems.length > 0 && (
+              <ul role="status" className="mt-2 list-disc pl-4 text-xs text-neon-amber">
+                {depositProblems.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            )}
             {!create.connected && (
               <p className="mt-2 text-xs text-mute">
                 Signing needs a connected wallet on a deployment that enables it
@@ -295,6 +362,16 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           </>
         )}
       </Card>
+      {create.flow.step === "done" && create.flow.result.ok && chosen && (
+        <CreatorFirstDeposit
+          namespace={namespace}
+          creator={accountId ?? ""}
+          txHash={create.flow.result.txHash}
+          representation={chosen.token}
+          label={chosen.symbol}
+          amount={amount}
+        />
+      )}
     </div>
   );
 }
