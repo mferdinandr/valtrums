@@ -128,22 +128,11 @@ test("creation is review-only without a wallet and sends no action request", asy
   await expect(
     page.getByRole("heading", { name: /Bring your crews/ }),
   ).toBeVisible();
-  const pickers = page.getByPlaceholder("Search a token name (CASHCAT) or address");
-  await expect(pickers.first()).toBeVisible();
-  // Pick registered tokens from the backend-searched grid; each becomes a chip with its plain name (no mock prefix).
-  await page.getByRole("button", { name: "Add CASHCAT" }).click();
-  await page.getByRole("button", { name: "Add WALLET" }).click();
-  const chips = page.getByLabel("Chosen communities");
-  await expect(chips.getByText("CASHCAT", { exact: true })).toBeVisible();
-  await expect(chips.getByText("WALLET", { exact: true })).toBeVisible();
-  await expect(page.getByText("mCASHCAT")).toHaveCount(0);
-  // A chosen token cannot be chosen twice.
-  await expect(page.getByRole("button", { name: "CASHCAT already chosen" })).toBeDisabled();
-  for (const [i, name] of ["CASHCAT", "WALLET"].entries()) {
-    const setup = page.locator("details", { hasText: `Required token setup for ${name}` });
-    await setup.getByLabel(/Representation/).fill(`c${i + 1}.rep.testnet`);
-    await setup.getByLabel("Custody domain").fill("custody-e2e");
-  }
+  // Open arena (D34): a start time, no community picker. The default start is filled from the client clock.
+  const start = page.getByLabel(/Start time/);
+  await expect(start).toBeVisible();
+  await expect(start).not.toHaveValue("");
+  await expect(page.getByPlaceholder("Search a token name (CASHCAT) or address")).toHaveCount(0);
   const review = page.getByLabel("Transaction review");
   await expect(
     review.getByText("create_lifecycle_battle").first(),
@@ -154,6 +143,8 @@ test("creation is review-only without a wallet and sends no action request", asy
   await expect(page.getByLabel("Exact arguments")).toContainText(
     '"mode": "PriceGain"',
   );
+  await expect(page.getByLabel("Exact arguments")).toContainText('"assets": []');
+  await expect(page.getByLabel("Exact arguments")).toContainText('"start_at_ms"');
   await expect(page.getByText(/storage payment, not a stake/)).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Connect wallet to sign" }),
@@ -288,25 +279,15 @@ test.describe("lifecycle intent terminal", () => {
     expect(calls).toEqual([]);
   });
 
-  test("create resolves registry tokens, asks about an unknown one and never invents an address", async ({ page }) => {
+  test("create asks for a start time and reviews an open arena with no communities", async ({ page }) => {
     const calls = watchActions(page);
-    const registryQueries: string[] = [];
-    page.on("request", (r) => {
-      if (r.url().includes("/api/arena/v1/assets")) registryQueries.push(r.url());
-    });
     await page.goto("/terminal");
-    await ask(page, "create price gain battle with PEPE, DOGE");
-    await expect(page.getByRole("alert").filter({ hasText: /could not find "pepe"/ })).toBeVisible();
-    await ask(page, `create price gain battle with 0x${"7".repeat(40)}, 0x${"1".repeat(40)}`);
-    await expect(page.getByRole("alert").filter({ hasText: /is not in the asset registry/ })).toBeVisible();
-    await ask(page, `create price gain battle with 0x${"1".repeat(40)}, 0x${"2".repeat(40)}, 0x${"3".repeat(40)}`);
-    await expect(page.getByText(/registry asset 46630:0x1{40}/)).toBeVisible();
-    for (const n of [1, 2, 3]) {
-      await page.getByLabel(`Community ${n} representation (NEP-141 account)`).fill(`c${n}.rep.testnet`);
-      await page.getByLabel(`Community ${n} custody domain`).fill("custody-e2e");
-    }
-    await expect(page.getByLabel("Reviewed call").getByText("create_lifecycle_battle").first()).toBeVisible();
-    expect(registryQueries.length).toBeGreaterThan(0);
+    await ask(page, "create price gain battle");
+    await expect(page.getByText(/When should it start/)).toBeVisible();
+    await ask(page, "create price gain battle in 15 minutes");
+    const reviewed = page.getByLabel("Reviewed call");
+    await expect(reviewed.getByText("create_lifecycle_battle").first()).toBeVisible();
+    await expect(reviewed.getByText(/none: communities join before the start/)).toBeVisible();
     expect(calls).toEqual([]);
   });
 
@@ -376,43 +357,10 @@ test("one application: every menu entry is present and the former A/B urls redir
   await expect(page.getByText(/demo mode|simulated data/i)).toHaveCount(0);
 });
 
-test("token names resolve to registry addresses in the terminal and the create picker shows the name", async ({ page }) => {
-  const actionCalls: string[] = [];
-  page.on("request", (r) => {
-    if (r.url().includes("/api/arena/actions") || r.url().includes("/api/arena/session")) actionCalls.push(r.url());
-  });
-  // Create picker: searching a name on the backend finds the labeled mock token.
-  await page.goto("/arena/new");
-  const picker = page.getByPlaceholder("Search a token name (CASHCAT) or address").first();
-  await picker.fill("cashcat");
-  await expect(page.getByRole("button", { name: "Add CASHCAT" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add WALLET" })).toHaveCount(0);
-  // Terminal: names resolve through the registry and the reviewed call carries the registry address.
-  await page.goto("/terminal");
-  await page.getByLabel("Terminal prompt").fill("create price gain battle with cashcat, wallet");
-  await page.getByRole("button", { name: "Read my request" }).click();
-  await expect(page.getByText(/registry asset 46630:0x5b2ba17e5be1b611c1299809db89c5fe21d9d0a6/i)).toBeVisible();
-  expect(actionCalls).toEqual([]);
-});
-
-test("the create picker is a compact grid with logos, removable chips and no reference wording", async ({ page }) => {
-  await page.goto("/arena/new");
-  const grid = page.locator(".token-grid");
-  await expect(grid.getByRole("button", { name: "Add CASHCAT" })).toBeVisible();
-  // The summary says how many tokens exist, not the contract limit of 16.
-  await expect(page.getByText(/0 chosen · \d+ available · at least 2 needed/)).toBeVisible();
-  // Reads like a name, not an address row: no "reference" text and no mock prefix in the picker.
-  await expect(grid.getByText(/reference/i)).toHaveCount(0);
-  await expect(grid.getByText(/^m[A-Z]/)).toHaveCount(0);
-  // Each token has an icon frame (logo or monogram) and the grid has several columns on a desktop width.
-  await expect(grid.locator(".token-icon").first()).toBeVisible();
-  const columns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
-  expect(columns).toBeGreaterThanOrEqual(3);
-  await page.getByRole("button", { name: "Add CASHCAT" }).click();
-  await page.getByRole("button", { name: "Remove CASHCAT" }).click();
-  await expect(page.getByRole("button", { name: "Add CASHCAT" })).toBeEnabled();
-  // Narrow screens keep the grid inside the page.
+test("the create page keeps the start-time form inside a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/arena/new");
+  await expect(page.getByLabel(/Start time/)).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
