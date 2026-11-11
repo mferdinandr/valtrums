@@ -692,12 +692,49 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
             .max_gas()
             .transact()
     };
+    // Recovery: a first window whose evidence never completed is abandoned after
+    // the grace, and the same round reopens with a fresh, later window.
+    let missed = now_ns - 290_000_000_000;
+    oracle(
+        "open_lifecycle_round",
+        json!({"battle_id": id.to_string(), "round_id": "1", "start_ns": missed.to_string()}),
+    )
+    .await?
+    .into_result()?;
+    let outsider = w
+        .creator
+        .call(w.arena.id(), "reopen_lifecycle_round")
+        .args_json(json!({"battle_id": id.to_string(), "round_id": "1"}))
+        .deposit(yocto())
+        .transact()
+        .await?;
+    assert!(outsider.is_failure(), "only the oracle may reopen a round");
+    let reopened = oracle(
+        "reopen_lifecycle_round",
+        json!({"battle_id": id.to_string(), "round_id": "1"}),
+    )
+    .await?
+    .into_result()?;
+    assert!(reopened
+        .logs()
+        .iter()
+        .any(|l| l.contains("lifecycle_round_reopened_v1")));
     oracle(
         "open_lifecycle_round",
         json!({"battle_id": id.to_string(), "round_id": "1", "start_ns": start.to_string()}),
     )
     .await?
     .into_result()?;
+    // The fresh window is inside its grace, so it cannot be abandoned again yet.
+    let early = oracle(
+        "reopen_lifecycle_round",
+        json!({"battle_id": id.to_string(), "round_id": "1"}),
+    )
+    .await?;
+    assert!(
+        early.is_failure(),
+        "a window inside its grace cannot be reopened"
+    );
     let observation = |community: usize, end: u64| {
         json!({
             "community": community,
