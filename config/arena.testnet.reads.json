@@ -1,0 +1,28 @@
+[
+  {
+    "deploymentId": "near-testnet-existing-arena",
+    "network": "near-testnet",
+    "arenaContract": "arena.valtrum-owner-b694.testnet",
+    "protocol": "lifecycle-v2",
+    "adapter": "rpc",
+    "companions": {
+      "payout": "payout.valtrum-owner-b694.testnet",
+      "registry": "arena.valtrum-owner-b694.testnet",
+      "backing": []
+    },
+    "abi": {
+      "version": "lifecycle-application-v1",
+      "evidence": "docs/dev-stack.md: read-only versioned ABI probes at block 277251181 on 2026-11-12",
+      "codeHash": "FSh893uD3RjntE9LvyiEAT1imwPkCJ2tgJKgJsND3Zpn"
+    },
+    "capabilities": {
+      "battles": { "enabled": true, "reasons": ["Versioned contract views; canonical indexed discovery not established"] },
+      "detail": { "enabled": true, "reasons": ["Versioned battle and readiness views verified on the deployed arena"] },
+      "assets": { "enabled": true, "reasons": ["Registry membership alone does not establish deposit eligibility"] },
+      "audits": { "enabled": false, "reasons": ["No shared audit archive binding verified"] },
+      "observations": { "enabled": false, "reasons": ["Qualified journal binding must be verified before enabling chart reads"] },
+      "oracle": { "enabled": false, "reasons": ["Oracle status binding must be verified separately"] },
+      "custody": { "enabled": false, "reasons": ["Live custody-to-payout proof remains pending"] }
+    }
+  }
+]
