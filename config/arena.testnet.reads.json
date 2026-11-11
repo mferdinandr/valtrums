@@ -20,7 +20,7 @@
       "detail": { "enabled": true, "reasons": ["Versioned battle and readiness views verified on the deployed arena"] },
       "assets": { "enabled": true, "reasons": ["Registry membership alone does not establish deposit eligibility"] },
       "audits": { "enabled": false, "reasons": ["No shared audit archive binding verified"] },
-      "observations": { "enabled": false, "reasons": ["Qualified journal binding must be verified before enabling chart reads"] },
+      "observations": { "enabled": true, "reasons": ["Journal binding verified: the dev stack's collector writes and the read API replays one journal under this deployment's namespace"] },
       "oracle": { "enabled": false, "reasons": ["Oracle status binding must be verified separately"] },
       "custody": { "enabled": false, "reasons": ["Live custody-to-payout proof remains pending"] }
     }

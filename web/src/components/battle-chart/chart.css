@@ -89,6 +89,10 @@
   background: var(--line);
   border-radius: 50%;
 }
+.score-chart-overlap {
+  font-size: 12px;
+  color: #526777;
+}
 .score-chart-inspect {
   display: flex;
   align-items: center;

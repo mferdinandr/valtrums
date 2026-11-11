@@ -22,6 +22,8 @@ export function useObservationChart(namespace: Namespace, battleId: string, enab
     const poller = createObservationPoller({
       fetcher: (params, signal) => fetchObservations(namespaceRef.current, battleId, params, signal),
       onView: (view) => setState({ scope, view }),
+      // The collector writes one sample per second; poll as often so the chart advances every second.
+      intervalMs: 1000,
     });
     const onVisibility = () => poller.setPaused(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", onVisibility);

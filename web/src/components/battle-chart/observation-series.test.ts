@@ -24,7 +24,10 @@ describe("observation chart adapter", () => {
     const m = observationSeries(data([item(0, START_MS, "300"), item(0, START_MS + 15_000n, "310"), item(1, START_MS, "200")]));
     expect(m.drawable).toBe(true);
     expect(m.duration).toBe(30);
-    expect(m.series[0]!.points).toEqual([{ x: 0, value: 0 }, { x: 15, value: 3.33 }]);
+    expect(m.series[0]!.points).toHaveLength(2);
+    expect(m.series[0]!.points[0]).toEqual({ x: 0, value: 0 });
+    expect(m.series[0]!.points[1]!.x).toBe(15);
+    expect(m.series[0]!.points[1]!.value).toBeCloseTo(3.333333333333, 10);
     expect(m.series[1]!.points).toEqual([{ x: 0, value: 0 }]);
   });
 

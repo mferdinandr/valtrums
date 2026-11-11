@@ -131,6 +131,11 @@ export interface RefreshDeps {
   now: () => Date;
   /** Re-audit when less than this much approval life remains (default 0). */
   refreshAheadMs?: number;
+  /**
+   * Do not re-audit a community whose last decision was not a pass until this much time passed (default 0:
+   * every pass). A missing, changed or expired record is always audited at once.
+   */
+  notPassedRetryMs?: number;
   fetchGoPlus: (q: GoPlusQuery) => Promise<RawGoPlusResponse>;
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
   submitter: Pick<AuditSubmitter, "submit">;
@@ -192,8 +197,12 @@ export async function refreshBattleAudit(
     deps.policy,
     new Date(deps.now().getTime() + (deps.refreshAheadMs ?? 0)),
   );
-  for (const { index } of before.needsRefresh) {
+  for (const { index, reason } of before.needsRefresh) {
     const log = deps.log ?? silentLogger;
+    if (reason === "not_passed" && deps.notPassedRetryMs) {
+      const last = deps.records.get(key(index));
+      if (last && deps.now().getTime() - Date.parse(last.decidedAt) < deps.notPassedRetryMs) continue;
+    }
     const { asset, hold } = resolved[index]!;
     const target = goplusTarget(asset);
     log.info("audit: checking token security", { battleId, community: index, representation: asset.representation });

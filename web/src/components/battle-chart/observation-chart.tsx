@@ -5,7 +5,7 @@ import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { useObservationChart } from "@/hooks/use-observation-chart";
 import type { Namespace } from "@/lib/arena-read/application";
 import { ScoreChart } from "./chart";
-import { exactScoreText, observationSeries } from "./observation-series";
+import { exactScoreText, observationSeries, withNames } from "./observation-series";
 import { modeName } from "@/lib/arena-read/lifecycle-presentation";
 
 /**
@@ -16,9 +16,12 @@ import { modeName } from "@/lib/arena-read/lifecycle-presentation";
 export function ObservationChart({
   namespace,
   battleId,
+  names,
 }: {
   namespace: Namespace;
   battleId: string;
+  /** Token name per community index; falls back to "Community N" when absent. */
+  names?: readonly string[];
 }) {
   const view = useObservationChart(namespace, battleId, true);
   const [selected, setSelected] = useState("0");
@@ -38,7 +41,8 @@ export function ObservationChart({
   }
   const env = view.latest;
   const data = { ...env.data, items: view.items };
-  const model = observationSeries(data);
+  const model = observationSeries(data, names);
+  const who = (community: number): string => names?.[community] ?? `community ${community + 1}`;
   const projection = data.projection;
   const recorded = data.recorded;
   const provisional = projection?.status === "provisional";
@@ -73,7 +77,7 @@ export function ObservationChart({
           pending={!provisional}
           result={
             recorded?.winner != null
-              ? `Recorded result · community ${recorded.winner + 1}`
+              ? `Recorded result · ${who(recorded.winner)}`
               : undefined
           }
           resetKey={`${data.battleId}:${recorded?.roundId ?? ""}`}
@@ -101,11 +105,11 @@ export function ObservationChart({
           {projection.scores
             .map(
               (s, i) =>
-                `community ${(s?.community ?? i) + 1} ${s ? exactScoreText(s) : "unavailable"}`,
+                `${who(s?.community ?? i)} ${s ? exactScoreText(s) : "unavailable"}`,
             )
             .join(" · ")}
           {provisional && projection.provisionalLeaders.length > 0
-            ? ` · provisional leader: ${projection.provisionalLeaders.map((c) => c + 1).join(", ")}`
+            ? ` · provisional leader: ${projection.provisionalLeaders.map((c) => who(c)).join(", ")}`
             : ""}
         </p>
       )}
@@ -115,7 +119,7 @@ export function ObservationChart({
         ...env.provenance.reasons,
       ].map((r) => (
         <p key={r} className="text-xs text-mute">
-          {r}
+          {withNames(r, names)}
         </p>
       ))}
     </section>

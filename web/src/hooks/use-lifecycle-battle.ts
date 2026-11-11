@@ -18,7 +18,7 @@ const INITIAL: LifecycleBattleView = { data: null, loading: true, error: null, s
  * is applied only if it is still the latest for the same namespace and battle, so a slow old answer can
  * never overwrite a newer one. Failure keeps the last good data flagged stale; it never loads demo data.
  */
-export function useLifecycleBattle(namespace: Namespace, battleId: string, refreshMs = 5000): LifecycleBattleView {
+export function useLifecycleBattle(namespace: Namespace, battleId: string, refreshMs = 2000): LifecycleBattleView {
   const scope = `${applicationKey(namespace)}:${battleId}`;
   const [state, setState] = useState<{ scope: string; view: LifecycleBattleView }>({ scope, view: INITIAL });
   useEffect(() => {
