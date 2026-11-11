@@ -315,14 +315,8 @@ export function LifecycleParticipate({
   return (
     <Card>
       <CardTitle>Deposit in a crew</CardTitle>
-      <div className="lifecycle-stepper">
-        <span>01 · Pick a crew</span>
-        <span>02 · Save your spot</span>
-        <span>03 · Review &amp; deposit</span>
-      </div>
       <p className="mb-3 text-xs text-mute">
-        Joined with a token already? Your spot is saved, so you can skip step 2.
-        A crew counts as entered once it holds a deposit.
+        Joined already? Skip "Save your spot" and deposit. A crew counts as entered once it holds a deposit.
       </p>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Community">
         {communities.map((c) => (

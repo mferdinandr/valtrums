@@ -20,7 +20,6 @@ import {
   utc,
   type OpenPhase,
 } from "@/lib/arena-read/open-arena";
-import { formatCountdown } from "@/lib/amounts";
 
 const sameAsset = (a: { chain_id: string; token_address: string }, b: { chain_id: string; token_address: string }) =>
   a.chain_id === b.chain_id && a.token_address.toLowerCase() === b.token_address.toLowerCase();
@@ -41,14 +40,12 @@ export function OpenArenaPanel({
   battleId,
   detail,
   phase,
-  now,
   name,
 }: {
   namespace: Namespace;
   battleId: number | null;
   detail: LifecycleDetail;
   phase: OpenPhase;
-  now: number;
   name: (index: number) => string;
 }) {
   const communities = detail.battle.communities;
@@ -61,8 +58,7 @@ export function OpenArenaPanel({
       <div role="status" aria-live="polite" className="space-y-2 text-sm leading-7">
         {phase.kind === "gathering" && (
           <p>
-            Starts {utc(phase.startAtMs)}
-            {now > 0 ? ` · ${formatCountdown(phase.msLeft)} left` : ""}. Any approved token can join until then.
+            Any approved token can join until {utc(phase.startAtMs)}.
           </p>
         )}
         {phase.kind === "awaiting_lock" && (
@@ -81,15 +77,6 @@ export function OpenArenaPanel({
           <Badge tone="mute">{pending} pending (no deposit yet)</Badge>
           {phase.kind === "cancelled" && <Badge tone="amber">cancelled</Badge>}
         </div>
-        {communities.length > 0 && (
-          <ul className="text-xs text-mute">
-            {communities.map((c, i) => (
-              <li key={c.representation}>
-                {name(i)}: {isFunded(c.vault) ? "entered" : "pending"}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
       {battleId === null ? null : (
         <div className="mt-6 space-y-8">

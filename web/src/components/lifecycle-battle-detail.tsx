@@ -145,13 +145,6 @@ export function LifecycleBattleDetail({
                 ? "The crews are locked in. Follow the round."
                 : "Join with a token or deposit in a crew."}
           </p>
-          <div className="lifecycle-facts">
-            <span>30-second rounds</span>
-            <span>Original-token rewards</span>
-            <span>
-              {fixture ? "Fixture data · not a live battle" : namespace.network}
-            </span>
-          </div>
         </div>
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -264,7 +257,6 @@ export function LifecycleBattleDetail({
         battleId={safeBattleId}
         detail={detail}
         phase={open}
-        now={now}
         name={name}
       />
 
@@ -337,19 +329,6 @@ export function LifecycleBattleDetail({
                     {approved ? "Fully backed" : "Backing pending"}
                   </Badge>
                 </div>
-                {!detail.battle.locked && r.blockers.length > 0 && (
-                  <details className="lifecycle-tech">
-                    <summary>Why deposits are closed</summary>
-                    <ul
-                      className="list-disc pl-4 text-xs text-neon-amber"
-                      aria-label={`Why community ${r.index + 1} is not ready`}
-                    >
-                      {r.blockers.map((b) => (
-                        <li key={b}>{b}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
                 <details className="lifecycle-tech">
                   <summary>Token details</summary>
                   {r.label && (
@@ -375,9 +354,9 @@ export function LifecycleBattleDetail({
         </div>
       </section>
 
-      <Card>
-        <CardTitle>Round history</CardTitle>
-        {detail.history && detail.history.items.length > 0 ? (
+      {detail.history && detail.history.items.length > 0 && (
+        <Card>
+          <CardTitle>Round history</CardTitle>
           <ul className="space-y-2 text-sm">
             {detail.history.items.map((h) => (
               <li key={h.round_id}>
@@ -386,13 +365,8 @@ export function LifecycleBattleDetail({
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="text-sm text-mute">
-            No stored history available. Windows, scores and evidence of earlier
-            rounds are never reconstructed.
-          </p>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
