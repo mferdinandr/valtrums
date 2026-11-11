@@ -1,6 +1,7 @@
 "use client";
 
 import { AgentGrants } from "@/components/agents/agent-grants";
+import { AutonomousAgent } from "@/components/agents/autonomous-agent";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { Card } from "@/components/ui/card";
 import { useApplicationDeployment } from "@/components/providers";
@@ -15,13 +16,20 @@ export default function AgentsPage() {
           <span className="arcade-kicker">PLAYER AGENTS</span>
           <h1>Your agents, your rules.</h1>
           <p className="text-sm text-mute">
-            Set a token, spending limits and an end date for your agent. You can revoke access at any time.
-            Your agent can suggest deposits, but cannot move tokens on its own.
+            Create an agent with its own wallet that plays battles by itself, or give an agent a spending grant from your own account.
+            A grant agent can suggest deposits but cannot move tokens on its own, and you can revoke it at any time.
           </p>
         </div>
         <CarnivalScene mode="terminal" caption="Your agent kiosk" />
       </header>
-      {namespace ? <AgentGrants namespace={namespace} /> : <Card role="alert">Agents are currently unavailable. Please try again later.</Card>}
+      {namespace ? (
+        <>
+          <AutonomousAgent namespace={namespace} />
+          <AgentGrants namespace={namespace} />
+        </>
+      ) : (
+        <Card role="alert">Agents are currently unavailable. Please try again later.</Card>
+      )}
     </div>
   );
 }
