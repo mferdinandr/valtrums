@@ -135,16 +135,9 @@ export function LifecycleBattleDetail({
       <section className="lifecycle-hero">
         <div>
           <span className="lifecycle-pill">
-            BATTLE #{detail.battleId} · {rows.length} crews
+            BATTLE #{detail.battleId}
           </span>
           <h1>{modeName(detail.battle.mode)}</h1>
-          <p className="text-sm text-mute">
-            {status === "cancelled"
-              ? "This battle was cancelled. Depositors can claim a refund."
-              : detail.battle.locked
-                ? "The crews are locked in. Follow the round."
-                : "Join with a token or deposit in a crew."}
-          </p>
         </div>
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -314,7 +307,6 @@ export function LifecycleBattleDetail({
                   <h3>{name(r.index)}</h3>
                 </button>
                 <p className="lifecycle-amount">{exactUnits(r.vault)}</p>
-                <p className="text-xs text-mute">Deposited so far</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {r.recordedWinner && (
                     <Badge tone="green">recorded winner</Badge>
@@ -322,11 +314,8 @@ export function LifecycleBattleDetail({
                   {r.eliminated && (
                     <Badge tone="mute">eliminated · recorded candidates</Badge>
                   )}
-                  <Badge tone={r.audit.state === "valid" ? "green" : "amber"}>
-                    {r.audit.state === "valid" ? "Safety check passed" : "Safety check pending"}
-                  </Badge>
-                  <Badge tone={approved ? "green" : "amber"}>
-                    {approved ? "Fully backed" : "Backing pending"}
+                  <Badge tone={approved && r.audit.state === "valid" ? "green" : "amber"}>
+                    {approved && r.audit.state === "valid" ? "Approved" : "Waiting for approval"}
                   </Badge>
                 </div>
                 <details className="lifecycle-tech">

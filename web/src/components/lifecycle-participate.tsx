@@ -113,7 +113,9 @@ export function Step({
         </ul>
       ) : (
         <>
-          <dl className="grid gap-1 text-xs sm:grid-cols-[12rem_1fr]">
+          <details className="lifecycle-tech">
+            <summary>Technical details</summary>
+          <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-[12rem_1fr]">
             {review.lines.map((l) => (
               <div key={l.label} className="contents">
                 <dt className="text-mute">{l.label}</dt>
@@ -121,11 +123,12 @@ export function Step({
               </div>
             ))}
           </dl>
-          <ul className="list-disc pl-4 text-xs text-mute">
+          <ul className="mt-2 list-disc pl-4 text-xs text-mute">
             {review.notes.map((n) => (
               <li key={n}>{n}</li>
             ))}
           </ul>
+          </details>
           {run.connected ? (
             <Button
               type="button"
@@ -315,9 +318,6 @@ export function LifecycleParticipate({
   return (
     <Card>
       <CardTitle>Deposit in a crew</CardTitle>
-      <p className="mb-3 text-xs text-mute">
-        Joined already? Skip "Save your spot" and deposit. A crew counts as entered once it holds a deposit.
-      </p>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Community">
         {communities.map((c) => (
           <Button
@@ -340,7 +340,7 @@ export function LifecycleParticipate({
           namespaceKey={applicationKey(namespace)}
           onSigningChange={setRegisterBusy}
           busyElsewhere={depositBusy}
-          title="Save your spot (a small storage fee, not a stake)"
+          title="Save your spot"
           review={registerReview}
           request={registerReq}
         />
@@ -356,9 +356,7 @@ export function LifecycleParticipate({
             disabled={signing}
           />
           <span className="mt-2 block leading-6 text-mute">
-            Enter the amount in the token&apos;s smallest unit. Faucet tokens
-            have 18 decimals, so 1 token is 1000000000000000000. Check the
-            amount in your wallet before you sign.
+            In the token&apos;s smallest unit (1 token = 1000000000000000000).
           </span>
         </label>
         <Step
