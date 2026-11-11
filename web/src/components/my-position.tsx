@@ -8,7 +8,7 @@ import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { readCreatorEscrow, readMyPositions, type CreatorEscrow, type MyPosition } from "@/lib/arena-read/positions";
 import { config } from "@/lib/config";
 
-const POLL_MS = 5_000;
+const POLL_MS = 15_000;
 
 /** What the connected account has in this battle, as the arena reports it. Refreshes on a timer. */
 export function MyPosition({

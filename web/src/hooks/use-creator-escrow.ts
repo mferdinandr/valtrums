@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { readCreatorEscrow, type CreatorEscrow } from "@/lib/arena-read/positions";
 import { config } from "@/lib/config";
 
-const POLL_MS = 5_000;
+const POLL_MS = 15_000;
 
 /** The creator escrow of a battle while the arena holds it (D41); null once converted or when there is none. */
 export function useCreatorEscrow(arena: string, battleId: number | null): CreatorEscrow | null {
