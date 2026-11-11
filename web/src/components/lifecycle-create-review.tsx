@@ -8,7 +8,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useBalances } from "@/hooks/use-balances";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
-import { STAGE_TEXT, useCreateAndDeposit } from "@/hooks/use-create-and-deposit";
+import { STAGE_NAME, STAGE_TEXT, useCreateAndDeposit } from "@/hooks/use-create-and-deposit";
 import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
 import { config } from "@/lib/config";
@@ -302,7 +302,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             )}
             {run.state.step === "failed" && (
               <div role="alert" className="mt-3 space-y-1 text-xs text-neon-amber">
-                <p>{run.state.message}</p>
+                <p>{STAGE_NAME[run.state.stage]} failed: {run.state.message}</p>
                 <p>
                   {run.state.battleId !== null
                     ? `Your battle #${run.state.battleId} already exists. Press Continue to finish the remaining steps, or `

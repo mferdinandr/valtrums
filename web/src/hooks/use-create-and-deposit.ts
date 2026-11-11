@@ -18,6 +18,8 @@ export const STAGE_TEXT: Record<Stage, string> = {
   deposit: "Step 3 of 3: depositing your tokens…",
 };
 
+export const STAGE_NAME: Record<Stage, string> = { create: "Creating the battle", join: "Joining", deposit: "Depositing" };
+
 export type RunState =
   | { step: "idle" }
   | { step: "running"; stage: Stage }
