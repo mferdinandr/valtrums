@@ -7,7 +7,6 @@
 
 use near_sdk::json_types::{U128, U64};
 use near_sdk::{near, AccountId};
-use std::collections::BTreeSet;
 
 /// Testnet limit; gas at this limit must be verified before live use.
 pub const MAX_COMMUNITIES: usize = 16;
@@ -58,7 +57,6 @@ impl From<AssetInput> for AssetIdentity {
     }
 }
 
-#[cfg(test)]
 impl From<AssetIdentity> for AssetInput {
     fn from(value: AssetIdentity) -> Self {
         Self {
@@ -233,6 +231,11 @@ pub struct LifecycleView {
     pub observation_policy_hash: Option<String>,
     pub principal_community: Option<u32>,
     pub principal_amount: Option<U128>,
+    /// Start time (ms since epoch) of an open arena. View-only: it lives in a
+    /// standalone map, so `Battle::view` leaves it unset and the contract fills it.
+    pub start_at_ms: Option<U64>,
+    /// True once the arena was cancelled. View-only, filled by the contract.
+    pub cancelled: bool,
 }
 
 #[near(serializers = [json])]
@@ -306,6 +309,14 @@ pub enum LifecycleError {
     PositionAlreadyRegistered,
     /// A community already has the most depositors settlement can process.
     TooManyParticipants,
+    /// The arena start time has passed, so joins and deposits are closed.
+    Started,
+    /// The arena start time has not been reached yet.
+    NotStarted,
+    /// The arena was cancelled.
+    Cancelled,
+    /// A refund has nothing to pay.
+    NothingToRefund,
 }
 
 fn is_evm_address(text: &str) -> bool {
@@ -316,15 +327,49 @@ fn is_evm_address(text: &str) -> bool {
         })
 }
 
+/// Checks one asset identity and returns it normalized (lowercase reference
+/// address). The reference pair is both-or-neither and a valid 20-byte address.
+pub fn validate_asset(asset: AssetIdentity) -> Result<AssetIdentity, LifecycleError> {
+    let address = asset
+        .token_address
+        .strip_prefix("0x")
+        .or_else(|| asset.token_address.strip_prefix("0X"));
+    if !address.is_some_and(|value| {
+        value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) || asset.custody_domain.trim().is_empty()
+        || asset.custody_domain.len() > MAX_METADATA_BYTES
+    {
+        return Err(LifecycleError::InvalidAsset);
+    }
+    match (asset.reference_chain_id, asset.reference_address.as_deref()) {
+        (None, None) => {}
+        (Some(chain), Some(address)) if chain > 0 && is_evm_address(address) => {}
+        _ => return Err(LifecycleError::InvalidAsset),
+    }
+    let mut asset = asset;
+    asset.reference_address = asset.reference_address.map(|a| a.to_ascii_lowercase());
+    Ok(asset)
+}
+
+/// True when two identities would occupy the same slot in one battle: same
+/// original token, same representation or the same reference token.
+pub fn same_slot(a: &AssetIdentity, b: &AssetIdentity) -> bool {
+    (a.chain_id == b.chain_id && a.token_address.eq_ignore_ascii_case(&b.token_address))
+        || a.representation == b.representation
+        || (a.reference_chain_id.is_some()
+            && a.reference_chain_id == b.reference_chain_id
+            && a.reference_address == b.reference_address)
+}
+
 impl Battle {
+    /// Starts with up to `MAX_COMMUNITIES` pre-seeded communities (an open arena
+    /// starts with none). The two-community minimum applies at lock, over funded
+    /// communities only.
     pub fn new(
         assets: Vec<AssetIdentity>,
         mode: ScoringMode,
         fee: FeePolicy,
     ) -> Result<Self, LifecycleError> {
-        if assets.len() < 2 {
-            return Err(LifecycleError::TooFewCommunities);
-        }
         if assets.len() > MAX_COMMUNITIES {
             return Err(LifecycleError::TooManyCommunities);
         }
@@ -334,55 +379,104 @@ impl Battle {
         {
             return Err(LifecycleError::InvalidPolicy);
         }
-        let mut original_assets = BTreeSet::new();
-        let mut references = BTreeSet::new();
-        let mut representations = BTreeSet::new();
-        let mut communities = Vec::with_capacity(assets.len());
-        for asset in assets {
-            let address = asset
-                .token_address
-                .strip_prefix("0x")
-                .or_else(|| asset.token_address.strip_prefix("0X"));
-            if !address.is_some_and(|value| {
-                value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-            }) || asset.custody_domain.trim().is_empty()
-                || asset.custody_domain.len() > MAX_METADATA_BYTES
-            {
-                return Err(LifecycleError::InvalidAsset);
-            }
-            // The reference pair is both-or-neither, a valid 20-byte address, stored lowercase.
-            match (asset.reference_chain_id, asset.reference_address.as_deref()) {
-                (None, None) => {}
-                (Some(chain), Some(address)) if chain > 0 && is_evm_address(address) => {
-                    if !references.insert((chain, address.to_ascii_lowercase())) {
-                        return Err(LifecycleError::DuplicateAsset);
-                    }
-                }
-                _ => return Err(LifecycleError::InvalidAsset),
-            }
-            // Chain IDs identify EVM chains; their hex addresses are case-insensitive.
-            if !original_assets.insert((asset.chain_id, asset.token_address.to_ascii_lowercase()))
-                || !representations.insert(asset.representation.clone())
-            {
-                return Err(LifecycleError::DuplicateAsset);
-            }
-            let mut asset = asset;
-            asset.reference_address = asset.reference_address.map(|a| a.to_ascii_lowercase());
-            communities.push(Community {
-                asset,
-                vault: 0,
-                audit: None,
-                backing: None,
-            });
-        }
-        Ok(Self {
-            communities,
+        let mut battle = Self {
+            communities: Vec::with_capacity(assets.len()),
             mode,
             fee,
             creator_has_position: false,
             snapshot: None,
             principal_hold: None,
-        })
+        };
+        for asset in assets {
+            battle.add_community(asset)?;
+        }
+        Ok(battle)
+    }
+
+    /// Appends a community and returns its index. Indices never move, so every
+    /// position, participant and round keyed by index stays valid. Refused after
+    /// lock, beyond the limit, and for an identity that duplicates another one.
+    pub fn add_community(&mut self, asset: AssetIdentity) -> Result<u32, LifecycleError> {
+        if self.snapshot.is_some() {
+            return Err(LifecycleError::Locked);
+        }
+        if self.communities.len() >= MAX_COMMUNITIES {
+            return Err(LifecycleError::TooManyCommunities);
+        }
+        let asset = validate_asset(asset)?;
+        if self
+            .communities
+            .iter()
+            .any(|entry| same_slot(&entry.asset, &asset))
+        {
+            return Err(LifecycleError::DuplicateAsset);
+        }
+        let index = self.communities.len() as u32;
+        self.communities.push(Community {
+            asset,
+            vault: 0,
+            audit: None,
+            backing: None,
+        });
+        Ok(index)
+    }
+
+    /// Index of the community that holds exactly this identity, if any.
+    pub fn community_index_of(&self, asset: &AssetIdentity) -> Option<u32> {
+        self.communities
+            .iter()
+            .position(|entry| &entry.asset == asset)
+            .map(|index| index as u32)
+    }
+
+    /// True when some community occupies the same slot as this identity without
+    /// being exactly equal to it (for example the same token with another reference).
+    pub fn conflicts_with(&self, asset: &AssetIdentity) -> bool {
+        self.communities
+            .iter()
+            .any(|entry| same_slot(&entry.asset, asset) && &entry.asset != asset)
+    }
+
+    /// Communities holding a deposit. After lock this reads the snapshot, which
+    /// keeps every community so indices stay valid.
+    pub fn funded_indices(&self) -> Vec<u32> {
+        self.snapshot
+            .as_ref()
+            .map_or(&self.communities, |snapshot| &snapshot.communities)
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.vault > 0)
+            .map(|(index, _)| index as u32)
+            .collect()
+    }
+
+    /// Removes a refunded deposit from a community's vault (unlocked battles only).
+    pub fn debit_vault(&mut self, community: u32, amount: u128) -> Result<(), LifecycleError> {
+        if self.snapshot.is_some() {
+            return Err(LifecycleError::Locked);
+        }
+        let entry = self
+            .communities
+            .get_mut(community as usize)
+            .ok_or(LifecycleError::InvalidCommunity)?;
+        entry.vault = entry
+            .vault
+            .checked_sub(amount)
+            .ok_or(LifecycleError::Overflow)?;
+        Ok(())
+    }
+
+    /// Puts back a refund that could not be paid.
+    pub fn restore_vault(&mut self, community: u32, amount: u128) -> Result<(), LifecycleError> {
+        let entry = self
+            .communities
+            .get_mut(community as usize)
+            .ok_or(LifecycleError::InvalidCommunity)?;
+        entry.vault = entry
+            .vault
+            .checked_add(amount)
+            .ok_or(LifecycleError::Overflow)?;
+        Ok(())
     }
 
     pub fn view(&self) -> LifecycleView {
@@ -427,6 +521,8 @@ impl Battle {
                 .map(|snapshot| snapshot.observation.policy_hash.clone()),
             principal_community: self.principal_hold.as_ref().map(|hold| hold.community),
             principal_amount: self.principal_hold.as_ref().map(|hold| U128(hold.amount)),
+            start_at_ms: None,
+            cancelled: false,
         }
     }
 
@@ -508,17 +604,15 @@ impl Battle {
         if self.snapshot.is_some() {
             return Err(LifecycleError::Locked);
         }
-        if self
-            .communities
-            .iter()
-            .any(|entry| entry.audit.is_none() || entry.backing.is_none())
-        {
-            return Err(LifecycleError::MissingApproval);
-        }
         let entry = self
             .communities
             .get_mut(community)
             .ok_or(LifecycleError::InvalidCommunity)?;
+        // Only the target community needs its approvals, so a community can be
+        // added and funded while others are still pending audit.
+        if entry.audit.is_none() || entry.backing.is_none() {
+            return Err(LifecycleError::MissingApproval);
+        }
         if &entry.asset.representation != token {
             return Err(LifecycleError::WrongRepresentation);
         }
@@ -552,6 +646,9 @@ impl Battle {
                 .communities
                 .get(winner as usize)
                 .ok_or(LifecycleError::InvalidCommunity)?;
+            if community.vault == 0 {
+                return Err(LifecycleError::InvalidCommunity);
+            }
             self.principal_hold = Some(PrincipalHold {
                 community: winner,
                 asset: community.asset.clone(),
@@ -657,11 +754,12 @@ impl Battle {
         })
     }
 
-    /// Every community's audit and backing approval must still bind its committed
-    /// asset (and the pinned audit policy, if any) and must not be expired.
+    /// Every FUNDED community's audit and backing approval must still bind its
+    /// committed asset (and the pinned audit policy, if any) and must not be
+    /// expired. Communities without a deposit are excluded and need no approval.
     /// Fails closed.
     fn check_audit_fresh(&self, check: &LockCheck) -> Result<(), LifecycleError> {
-        for entry in &self.communities {
+        for entry in self.communities.iter().filter(|entry| entry.vault > 0) {
             let approval = entry
                 .audit
                 .as_ref()
@@ -702,17 +800,17 @@ impl Battle {
             if !observation.is_valid() {
                 return Err(LifecycleError::InvalidPolicy);
             }
+            // An arena needs at least two funded communities; the rest are excluded.
             if self
                 .communities
                 .iter()
-                .any(|entry| entry.audit.is_none() || entry.backing.is_none())
+                .filter(|entry| entry.vault > 0)
+                .count()
+                < 2
             {
-                return Err(LifecycleError::MissingApproval);
+                return Err(LifecycleError::TooFewCommunities);
             }
             self.check_audit_fresh(check)?;
-            if self.communities.iter().any(|entry| entry.vault == 0) {
-                return Err(LifecycleError::EmptyVault);
-            }
             if !self.creator_has_position {
                 return Err(LifecycleError::CreatorHasNoPosition);
             }
@@ -775,12 +873,27 @@ impl crate::Arena {
         Ok(())
     }
 
+    /// Joins, registrations and deposits close when the arena is cancelled and at
+    /// its start time. Arenas without a start time keep the earlier behavior.
+    pub fn lifecycle_assert_entry_open(&self, id: u64) -> Result<(), LifecycleError> {
+        if self.lifecycle_is_cancelled(id) {
+            return Err(LifecycleError::Cancelled);
+        }
+        if let Some(start) = self.lifecycle_start_of(id) {
+            if near_sdk::env::block_timestamp_ms() >= start {
+                return Err(LifecycleError::Started);
+            }
+        }
+        Ok(())
+    }
+
     pub fn lifecycle_register_position(
         &mut self,
         id: u64,
         community: u32,
         account: &AccountId,
     ) -> Result<(), LifecycleError> {
+        self.lifecycle_assert_entry_open(id)?;
         let battle = self
             .lifecycle_battles
             .get(&id)
@@ -847,6 +960,7 @@ impl crate::Arena {
         sender: &AccountId,
         amount: u128,
     ) -> Result<(), LifecycleError> {
+        self.lifecycle_assert_entry_open(id)?;
         let mut battle = self
             .lifecycle_battles
             .get(&id)
@@ -881,6 +995,16 @@ impl crate::Arena {
             .get(&id)
             .cloned()
             .ok_or(LifecycleError::UnknownBattle)?;
+        if self.lifecycle_is_cancelled(id) {
+            return Err(LifecycleError::Cancelled);
+        }
+        if !battle.is_locked() {
+            if let Some(start) = self.lifecycle_start_of(id) {
+                if check.now_ms < start {
+                    return Err(LifecycleError::NotStarted);
+                }
+            }
+        }
         let snapshot = battle.lock(policy, &check)?.clone();
         self.lifecycle_battles.insert(id, battle);
         Ok(snapshot)
@@ -1075,8 +1199,10 @@ mod tests {
             Err(LifecycleError::MissingApproval)
         );
         assert_eq!(b.communities[1].vault, 11);
+        // Only the target community's approvals gate a deposit.
+        assert_eq!(deposit(&mut b, 0, "creator.testnet", 7, 1), Ok(8));
         assert_eq!(
-            deposit(&mut b, 0, "creator.testnet", 7, 1),
+            deposit(&mut b, 1, "other.testnet", 11, 1),
             Err(LifecycleError::MissingApproval)
         );
         b.set_backing(1, Some(backing(1)))
@@ -1089,7 +1215,7 @@ mod tests {
     }
 
     #[test]
-    fn no_creator_stake_or_empty_vault_cannot_lock() {
+    fn no_creator_stake_or_fewer_than_two_funded_communities_cannot_lock() {
         let mut b = battle();
         approve(&mut b);
         for i in 0..3 {
@@ -1102,7 +1228,16 @@ mod tests {
         let mut b = battle();
         approve(&mut b);
         deposit(&mut b, 0, "creator.testnet", 0, 1).expect("credit");
-        assert_eq!(b.lock(policy("p"), &ck()), Err(LifecycleError::EmptyVault));
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::TooFewCommunities)
+        );
+        // A second funded community lets it lock; the empty third is excluded.
+        deposit(&mut b, 1, "other.testnet", 0, 1).expect("credit");
+        let snapshot = b.lock(policy("p"), &ck()).expect("lock");
+        assert_eq!(snapshot.communities.len(), 3);
+        assert_eq!(snapshot.communities[2].vault, 0);
+        assert_eq!(b.funded_indices(), vec![0, 1]);
     }
 
     #[test]
@@ -1543,7 +1678,7 @@ mod tests {
             .predecessor_account_id(account("worker.testnet"))
             .attached_deposit(NearToken::from_near(1));
         testing_env!(context.build());
-        arena.lock_lifecycle_battle(id);
+        arena.lock_lifecycle_battle(id, None);
         let frozen = arena
             .lifecycle_battles
             .get(&id)
@@ -1558,7 +1693,7 @@ mod tests {
         arena.set_lifecycle_observation_policy(policy("changed").into());
         context.predecessor_account_id(account("worker.testnet"));
         testing_env!(context.build());
-        arena.lock_lifecycle_battle(id);
+        arena.lock_lifecycle_battle(id, None);
         context.predecessor_account_id(asset(1).representation);
         testing_env!(context.build());
         assert_eq!(
@@ -1610,6 +1745,7 @@ mod tests {
         let id = arena.create_lifecycle_battle(
             vec![asset(1).into(), asset(2).into()],
             ScoringMode::PriceGain,
+            None,
         );
         let battle = arena.lifecycle_battles.get(&id).expect("stored");
         assert_eq!(battle.fee.creator, account("creator.testnet"));
@@ -1738,6 +1874,7 @@ mod tests {
             arena.create_lifecycle_battle(
                 vec![asset(1).into(), asset(2).into()],
                 ScoringMode::PriceGain,
+                None,
             )
         };
         let first = create(&mut arena);
@@ -1800,6 +1937,7 @@ mod tests {
         arena.create_lifecycle_battle(
             vec![asset(1).into(), asset(2).into()],
             ScoringMode::PriceGain,
+            None,
         );
     }
 
@@ -2375,7 +2513,7 @@ mod tests {
     }
 
     #[test]
-    fn deposits_need_backing_for_every_community_and_the_right_representation() {
+    fn deposits_need_the_target_communitys_approvals_and_the_right_representation() {
         let mut b = battle();
         for i in 0..3 {
             b.set_audit(i, Some(audit(i))).expect("audit");
@@ -2385,14 +2523,22 @@ mod tests {
             deposit(&mut b, 0, "creator.testnet", 0, 5),
             Err(LifecycleError::MissingApproval)
         );
-        for i in 0..2 {
-            b.set_backing(i, Some(backing(i))).expect("backing");
-        }
+        // Backing for community 1 opens community 1 only.
+        b.set_backing(1, Some(backing(1))).expect("backing");
         assert_eq!(
             deposit(&mut b, 0, "creator.testnet", 0, 5),
             Err(LifecycleError::MissingApproval)
         );
+        assert_eq!(deposit(&mut b, 1, "other.testnet", 0, 5), Ok(5));
+        // A missing audit on the target also blocks the deposit.
         b.set_backing(2, Some(backing(2))).expect("backing");
+        b.set_audit(2, None).expect("withdraw audit");
+        assert_eq!(
+            deposit(&mut b, 2, "other.testnet", 0, 5),
+            Err(LifecycleError::MissingApproval)
+        );
+        b.set_audit(2, Some(audit(2))).expect("audit");
+        b.set_backing(0, Some(backing(0))).expect("backing");
         // A transfer from another token is not a backed deposit of this community.
         assert_eq!(
             b.credit(
@@ -2405,14 +2551,12 @@ mod tests {
             Err(LifecycleError::WrongRepresentation)
         );
         assert_eq!(deposit(&mut b, 0, "creator.testnet", 0, 5), Ok(5));
-        // Only a creator deposit counts as creator participation.
-        deposit(&mut b, 1, "other.testnet", 0, 5).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 5).expect("credit");
         assert!(b.lock(policy("p"), &ck()).is_ok());
     }
 
     #[test]
-    fn a_protocol_created_battle_also_needs_a_protocol_position_and_every_vault() {
+    fn a_protocol_created_battle_also_needs_a_protocol_position() {
         let protocol = account("protocol.testnet");
         let fee = FeePolicy {
             creator: protocol.clone(),
@@ -2428,9 +2572,11 @@ mod tests {
         approve(&mut b);
         deposit(&mut b, 1, "other.testnet", 0, 5).expect("credit");
         deposit(&mut b, 2, "other.testnet", 0, 5).expect("credit");
-        assert_eq!(b.lock(policy("p"), &ck()), Err(LifecycleError::EmptyVault));
-        // A protocol deposit alone is not enough without every other vault, and a
-        // third party's deposit never counts as the protocol's position.
+        assert_eq!(
+            b.lock(policy("p"), &ck()),
+            Err(LifecycleError::CreatorHasNoPosition)
+        );
+        // A third party's deposit never counts as the protocol's position.
         deposit(&mut b, 0, "other.testnet", 0, 5).expect("credit");
         assert_eq!(
             b.lock(policy("p"), &ck()),

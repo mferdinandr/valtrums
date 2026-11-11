@@ -386,7 +386,7 @@ mod tests {
 
     fn create(arena: &mut Arena, assets: Vec<AssetInput>) -> u64 {
         context("creator.testnet", NearToken::from_near(1));
-        arena.create_lifecycle_battle(assets, ScoringMode::PriceGain)
+        arena.create_lifecycle_battle(assets, ScoringMode::PriceGain, None)
     }
 
     #[test]

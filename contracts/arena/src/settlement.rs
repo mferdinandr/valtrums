@@ -214,6 +214,10 @@ pub fn allocate_battle(
         let loser = battle
             .losing_vault(community)
             .map_err(|_| SettlementError::InvalidInput)?;
+        // A community that never held a deposit was excluded at lock.
+        if loser.amount == 0 {
+            continue;
+        }
         allocations.push(allocate_vault(
             battle_id,
             community,
