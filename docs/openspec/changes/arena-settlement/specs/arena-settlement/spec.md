@@ -28,6 +28,14 @@ For each losing vault the system SHALL allocate the remainder after its snapshot
 - **WHEN** the protocol created and actually staked in a battle with 100000 losing units and default settings
 - **THEN** winners receive 99900 and protocol receives 100 with no extra creator fee
 
+#### Scenario: Community joined after creation
+- **WHEN** a losing community joined an open arena after it was created
+- **THEN** its vault uses the fee and creator share snapshotted at creation, the same as every other community (D38)
+
+#### Scenario: Cancelled or empty
+- **WHEN** a battle is cancelled before lock, or a community had an empty vault at lock
+- **THEN** no allocation, fee or entitlement exists for it; a cancelled battle's depositors take refunds instead
+
 ### Requirement: Deterministic conserving rounding
 The system SHALL first collect `fee = floor(loser_vault * fee_bps / 10000)` using checked wide arithmetic and assign `loser_vault - fee` to the winner pool. Largest remainder SHALL apply only within the winner pool with stable beneficiary tie ordering, independent of claim order.
 
