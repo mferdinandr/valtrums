@@ -15,6 +15,10 @@ export interface AuditConfig {
   referenceRpcUrl: string;
   /** AUDIT_LOCK_ENABLED=true lets the agent send `lock_lifecycle_battle`; off by default because a lock is final. */
   lockEnabled: boolean;
+  /** AUDIT_CANCEL_ENABLED=true lets the agent send `cancel_lifecycle_battle` for a battle whose start passed with fewer than two funded communities; off by default. */
+  cancelEnabled: boolean;
+  /** Keeps every community's backing approval fresh with `refresh_lifecycle_backing`; on unless AUDIT_BACKING_REFRESH_ENABLED=false (deposits cannot open without a backing approval). */
+  backingRefreshEnabled: boolean;
 }
 
 function json(env: Record<string, string | undefined>, name: string, fallback: string): unknown {
@@ -149,5 +153,7 @@ export function loadAuditConfig(
     goplusAccessToken: env.GOPLUS_ACCESS_TOKEN?.trim() || undefined,
     referenceRpcUrl,
     lockEnabled: env.AUDIT_LOCK_ENABLED?.trim() === "true",
+    cancelEnabled: env.AUDIT_CANCEL_ENABLED?.trim() === "true",
+    backingRefreshEnabled: env.AUDIT_BACKING_REFRESH_ENABLED?.trim() !== "false",
   };
 }
