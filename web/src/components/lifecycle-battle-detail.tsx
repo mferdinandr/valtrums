@@ -12,8 +12,8 @@ import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
-import { ReferencePreviewChart } from "@/components/battle-chart/reference-preview";
 import { lifecycleRoster } from "@/components/colosseum/lifecycle-runtime";
+import { useCreatorEscrow } from "@/hooks/use-creator-escrow";
 import { useLifecycleBattle } from "@/hooks/use-lifecycle-battle";
 import { useNow } from "@/hooks/use-now";
 import type { Namespace } from "@/lib/arena-read/application";
@@ -30,7 +30,8 @@ import {
   modeName,
   shortAccount,
 } from "@/lib/arena-read/lifecycle-presentation";
-import { formatCountdown } from "@/lib/amounts";
+import { formatCountdown, formatUnits } from "@/lib/amounts";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
 import "@/components/lifecycle/lifecycle.css";
@@ -65,6 +66,10 @@ export function LifecycleBattleDetail({
     battleId,
   );
   const [highlighted, setHighlighted] = useState("");
+  const escrow = useCreatorEscrow(
+    namespace.arenaContract,
+    /^[1-9][0-9]{0,15}$/.test(battleId) ? Number(battleId) : null,
+  );
   const now = useNow(1000);
   const page = useRef<HTMLDivElement>(null);
   const entered = useRef(false);
@@ -207,17 +212,9 @@ export function LifecycleBattleDetail({
               />
             </section>
           ) : (
-            <section>
-              <h2 className="my-3 text-lg">Live price preview</h2>
-              <ReferencePreviewChart
-                symbols={rows.map((r) =>
-                  displaySymbol(r.label, communityName(r.index)),
-                )}
-              />
-              <p className="py-3 text-sm text-mute">
-                Round results appear after the crews lock in.
-              </p>
-            </section>
+            <p className="py-3 text-sm text-mute">
+              The price chart appears when the battle starts.
+            </p>
           )
         }
       />
@@ -306,7 +303,20 @@ export function LifecycleBattleDetail({
                   )}
                   <h3>{name(r.index)}</h3>
                 </button>
-                <p className="lifecycle-amount">{exactUnits(r.vault)}</p>
+                <p
+                  className="lifecycle-amount"
+                  title={`${exactUnits(r.vault)} base units (exact)`}
+                >
+                  {/^\d+$/.test(r.vault)
+                    ? formatUnits(BigInt(r.vault), TOKEN_DECIMALS, 4)
+                    : r.vault}
+                </p>
+                {escrow && escrow.representation === r.representation && (
+                  <p className="text-xs text-neon-amber">
+                    + {formatUnits(BigInt(escrow.amount), TOKEN_DECIMALS, 4)} in
+                    escrow, waiting for approval
+                  </p>
+                )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {r.recordedWinner && (
                     <Badge tone="green">recorded winner</Badge>
