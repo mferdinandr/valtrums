@@ -27,3 +27,6 @@ res/
 
 # Player agent program state (local only)
 agent/.data/
+
+# Local development worker journals and logs
+.live-state/

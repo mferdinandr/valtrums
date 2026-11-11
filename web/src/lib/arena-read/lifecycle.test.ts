@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: synthetic lifecycle payloads. Not live chain data.
 import { describe, expect, it, vi } from "vitest";
-import { arenaBlockers, battleStatus, communityRows, fetchLifecycleBattle, roundPhase, type LifecycleDetail } from "./lifecycle";
+import { arenaBlockers, battleStatus, communityRows, communityApproval, fetchLifecycleBattle, roundPhase, type LifecycleDetail } from "./lifecycle";
 import type { Namespace } from "./application";
 
 const namespace: Namespace = { deploymentId: "arena-v1", network: "near-testnet", arenaContract: "arena.testnet", protocol: "lifecycle-v2" };
@@ -39,6 +39,15 @@ describe("round phase", () => {
 });
 
 describe("community rows", () => {
+  it("does not call a credited vault pending when readiness is unavailable", () => {
+    const unknown = communityRows(detail({ readiness: null }), 1000)[0]!;
+    expect(BigInt(unknown.vault)).toBeGreaterThan(0n);
+    expect(communityApproval(unknown)).toEqual({ label: "Approval status unavailable", approved: false });
+    const approved = communityRows(detail(), 1000)[0]!;
+    expect(communityApproval(approved)).toEqual({ label: "Approved", approved: true });
+    expect(communityApproval({ ...approved, audit: { ...approved.audit, state: "expired" } })).toEqual({ label: "Approval expired", approved: false });
+    expect(communityApproval({ ...approved, backing: { ...approved.backing, fresh: false } }).label).toBe("Waiting for approval");
+  });
   it("keeps u128 vaults exact and binds identity from the contract, not from symbols", () => {
     const rows = communityRows(detail(), 1000);
     expect(rows[0]).toMatchObject({ vault: "18446744073709551615", asset: `46630:0x${"1".repeat(40)}`, reference: null, blockers: [] });

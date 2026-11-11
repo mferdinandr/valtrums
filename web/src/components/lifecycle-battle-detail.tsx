@@ -21,6 +21,7 @@ import {
   arenaBlockers,
   battleStatus,
   communityRows,
+  communityApproval,
   nsToMs,
   roundPhase,
 } from "@/lib/arena-read/lifecycle";
@@ -274,11 +275,7 @@ export function LifecycleBattleDetail({
         </div>
         <div className="lifecycle-crew-grid mt-4">
           {rows.map((r) => {
-            const approved =
-              r.backing.known &&
-              r.backing.fresh &&
-              r.backing.trusted &&
-              r.backing.assetMatches;
+            const approval = communityApproval(r);
             return (
               <Card
                 key={r.index}
@@ -324,8 +321,9 @@ export function LifecycleBattleDetail({
                   {r.eliminated && (
                     <Badge tone="mute">eliminated · recorded candidates</Badge>
                   )}
-                  <Badge tone={approved && r.audit.state === "valid" ? "green" : "amber"}>
-                    {approved && r.audit.state === "valid" ? "Approved" : "Waiting for approval"}
+                  {/^\d+$/.test(r.vault) && BigInt(r.vault) > 0n && <Badge tone="green">Deposit received</Badge>}
+                  <Badge tone={approval.approved ? "green" : r.backing.known ? "amber" : "mute"}>
+                    {approval.label}
                   </Badge>
                 </div>
                 <details className="lifecycle-tech">

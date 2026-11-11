@@ -142,6 +142,15 @@ export interface CommunityRow {
   recordedWinner: boolean;
 }
 
+/** Missing readiness is unknown, never evidence that approval is pending. */
+export function communityApproval(row: CommunityRow): { label: string; approved: boolean } {
+  if (!row.backing.known) return { label: "Approval status unavailable", approved: false };
+  if (row.audit.state === "expired") return { label: "Approval expired", approved: false };
+  if (row.audit.state === "valid" && row.backing.fresh && row.backing.trusted && row.backing.assetMatches)
+    return { label: "Approved", approved: true };
+  return { label: "Waiting for approval", approved: false };
+}
+
 export function communityRows(detail: LifecycleDetail, nowMs: number): CommunityRow[] {
   const candidates = detail.round && detail.round.winner === null ? new Set(detail.round.candidates) : null;
   return detail.battle.communities.map((c, index) => {

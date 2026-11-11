@@ -65,7 +65,16 @@ pnpm -F @valtrum/web test
 pnpm dev
 ```
 
-`pnpm dev` starts the web and builds and starts the infrastructure agent together. The agent requires `ARENA_CONTRACT_ID`, `AGENT_ACCOUNT_ID`, and exactly one of `AGENT_PRIVATE_KEY` or `AGENT_PRIVATE_KEY_FILE` in the process environment; see [agent setup](agent/README.md). Restart the command after changing agent source code. To run only the web in demo mode, use `pnpm -F @valtrum/web dev`; without an arena ID it uses deterministic demo data. Contract checks from contracts/:
+`pnpm dev` builds the agent, then starts the web, read API, Robinhood price relay, token audit/backing/lock agent, observation collector and round oracle for `arena.valtrum-owner-b694.testnet`. **The agent and oracle submit testnet transactions automatically.** Worker credentials come from the git-ignored root `.env`; audit settings come from `agent/.env.local`. Each worker receives its own credentials. Worker logs and shared observation/oracle state live in `.live-state/`. Ctrl+C stops the processes launched by this command; an existing relay is reused and left running.
+
+Run `pnpm dev:check` first to check worker configuration without starting processes or sending transactions. Use `DEV_WORKERS=0 pnpm dev` for only the UI, read API and relay. Stop an existing process on ports 3000 or 8790 before starting the stack. `DEV_RELAY=0` skips the mainnet reference relay; `DEV_RELAY_TESTNET=1` adds the source testnet relay on 18545.
+
+See [local stack and approval-read configuration](docs/dev-stack.md) when an arena
+redeploy changes the read ABI or the UI reports approval status unavailable.
+
+Payout relayer/operator start separately when their `PAYOUT_RELAYER_*` / `PAYOUT_OPERATOR_*` credentials and shared payout settings are configured. Otherwise startup explicitly reports them as not configured; the core arena stack still runs. Their credentials remain isolated; operator submission still follows `PAYOUT_OPERATOR_SUBMIT`.
+
+Contract checks from contracts/:
 
 ```bash
 cargo fmt --check
