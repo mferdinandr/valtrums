@@ -16,10 +16,9 @@ import { CarnivalScene } from "@/components/carnival/scene";
 import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
-  buildCreateReview,
+  buildCreatorDepositReview,
+  creatorDepositRequest,
   SCORING_MODES,
-  toActionRequest,
-  type AssetDraft,
 } from "@/lib/arena-read/create-review";
 import { formatUnits, parseUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
@@ -27,8 +26,6 @@ import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
 import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
 import "@/components/lifecycle/lifecycle.css";
 
-/** An open arena lists no community at creation (D34): communities join before the start time. */
-const NO_ASSETS: readonly AssetDraft[] = [];
 const DEFAULT_LEAD_MS = 15 * 60 * 1000;
 
 /**
@@ -61,19 +58,20 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
     if (now > 0 && startInput === "") setStartInput(msToLocalInput(now + DEFAULT_LEAD_MS));
   }, [now, startInput]);
   const startAtMs = localInputToMs(startInput);
-  const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now, config.createModes);
-  const request = useMemo(() => toActionRequest(NO_ASSETS, mode, startAtMs), [mode, startAtMs]);
+  const deposit = useMemo(
+    () => ({ representation: token, amount: amountBase, label: chosen?.symbol }),
+    [token, amountBase, chosen?.symbol],
+  );
+  const review = buildCreatorDepositReview(namespace.arenaContract, deposit, mode, startAtMs, now, config.createModes);
+  const request = useMemo(() => creatorDepositRequest(deposit, mode, startAtMs), [deposit, mode, startAtMs]);
   const { signIn } = useWallet();
   const run = useCreateAndDeposit({
     arena: namespace.arenaContract,
     createRequest: request,
     createReview: review.ok ? review : null,
-    representation: token,
-    label: chosen?.symbol ?? "",
-    amount: amountBase,
   });
   const router = useRouter();
-  // The battle and the first deposit are done: show the battle, where the creator's position is listed.
+  // The battle exists with the creator's deposit in escrow: show it, where the creator's position is listed.
   useEffect(() => {
     if (run.state.step === "done") router.push(`/arena/${run.state.battleId}`);
   }, [run.state, router]);
@@ -157,17 +155,16 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
           <p id="start-help" className="text-xs leading-6 text-mute">
             {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}
             Between 1 minute and 7 days from now. Until then any approved token
-            community can join and deposit. You must deposit in one community
-            before the start. At the start the battle needs at least two funded
-            communities; otherwise anyone can cancel it and every depositor
-            claims a refund.
+            community can join and deposit. At the start the battle needs at
+            least two funded communities; otherwise anyone can cancel it and
+            every depositor claims a refund.
           </p>
         </Card>
         <Card className="space-y-4">
           <CardTitle>03 / Your first deposit</CardTitle>
           <p className="text-xs leading-6 text-mute">
-            A battle needs a deposit from its creator before it can lock. After you sign the create transaction, you
-            join with this token and deposit it right away.
+            Your deposit creates the battle: you send this token to the arena in the same transaction. The arena holds
+            it in escrow until the token&apos;s audit and backing approvals exist, then it becomes your position.
           </p>
           {owned.length === 0 ? (
             <p role="status" className="text-xs text-neon-amber">
@@ -239,9 +236,10 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
               </li>
             </ul>
             <p className="mt-3 text-xs leading-6 text-mute">
-              Your wallet asks you to confirm three times: create the battle,
-              join with your token, then deposit it. A small network fee is
-              charged and the unused part is refunded.
+              Creating the battle sends your tokens to the arena in one
+              transaction. On your first battle you first prepay a small amount
+              of NEAR (0.05, withdrawable) that pays the battle's storage. A
+              small network fee is charged.
             </p>
             <details className="lifecycle-tech">
               <summary>Technical details</summary>
@@ -297,22 +295,13 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             )}
             {run.state.step === "running" && (
               <p role="status" className="mt-3 text-xs text-mute">
-                {run.state.waitingForAudit ? "Step 3 of 3: waiting for the community's audit approval. This can take a minute." : `${STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.`}
+                {STAGE_TEXT[run.state.stage]} Confirm in your wallet when asked.
               </p>
             )}
             {run.state.step === "failed" && (
               <div role="alert" className="mt-3 space-y-1 text-xs text-neon-amber">
                 <p>{STAGE_NAME[run.state.stage]} failed: {run.state.message}</p>
-                <p>
-                  {run.state.battleId !== null
-                    ? `Your battle #${run.state.battleId} already exists. Press Continue to finish the remaining steps, or `
-                    : "Nothing was created. Press Continue to try again, or "}
-                  {run.state.battleId !== null ? (
-                    <Link href={`/arena/${run.state.battleId}`} className="underline">open the battle</Link>
-                  ) : (
-                    "change your choices above."
-                  )}
-                </p>
+                <p>Press Continue to try again, or change your choices above.</p>
               </div>
             )}
             {run.state.step === "done" && (

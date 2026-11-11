@@ -1,25 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { ReviewScope, reviewScopeKey, scopeWallet } from "./review-scope";
 import {
-  buildCreateReview,
-  toActionRequest,
-  type AssetDraft,
+  buildCreatorDepositReview,
+  creatorDepositRequest,
 } from "./create-review";
 import type { ActionWallet } from "@/lib/terminal/actions";
 
-const assets: AssetDraft[] = [1, 2].map((i) => ({
-  chainId: "46630",
-  tokenAddress: `0x${String(i).repeat(40)}`,
-  representation: `c${i}.rep.testnet`,
-  custodyDomain: "custody-v1",
-  referenceChainId: "",
-  referenceAddress: "",
-}));
+const deposit = { representation: "c1.rep.testnet", amount: "100" };
 const NOW = 1_800_000_000_000;
 const START = String(NOW + 15 * 60_000);
-const review = buildCreateReview("arena.testnet", assets, "PriceGain", START, NOW);
+const review = buildCreatorDepositReview("arena.testnet", deposit, "PriceGain", START, NOW);
 if (!review.ok) throw new Error("fixture review");
-const request = toActionRequest(assets, "PriceGain", START);
+const request = creatorDepositRequest(deposit, "PriceGain", START);
 
 describe("reviewed action scope", () => {
   it("binds exact request, transaction, wallet account and deployment rather than display labels", () => {

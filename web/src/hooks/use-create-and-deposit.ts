@@ -3,26 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
 import { ActionSession, createActionWallet } from "@/lib/arena-read/action-session";
-import type { CallReview } from "@/lib/arena-read/create-review";
+import { buildPrepayReview, CREATE_STORAGE_MIN_YOCTO, prepayRequest, type CallReview } from "@/lib/arena-read/create-review";
 import { previewCreate } from "@/lib/arena-read/create-flow";
-import { readCommunityReadiness, readCreatedBattleId } from "@/lib/arena-read/create-deposit";
-import { buildDepositReview, depositRequest } from "@/lib/arena-read/deposit-flow";
-import { buildJoinReview, joinRequest } from "@/lib/arena-read/open-arena";
+import { readCreateOutcome, readStorageBalance } from "@/lib/arena-read/create-deposit";
 import { config } from "@/lib/config";
 import { executeTerminalAction } from "@/lib/terminal/actions";
 
-export type Stage = "create" | "join" | "deposit";
+export type Stage = "prepay" | "create";
+export const STAGE_NAME: Record<Stage, string> = { prepay: "Prepaying battle storage", create: "Creating the battle" };
 export const STAGE_TEXT: Record<Stage, string> = {
-  create: "Step 1 of 3: creating your battle…",
-  join: "Step 2 of 3: joining with your token…",
-  deposit: "Step 3 of 3: depositing your tokens…",
+  prepay: "Prepaying the NEAR that pays your battle's storage…",
+  create: "Creating your battle with your deposit…",
 };
-
-export const STAGE_NAME: Record<Stage, string> = { create: "Creating the battle", join: "Joining", deposit: "Depositing" };
 
 export type RunState =
   | { step: "idle" }
-  | { step: "running"; stage: Stage; waitingForAudit?: boolean }
+  | { step: "running"; stage: Stage }
   | { step: "failed"; stage: Stage; message: string; battleId: number | null }
   | { step: "done"; battleId: number };
 
@@ -30,51 +26,30 @@ export interface Plan {
   arena: string;
   createRequest: Record<string, unknown>;
   createReview: CallReview | null;
-  representation: string;
-  label: string;
-  /** Base units. */
-  amount: string;
 }
-
-/** The agent audits on its own schedule (30 s by default), so wait for about two passes plus margin. */
-const AUDIT_WAIT_TRIES = 30;
-const AUDIT_WAIT_MS = 3_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function retry<T>(attempts: number, task: () => Promise<T | null>): Promise<T | null> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const out = await task();
-      if (out !== null) return out;
-    } catch (e) {
-      if (i === attempts - 1) throw e;
-    }
-    await sleep(1_500);
-  }
-  return null;
-}
 
 /**
- * One click that creates the battle, joins with the creator's token and deposits it. Every step is previewed
- * and compared with the call the page reviewed before the wallet is asked for anything, exactly like a single
- * action. The battle exists after step 1, so progress is kept: a failed later step resumes from where it
- * stopped instead of creating a second battle. A confirmed deposit is not proof of credit; the arena page reads
- * the position from the arena.
+ * One click that creates a battle with the creator's deposit (D41). When the account has not prepaid enough
+ * storage on the arena, a small prepayment is confirmed first. Each step is previewed and compared with the
+ * call the page reviewed before the wallet is asked for anything, exactly like a single action. The creation
+ * is one transaction: the arena either creates the battle and holds the deposit in escrow, or refuses and the
+ * token returns the whole transfer. Progress is kept, so a failed read of the outcome does not send the tokens
+ * twice. The arena page reads the position and the escrow from the arena.
  */
 export function useCreateAndDeposit(plan: Plan) {
   const { accountId } = useWallet();
   const getWallet = useActionWallet();
   const [state, setState] = useState<RunState>({ step: "idle" });
-  const progress = useRef<{ account: string; txHash: string | null; battleId: number | null; joined: boolean }>({
-    account: "", txHash: null, battleId: null, joined: false,
-  });
+  const progress = useRef<{ txHash: string | null; battleId: number | null }>({ txHash: null, battleId: null });
   const session = useRef<{ account: string; value: ActionSession } | null>(null);
   const busy = useRef(false);
 
   // A different account starts over; nothing from another account's run is reused.
   useEffect(() => {
     session.current = null;
-    progress.current = { account: accountId ?? "", txHash: null, battleId: null, joined: false };
+    progress.current = { txHash: null, battleId: null };
     setState({ step: "idle" });
   }, [accountId]);
 
@@ -101,36 +76,33 @@ export function useCreateAndDeposit(plan: Plan) {
       return result;
     };
     try {
-      if (p.battleId === null) {
-        setState({ step: "running", stage });
-        if (p.txHash === null) p.txHash = (await act(plan.createRequest, plan.createReview)).txHash;
-        p.battleId = await retry(5, () => readCreatedBattleId(config.rpcUrl, p.txHash as string, accountId));
-        if (p.battleId === null) throw new Error("the battle was created but its id could not be read yet");
-      }
-      const battleId = p.battleId;
-      if (!p.joined) {
-        stage = "join";
-        setState({ step: "running", stage });
-        await act(joinRequest(battleId, plan.representation), buildJoinReview(plan.arena, battleId, plan.representation, plan.label).ok
-          ? (buildJoinReview(plan.arena, battleId, plan.representation, plan.label) as CallReview) : null);
-        p.joined = true;
-      }
-      stage = "deposit";
-      setState({ step: "running", stage });
-      let community: number | null = null;
-      for (let i = 0; i < AUDIT_WAIT_TRIES; i++) {
-        const ready = await readCommunityReadiness(config.rpcUrl, plan.arena, battleId, plan.representation).catch(() => null);
-        if (ready?.approved) {
-          community = ready.index;
-          break;
+      if (p.txHash === null) {
+        const prepaid = await readStorageBalance(config.rpcUrl, plan.arena, accountId);
+        if (prepaid < BigInt(CREATE_STORAGE_MIN_YOCTO)) {
+          stage = "prepay";
+          setState({ step: "running", stage });
+          const review = buildPrepayReview(plan.arena);
+          await act(prepayRequest(), review.ok ? review : null);
         }
-        setState({ step: "running", stage, waitingForAudit: true });
-        await sleep(AUDIT_WAIT_MS);
+        stage = "create";
+        setState({ step: "running", stage });
+        p.txHash = (await act(plan.createRequest, plan.createReview)).txHash;
       }
-      if (community === null) throw new Error("the community has no audit approval yet. The audit service approves it on its own schedule; press Continue to check again. If this keeps happening, the audit service is probably not running");
-      const depositReview = buildDepositReview({ arena: plan.arena, representation: plan.representation, battleId, community, amount: plan.amount });
-      await act(depositRequest(battleId, community, plan.amount), depositReview.ok ? depositReview : null);
-      setState({ step: "done", battleId });
+      stage = "create";
+      setState({ step: "running", stage });
+      // The outcome is a log of the creation's own receipts; give the chain a moment to execute them.
+      let outcome = null;
+      for (let i = 0; i < 6 && outcome === null; i++) {
+        outcome = await readCreateOutcome(config.rpcUrl, p.txHash as string, accountId).catch(() => null);
+        if (outcome === null) await sleep(1_500);
+      }
+      if (outcome === null) throw new Error("the transaction was sent but its outcome could not be read yet. Press Continue to read it again; your tokens are not sent twice");
+      if ("refused" in outcome) {
+        p.txHash = null;
+        throw new Error(`the arena refused the creation and returned your tokens: ${outcome.refused}`);
+      }
+      p.battleId = outcome.battleId;
+      setState({ step: "done", battleId: outcome.battleId });
     } catch (e) {
       setState({ step: "failed", stage, message: e instanceof Error ? e.message : String(e), battleId: p.battleId });
     } finally {

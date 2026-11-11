@@ -1,27 +1,23 @@
 // FIXTURE-ONLY: synthetic payloads. Labels are display names, never identity or eligibility.
 import { describe, expect, it } from "vitest";
-import { buildCreateReview, toActionRequest, type AssetDraft } from "./create-review";
+import { buildCreatorDepositReview, creatorDepositRequest, type CreatorDeposit } from "./create-review";
 import { communityRows, type LifecycleDetail } from "./lifecycle";
 
-const draft = (i: number, label?: string): AssetDraft => ({
-  chainId: "46630", tokenAddress: `0x${String(i).repeat(40)}`, representation: `c${i}.rep.testnet`, custodyDomain: "custody-v1",
-  referenceChainId: "", referenceAddress: "", ...(label ? { label } : {}),
-});
+const deposit = (label?: string): CreatorDeposit => ({ representation: "c1.rep.testnet", amount: "100", ...(label ? { label } : {}) });
 
 const NOW = 1_800_000_000_000;
 const START = String(NOW + 15 * 60_000);
 
 describe("token labels in the create flow", () => {
   it("never puts the display label into the action request or the reviewed arguments", () => {
-    const drafts = [draft(1, "mCASHCAT"), draft(2, "mWALLET")];
-    const request = JSON.stringify(toActionRequest(drafts, "PriceGain", START));
-    expect(request).not.toMatch(/mCASHCAT|mWALLET|label/);
-    const review = buildCreateReview("arena.testnet", drafts, "PriceGain", START, NOW);
+    const request = JSON.stringify(creatorDepositRequest(deposit("mCASHCAT"), "PriceGain", START));
+    expect(request).not.toMatch(/mCASHCAT|label/);
+    const review = buildCreatorDepositReview("arena.testnet", deposit("mCASHCAT"), "PriceGain", START, NOW);
     expect(review.ok).toBe(true);
-    if (review.ok) expect(JSON.stringify(review.args)).not.toMatch(/mCASHCAT|mWALLET|label/);
+    if (review.ok) expect(JSON.stringify(review.args)).not.toMatch(/mCASHCAT|label/);
   });
-  it("produces the same request with or without labels", () => {
-    expect(toActionRequest([draft(1, "mCASHCAT"), draft(2, "mWALLET")], "PriceGain", START)).toEqual(toActionRequest([draft(1), draft(2)], "PriceGain", START));
+  it("produces the same request with or without a label", () => {
+    expect(creatorDepositRequest(deposit("mCASHCAT"), "PriceGain", START)).toEqual(creatorDepositRequest(deposit(), "PriceGain", START));
   });
 });
 

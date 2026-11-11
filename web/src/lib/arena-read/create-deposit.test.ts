@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: a fake RPC. Nothing here touches a chain.
 import { describe, expect, it } from "vitest";
-import { firstDepositProblems, parseCreatedBattleId, readCommunityIndex, readCommunityReadiness, readCreatedBattleId } from "./create-deposit";
+import { firstDepositProblems, parseCreatedBattleId, parseCreateRefusal, readCreateOutcome, readCreatedBattleId, readStorageBalance } from "./create-deposit";
 
 const created = (battleId: number, creator: string) =>
   `EVENT_JSON:${JSON.stringify({ standard: "valtrum", version: "1", event: "lifecycle_battle_created", data: [{ battle_id: battleId, creator }] })}`;
@@ -29,18 +29,6 @@ describe("readCreatedBattleId", () => {
   });
 });
 
-describe("readCommunityIndex", () => {
-  const view = (battle: unknown) => async () =>
-    new Response(JSON.stringify({ result: { result: Array.from(new TextEncoder().encode(JSON.stringify(battle))) } }), { status: 200 });
-  it("finds the position of the representation", async () => {
-    const f = view({ communities: [{ representation: "a.testnet" }, { representation: "b.testnet" }] });
-    expect(await readCommunityIndex("https://rpc", "arena.testnet", 1, "b.testnet", f)).toBe(1);
-  });
-  it("is null when the community has not joined", async () => {
-    expect(await readCommunityIndex("https://rpc", "arena.testnet", 1, "c.testnet", view({ communities: [] }))).toBeNull();
-  });
-});
-
 describe("firstDepositProblems", () => {
   it("accepts an amount within the balance", () => {
     expect(firstDepositProblems("a.testnet", "100", "100")).toEqual([]);
@@ -53,18 +41,40 @@ describe("firstDepositProblems", () => {
   });
 });
 
-describe("readCommunityReadiness", () => {
-  const view = (battle: unknown) => async () =>
-    new Response(JSON.stringify({ result: { result: Array.from(new TextEncoder().encode(JSON.stringify(battle))) } }), { status: 200 });
-  it("is not approved while the audit or the backing approval is missing", async () => {
-    const f = view({ communities: [{ representation: "a.testnet", audit_evidence_hash: null, backing_evidence_hash: "b" }] });
-    expect(await readCommunityReadiness("https://rpc", "arena.testnet", 1, "a.testnet", f)).toEqual({ index: 0, approved: false });
+const refused = (reason: string, who: string) =>
+  `EVENT_JSON:${JSON.stringify({ standard: "valtrum", version: "1", event: "lifecycle_create_refused", data: [{ account_id: who, representation: "a.testnet", reason }] })}`;
+
+describe("parseCreateRefusal", () => {
+  it("returns the reason the arena gave for this creator", () => {
+    expect(parseCreateRefusal(["noise", refused("the token is not joinable", "alice.testnet")], "alice.testnet")).toBe("the token is not joinable");
   });
-  it("is approved with both approvals", async () => {
-    const f = view({ communities: [{ representation: "a.testnet", audit_evidence_hash: "a", backing_evidence_hash: "b" }] });
-    expect(await readCommunityReadiness("https://rpc", "arena.testnet", 1, "a.testnet", f)).toEqual({ index: 0, approved: true });
+  it("ignores another account and other events", () => {
+    expect(parseCreateRefusal([refused("x", "bob.testnet"), created(7, "alice.testnet")], "alice.testnet")).toBeNull();
   });
-  it("is null before the community is listed", async () => {
-    expect(await readCommunityReadiness("https://rpc", "arena.testnet", 1, "a.testnet", view({ communities: [] }))).toBeNull();
+});
+
+describe("readCreateOutcome", () => {
+  const tx = (logs: string[]) => async () => new Response(JSON.stringify({ result: { receipts_outcome: [{ outcome: { logs } }] } }), { status: 200 });
+  it("reports the new battle id", async () => {
+    expect(await readCreateOutcome("https://rpc", "hash", "alice.testnet", tx([created(9, "alice.testnet")]))).toEqual({ battleId: 9 });
+  });
+  it("reports a refusal, because a refused creation still succeeds as a transaction", async () => {
+    expect(await readCreateOutcome("https://rpc", "hash", "alice.testnet", tx([refused("the start time must be 1 minute to 7 days ahead", "alice.testnet")]))).toEqual({
+      refused: "the start time must be 1 minute to 7 days ahead",
+    });
+  });
+  it("is null while the outcome has neither event", async () => {
+    expect(await readCreateOutcome("https://rpc", "hash", "alice.testnet", tx([]))).toBeNull();
+  });
+});
+
+describe("readStorageBalance", () => {
+  const view = (value: unknown) => async () =>
+    new Response(JSON.stringify({ result: { result: Array.from(new TextEncoder().encode(JSON.stringify(value))) } }), { status: 200 });
+  it("reads the prepaid balance as a bigint", async () => {
+    expect(await readStorageBalance("https://rpc", "arena.testnet", "alice.testnet", view("50000000000000000000000"))).toBe(50000000000000000000000n);
+  });
+  it("is zero for an account that never prepaid", async () => {
+    expect(await readStorageBalance("https://rpc", "arena.testnet", "alice.testnet", view("0"))).toBe(0n);
   });
 });

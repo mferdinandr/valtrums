@@ -1,9 +1,11 @@
 import { rpcView } from "./agent-grant";
 
 /**
- * First deposit of the creator (issue #149 follow-up). `create_lifecycle_battle` returns the new id only to the
- * wallet, so the id is read back from the transaction's `lifecycle_battle_created` event, and the creator's
- * community index from the arena's own view. Nothing here signs or trusts a receipt as credit.
+ * Reading the outcome of a battle creation (D41). The arena creates the battle inside `ft_on_transfer`, so the
+ * wallet never receives the new id: it is read back from the transaction's `lifecycle_battle_created` event.
+ * A creation the arena refuses (a token it does not accept, a start out of range) returns the tokens and the
+ * transaction still succeeds, so the refusal is read from `lifecycle_create_refused`. Nothing here signs or
+ * trusts a receipt as credit.
  */
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -27,10 +29,29 @@ export function parseCreatedBattleId(logs: readonly string[], creator: string): 
   return null;
 }
 
-/** Reads the battle id from a confirmed create transaction over RPC. Null while the outcome has no such event. */
-export async function readCreatedBattleId(
+/** The reason the arena gave for refusing a creation by `creator`, from the NEP-297 logs of a transaction. */
+export function parseCreateRefusal(logs: readonly string[], creator: string): string | null {
+  for (const line of logs) {
+    if (!line.startsWith("EVENT_JSON:")) continue;
+    try {
+      const body = JSON.parse(line.slice("EVENT_JSON:".length)) as { event?: unknown; data?: Array<{ account_id?: unknown; reason?: unknown }> };
+      if (body.event !== "lifecycle_create_refused") continue;
+      for (const d of body.data ?? []) {
+        if (d.account_id === creator && typeof d.reason === "string") return d.reason;
+      }
+    } catch {
+      // A log line that is not valid JSON is not our event.
+    }
+  }
+  return null;
+}
+
+export type CreateOutcome = { battleId: number } | { refused: string } | null;
+
+/** The outcome of a create transaction over RPC. Null while its outcome has neither event yet. */
+export async function readCreateOutcome(
   rpcUrl: string, txHash: string, creator: string, doFetch: FetchLike = (u, i) => fetch(u, i),
-): Promise<number | null> {
+): Promise<CreateOutcome> {
   const res = await doFetch(rpcUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -40,39 +61,24 @@ export async function readCreatedBattleId(
   const body = (await res.json()) as { result?: { receipts_outcome?: Array<{ outcome?: { logs?: string[] } }> }; error?: { message?: string } };
   if (body.error || !body.result) throw new Error(body.error?.message ?? "transaction outcome unavailable");
   const logs = (body.result.receipts_outcome ?? []).flatMap((r) => r.outcome?.logs ?? []);
-  return parseCreatedBattleId(logs, creator);
+  const battleId = parseCreatedBattleId(logs, creator);
+  if (battleId !== null) return { battleId };
+  const refused = parseCreateRefusal(logs, creator);
+  return refused !== null ? { refused } : null;
 }
 
-/** Index of `representation` among the battle's communities as the arena reports it, or null when it is not there yet. */
-export async function readCommunityIndex(
-  rpcUrl: string, arena: string, battleId: number, representation: string, doFetch?: FetchLike,
+/** Kept for callers that only want the id: null for a refusal or while the outcome has no event. */
+export async function readCreatedBattleId(
+  rpcUrl: string, txHash: string, creator: string, doFetch?: FetchLike,
 ): Promise<number | null> {
-  const battle = await rpcView<{ communities?: Array<{ representation?: string }> }>(rpcUrl, arena, "get_lifecycle_battle", { battle_id: battleId }, doFetch);
-  const index = battle?.communities?.findIndex((c) => c.representation === representation) ?? -1;
-  return index >= 0 ? index : null;
+  const outcome = await readCreateOutcome(rpcUrl, txHash, creator, doFetch);
+  return outcome && "battleId" in outcome ? outcome.battleId : null;
 }
 
-export interface CommunityReadiness {
-  index: number;
-  /** True once the arena holds both an audit approval and a backing approval for the community. */
-  approved: boolean;
-}
-
-/**
- * The creator's community in the battle and whether deposits can open for it. The agent's audit pass writes the
- * approvals some time after the join, so a deposit sent right away is refused (`audit_missing`). Null until the
- * community is listed.
- */
-export async function readCommunityReadiness(
-  rpcUrl: string, arena: string, battleId: number, representation: string, doFetch?: FetchLike,
-): Promise<CommunityReadiness | null> {
-  const battle = await rpcView<{ communities?: Array<{ representation?: string; audit_evidence_hash?: string | null; backing_evidence_hash?: string | null }> }>(
-    rpcUrl, arena, "get_lifecycle_battle", { battle_id: battleId }, doFetch,
-  );
-  const index = battle?.communities?.findIndex((c) => c.representation === representation) ?? -1;
-  if (index < 0) return null;
-  const c = battle!.communities![index]!;
-  return { index, approved: !!c.audit_evidence_hash && !!c.backing_evidence_hash };
+/** NEAR (yocto) the account prepaid on the arena for battle storage. */
+export async function readStorageBalance(rpcUrl: string, arena: string, account: string, doFetch?: FetchLike): Promise<bigint> {
+  const raw = await rpcView<string>(rpcUrl, arena, "get_lifecycle_storage_balance", { account_id: account }, doFetch);
+  return raw && /^[0-9]+$/.test(raw) ? BigInt(raw) : 0n;
 }
 
 /** Reasons the first deposit cannot be signed with this token, amount and balance. Empty means it can. */

@@ -2,19 +2,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { createActionWallet, ActionSession, type WalletLike } from "./action-session";
 import { previewCreate } from "./create-flow";
-import { buildCreateReview, CREATE_DEPOSIT_YOCTO, toActionRequest, type AssetDraft } from "./create-review";
+import { buildCreatorDepositReview, createMessage, creatorDepositRequest } from "./create-review";
 import { executeTerminalAction } from "@/lib/terminal/actions";
 
 const ACCOUNT = "alice.testnet";
-const draft = (i: number): AssetDraft => ({ chainId: "46630", tokenAddress: `0x${String(i).repeat(40)}`, representation: `c${i}.rep.testnet`, custodyDomain: "custody-v1", referenceChainId: "", referenceAddress: "" });
-const drafts = [draft(1), draft(2)];
+const deposit = { representation: "c1.rep.testnet", amount: "100" };
 const NOW = 1_800_000_000_000;
 const START = String(NOW + 15 * 60_000);
-const review = (() => { const r = buildCreateReview("arena.testnet", drafts, "PriceGain", START, NOW); if (!r.ok) throw new Error("fixture"); return r; })();
+const review = (() => { const r = buildCreatorDepositReview("arena.testnet", deposit, "PriceGain", START, NOW); if (!r.ok) throw new Error("fixture"); return r; })();
 
 function world(over: { previewArgs?: unknown; confirm?: boolean } = {}) {
   const calls: string[] = [];
-  const tx = { signerId: ACCOUNT, receiverId: "arena.testnet", actions: [{ type: "FunctionCall", methodName: "create_lifecycle_battle", args: over.previewArgs ?? review.args, gas: "100000000000000", deposit: CREATE_DEPOSIT_YOCTO }] };
+  const tx = { signerId: ACCOUNT, receiverId: "c1.rep.testnet", actions: [{ type: "FunctionCall", methodName: "ft_transfer_call", args: over.previewArgs ?? review.args, gas: "100000000000000", deposit: "1" }] };
   const record = (status: string) => ({ actionId: "a1", previewHash: "hash1", status, reason: null, preview: { expiresAtMs: 9e12, accountId: ACCOUNT, transaction: tx, costs: {}, binding: {} } });
   const gateway = vi.fn(async (url: string, init: RequestInit) => {
     const path = new URL(url, "http://x").pathname.replace("/api/arena/actions", "");
@@ -35,7 +34,7 @@ function world(over: { previewArgs?: unknown; confirm?: boolean } = {}) {
   const deps = { session: "tok", wallet: action, fetchImpl: gateway as never, sleep: async () => undefined, maxPolls: 1 };
   return { calls, deps, wallet };
 }
-const request = toActionRequest(drafts, "PriceGain", START);
+const request = creatorDepositRequest(deposit, "PriceGain", START);
 
 describe("create flow sequencing", () => {
   it("previews first, authorizes and signs only after the preview matches, and confirms from a verified receipt", async () => {
@@ -51,7 +50,7 @@ describe("create flow sequencing", () => {
   });
 
   it("stops before any authorization when the service's preview differs from the reviewed call", async () => {
-    const w = world({ previewArgs: { assets: review.args.assets, mode: "VolumeRatio" } });
+    const w = world({ previewArgs: { ...(review.args as object), msg: createMessage("VolumeRatio", START) } });
     const outcome = await previewCreate(request, review, ACCOUNT, w.deps);
     expect(outcome).toMatchObject({ step: "blocked", reasons: ["the preview arguments differ from the reviewed arguments"] });
     expect(w.calls).toEqual(["POST /"]);
