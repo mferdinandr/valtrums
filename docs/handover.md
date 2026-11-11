@@ -4,30 +4,20 @@ For the next person working on Valtrum. It lists what is finished, what exists o
 
 Hackathon deadline: development ends **2026-11-14 23:59 UTC**, the repository must be public before then, one submission per project. The organizers' rules say an AI agent never submits, posts, makes the repo public, pushes, signs transactions or spends tokens without the human's explicit confirmation.
 
-## DO NOT TOUCH: the faucet pipeline is waiting
+## Faucet status: stocked (2026-11-11), nothing is running anymore
 
-The faucet is not usable yet. It is waiting for the finality of six Robinhood testnet custody deposits, and the same session that started it will run the follow-up steps by itself as soon as they are verified. **Until the faucet page lists tokens (see "How to tell it finished"), do not do any of the following**, because the steps are order dependent and a second actor can double claim, replay a receipt or break the sequence:
+The faucet pipeline finished. Six new custody deposits were verified, attested, claimed and minted, and `valtrum-faucet.testnet` holds 1,000,000 of each of the six tokens (100 per claim, 100,000 per day, 24 hour cooldown). `/faucet` shows all six as ready. Details and every transaction are in [testnet-evidence.md](testnet-evidence.md) section 9. No background job or relay needs to keep running for the faucet itself.
 
-- Do not run, restart or kill the verification processes (`custody-verify-cli`, six of them) or the two local RPC relays on ports `18545` (Robinhood testnet) and `18546` (Robinhood mainnet).
-- Do not attest receipts, call `claim_receipt` or `claim_representation`, register storage for the operator, register the faucet contract on a backing, transfer stock to `valtrum-faucet.testnet` or call `set_token` / `remove_token` / `set_paused` / `withdraw_*` on it.
-- Do not send more custody deposits, and do not cancel, replace or recreate **battle 1**. Every deposit and `claim_receipt` names battle 1, and `claim_receipt` fails closed if it is missing.
-- Do not change, rotate or reuse the keys and accounts of the verifier (`valtrum-verifier-b694.testnet`), the faucet operator (`valtrum-operator.testnet`) or the faucet (`valtrum-faucet.testnet`). Their keys are on the owner's machine only (see "Access you need").
-- Do not redeploy the arena, backings or registry.
+Still do not casually change: the faucet owner is `valtrum-operator.testnet` (only it can `set_token`, pause or withdraw), battle 1 must stay (every receipt names it), and the six backings, registry and verifier stay as they are. The first set of six deposits (section 8) was never verified and stays in custody unclaimed; ignore it.
 
-Everything else in this file can be worked on in parallel.
-
-**How to tell it finished.** The faucet contract answers `get_tokens` with six tokens (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN) each with a `budget_left`, and the `/faucet` page lists all six with a claim button. Check with:
-`near contract call-function as-read-only valtrum-faucet.testnet get_tokens json-args '{}' network-config testnet now`
-An empty list means it is still waiting.
-
-**What the pipeline does (for reference, do not run by hand):** verify the six deposits as finalized, attest each receipt as the verifier, then as the operator register storage, `claim_receipt`, `claim_representation`, register the faucet on each backing, `ft_transfer` 1,000,000 of each token to the faucet and `set_token` (claim 100, daily budget 100,000). `pnpm -C agent faucet:plan plan --faucet valtrum-faucet.testnet --operator valtrum-operator.testnet --battle 1 --depositor 0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6` prints the full ordered command list; it only prints text. The six deposit transactions and log indexes are in [testnet-evidence.md](testnet-evidence.md) section 8; log index is `0x1` for all but DEGEN, which is `0x12`. If the original session is gone and the faucet is still empty after the deposits are well past finality, ask the owner before restarting anything, because partial progress (an attested or claimed receipt) must be read from the chain first.
+**Lessons for the next run of this path (also in the funding plan):** the Robinhood testnet finalized head moves in steps of thousands of blocks and the verifier only walks `--max-depth` blocks (default 256) below it, so verify promptly with `--poll-seconds 10 --max-depth 12000`; `registry.attest` needs about 0.02 NEAR attached for storage (1 yoctoNEAR panics); the public RPC answers 429 to a batch of 100, and `scripts/rpc-relay.py` caches finalized blocks and prefetches 40 per batch.
 
 ## Done and proven on testnet
 
 - Arena, registry, payout, six backings and the current player policy (`policy-v2`) are deployed and wired ([deployment.md](deployment.md)).
 - Infrastructure agent `valtrum-agent-b694.testnet` is in the arena whitelist; the faucet contract and its operator account exist.
 - Battle 1 exists with six communities (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN), not locked.
-- Six custody deposits were sent on Robinhood testnet (waiting for finality, see above).
+- Six custody deposits were verified, attested, claimed and minted; the faucet is stocked and `/faucet` lists all six tokens (section 9 of the evidence). No user claim was made yet.
 - A read-only audit dry run ran through the production audit code: five communities `pass`, AI `pending`.
 - The web pages render against live testnet reads and were checked in a browser: `/`, `/arena`, `/arena/<id>`, `/portfolio`, `/terminal`, `/agents`, `/faucet`.
 
@@ -47,7 +37,7 @@ An empty list means it is still waiting.
 
 ## Not connected, or never tried
 
-- **Deposits cannot work yet:** every community needs an audit approval and a backing approval first, and a lock needs fresh approvals for all of them. Battle 1 cannot lock while AI is `pending`. Whether to make a new battle with five tokens is an open decision (it only matters if the arena is to be played; the faucet does not need it).
+- **Deposits cannot work yet:** every community needs an audit approval and a backing approval first, and a lock needs fresh approvals for all of them. Battle 1 cannot lock while AI is `pending`. Now that the backings exist, audit approvals and refreshes are the next gate. Whether to make a new battle with five tokens is an open decision (it only matters if the arena is to be played; the faucet does not need it).
 - **Payout:** the terminal blocks it until spendable custody (#148) is proven; no winner was ever paid, and no round has run.
 - **Per-second chart of a locked battle** needs oracle plus collector plus a qualified source; nothing is set up. The deployed arena also lacks the `_v1` read views (display only).
 - **Terminal with a model** needs a NEAR AI Cloud key (paid credits) that the owner supplies in `web/.env.local`; without it the rule parser is used.
@@ -84,7 +74,7 @@ The relay resolves the real address through Cloudflare DNS over HTTPS, listens o
 ## Suggested next steps for the new person
 
 1. Read this file, then run the local setup above and open the pages.
-2. Leave the faucet pipeline alone until `get_tokens` returns six tokens.
+2. Try a real claim from the faucet page with a wallet that has testnet NEAR (never tried), then check the balance of the claimed token.
 3. Meanwhile: add a `LICENSE`, a machine-readable README with the AI-code disclosure, run `near-contract-audit` on `contracts/faucet`, and pick up #149 and #151.
 4. After the faucet works: decide with the owner whether to submit audit approvals and run a five-token battle, then try one real deposit and a lock on testnet.
 5. Before 2026-11-14: confirm the repository is clean of secrets, then the owner makes it public and submits.
