@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
 import { buildClaimCall, claimBatches, readFaucet, type FaucetState } from "@/lib/arena-read/faucet";
 import { config } from "@/lib/config";
+import { BALANCES_STALE_EVENT } from "@/hooks/use-balances";
 
 export type ClaimOutcome = { symbol: string; ok: boolean; message: string };
 
@@ -65,7 +66,10 @@ export function useFaucet() {
       }
       setClaiming(null);
       setOutcomes(done);
-      setTimeout(() => void refresh(), 4_000);
+      setTimeout(() => {
+        void refresh();
+        window.dispatchEvent(new Event(BALANCES_STALE_EVENT));
+      }, 4_000);
     },
     [contract, getWallet, refresh],
   );
