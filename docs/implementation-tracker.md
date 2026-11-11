@@ -51,7 +51,7 @@ The checkboxes above stay unticked on purpose: an item is ticked only when its a
 | # | Item | Code | Proven on testnet | Open |
 | --- | --- | --- | --- | --- |
 | 1 | Integrations and data sources | NEAR, Robinhood testnet RPC, GoPlus, DexScreener and mainnet pool reads wired | NEAR testnet and Robinhood custody transactions; GoPlus and pool reads in a dry run | NEAR Intents is a labeled fixture; Bitte orchestration not shown |
-| 2 | Backing, representation, redemption, burn | Backing and receipt-registry contracts, custody verifier | Six backings deployed and wired | Six custody deposits are waiting for finality; no mint from a receipt, redemption or burn yet |
+| 2 | Backing, representation, redemption, burn | Backing and receipt-registry contracts, custody verifier | Six backings deployed and wired; one full custody to receipt to mint path run live for six tokens | Redemption and burn were not run; the verifier's 256-block ancestry limit needs a larger `--max-depth` and prompt polling because the finalized head jumps |
 | 3 | Multi-community lifecycle | Arena lifecycle and the single lifecycle web app | Battle 1 created with six communities | Not locked; deposits are refused until audit and backing approvals exist |
 | 4 | GoPlus and LP audit | Audit pass, policy, report archive, price pool reader | Dry run: five pass, AI pending (no liquidity evidence) | No approval submitted; AI cannot pass without a pool the reader supports |
 | 5 | Scoring and overtime | Four modes and tie rounds in the arena, lifecycle oracle (dry run) | None | No round has run; the oracle account of the deployed arena is not confirmed set |

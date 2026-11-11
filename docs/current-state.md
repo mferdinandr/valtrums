@@ -25,9 +25,9 @@ Accounts and contracts are listed in [deployment.md](deployment.md); recorded ob
 | Arena, registry, payout, six backings, current player policy (`policy-v2`) | Deployed and wired on 2026-11-09 |
 | Infrastructure agent in the arena whitelist | Registered with `add_agent` (transaction in [testnet-evidence.md](testnet-evidence.md), section 8) |
 | Battle 1 | Created with six communities (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN). Not locked |
-| Robinhood testnet custody deposits | Six deposits sent (one per token). Receipts are not yet verified as finalized, so no representation has been minted from them |
+| Robinhood testnet custody deposits | A first set of six deposits could not be verified (finalized head moved too far). A second set of six was verified and attested, receipts claimed and 1,000,000 of each representation minted ([testnet-evidence.md](testnet-evidence.md), section 9) |
 | Audit | A read-only dry run of the production audit pass gave `pass` for five communities and `pending` for AI (no v3 WETH pool, so no liquidity evidence). Nothing was submitted, so no community has an audit approval on chain |
-| Faucet contract | Deployed with an operator account. It has no stock and no token configured yet |
+| Faucet contract | Stocked: 1,000,000 of each of the six tokens, 100 per claim, 100,000 per day, 24 hour cooldown. No user claim has been made yet |
 | Rounds, observations, settlement, payout | Never run on testnet |
 
 ## Known gaps
