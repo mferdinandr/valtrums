@@ -155,6 +155,7 @@ const ARENA_EVENTS: Record<string, SupportedEventName> = {
   lifecycle_battle_cancelled: "lifecycle_battle_cancelled",
   lifecycle_refund: "lifecycle_refund",
   lifecycle_refund_failed: "lifecycle_refund_failed",
+  lifecycle_round_reopened_v1: "lifecycle_round_reopened_v1",
   lifecycle_joinable_asset_set: "lifecycle_joinable_asset_set",
   lifecycle_joinable_asset_removed: "lifecycle_joinable_asset_removed",
   backing_updated: "backing_updated",
@@ -237,6 +238,14 @@ function normalize(name: SupportedEventName, data: Record<string, JsonValue>): A
     case "lifecycle_joinable_asset_set":
     case "lifecycle_joinable_asset_removed":
       return { name, representation: reqString(data, "representation", ACCOUNT_MAX) };
+    case "lifecycle_round_reopened_v1":
+      return {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        roundId: reqIntString(data, "round_id"),
+        abandonedStartNs: reqIntString(data, "abandoned_start_ns"),
+        abandonedEndNs: reqIntString(data, "abandoned_end_ns"),
+      };
     case "backing_updated":
       return {
         name,

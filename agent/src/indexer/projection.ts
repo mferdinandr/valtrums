@@ -95,6 +95,8 @@ export interface BattleActivity {
   refundedByCommunity?: Record<string, string>;
   /** Present only when `lifecycle_refund_failed` was recorded: the transfer failed and the arena restored the position, so nothing was paid. */
   refundFailures?: RefundEntry[];
+  /** Present only when `lifecycle_round_reopened_v1` was recorded: windows abandoned because their evidence never completed. */
+  roundReopens?: Array<{ roundId: string; abandonedStartNs: string; abandonedEndNs: string; ref: EventRef }>;
   /** Present only when versioned round events were actually recorded. No inferred past evidence. */
   rounds?: Record<string, { evidence: import("./round-events.js").RoundEvidenceV1; ref: EventRef; complete: boolean }>;
 }
@@ -246,6 +248,8 @@ export function buildProjection(events: AcceptedEvent[], opts: BuildOptions): Pr
         refunded[e.community] = ((refunded[e.community] ? BigInt(refunded[e.community]!) : 0n) + BigInt(e.amount)).toString();
       } else if (e.name === "lifecycle_refund_failed") {
         (b.refundFailures ??= []).push({ community: e.community, accountId: e.accountId, amount: e.amount, ref });
+      } else if (e.name === "lifecycle_round_reopened_v1") {
+        (b.roundReopens ??= []).push({ roundId: e.roundId, abandonedStartNs: e.abandonedStartNs, abandonedEndNs: e.abandonedEndNs, ref });
       } else if (e.name === "backing_updated") {
         b.backings[e.community] = { approved: e.approved, evidenceHash: e.evidenceHash, expiresAtMs: e.expiresAtMs, ref };
       } else if (e.name === "late_deposit_recorded") {
