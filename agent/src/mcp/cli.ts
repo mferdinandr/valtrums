@@ -36,6 +36,15 @@ function required(env: NodeJS.ProcessEnv, key: string): string {
   return v;
 }
 
+function readRpc(env: NodeJS.ProcessEnv, network: "testnet" | "mainnet") {
+  if (env.NEAR_RPC_URL?.trim()) return { rpcUrl: env.NEAR_RPC_URL.trim() };
+  if (env.FASTNEAR_API_KEY?.trim()) return {
+    rpcUrl: `https://rpc.${network}.fastnear.com`,
+    headers: { Authorization: `Bearer ${env.FASTNEAR_API_KEY.trim()}` },
+  };
+  return {};
+}
+
 export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
   const network = env.NEAR_NETWORK?.trim() || "testnet";
   if (network !== "testnet" && network !== "mainnet") throw new Error('NEAR_NETWORK must be "testnet" or "mainnet"');
@@ -43,7 +52,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
   if (!/^[0-9a-fA-F]{64,}$/.test(secretHex) || secretHex.length % 2 !== 0) {
     throw new Error("READ_SESSION_SECRET must be at least 32 bytes of hex");
   }
-  const near = new Near({ network, ...(env.NEAR_RPC_URL?.trim() ? { rpcUrl: env.NEAR_RPC_URL.trim() } : {}) });
+  const near = new Near({ network, ...readRpc(env, network) });
   const arena = new NearArenaReadSource(
     { network: `near-${network}`, kind: "live", name: required(env, "ARENA_CONTRACT_ID") },
     (contractId, method, args) => near.view(contractId, method, args),
@@ -112,7 +121,7 @@ export async function runCli(args: string[], env: NodeJS.ProcessEnv = process.en
     const port = Number(env.READ_API_PORT ?? 8790);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("READ_API_PORT must be a valid port");
     const application = await loadApplicationReads(env, (network) => {
-      const near = new Near({ network, ...(network === (env.NEAR_NETWORK?.trim() || "testnet") && env.NEAR_RPC_URL?.trim() ? { rpcUrl: env.NEAR_RPC_URL.trim() } : {}) });
+      const near = new Near({ network, ...readRpc(network === (env.NEAR_NETWORK?.trim() || "testnet") ? env : { FASTNEAR_API_KEY: env.FASTNEAR_API_KEY }, network) });
       return (contract, method, args) => near.view(contract, method, args);
     });
     startReadServer(port, host, { ...deps, sessions: deps.sessions, ...(application ? { application } : {}) });
