@@ -40,6 +40,14 @@ const battles = new Map([
   [2, battle()],
   // 3: decided
   [3, battle({ mode: "LowestDrawdown", principal_community: 1, principal_amount: "500" })],
+  // Open arena (D34 to D36). 4: gathering before its start, one funded and one pending community
+  [4, battle({ locked: false, observation_policy_hash: null, start_at_ms: String(NOW + 3_600_000), cancelled: false, communities: [community(1, { vault: "1000" }), community(2, { vault: "0" })] })],
+  // 5: start passed with one funded community: anyone can cancel
+  [5, battle({ locked: false, observation_policy_hash: null, start_at_ms: String(NOW - 60_000), cancelled: false, communities: [community(1, { vault: "1000" })] })],
+  // 6: cancelled: depositors claim refunds
+  [6, battle({ locked: false, observation_policy_hash: null, start_at_ms: String(NOW - 120_000), cancelled: true, communities: [community(1, { vault: "1000" })] })],
+  // 7: just created, no community has joined yet
+  [7, battle({ locked: false, observation_policy_hash: null, start_at_ms: String(NOW + 3_600_000), cancelled: false, communities: [] })],
 ]);
 const ns = (ms) => String(BigInt(ms) * 1_000_000n);
 const rounds = new Map([

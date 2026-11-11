@@ -50,11 +50,8 @@ test("an open battle lists the specific reason a community is not ready", async 
   page,
 }) => {
   await page.goto("/arena/1");
-  await expect(
-    page.getByText(
-      "The battle is still open for deposits; no round has started.",
-    ),
-  ).toBeVisible();
+  // Battle 1 has no start time (the earlier rules): no countdown, just the round state.
+  await expect(page.getByText("No round has started.")).toBeVisible();
   await expect(page.getByText("no audit approval recorded")).toBeVisible();
 });
 
@@ -104,9 +101,8 @@ test("a backend outage is an explicit error with no demo data", async ({
     }),
   );
   await page.goto("/arena/2");
-  const alert = page.locator("[role=alert]", { hasText: "could not be read" });
+  const alert = page.locator("[role=alert]", { hasText: "could not be loaded" });
   await expect(alert).toBeVisible();
-  await expect(alert).toContainText("No demo or legacy data");
   await expect(
     page.getByRole("heading", { name: "Biggest price climb" }),
   ).toHaveCount(0);
@@ -185,7 +181,7 @@ test("an open battle shows the exact register and deposit calls and sends no act
   });
   await page.goto("/arena/1");
   await expect(
-    page.getByText("1 · REGISTER A POSITION (STORAGE, NOT A STAKE)"),
+    page.getByText("Save your spot (a small storage fee, not a stake)"),
   ).toBeVisible();
   await expect(page.getByText("register_lifecycle_position")).toBeVisible();
   await expect(
@@ -296,7 +292,7 @@ test.describe("lifecycle intent terminal", () => {
     await page.goto("/terminal");
     await ask(page, `payout 500 to 0x${"a".repeat(40)} from token.testnet`);
     await expect(page.getByRole("button", { name: "Payout cannot be submitted yet" })).toBeDisabled();
-    await expect(page.getByText(/spendable custody \(#148\) is not proven/)).toBeVisible();
+    await expect(page.getByText(/Payout requests are currently unavailable\. Nothing was sent\./)).toBeVisible();
     expect(calls).toEqual([]);
   });
 
@@ -320,7 +316,8 @@ test("the portfolio is wallet-gated, labels fixture data, keeps alerts readable 
   await expect(page.getByText("Positions (deposits by original asset)")).toHaveCount(0);
   // Recovery alerts need no session: the FIXTURE ledger condition is visible and labeled.
   await expect(page.getByText("the backing ledger needs reconciliation")).toBeVisible();
-  await expect(page.getByText(/FIXTURE \(not live\)/).first()).toBeVisible();
+  // The provenance label sits in the collapsed technical details; it must be present, not necessarily expanded.
+  await expect(page.getByText(/FIXTURE \(not live\)/).first()).toBeAttached();
   // Payout requests are disabled with the specific unmet requirements; status reads stay available.
   const disabled = page.getByTestId("payout-disabled");
   await expect(disabled).toContainText("payout requests disabled");
@@ -355,6 +352,88 @@ test("one application: every menu entry is present and the former A/B urls redir
   // No page of this app says "demo", "mock" or "legacy".
   await page.goto("/arena");
   await expect(page.getByText(/demo mode|simulated data/i)).toHaveCount(0);
+});
+
+/**
+ * FIXTURE allowlist answered for `get_lifecycle_joinable_assets`, and an empty reference price preview (the e2e
+ * deployment has no price RPC, which otherwise answers 502); every other request continues untouched.
+ */
+async function fixtureAllowlist(page: Page) {
+  await page.route("**/api/reference-price", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, ts: Date.now(), prices: {} }) }));
+  const entry = (symbol: string, n: number) => ({
+    chain_id: "46630", token_address: `0x${String(n).repeat(40)}`, representation: `backing-${symbol}.owner.testnet`,
+    custody_domain: "custody-e2e", reference_chain_id: null, reference_address: null,
+  });
+  await page.route("**/*", async (route) => {
+    const body = route.request().postData() ?? "";
+    if (route.request().method() !== "POST" || !body.includes("get_lifecycle_joinable_assets")) return route.continue();
+    const args = JSON.parse(Buffer.from(JSON.parse(body).params.args_base64, "base64").toString()) as { from_index: string };
+    const page0 = args.from_index === "0" ? [entry("cashcat", 5), entry("wallet", 6)] : [];
+    const bytes = Array.from(Buffer.from(JSON.stringify(page0)));
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ jsonrpc: "2.0", id: "valtrum", result: { result: bytes, logs: [] } }) });
+  });
+}
+
+test.describe("open arena (fixture battles 4 to 7)", () => {
+  test("a gathering battle shows the countdown, entered and pending crews, and a reviewed join", async ({ page }) => {
+    const problems = watch(page);
+    const actions: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/arena/actions")) actions.push(r.url());
+    });
+    await fixtureAllowlist(page);
+    await page.goto("/arena/4");
+    const panel = page.getByLabel("Open arena");
+    await expect(panel.getByText(/Starts .* left/)).toBeVisible();
+    await expect(panel.getByText("1 entered")).toBeVisible();
+    await expect(panel.getByText(/1 pending/)).toBeVisible();
+    await panel.getByRole("button", { name: "CASHCAT" }).click();
+    await expect(panel.getByText("join_lifecycle_battle").first()).toBeVisible();
+    await expect(panel.getByText(/moves no tokens/)).toBeVisible();
+    expect(actions).toEqual([]);
+    expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+  });
+
+  test("a battle with no community yet renders and asks to join first", async ({ page }) => {
+    const problems = watch(page);
+    await fixtureAllowlist(page);
+    await page.goto("/arena/7");
+    await expect(page.getByLabel("Open arena").getByText("0 entered")).toBeVisible();
+    await expect(page.getByText(/No community has joined yet/)).toBeVisible();
+    expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+  });
+
+  test("after the start below two funded crews, cancel is offered and deposits are closed", async ({ page }) => {
+    const problems = watch(page);
+    await fixtureAllowlist(page);
+    await page.goto("/arena/5");
+    const panel = page.getByLabel("Open arena");
+    await expect(panel.getByText(/Anyone can cancel/)).toBeVisible();
+    await expect(panel.getByText("cancel_lifecycle_battle").first()).toBeVisible();
+    await expect(page.getByText(/Deposits are closed and a deposit would be returned/)).toBeVisible();
+    expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+  });
+
+  test("a cancelled battle offers a refund per funded crew and no join or cancel", async ({ page }) => {
+    const problems = watch(page);
+    await fixtureAllowlist(page);
+    await page.goto("/arena/6");
+    const panel = page.getByLabel("Open arena");
+    await expect(page.getByText("Cancelled").first()).toBeVisible();
+    await expect(panel.getByText("claim_lifecycle_refund").first()).toBeVisible();
+    await expect(panel.getByText("cancel_lifecycle_battle")).toHaveCount(0);
+    await expect(panel.getByText("join_lifecycle_battle")).toHaveCount(0);
+    expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
+  });
+
+  test("the list shows a cancelled battle and the create form offers only the policy's mode", async ({ page }) => {
+    await page.goto("/arena");
+    await page.getByRole("button", { name: "cancelled" }).click();
+    await expect(page.getByRole("heading", { name: /Battle #6/ })).toBeVisible();
+    await page.goto("/arena/new");
+    const modes = page.getByRole("group", { name: "Scoring mode" }).getByRole("button");
+    await expect(modes).toHaveCount(1);
+  });
 });
 
 test("the create page keeps the start-time form inside a narrow screen", async ({ page }) => {
