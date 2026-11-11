@@ -19,6 +19,9 @@ import type { Mode } from "../observations/schema.js";
 import type { OracleStatus } from "../lifecycle-oracle/status.js";
 import { assessCustody, type CustodyFacts } from "../custody-compat.js";
 
+/** Battles the list reads at the same time. */
+const LIST_READ_CONCURRENCY = 6;
+
 export interface ApplicationBinding {
   source?: ArenaReadSource;
   versioned?: VersionedLifecycleReadSource;
@@ -269,10 +272,21 @@ export class ApplicationReads {
       const count = binding.versioned ? await binding.versioned.count() : integer(await source.battleCount());
       if (!binding.versioned && BigInt(count) > BigInt(Number.MAX_SAFE_INTEGER)) throw new ApplicationError(422, "unsupported_boundary", "safe count view required (#144)");
       const items: ApplicationBattleSummary[] = [];
-      for (let id = BigInt(count), scanned = 0; id >= 1n && scanned < MAX_SCAN; id--, scanned++) {
+      const ids: bigint[] = [];
+      for (let id = BigInt(count), scanned = 0; id >= 1n && scanned < MAX_SCAN; id--, scanned++) ids.push(id);
+      // Reads run a few at a time: one after another, the list grew linearly with the number of battles and
+      // outran the web proxy's timeout; unbounded, a public RPC answers 429. The result keeps newest-first order.
+      const readOne = async (id: bigint) => {
         const b = binding.versioned ? await binding.versioned.battle(String(id)) : await readApplicationBattle(source, String(id));
-        if (!b) continue;
+        if (!b) return null;
         const round = b.locked ? binding.versioned ? await binding.versioned.round(String(id)) : await readApplicationRound(source, String(id)) : null;
+        return { id, b, round };
+      };
+      const rows: Array<Awaited<ReturnType<typeof readOne>>> = [];
+      for (let i = 0; i < ids.length; i += LIST_READ_CONCURRENCY) rows.push(...(await Promise.all(ids.slice(i, i + LIST_READ_CONCURRENCY).map(readOne))));
+      for (const row of rows) {
+        if (!row) continue;
+        const { id, b, round } = row;
         const winner = round?.winner ?? null;
         const cancelled = b.cancelled === true;
         const status = cancelled ? "cancelled" : !b.locked ? "open" : winner === null ? "locked" : "decided";
