@@ -25,7 +25,7 @@ function guarded(source: ArenaReadSource) {
 }
 
 const argsFor = (name: string, token: string): Record<string, unknown> => {
-  if (["inspect_battle", "inspect_round", "inspect_audit"].includes(name)) return { battleId: 2 };
+  if (["inspect_battle", "inspect_round", "inspect_audit", "inspect_endgame"].includes(name)) return { battleId: 2 };
   if (READ_TOOLS.find((t) => t.name === name)?.accountScoped) return { session: token };
   return {};
 };
@@ -35,7 +35,7 @@ describe("read-only MCP and terminal tools", () => {
     expect(READ_TOOL_NAMES).toEqual([
       "list_battles", "inspect_battle", "inspect_round", "inspect_audit",
       "inspect_positions", "inspect_entitlements", "inspect_payouts", "inspect_escrow",
-      "inspect_account_state", "list_recovery_alerts",
+      "inspect_account_state", "inspect_endgame", "list_recovery_alerts",
     ]);
     const all = [...READ_TOOL_NAMES, OPEN_SESSION_TOOL.name];
     for (const n of all) expect(n).not.toMatch(/submit|sign_tx|send|transfer|deposit|withdraw|approve|grant|reserve|execute/);

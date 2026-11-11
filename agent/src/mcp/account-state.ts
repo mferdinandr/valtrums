@@ -19,6 +19,13 @@ export interface DispositionView {
   return_weight: string;
   escrow_reserved: boolean;
   escrow_id: string | null;
+  /** Extra fields of the contract view; absent on older fixtures. */
+  window_secs?: string | null;
+  opens_at_ns?: string | null;
+  burn_total?: string;
+  return_total?: string;
+  released?: number;
+  total_releases?: number;
 }
 
 /** `arena.get_lifecycle_disposition_releases` item. */
@@ -49,6 +56,8 @@ export interface StateSource {
   suspension(backing: string): Promise<SuspensionView | null>;
   ledger(backing: string): Promise<LedgerView | null>;
   indexerHealth(): Promise<IndexerHealthView | null>;
+  /** `get_settlement_progress`; null until a final winner is recorded. Optional for older sources. */
+  settlementProgress?(battleId: number): Promise<{ recorded: number; total: number } | null>;
 }
 
 export class NearStateSource implements StateSource {
@@ -78,6 +87,9 @@ export class NearStateSource implements StateSource {
   async ledger(backing: string): Promise<LedgerView | null> {
     return ((await this.view(backing, "get_ledger", {})) ?? null) as LedgerView | null;
   }
+  async settlementProgress(battleId: number): Promise<{ recorded: number; total: number } | null> {
+    return ((await this.view(this.arena, "get_settlement_progress", { battle_id: String(battleId) })) ?? null) as { recorded: number; total: number } | null;
+  }
   async indexerHealth(): Promise<IndexerHealthView | null> {
     if (!this.indexerStateDir) return null;
     try {
@@ -106,6 +118,7 @@ export class FixtureStateSource implements StateSource {
       suspensions?: Map<string, SuspensionView>;
       ledgers?: Map<string, LedgerView>;
       indexer?: IndexerHealthView | null;
+      settlement?: Map<number, { recorded: number; total: number }>;
     },
   ) {
     this.info = { network, kind: "fixture", name: "fixture-state" };
@@ -127,6 +140,9 @@ export class FixtureStateSource implements StateSource {
   }
   async ledger(backing: string) {
     return this.data.ledgers?.get(backing) ?? null;
+  }
+  async settlementProgress(battleId: number) {
+    return this.data.settlement?.get(battleId) ?? null;
   }
   async indexerHealth() {
     return this.data.indexer ?? null;

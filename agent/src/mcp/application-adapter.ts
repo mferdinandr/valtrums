@@ -11,21 +11,22 @@ const u128 = z.unknown().transform((v, ctx) => {
   try { return integer(v, 128); } catch { ctx.addIssue({ code: "custom", message: "unsafe u128" }); return z.NEVER; }
 });
 const text = z.string().max(256);
-const index = z.number().int().min(0).max(255);
+const index = z.number().int().min(0).max(15);
 export const battleSchema = z.object({
   creator: text, protocol: text, protocol_created: z.boolean(), fee_bps: z.number().int().min(0).max(10000),
   creator_share_bps: z.number().int().min(0).max(10000), mode: z.enum(SCORING_MODES), locked: z.boolean(),
   observation_policy_version: u64.nullable(), observation_policy_hash: text.nullable(),
   principal_community: index.nullable(), principal_amount: u128.nullable(),
+  start_at_ms: u64.nullable().optional(), cancelled: z.boolean().optional(),
   communities: z.array(z.object({
     chain_id: u64, token_address: text, representation: text, custody_domain: text,
     reference_chain_id: u64.nullable(), reference_address: text.nullable(), vault: u128,
     audit_policy_hash: text.nullable(), audit_evidence_hash: text.nullable(), audit_expires_at_ms: u64.nullable(),
     backing_evidence_hash: text.nullable(),
-  })).min(2).max(256),
+  })).min(0).max(16),
 });
 export const roundSchema = z.object({
-  round_id: u64, candidates: z.array(index).max(256), start_ns: u64.nullable(), end_ns: u64.nullable(), winner: index.nullable(),
+  round_id: u64, candidates: z.array(index).max(16), start_ns: u64.nullable(), end_ns: u64.nullable(), winner: index.nullable(),
 });
 
 const readinessSchema = z.object({

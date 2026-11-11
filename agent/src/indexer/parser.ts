@@ -151,6 +151,12 @@ const ARENA_EVENTS: Record<string, SupportedEventName> = {
   lifecycle_battle_created: "lifecycle_battle_created",
   audit_updated: "audit_updated",
   lifecycle_deposit: "lifecycle_deposit",
+  lifecycle_community_added: "lifecycle_community_added",
+  lifecycle_battle_cancelled: "lifecycle_battle_cancelled",
+  lifecycle_refund: "lifecycle_refund",
+  lifecycle_refund_failed: "lifecycle_refund_failed",
+  lifecycle_joinable_asset_set: "lifecycle_joinable_asset_set",
+  lifecycle_joinable_asset_removed: "lifecycle_joinable_asset_removed",
   backing_updated: "backing_updated",
   lifecycle_representation_trust_changed: "lifecycle_representation_trust_changed",
 };
@@ -209,6 +215,28 @@ function normalize(name: SupportedEventName, data: Record<string, JsonValue>): A
         accountId: reqString(data, "account_id", ACCOUNT_MAX),
         amount: reqIntString(data, "amount"),
       };
+    case "lifecycle_community_added":
+      return {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        community: reqIntString(data, "community"),
+        representation: reqString(data, "representation", ACCOUNT_MAX),
+        accountId: reqString(data, "account_id", ACCOUNT_MAX),
+      };
+    case "lifecycle_battle_cancelled":
+      return { name, battleId: reqIntString(data, "battle_id") };
+    case "lifecycle_refund":
+    case "lifecycle_refund_failed":
+      return {
+        name,
+        battleId: reqIntString(data, "battle_id"),
+        community: reqIntString(data, "community"),
+        accountId: reqString(data, "account_id", ACCOUNT_MAX),
+        amount: reqIntString(data, "amount"),
+      };
+    case "lifecycle_joinable_asset_set":
+    case "lifecycle_joinable_asset_removed":
+      return { name, representation: reqString(data, "representation", ACCOUNT_MAX) };
     case "backing_updated":
       return {
         name,

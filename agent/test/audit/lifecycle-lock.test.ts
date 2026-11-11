@@ -49,7 +49,7 @@ describe("lifecycle lock step (fixture-only)", () => {
     const t = locker({ records: fresh() });
     expect(await t.l.tryLock(1, 2, true)).toEqual({ status: "locked" });
     const [contract, method, args, gas, deposit] = t.calls[0]!;
-    expect([contract, method, args]).toEqual(["arena.testnet", "lock_lifecycle_battle", { battle_id: 1 }]);
+    expect([contract, method, args]).toEqual(["arena.testnet", "lock_lifecycle_battle", { battle_id: 1, expected_communities: 2 }]);
     expect(String(gas)).toMatch(/Tgas/);
     // At least 1 yocto plus storage: a positive NEAR amount, refunded in part by the contract.
     expect(deposit).toBe(LOCK_DEPOSIT);
@@ -116,19 +116,16 @@ describe("lifecycle lock step (fixture-only)", () => {
         if (method === "lock_lifecycle_battle") onChain = true;
       },
     };
-    const view: LifecycleBattleView = {
-      locked: false,
-      communities: [
-        {
-          chain_id: "46630",
-          token_address: TOKEN,
-          representation: "aa.token.testnet",
-          custody_domain: "vault-1",
-          reference_chain_id: REF_CHAIN,
-          reference_address: REF_TOKEN,
-        },
-      ],
+    const community = {
+      chain_id: "46630",
+      token_address: TOKEN,
+      representation: "aa.token.testnet",
+      custody_domain: "vault-1",
+      reference_chain_id: REF_CHAIN,
+      reference_address: REF_TOKEN,
     };
+    // The lock needs two funded communities.
+    const view: LifecycleBattleView = { locked: false, communities: [community, community] };
     const pass = createLifecycleAuditPass({
       source: { count: async () => 1, get: async () => ({ ...view, locked: onChain }) },
       refresh: {
@@ -149,10 +146,10 @@ describe("lifecycle lock step (fixture-only)", () => {
       }),
     });
     expect(await pass()).toEqual({ checked: 1, ready: 1, errors: 0 });
-    expect(calls.map((c) => c.method)).toEqual(["submit_lifecycle_audit", "lock_lifecycle_battle"]);
+    expect(calls.map((c) => c.method)).toEqual(["submit_lifecycle_audit", "submit_lifecycle_audit", "lock_lifecycle_battle"]);
     // Locked battles are skipped afterwards: no further calls.
     await pass();
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   it("the pass sends no lock when the refreshed result is not a pass", async () => {
