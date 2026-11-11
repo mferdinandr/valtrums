@@ -22,8 +22,11 @@ interface BattleView {
   locked: boolean;
   mode: Mode;
   observation_policy_hash: string | null;
+  cancelled?: boolean;
   communities: Array<{ chain_id: string; token_address: string; reference_chain_id: string | null; reference_address: string | null }>;
 }
+/** How often a battle that is not locked yet is read again (a lock is announced well before its rounds open). */
+const UNLOCKED_RECHECK_MS = 15_000;
 interface RoundView { round_id: string; candidates: number[]; start_ns: string | null; end_ns: string | null; winner: number | null }
 
 export interface CollectorViews {
@@ -45,6 +48,7 @@ export class CollectorRunner {
   private readonly sources = new Map<string, SampleSource>();
   /** A locked battle never changes its communities, mode or policy, so it is read once. */
   private readonly lockedBattles = new Map<string, BattleView>();
+  private readonly unlockedCheckedAt = new Map<string, number>();
   private count: { value: number; atMs: number } | null = null;
   constructor(
     private readonly cfg: RunnerConfig,
@@ -79,9 +83,18 @@ export class CollectorRunner {
       try {
         let battle = this.lockedBattles.get(id) ?? null;
         if (!battle) {
+          // An unlocked battle is re-read at most every UNLOCKED_RECHECK_MS, to spare the NEAR RPC.
+          const checked = this.unlockedCheckedAt.get(id);
+          if (checked !== undefined && nowMs - checked < UNLOCKED_RECHECK_MS) continue;
           battle = await this.deps.views.battle(id);
+          this.unlockedCheckedAt.set(id, nowMs);
+          if (battle?.cancelled === true) {
+            this.finished.add(id); // a cancelled battle never plays a round
+            continue;
+          }
           if (!battle?.locked || !battle.observation_policy_hash) continue;
           this.lockedBattles.set(id, battle);
+          this.unlockedCheckedAt.delete(id);
         }
         if (!battle.observation_policy_hash) continue;
         const round = await this.deps.views.round(id);
