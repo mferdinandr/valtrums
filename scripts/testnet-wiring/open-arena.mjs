@@ -130,10 +130,14 @@ const commands = {
     if (!wasmPath) throw new Error("usage: deploy-arena <arena.wasm>");
     const code = fs.readFileSync(wasmPath);
     const sha = crypto.createHash("sha256").update(code).digest("hex");
-    const { accountId, near } = signer("OWNER");
-    plan({ action: "redeploy arena code in place (no init, state kept)", signer: accountId, receiver: ARENA, wasm: wasmPath, bytes: code.length, sha256: sha });
+    // DeployContract must be signed by the arena account itself; its deploy (upgrade) key is the owner's key.
+    const env = readEnv();
+    const ownerKey = env.TESTNET_OWNER_PRIVATE_KEY;
+    if (!ownerKey) throw new Error("missing TESTNET_OWNER_PRIVATE_KEY in .env");
+    const near = new Near({ network: NETWORK, privateKey: ownerKey, defaultSignerId: ARENA });
+    plan({ action: "redeploy arena code in place (no init, state kept)", signer: `${ARENA} (owner's deploy key)`, receiver: ARENA, wasm: wasmPath, bytes: code.length, sha256: sha });
     if (!send) return;
-    const outcome = await near.transaction(accountId).deployContract(ARENA, new Uint8Array(code)).send({ waitUntil: "FINAL" });
+    const outcome = await near.transaction(ARENA).deployContract(ARENA, new Uint8Array(code)).send({ waitUntil: "FINAL" });
     console.log(JSON.stringify({ sent: true, tx: outcome?.transaction?.hash ?? null, status: outcome?.status ?? null }));
   },
 
