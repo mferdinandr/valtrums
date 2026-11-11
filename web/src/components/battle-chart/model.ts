@@ -10,6 +10,31 @@ export interface ChartSeries {
   inactive?: boolean;
 }
 
+/**
+ * Each series as its distance from the average of all series at the same time. What moves every token
+ * together (the shared ETH/USD price) cancels out, so only the differences between tokens remain and
+ * can be magnified on their own axis. A time with fewer than two values has no average and is left out.
+ */
+export function relativeToField(series: readonly ChartSeries[]): ChartSeries[] {
+  const key = (x: number) => x.toFixed(3);
+  const at = new Map<string, number[]>();
+  for (const s of series) {
+    for (const p of s.points) {
+      if (p.value === null || !Number.isFinite(p.value)) continue;
+      at.set(key(p.x), [...(at.get(key(p.x)) ?? []), p.value]);
+    }
+  }
+  return series.map((s) => ({
+    ...s,
+    points: s.points.flatMap((p): ChartPoint[] => {
+      if (p.value === null || !Number.isFinite(p.value)) return [p];
+      const values = at.get(key(p.x)) ?? [];
+      if (values.length < 2) return [{ x: p.x, value: null }];
+      return [{ x: p.x, value: p.value - values.reduce((a, b) => a + b, 0) / values.length }];
+    }),
+  }));
+}
+
 /** Display-only geometry. Never use floating-point chart values to settle a battle. */
 export function chartSegments(points: readonly ChartPoint[]) {
   const segments: ChartPoint[][] = [];

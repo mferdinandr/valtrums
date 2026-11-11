@@ -19,8 +19,8 @@ function price(item: ObservationItem): { value: bigint; scale: number } | null {
   return { value: BigInt(i.price), scale: i.priceScale };
 }
 
-/** Basis points as a display percentage; BigInt arithmetic until the final division by 100. */
-const percent = (numerator: bigint, denominator: bigint): number => Number((numerator * 10_000n) / denominator) / 100;
+/** A display percentage to 18 decimals; BigInt arithmetic until the final division. (Basis points hid moves below 0.01%.) */
+const percent = (numerator: bigint, denominator: bigint): number => Number((numerator * 10n ** 20n) / denominator) / 1e18;
 
 export interface ObservationChartModel {
   series: ChartSeries[];
@@ -32,7 +32,16 @@ export interface ObservationChartModel {
   gapNotes: string[];
 }
 
-export function observationSeries(data: ObservationData): ObservationChartModel {
+/** Replaces "community N" (the backend counts from 0) with the token's own name when it is known. */
+export function withNames(text: string, names: readonly string[] | undefined): string {
+  if (!names) return text;
+  return text.replace(/\bcommunity (\d+)\b/gi, (whole, n: string) => names[Number(n)] ?? whole);
+}
+
+export function observationSeries(data: ObservationData, names?: readonly string[]): ObservationChartModel {
+  const label = (community: number): string => names?.[community] ?? `Community ${community + 1}`;
+  // Notes read as a sentence: lower-case fallback when no token name is known.
+  const note = (community: number): string => names?.[community] ?? `community ${community + 1}`;
   const mode = data.items[0]?.mode ?? data.projection?.mode;
   const drawable = mode === "PriceGain" || mode === "LowestDrawdown";
   const startMs = data.recorded?.startNs ? nsToMs(data.recorded.startNs) : null;
@@ -56,7 +65,11 @@ export function observationSeries(data: ObservationData): ObservationChartModel 
     let peak = 0n;
     for (const [n, item] of timed.entries()) {
       const p = price(item)!;
-      const x = Math.min(duration, Math.max(0, Number(BigInt(item.observedAtMs as string) - startMs) / 1000));
+      // A sample within the boundary tolerance but outside the window is evidence for the score, not a point
+      // of this round's timeline: clamping it to the edge drew a false jump at 0s / 30s.
+      const rawX = Number(BigInt(item.observedAtMs as string) - startMs) / 1000;
+      const inWindow = rawX >= 0 && rawX <= duration;
+      const x = Math.min(duration, Math.max(0, rawX));
       let value: number | null = null;
       if (mode === "PriceGain") {
         if (base && base.scale === p.scale && base.value > 0n) value = percent(p.value - base.value, base.value);
@@ -68,16 +81,16 @@ export function observationSeries(data: ObservationData): ObservationChartModel 
       if (prev && cov?.gaps.some((g) => BigInt(g.fromMs) >= BigInt(prev.observedAtMs as string) && BigInt(g.toMs) <= BigInt(item.observedAtMs as string))) {
         points.push({ x: (points.at(-1)?.x ?? x) + (x - (points.at(-1)?.x ?? x)) / 2, value: null });
       }
-      points.push({ x, value });
+      if (inWindow) points.push({ x, value });
     }
     if (timed.length > 0 && cov && !cov.hasEnd) {
       points.push({ x: duration, value: null });
-      gapNotes.push(`community ${community + 1}: no closing sample yet`);
+      gapNotes.push(`${note(community)}: no closing sample yet`);
     }
-    if (timed.length === 0) gapNotes.push(`community ${community + 1}: no samples with a provider time`);
-    if (cov && cov.unknownTime > 0) gapNotes.push(`community ${community + 1}: ${cov.unknownTime} sample(s) without a provider time are not plotted`);
-    if (cov && cov.gaps.length > 0) gapNotes.push(`community ${community + 1}: ${cov.gaps.length} gap(s) in coverage`);
-    return { id: String(community), name: `Community ${community + 1}`, color: COLORS[index % COLORS.length]!, points };
+    if (timed.length === 0) gapNotes.push(`${note(community)}: no samples with a provider time`);
+    if (cov && cov.unknownTime > 0) gapNotes.push(`${note(community)}: ${cov.unknownTime} sample(s) without a provider time are not plotted`);
+    if (cov && cov.gaps.length > 0) gapNotes.push(`${note(community)}: ${cov.gaps.length} gap(s) in coverage`);
+    return { id: String(community), name: label(community), color: COLORS[index % COLORS.length]!, points };
   });
   return { series, duration, lowerIsBetter, drawable, gapNotes };
 }
