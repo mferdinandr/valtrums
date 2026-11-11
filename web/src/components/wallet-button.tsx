@@ -1,11 +1,68 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { TokenIcon } from "@/components/token-icon";
 import { useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
+import { useBalances } from "@/hooks/use-balances";
+import { formatUnits } from "@/lib/amounts";
+import { NEAR_DECIMALS, TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 
 function shorten(id: string): string {
   return id.length > 22 ? `${id.slice(0, 10)}...${id.slice(-8)}` : id;
+}
+
+/** The account chip; clicking it lists what the account holds. Reads only, nothing here signs. */
+function BalanceMenu({ accountId }: { accountId: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const { balances, error, loading, refresh, configured } = useBalances();
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => { setOpen((v) => !v); if (!open) void refresh(); }}
+        className="max-w-[110px] sm:max-w-[150px] truncate rounded-xl border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
+        title={accountId}
+      >
+        {shorten(accountId)} ▾
+      </button>
+      {open && (
+        <div role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 space-y-2 rounded-xl border border-edge bg-void p-3 text-sm shadow-xl">
+          <p className="font-pixel text-[10px] uppercase tracking-wider text-mute">My balance</p>
+          <p className="break-all text-xs text-mute">{accountId}</p>
+          {error && <p role="alert" className="text-xs text-neon-red">Could not read balances. {error}</p>}
+          {!balances && !error && <p role="status" className="text-xs text-mute">{loading ? "Reading balances…" : "No balances yet."}</p>}
+          {balances && (
+            <ul className="space-y-1.5">
+              <li className="flex items-center justify-between gap-2">
+                <span>NEAR</span>
+                <span>{formatUnits(BigInt(balances.near), NEAR_DECIMALS, 3)}</span>
+              </li>
+              {balances.tokens.map((t) => (
+                <li key={t.token} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2"><TokenIcon symbol={t.symbol} size={20} />{t.symbol}</span>
+                  <span>{formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 2)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!configured && <p className="text-xs text-mute">Token balances need <code>NEXT_PUBLIC_FAUCET_CONTRACT_ID</code>.</p>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function WalletButton() {
@@ -39,12 +96,7 @@ export function WalletButton() {
   }
   return (
     <div className="flex max-w-xs flex-wrap items-center justify-end gap-2">
-      <span
-        className="max-w-[110px] sm:max-w-[150px] truncate rounded-xl border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
-        title={accountId}
-      >
-        {shorten(accountId)}
-      </span>
+      <BalanceMenu accountId={accountId} />
       <Button
         variant="ghost"
         size="sm"
