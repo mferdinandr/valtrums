@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Step } from "@/components/lifecycle-participate";
 import { useWallet } from "@/components/providers";
-import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { useRefund } from "@/hooks/use-refund";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
@@ -13,17 +12,12 @@ import { applicationKey, type Namespace } from "@/lib/arena-read/application";
 import type { LifecycleDetail } from "@/lib/arena-read/lifecycle";
 import {
   buildCancelReview,
-  buildJoinReview,
   cancelRequest,
   isFunded,
-  joinRequest,
   MIN_FUNDED,
   utc,
   type OpenPhase,
 } from "@/lib/arena-read/open-arena";
-
-const sameAsset = (a: { chain_id: string; token_address: string }, b: { chain_id: string; token_address: string }) =>
-  a.chain_id === b.chain_id && a.token_address.toLowerCase() === b.token_address.toLowerCase();
 
 /** `backing-cashcat.valtrum-owner-b694.testnet` reads as CASHCAT; anything else shows the first account segment. */
 const tokenName = (representation: string): string => {
@@ -71,7 +65,6 @@ export function OpenArenaPanel({
       </div>
       {battleId === null ? null : (
         <div className="mt-6 space-y-8">
-          {phase.kind === "gathering" && <JoinStep namespace={namespace} battleId={battleId} detail={detail} />}
           {phase.kind === "cancellable" && <CancelStep namespace={namespace} battleId={battleId} />}
           {phase.kind === "cancelled" && <RefundStep namespace={namespace} battleId={battleId} detail={detail} name={name} />}
         </div>
@@ -80,62 +73,6 @@ export function OpenArenaPanel({
   );
 }
 
-function JoinStep({ namespace, battleId, detail }: { namespace: Namespace; battleId: number; detail: LifecycleDetail }) {
-  const joinable = useJoinableAssets(namespace.arenaContract);
-  const [choice, setChoice] = useState("");
-  const [busy, setBusy] = useState(false);
-  const full = detail.battle.communities.length >= 16;
-  const options = useMemo(
-    () =>
-      (joinable.items ?? []).map((a) => ({
-        representation: a.representation,
-        label: tokenName(a.representation),
-        joined: detail.battle.communities.some((c) => c.representation === a.representation || sameAsset(c, a)),
-      })),
-    [joinable.items, detail.battle.communities],
-  );
-  const picked = options.find((o) => o.representation === choice);
-  const review = useMemo(
-    () => buildJoinReview(namespace.arenaContract, battleId, choice, picked?.label),
-    [namespace.arenaContract, battleId, choice, picked?.label],
-  );
-  const request = useMemo(() => joinRequest(battleId, choice), [battleId, choice]);
-  if (joinable.error) return <p role="alert" className="text-xs text-neon-red">The joinable tokens could not be read: {joinable.error}</p>;
-  if (!joinable.items) return <p role="status" className="text-xs text-mute">Reading the joinable tokens…</p>;
-  if (options.length === 0) return <p className="text-xs text-mute">The arena has no joinable tokens yet.</p>;
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Token to join with">
-        {options.map((o) => (
-          <Button
-            key={o.representation}
-            type="button"
-            variant="ghost"
-            disabled={busy || (full && !o.joined)}
-            aria-pressed={choice === o.representation}
-            onClick={() => setChoice(o.representation)}
-            className={choice === o.representation ? "border-neon-green text-neon-green" : ""}
-          >
-            {o.label}
-            {o.joined ? " · in the arena" : ""}
-          </Button>
-        ))}
-      </div>
-      {full && <p className="text-xs text-mute">The arena has 16 communities: you can still join one of them.</p>}
-      {choice && (
-        <Step
-          key={`join-${choice}`}
-          title={picked?.joined ? "Join this crew (saves your spot)" : "Join with this token (adds its crew)"}
-          review={review}
-          request={request}
-          namespaceKey={applicationKey(namespace)}
-          onSigningChange={setBusy}
-          busyElsewhere={false}
-        />
-      )}
-    </div>
-  );
-}
 
 const ignoreSigning = (): void => undefined;
 

@@ -6,6 +6,7 @@ import gsap from "gsap";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
+import { JoinDeposit } from "@/components/lifecycle-join-deposit";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
@@ -257,7 +258,8 @@ export function LifecycleBattleDetail({
           supports it losslessly. Read-only arena and evidence remain available.
         </Card>
       ) : (
-        <LifecycleParticipate
+        depositsClosed(open) !== null ? (
+          <LifecycleParticipate
           namespace={namespace}
           battleId={safeBattleId}
           communities={rows.map((r) => ({
@@ -267,6 +269,13 @@ export function LifecycleBattleDetail({
           }))}
           closedReason={depositsClosed(open)}
         />
+        ) : (
+          <JoinDeposit
+            namespace={namespace}
+            battleId={safeBattleId}
+            communityTokens={rows.map((r) => r.representation)}
+          />
+        )
       )}
 
       <section aria-label="Communities">
