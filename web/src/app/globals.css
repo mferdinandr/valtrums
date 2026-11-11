@@ -233,10 +233,10 @@
   margin-bottom: 2rem;
 }
 .carnival-page-hero > div:first-child {
-  padding: 2.5rem;
+  padding: 1.75rem 2.5rem;
 }
 .carnival-page-hero h1 {
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-size: clamp(1.9rem, 3.2vw, 2.8rem);
   line-height: 1.05;
   margin: 0.8rem 0;
   letter-spacing: -0.06em;
@@ -247,7 +247,7 @@
   color: #607780;
 }
 .carnival-page-hero .carnival-scene {
-  min-height: 320px;
+  min-height: 220px;
 }
 .carnival-page-hero .carnival-scene-caption {
   font-size: 9px;

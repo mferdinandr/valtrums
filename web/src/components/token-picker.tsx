@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
+import { Check, X } from "lucide-react";
 import { TokenIcon } from "@/components/token-icon";
 import { Input, Label } from "@/components/ui/input";
 import { useApplicationSearch } from "@/hooks/use-application-search";
@@ -64,6 +65,33 @@ export function TokenPicker({
   useEffect(() => {
     if (q === "" && result && !loading) onAvailable?.(result.data.nextCursor ? null : result.data.items.length);
   }, [q, result, loading, onAvailable]);
+  const grid = useRef<HTMLUListElement>(null);
+  const seen = useRef<Set<string>>(new Set());
+  // Cards slide in once, and a card that has just been chosen pops so the choice is easy to spot.
+  useEffect(() => {
+    const el = grid.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const fresh = Array.from(el.querySelectorAll<HTMLElement>("[data-asset]")).filter((c) => !seen.current.has(c.dataset.asset ?? ""));
+    fresh.forEach((c) => seen.current.add(c.dataset.asset ?? ""));
+    if (fresh.length === 0) return;
+    const ctx = gsap.context(() => {
+      gsap.from(fresh, { autoAlpha: 0, y: 14, duration: 0.35, stagger: 0.04, ease: "power2.out", clearProps: "opacity,visibility,transform" });
+    }, el);
+    return () => ctx.revert();
+  }, [items]);
+  const picked = Array.from(chosen).join("|");
+  const lastPicked = useRef(picked);
+  useEffect(() => {
+    const el = grid.current;
+    const added = picked.split("|").filter((k) => k && !lastPicked.current.split("|").includes(k));
+    lastPicked.current = picked;
+    if (!el || added.length === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const cards = Array.from(el.querySelectorAll<HTMLElement>("[data-selected='true']"));
+    const ctx = gsap.context(() => {
+      gsap.fromTo(cards, { scale: 0.92 }, { scale: 1, duration: 0.5, ease: "back.out(2.2)", clearProps: "transform" });
+    }, el);
+    return () => ctx.revert();
+  }, [picked]);
   return (
     <div className="space-y-3">
       <Label>
@@ -88,25 +116,31 @@ export function TokenPicker({
       {result && !loading && items.length === 0 && (
         <p className="text-xs text-mute">No registered asset matches. Registry membership is required.</p>
       )}
-      <ul className="token-grid">
+      <ul ref={grid} className="token-grid">
         {items.map((a) => {
           const symbol = assetSymbol(a);
           const taken = chosen.has(`${a.chainId}:${a.token.toLowerCase()}`);
           const title = [a.label?.name, `${a.chainId}:${a.token}`].filter(Boolean).join(" · ");
           return (
-            <li key={a.assetKey}>
+            <li key={a.assetKey} data-asset={a.assetKey}>
               <button
                 type="button"
                 className="token-card"
+                data-selected={taken}
                 style={{ ["--token-accent" as string]: accentFor(symbol) }}
                 disabled={taken || full}
                 aria-label={taken ? `${symbol} already chosen` : `Add ${symbol}`}
                 title={title}
                 onClick={() => onPick(a)}
               >
+                {taken && (
+                  <span className="token-card-check" aria-hidden="true">
+                    <Check size={14} strokeWidth={3} />
+                  </span>
+                )}
                 <TokenIcon symbol={symbol} size={44} />
                 <strong>{symbol}</strong>
-                <span>{shortAccount(a.token)}</span>
+                {taken && <span className="token-card-state">Selected</span>}
               </button>
             </li>
           );

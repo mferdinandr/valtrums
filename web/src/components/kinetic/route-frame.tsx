@@ -31,7 +31,7 @@ export function RouteFrame({ children }: { children: ReactNode }) {
     <div ref={ref} className="route-content relative">
       <p className="mb-5 flex items-center gap-2 text-[10px] text-mute">
         <span className="status-dot" />
-        {`${config.network} · lifecycle arena`}
+        {config.network}
       </p>
       <div key={pathname} className="route-reveal">
         {children}

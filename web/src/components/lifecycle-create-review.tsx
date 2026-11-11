@@ -142,8 +142,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Whether a mode can run live depends on provider qualification; the
-            arena and oracle report that, this page does not.
+            Some challenges may not be able to run live yet.
           </p>
         </Card>
 

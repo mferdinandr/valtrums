@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
 import { Button } from "@/components/ui/button";
 import { TokenIcon } from "@/components/token-icon";
 import { useWallet } from "@/components/providers";
@@ -26,6 +27,16 @@ function BalanceMenu({ accountId }: { accountId: string }) {
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || !panel.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const el = panel.current;
+    const ctx = gsap.context(() => {
+      gsap.fromTo(el, { autoAlpha: 0, y: -8, scale: 0.97, transformOrigin: "top right" }, { autoAlpha: 1, y: 0, scale: 1, duration: 0.22, ease: "power2.out" });
+      gsap.from(el.querySelectorAll("li"), { autoAlpha: 0, x: 8, duration: 0.25, stagger: 0.04, delay: 0.08, ease: "power2.out" });
+    }, el);
+    return () => ctx.revert();
+  }, [open]);
   return (
     <div ref={box} className="relative">
       <button
@@ -39,7 +50,7 @@ function BalanceMenu({ accountId }: { accountId: string }) {
         {shorten(accountId)} ▾
       </button>
       {open && (
-        <div role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 space-y-2 rounded-xl border border-edge bg-void p-3 text-sm shadow-xl">
+        <div ref={panel} role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 space-y-2 rounded-xl border border-edge bg-void p-3 text-sm shadow-xl">
           <p className="font-pixel text-[10px] uppercase tracking-wider text-mute">My balance</p>
           <p className="break-all text-xs text-mute">{accountId}</p>
           {error && <p role="alert" className="text-xs text-neon-red">Could not read balances. {error}</p>}

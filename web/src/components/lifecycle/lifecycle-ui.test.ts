@@ -129,8 +129,8 @@ describe("lifecycle presentation and fallback", () => {
       })),
     };
     const html = render();
-    expect(html).toContain("backing not ready");
-    expect(html).not.toContain("backing approved");
+    expect(html).toContain("Backing pending");
+    expect(html).not.toContain("Fully backed");
   });
   it("shows a read error without rendering an invented demo arena", () => {
     state.data = null;

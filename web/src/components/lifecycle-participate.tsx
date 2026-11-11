@@ -6,6 +6,7 @@ import { useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { TokenIcon } from "@/components/token-icon";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { applicationKey, type Namespace } from "@/lib/arena-read/application";
 import {
@@ -304,13 +305,9 @@ export function LifecycleParticipate({
   return (
     <Card>
       <CardTitle>Join your crew</CardTitle>
-      <p className="mb-4 text-sm leading-7 text-mute">
-        Pick your community, register your position, then review a token
-        deposit. Each step has its own wallet approval.
-      </p>
       <div className="lifecycle-stepper">
         <span>01 · Pick a crew</span>
-        <span>02 · Register storage</span>
+        <span>02 · Save your spot</span>
         <span>03 · Review &amp; deposit</span>
       </div>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Community">
@@ -322,10 +319,9 @@ export function LifecycleParticipate({
             disabled={signing}
             aria-pressed={community === c.index}
             onClick={() => setCommunity(c.index)}
-            className={
-              community === c.index ? "border-neon-green text-neon-green" : ""
-            }
+            className={`lifecycle-crew-pick ${community === c.index ? "border-neon-green text-neon-green" : ""}`}
           >
+            {c.label && <TokenIcon symbol={c.label} size={28} />}
             {c.label ?? `Community ${c.index + 1}`}
           </Button>
         ))}
@@ -336,12 +332,12 @@ export function LifecycleParticipate({
           namespaceKey={applicationKey(namespace)}
           onSigningChange={setRegisterBusy}
           busyElsewhere={depositBusy}
-          title="1 · REGISTER A POSITION (STORAGE, NOT A STAKE)"
+          title="1 · Save your spot (a small storage fee, not a stake)"
           review={registerReview}
           request={registerReq}
         />
         <label className="block text-xs">
-          <span className="text-mute">Deposit amount · exact token units</span>
+          <span className="text-mute">Amount to deposit</span>
           <input
             inputMode="numeric"
             autoComplete="off"
@@ -352,9 +348,9 @@ export function LifecycleParticipate({
             disabled={signing}
           />
           <span className="mt-2 block leading-6 text-mute">
-            The read service has not provided token decimals, so this field uses
-            base units. For example, a token with 6 decimals uses 1,000,000
-            units for 1 token. Confirm your token’s precision before signing.
+            Enter the amount in the token&apos;s smallest unit. Faucet tokens
+            have 18 decimals, so 1 token is 1000000000000000000. Check the
+            amount in your wallet before you sign.
           </span>
         </label>
         <Step
@@ -362,7 +358,7 @@ export function LifecycleParticipate({
           namespaceKey={applicationKey(namespace)}
           onSigningChange={setDepositBusy}
           busyElsewhere={registerBusy}
-          title="2 · DEPOSIT THE REPRESENTATION"
+          title="2 · Deposit your tokens"
           review={depositReview}
           request={depositReq}
           onPreviewed={(id, read) => {
