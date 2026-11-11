@@ -4,18 +4,20 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Step } from "@/components/lifecycle-participate";
+import { useWallet } from "@/components/providers";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
+import { useRefund } from "@/hooks/use-refund";
+import { formatUnits } from "@/lib/amounts";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { applicationKey, type Namespace } from "@/lib/arena-read/application";
 import type { LifecycleDetail } from "@/lib/arena-read/lifecycle";
 import {
   buildCancelReview,
   buildJoinReview,
-  buildRefundReview,
   cancelRequest,
   isFunded,
   joinRequest,
   MIN_FUNDED,
-  refundRequest,
   utc,
   type OpenPhase,
 } from "@/lib/arena-read/open-arena";
@@ -152,44 +154,40 @@ function CancelStep({ namespace, battleId }: { namespace: Namespace; battleId: n
   );
 }
 
+/** One button that takes back everything the connected account has in a cancelled battle (positions and escrow). */
 function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespace; battleId: number; detail: LifecycleDetail; name: (i: number) => string }) {
-  const funded = detail.battle.communities.map((c, i) => ({ index: i, funded: isFunded(c.vault) })).filter((c) => c.funded);
-  const [community, setCommunity] = useState<number | null>(funded[0]?.index ?? null);
-  const [busy, setBusy] = useState(false);
-  const review = useMemo(
-    () => buildRefundReview(namespace.arenaContract, battleId, community ?? -1, community === null ? undefined : name(community)),
-    [namespace.arenaContract, battleId, community, name],
-  );
-  const request = useMemo(() => refundRequest(battleId, community ?? -1), [battleId, community]);
-  if (funded.length === 0) return <p className="text-xs text-mute">No community holds a deposit, so there is nothing to refund.</p>;
+  const { signIn } = useWallet();
+  const refund = useRefund(namespace.arenaContract, battleId, detail.battle.communities.length, name);
+  const amount = (units: string) => formatUnits(BigInt(units), TOKEN_DECIMALS, 4);
+  if (!refund.connected) {
+    return (
+      <Button type="button" variant="ghost" onClick={() => void signIn()}>
+        Connect wallet to get your refund
+      </Button>
+    );
+  }
+  if (refund.claims === null) return <p role="status" className="text-xs text-mute">Checking what you can get back…</p>;
+  if (refund.claims.length === 0) {
+    return (
+      <p role="status" className="text-sm text-mute">
+        {refund.state.step === "done" ? "Refunded. Check your wallet." : "You have nothing to refund in this battle."}
+      </p>
+    );
+  }
+  const list = refund.claims
+    .map((c) => `${amount(c.amount)} ${c.kind === "position" ? name(c.community) : tokenName(c.representation)}`)
+    .join(" + ");
+  const st = refund.state;
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-mute">Pick the community you deposited in. The arena refunds only your own position.</p>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Community to refund from">
-        {funded.map((c) => (
-          <Button
-            key={c.index}
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            aria-pressed={community === c.index}
-            onClick={() => setCommunity(c.index)}
-            className={community === c.index ? "border-neon-green text-neon-green" : ""}
-          >
-            {name(c.index)}
-          </Button>
-        ))}
-      </div>
-      {community !== null && (
-        <Step
-          key={`refund-${community}`}
-          title="Claim your refund"
-          review={review}
-          request={request}
-          namespaceKey={applicationKey(namespace)}
-          onSigningChange={setBusy}
-          busyElsewhere={false}
-        />
+    <div className="space-y-2">
+      <Button type="button" onClick={refund.run} disabled={st.step === "running"}>
+        {st.step === "running" ? `Refunding ${st.done} of ${st.total}…` : st.step === "failed" ? "Continue refund" : `Refund ${list}`}
+      </Button>
+      {st.step === "running" && <p role="status" className="text-xs text-mute">Confirm in your wallet when asked.</p>}
+      {st.step === "failed" && (
+        <p role="alert" className="text-xs text-neon-amber">
+          Refund failed: {st.message} Press the button to continue.
+        </p>
       )}
     </div>
   );

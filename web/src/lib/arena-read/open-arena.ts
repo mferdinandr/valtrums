@@ -143,6 +143,33 @@ export function buildRefundReview(arena: string, battleId: number, community: nu
   };
 }
 
+export const escrowRefundRequest = (battleId: number) => ({ kind: "claim_escrow_refund", battleId });
+
+/** The creator's escrow after a cancel (D41): the same one-yocto claim shape as a position refund, on its own method. */
+export function buildEscrowRefundReview(arena: string, battleId: number, label?: string): Review {
+  const problems = [...idProblems(battleId), ...arenaProblems(arena)];
+  if (problems.length > 0) return { ok: false, problems };
+  return {
+    ok: true,
+    receiver: arena,
+    method: "claim_lifecycle_escrow_refund",
+    args: { battle_id: battleId },
+    depositYocto: "1",
+    gasTgas: REFUND_GAS_TGAS,
+    lines: [
+      { label: "Contract", value: arena },
+      { label: "Method", value: "claim_lifecycle_escrow_refund" },
+      { label: "Battle", value: `#${battleId}${label ? ` / ${label}` : ""}` },
+      { label: "Attached deposit", value: "1 yoctoNEAR" },
+      { label: "Gas", value: `${REFUND_GAS_TGAS} Tgas` },
+    ],
+    notes: [
+      "Returns the deposit you made when you created this battle, which the arena was still holding in escrow.",
+      "The refund is real only after the arena records it; a failed transfer restores the escrow.",
+    ],
+  };
+}
+
 export type OpenPhase =
   /** Created without a start time: the earlier rules, never cancellable. */
   | { kind: "no_start" }

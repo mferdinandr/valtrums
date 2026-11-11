@@ -9,8 +9,7 @@ import {
   msToLocalInput,
   openPhase,
   readJoinableAssets,
-  startTimeProblems,
-} from "./open-arena";
+  startTimeProblems, buildEscrowRefundReview, escrowRefundRequest } from "./open-arena";
 import { battleStatus, type LifecycleCommunity, type LifecycleDetail } from "./lifecycle";
 
 const NOW = 1_800_000_000_000;
@@ -111,5 +110,19 @@ describe("joinable allowlist read", () => {
   it("refuses a malformed entry", async () => {
     const { doFetch } = rpc([[{ representation: 5 }]]);
     await expect(readJoinableAssets("https://rpc", "arena.testnet", doFetch)).rejects.toThrow(/malformed/);
+  });
+});
+
+describe("escrow refund review (D41)", () => {
+  it("is one claim_lifecycle_escrow_refund with one yocto, in the shape the agent previews", () => {
+    const r = buildEscrowRefundReview("arena.testnet", 17, "CASHCAT");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r).toMatchObject({ receiver: "arena.testnet", method: "claim_lifecycle_escrow_refund", args: { battle_id: 17 }, depositYocto: "1" });
+    expect(escrowRefundRequest(17)).toEqual({ kind: "claim_escrow_refund", battleId: 17 });
+  });
+  it("refuses a bad battle id and an unconfigured arena", () => {
+    expect(buildEscrowRefundReview("arena.testnet", 0).ok).toBe(false);
+    expect(buildEscrowRefundReview("", 17).ok).toBe(false);
   });
 });
