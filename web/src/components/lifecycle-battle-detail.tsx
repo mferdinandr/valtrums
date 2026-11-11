@@ -7,6 +7,8 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
+import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
+import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { ReferencePreviewChart } from "@/components/battle-chart/reference-preview";
@@ -34,6 +36,21 @@ import "@/components/lifecycle/lifecycle.css";
 
 const when = (ms: number) =>
   new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+
+/** Why the deposit step is closed, or null while deposits are open. */
+function depositsClosed(open: OpenPhase): string | null {
+  switch (open.kind) {
+    case "locked":
+      return "This battle is locked. Positions can no longer be registered and a deposit would be returned.";
+    case "cancelled":
+      return "This battle was cancelled. Deposits are closed; claim your refund in the open arena panel.";
+    case "awaiting_lock":
+    case "cancellable":
+      return "The start time has passed. Deposits are closed and a deposit would be returned.";
+    default:
+      return null;
+  }
+}
 
 export function LifecycleBattleDetail({
   namespace,
@@ -92,6 +109,7 @@ export function LifecycleBattleDetail({
 
   const detail = data.data;
   const status = battleStatus(detail);
+  const open = openPhase(detail, now);
   const phase = roundPhase(detail.round, now);
   const rows = communityRows(detail, now);
   const roster = lifecycleRoster(detail.battle.communities);
@@ -120,9 +138,11 @@ export function LifecycleBattleDetail({
           </span>
           <h1>{modeName(detail.battle.mode)}</h1>
           <p className="text-sm text-mute">
-            {detail.battle.locked
-              ? "The crews are locked in. Follow the round."
-              : "Pick a crew and join the battle."}
+            {status === "cancelled"
+              ? "This battle was cancelled. Depositors can claim a refund."
+              : detail.battle.locked
+                ? "The crews are locked in. Follow the round."
+                : "Join with a token or deposit in a crew."}
           </p>
           <div className="lifecycle-facts">
             <span>30-second rounds</span>
@@ -147,15 +167,23 @@ export function LifecycleBattleDetail({
                 ? "Result recorded"
                 : status === "locked"
                   ? "Crews locked in"
-                  : "Open for deposits"}
+                  : status === "cancelled"
+                    ? "Cancelled"
+                    : open.kind === "gathering" || open.kind === "no_start"
+                      ? "Open for deposits"
+                      : "Start time passed"}
             </Badge>
             {fixture && <Badge tone="amber">fixture data</Badge>}
           </div>
           <div role="status" aria-live="polite" className="text-sm leading-7">
             {phase.kind === "not_started" &&
-              (detail.battle.locked
-                ? "Waiting for round one. The recorded result will appear here."
-                : "The battle is still open for deposits; no round has started.")}
+              (status === "cancelled"
+                ? "No round was played."
+                : detail.battle.locked
+                  ? "Waiting for round one. The recorded result will appear here."
+                  : open.kind === "gathering" && now > 0
+                    ? `Starts in ${formatCountdown(open.msLeft)}. No round has started.`
+                    : "No round has started.")}
             {phase.kind === "awaiting_open" &&
               `Round ${detail.round!.round_id} is preparing its next window. ${phase.candidates.length} crews remain.`}
             {phase.kind === "window_open" &&
@@ -221,6 +249,15 @@ export function LifecycleBattleDetail({
         </div>
       )}
 
+      <OpenArenaPanel
+        namespace={namespace}
+        battleId={safeBattleId}
+        detail={detail}
+        phase={open}
+        now={now}
+        name={name}
+      />
+
       {safeBattleId === null ? (
         <Card role="status">
           Wallet actions are unavailable for this ID until the action service
@@ -235,7 +272,7 @@ export function LifecycleBattleDetail({
             representation: r.representation,
             label: name(r.index),
           }))}
-          locked={detail.battle.locked}
+          closedReason={depositsClosed(open)}
         />
       )}
 

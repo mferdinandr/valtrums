@@ -18,6 +18,7 @@ import {
   type CreditState,
   type Review,
 } from "@/lib/arena-read/deposit-flow";
+import type { Review as OpenReview } from "@/lib/arena-read/open-arena";
 
 interface CommunityOption {
   index: number;
@@ -41,7 +42,7 @@ const CREDIT_TEXT: Record<CreditState, string> = {
  * review intact for a retry. `onPreviewed` and `onDone` let a step read the account's position around the
  * transaction without ever trusting the receipt as proof of credit.
  */
-function Step({
+export function Step({
   title,
   review,
   request,
@@ -53,7 +54,7 @@ function Step({
   children,
 }: {
   title: string;
-  review: Review;
+  review: Review | OpenReview;
   request: Record<string, unknown>;
   namespaceKey: string;
   onSigningChange: (busy: boolean) => void;
@@ -217,19 +218,20 @@ function Step({
 /**
  * Registration and deposit for an open lifecycle battle (issue #149). Two separate reviewed transactions:
  * a storage-paying position registration, then the representation `ft_transfer_call`. Neither is offered
- * on a locked battle. Eligibility (audit, backing, balance) is decided by the service and the arena; the
- * reasons they return are shown, not re-derived here.
+ * once deposits are closed (locked, started or cancelled). Eligibility (audit, backing, balance) is decided by
+ * the service and the arena; the reasons they return are shown, not re-derived here.
  */
 export function LifecycleParticipate({
   namespace,
   battleId,
   communities,
-  locked,
+  closedReason,
 }: {
   namespace: Namespace;
   battleId: number;
   communities: CommunityOption[];
-  locked: boolean;
+  /** Why deposits are closed, or null while they are open. */
+  closedReason: string | null;
 }) {
   const [community, setCommunity] = useState(0);
   const [amount, setAmount] = useState("");
@@ -286,13 +288,21 @@ export function LifecycleParticipate({
     setAfter(null);
   }, [community, amount]);
 
-  if (locked) {
+  if (closedReason !== null) {
     return (
       <Card>
-        <CardTitle>Participate</CardTitle>
+        <CardTitle>Deposit</CardTitle>
+        <p className="text-sm text-mute">{closedReason}</p>
+      </Card>
+    );
+  }
+  if (communities.length === 0) {
+    return (
+      <Card>
+        <CardTitle>Deposit</CardTitle>
         <p className="text-sm text-mute">
-          This battle is locked. Positions can no longer be registered and a
-          deposit would be returned.
+          No community has joined yet. Join with a token above, then deposit
+          here.
         </p>
       </Card>
     );
@@ -304,12 +314,16 @@ export function LifecycleParticipate({
   );
   return (
     <Card>
-      <CardTitle>Join your crew</CardTitle>
+      <CardTitle>Deposit in a crew</CardTitle>
       <div className="lifecycle-stepper">
         <span>01 · Pick a crew</span>
         <span>02 · Save your spot</span>
         <span>03 · Review &amp; deposit</span>
       </div>
+      <p className="mb-3 text-xs text-mute">
+        Joined with a token already? Your spot is saved, so you can skip step 2.
+        A crew counts as entered once it holds a deposit.
+      </p>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Community">
         {communities.map((c) => (
           <Button

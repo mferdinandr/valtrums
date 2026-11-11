@@ -16,6 +16,7 @@ import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
+import { utc } from "@/lib/arena-read/open-arena";
 import {
   communityName,
   modeName,
@@ -81,7 +82,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         role="group"
         aria-label="Filter by battle status"
       >
-        {["", "open", "locked", "decided"].map((value) => (
+        {["", "open", "locked", "decided", "cancelled"].map((value) => (
           <button
             key={value}
             aria-pressed={status === value}
@@ -142,18 +143,23 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                 key={`${namespace.deploymentId}:${battle.battleId}`}
               >
                 <div className="battle-preview-meta"><p className="eyebrow text-neon-green">
-                  BATTLE #{battle.battleId} · {battle.communities.length} CREWS
-                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : "In progress"}</span></div>
+                  BATTLE #{battle.battleId} · {battle.enteredCount ?? battle.communities.length} ENTERED
+                  {battle.pendingCount ? ` · ${battle.pendingCount} PENDING` : ""}
+                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
                 <h2 className="mt-3 text-xl">
                   <span className="sr-only">Battle #{battle.battleId}: </span>
                   {modeName(battle.mode)}
                 </h2>
                 <p className="mt-2 text-sm text-mute">
                   {battle.status === "open"
-                    ? "Ready to meet your crew"
+                    ? battle.startAtMs && /^[0-9]+$/.test(battle.startAtMs)
+                      ? `Starts ${utc(Number(battle.startAtMs))}`
+                      : "Ready to meet your crew"
                     : battle.status === "decided"
                       ? "The result is recorded"
-                      : "Crews locked in"}
+                      : battle.status === "cancelled"
+                        ? "Cancelled · depositors can claim a refund"
+                        : "Crews locked in"}
                 </p>
                 <div className="battle-preview-roster">
                   {battle.communities.map((c) => (
@@ -184,7 +190,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                     </Link>
                   </Button>
                 </div>
-                {battle.status !== "open" && (
+                {battle.status !== "open" && battle.status !== "cancelled" && (
                   <>
                     <Button
                       variant="ghost"
