@@ -315,6 +315,49 @@ export const READ_TOOLS: readonly ReadTool[] = [
     },
   },
   {
+    name: "inspect_endgame",
+    description:
+      "Read one battle's end-of-battle state: settlement progress, the DAO vote window and tally, the escrow, execution progress and the " +
+      "decided releases. Read-only; settle_battle, vote_disposition, reserve_escrow, execute_disposition and request_dao_burn act on it.",
+    accountScoped: false,
+    inputSchema: { type: "object", properties: { battleId: { type: "number" } }, required: ["battleId"], additionalProperties: false },
+    async run(args, deps) {
+      if (!deps.state) throw new ToolInputError("end-of-battle reads are not configured");
+      const id = battleIdArg(args);
+      const battle = await deps.arena.battle(id);
+      if (!battle) throw new ToolInputError(`battle ${id} not found`);
+      const settlement = deps.state.settlementProgress ? await deps.state.settlementProgress(id) : null;
+      const disposition = await deps.state.disposition(id);
+      const releases = await deps.state.releases(id);
+      const nowNs = BigInt(deps.now()) * 1_000_000n;
+      const closes = disposition?.closes_at_ns ? BigInt(disposition.closes_at_ns) : null;
+      return live(deps, "inspect_endgame", deps.state.info, {
+        battleId: id,
+        cancelled: battle.cancelled === true,
+        settlement: settlement ? { ...settlement, complete: settlement.total > 0 && settlement.recorded >= settlement.total } : null,
+        vote: disposition
+          ? {
+              status: disposition.status,
+              windowSecs: disposition.window_secs ?? null,
+              opensAtNs: disposition.opens_at_ns ?? null,
+              closesAtNs: disposition.closes_at_ns,
+              open: disposition.status === "voting" && closes !== null && nowNs < closes,
+              burnWeight: disposition.burn_weight,
+              returnWeight: disposition.return_weight,
+            }
+          : null,
+        escrow: disposition ? { reserved: disposition.escrow_reserved, escrowId: disposition.escrow_id } : null,
+        execution: disposition
+          ? { released: disposition.released ?? 0, total: disposition.total_releases ?? 0, burnTotal: disposition.burn_total ?? "0", returnTotal: disposition.return_total ?? "0" }
+          : null,
+        releases: releases.map((r) => ({ id: r.id, kind: r.kind, beneficiary: r.beneficiary, amount: r.amount, recorded: r.recorded })),
+      }, [
+        "a recorded burn release is a reservation for the sink, not a confirmed source burn",
+        "a null section means the contract has no value for it yet (for example no final winner)",
+      ]);
+    },
+  },
+  {
     name: "list_recovery_alerts",
     description:
       "Recovery alerts recomputed now: missing or expired audits, missing market data, backing deficits or suspension, " +
