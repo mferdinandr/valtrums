@@ -16,6 +16,7 @@ pub mod lifecycle_backing;
 #[cfg(test)]
 mod lifecycle_guards;
 pub mod math;
+pub mod mode_policy;
 pub mod mpc;
 pub mod open_arena;
 #[cfg(test)]
@@ -90,6 +91,9 @@ enum StorageKey {
     LifecycleJoinable,
     LifecycleJoinableIndex,
     LifecycleCancelled,
+    // Per-mode observation policies (D40). Appended at the end: existing prefixes must not move.
+    LifecycleModePolicy,
+    LifecycleModePolicyEnabled,
 }
 
 #[ext_contract(ext_ft)]
@@ -404,9 +408,14 @@ impl Arena {
             "Requires an attached deposit of at least 1 yoctoNEAR"
         );
         require!(!self.paused, "Arena is paused");
+        let mode = self
+            .lifecycle_battles
+            .get(&battle_id)
+            .unwrap_or_else(|| env::panic_str("Unknown battle"))
+            .mode();
+        // D40: the battle's own mode policy once per-mode policies are enabled, else the legacy single policy.
         let policy = self
-            .lifecycle_observation_policy
-            .clone()
+            .lifecycle_policy_for(mode)
             .unwrap_or_else(|| env::panic_str("Observation policy is not configured"));
         let caller = env::predecessor_account_id();
         if let Some(expected) = expected_communities {
@@ -560,6 +569,8 @@ impl Arena {
     ) -> u64 {
         require!(!self.paused, "Arena is paused");
         require!(self.lifecycle_exclusive, "Lifecycle is not activated");
+        // D40: once per-mode policies are enabled, a mode without a policy could lock but never start its rounds.
+        self.lifecycle_assert_mode_offered(mode);
         if let Some(start) = start_at_ms {
             Self::lifecycle_check_start(start.0);
         }

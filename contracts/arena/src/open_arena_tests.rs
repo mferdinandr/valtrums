@@ -995,3 +995,126 @@ fn a_protocol_created_open_arena_pays_the_whole_fee_to_the_protocol() {
     lock(&mut arena, id, Some(2), start);
     assert!(arena.get_lifecycle_battle(id).expect("battle").locked);
 }
+
+// ---- D40: per-mode observation policies ----
+
+fn mode_policy(arena: &mut Arena, mode: ScoringMode, hash: Option<&str>) {
+    ctx("owner.testnet", NearToken::from_yoctonear(1), NOW_MS);
+    arena.set_lifecycle_mode_observation_policy(
+        mode,
+        hash.map(|h| ObservationPolicyInput {
+            version: U64(2),
+            policy_hash: h.into(),
+        }),
+    );
+}
+
+#[test]
+fn without_mode_policies_every_mode_is_created_and_the_legacy_policy_locks() {
+    let mut arena = setup();
+    assert!(!arena.is_lifecycle_mode_policy_enabled());
+    ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
+    arena.create_lifecycle_battle(vec![], ScoringMode::VolumeRatio, Some(U64(NOW_MS + DAY_MS)));
+    let (mut arena, id, start) = open_arena();
+    join(&mut arena, "creator.testnet", id, 1, NOW_MS);
+    join(&mut arena, "alice.testnet", id, 2, NOW_MS);
+    for (community, token, who) in [(0, 1, "creator.testnet"), (1, 2, "alice.testnet")] {
+        approve(&mut arena, id, community);
+        deposit(&mut arena, who, id, community, token, 5, start - 1);
+    }
+    lock(&mut arena, id, Some(2), start);
+    let legacy = ObservationTerms::from(terms()).digest(ScoringMode::PriceGain);
+    assert_eq!(
+        arena
+            .get_lifecycle_battle(id)
+            .expect("battle")
+            .observation_policy_hash
+            .as_deref(),
+        Some(legacy.as_str())
+    );
+}
+
+#[test]
+fn mode_policies_refuse_unoffered_modes_and_the_lock_freezes_the_mode_policy() {
+    let (mut arena, id, start) = open_arena();
+    // Only the owner, with exactly one yocto.
+    ctx("mallory.testnet", NearToken::from_yoctonear(1), NOW_MS);
+    assert!(panics(|| arena.set_lifecycle_mode_observation_policy(
+        ScoringMode::PriceGain,
+        None
+    )));
+    ctx("owner.testnet", NearToken::from_yoctonear(2), NOW_MS);
+    assert!(panics(|| arena.set_lifecycle_mode_observation_policy(
+        ScoringMode::PriceGain,
+        None
+    )));
+    mode_policy(&mut arena, ScoringMode::PriceGain, Some("price-policy"));
+    assert!(arena.is_lifecycle_mode_policy_enabled());
+    assert_eq!(
+        arena
+            .get_lifecycle_mode_observation_policy(ScoringMode::PriceGain)
+            .map(|p| p.policy_hash),
+        Some("price-policy".into())
+    );
+    // A mode without its own policy can no longer be created: it could lock and never start its rounds.
+    ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
+    assert!(panics(|| {
+        arena.create_lifecycle_battle(vec![], ScoringMode::VolumeRatio, Some(U64(NOW_MS + DAY_MS)));
+    }));
+    // The PriceGain battle created before still locks, and freezes the PriceGain policy, not the legacy one.
+    join(&mut arena, "creator.testnet", id, 1, NOW_MS);
+    join(&mut arena, "alice.testnet", id, 2, NOW_MS);
+    for (community, token, who) in [(0, 1, "creator.testnet"), (1, 2, "alice.testnet")] {
+        approve(&mut arena, id, community);
+        deposit(&mut arena, who, id, community, token, 5, start - 1);
+    }
+    lock(&mut arena, id, Some(2), start);
+    assert_eq!(
+        arena
+            .get_lifecycle_battle(id)
+            .expect("battle")
+            .observation_policy_hash
+            .as_deref(),
+        Some("price-policy")
+    );
+}
+
+#[test]
+fn clearing_a_mode_policy_stops_new_battles_of_that_mode() {
+    let mut arena = setup();
+    mode_policy(&mut arena, ScoringMode::PriceGain, Some("price-policy"));
+    mode_policy(
+        &mut arena,
+        ScoringMode::LowestDrawdown,
+        Some("drawdown-policy"),
+    );
+    ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
+    arena.create_lifecycle_battle(
+        vec![],
+        ScoringMode::LowestDrawdown,
+        Some(U64(NOW_MS + DAY_MS)),
+    );
+    mode_policy(&mut arena, ScoringMode::LowestDrawdown, None);
+    assert_eq!(
+        arena
+            .get_lifecycle_mode_observation_policy(ScoringMode::LowestDrawdown)
+            .map(|p| p.policy_hash),
+        None
+    );
+    ctx("creator.testnet", NearToken::from_near(1), NOW_MS);
+    assert!(panics(|| {
+        arena.create_lifecycle_battle(
+            vec![],
+            ScoringMode::LowestDrawdown,
+            Some(U64(NOW_MS + DAY_MS)),
+        );
+    }));
+    ctx("owner.testnet", NearToken::from_yoctonear(1), NOW_MS);
+    assert!(panics(|| arena.set_lifecycle_mode_observation_policy(
+        ScoringMode::PriceGain,
+        Some(ObservationPolicyInput {
+            version: U64(1),
+            policy_hash: " ".into()
+        })
+    )));
+}
