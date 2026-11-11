@@ -23,3 +23,10 @@ First read the [main reconciliation](../../plans/arena-application-integration/m
 - [ ] 3.2 Verify timer expiry, incomplete scores, contract outcome updates, fixture isolation and visual fallbacks do not invent financial transitions.
 - [ ] 3.3 Record prerequisite handoffs from lifecycle/backing/audit/testnet owners and verify eligible wallet flows on the opted-in deployment before enabling financial actions; retain unresolved DAO/provider gates.
 - [ ] 3.4 Verify lifecycle activation compatibility and an actual spendable custody/payout path before enabling source transfers; the deposit-only test custody contract is not sufficient evidence.
+
+## 4. Open arena (D34 to D36)
+
+- [ ] 4.1 Create form with one mode and a start time (now + 60 s to now + 7 days), without invited communities.
+- [ ] 4.2 Join by allowlisted token, then deposit; countdown to the start; entered versus pending communities.
+- [ ] 4.3 Cancel action only when allowed, cancelled state and a refund action per funded position; none of these for a battle without a start time.
+- [ ] 4.4 Unit tests for the new reviews and states; the owner checks the UI by hand.

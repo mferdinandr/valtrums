@@ -92,3 +92,14 @@ discovery stays disabled until full deployment coverage and #80 acceptance.
 - [ ] Security review of the contract (the NEAR contract audit checklist) before it holds stock.
 - [ ] Deploy the faucet contract, fund it with backed representation for all six tokens and offer them (operator actions; needs the owner's per-transaction approval; the first live run of deposit, claim receipt and claim representation).
 - [ ] Verify one live claim on testnet and record the evidence.
+
+## Open arena rollout (D34 to D38)
+
+Every step is a chain action and needs the owner's approval one by one.
+
+- [ ] Redeploy the arena code in place on `arena.valtrum-owner-b694.testnet` with the owner key (state kept; battle 1 stays on the old rules).
+- [ ] Five DAO proposals calling `set_lifecycle_joinable_asset` for CASHCAT, WALLET, GOOD, VLAD and DEGEN with their backings' asset identities.
+- [ ] Remove AI's backing from the trusted-representation list.
+- [ ] Create the oracle account, call `set_lifecycle_oracle` once (permanent) and `set_lifecycle_observation_policy`.
+- [ ] Run the observation collector and the oracle worker.
+- [ ] Live run: create with a start time, deposits from two users, audit, lock at the start, 30-second rounds; then a cancel-and-refund drill. Record evidence.

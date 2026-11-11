@@ -24,10 +24,14 @@ Planned mode enum: `PricePercentGain`, `MarketCapPercentGrowth`, `VolumeToInitia
 
 | Planned method / message | Caller and checks | Effect |
 | --- | --- | --- |
-| create_battle(config) | Creator; two or more distinct communities, one mode | Audit-pending proposal; no bond |
+| create_battle(config) | Creator; zero to sixteen distinct communities, one mode, start time now + 60 s to now + 7 days | Open battle; no bond |
+| join_battle(battle_id, representation) | Anyone before the start; allowlisted representation only | Adds or reuses the community and registers the caller's position |
+| cancel_battle(battle_id) | Anyone after the start; unlocked, fewer than two funded communities | Cancelled; no rounds |
+| claim_refund(battle_id, community) | Depositor of a cancelled battle; one yocto | Returns the credited representation units; restores the position if the transfer fails |
+| set_joinable_asset(asset) / remove_joinable_asset(representation) | Protocol account; one yocto | Changes the allowlist (at most 64) |
 | submit_audit(battle_id, evidence) | Authorized auditor; versioned chain/token evidence | Pass, Reject or Pending per asset; no unresolved-policy bypass |
 | credit_deposit(receipt, beneficiary, community) | Controlled mint/verifier path; finalized unique receipt and user attribution | Credit only actual received backing before lock |
-| lock_battle(battle_id, expected_version) | Authorized trigger; audits, creator stake, nonempty vaults and policy gates | Freeze config and deposits atomically |
+| lock_battle(battle_id, expected_version) | Authorized trigger at or after the start; at least two funded communities with fresh audits and backing, creator stake and policy gates | Freeze funded communities and deposits atomically; empty communities excluded |
 | open_round(battle_id, round_id, observations) | Scheduler/oracle; correct candidates/policy/start evidence | Record next 30-second interval |
 | resolve_round(battle_id, round_id, observations) | Authorized role; complete mode-specific interval evidence | Compute winner or next tied candidates; no funds released on tie |
 | allocate_settlement(battle_id, final_round_id) | Valid final state and unique allocation ID | Split losing tokens once; escrow winning principal |

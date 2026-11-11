@@ -93,6 +93,8 @@ export interface BattleActivity {
   refunds?: RefundEntry[];
   /** Exact summed refunded amount per community (decimal string); present with `refunds`. */
   refundedByCommunity?: Record<string, string>;
+  /** Present only when `lifecycle_refund_failed` was recorded: the transfer failed and the arena restored the position, so nothing was paid. */
+  refundFailures?: RefundEntry[];
   /** Present only when versioned round events were actually recorded. No inferred past evidence. */
   rounds?: Record<string, { evidence: import("./round-events.js").RoundEvidenceV1; ref: EventRef; complete: boolean }>;
 }
@@ -113,6 +115,8 @@ export interface PayoutActivity {
 export interface ContractActivity {
   namespace: string;
   trustedRepresentations: Record<string, boolean>;
+  /** Present only when the arena emitted allowlist events: true while a representation is joinable (last event wins). Joinable is not trusted. */
+  joinableRepresentations?: Record<string, boolean>;
   suspension: { suspended: boolean; reasons: string[]; ref: EventRef | null };
   lastAttestation: { sequence: string; sourceBlockNumber: string; covered: boolean; balance: string; required: string | null; ref: EventRef } | null;
   operator: { value: string | null; ref: EventRef } | null;
@@ -240,6 +244,8 @@ export function buildProjection(events: AcceptedEvent[], opts: BuildOptions): Pr
         (b.refunds ??= []).push({ community: e.community, accountId: e.accountId, amount: e.amount, ref });
         const refunded = (b.refundedByCommunity ??= {});
         refunded[e.community] = ((refunded[e.community] ? BigInt(refunded[e.community]!) : 0n) + BigInt(e.amount)).toString();
+      } else if (e.name === "lifecycle_refund_failed") {
+        (b.refundFailures ??= []).push({ community: e.community, accountId: e.accountId, amount: e.amount, ref });
       } else if (e.name === "backing_updated") {
         b.backings[e.community] = { approved: e.approved, evidenceHash: e.evidenceHash, expiresAtMs: e.expiresAtMs, ref };
       } else if (e.name === "late_deposit_recorded") {
@@ -256,6 +262,10 @@ export function buildProjection(events: AcceptedEvent[], opts: BuildOptions): Pr
     switch (e.name) {
       case "lifecycle_representation_trust_changed":
         c.trustedRepresentations[e.representation] = e.trusted;
+        break;
+      case "lifecycle_joinable_asset_set":
+      case "lifecycle_joinable_asset_removed":
+        (c.joinableRepresentations ??= {})[e.representation] = e.name === "lifecycle_joinable_asset_set";
         break;
       case "asset_suspended":
         c.suspension = { suspended: true, reasons: [...new Set([...c.suspension.reasons, e.reason])].sort(), ref };
