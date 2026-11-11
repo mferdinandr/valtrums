@@ -30,7 +30,17 @@ export interface LifecycleBattleView {
   observation_policy_hash: string | null;
   principal_community: number | null;
   principal_amount: string | null;
+  /** Start time in ms; null or absent for a battle created without one. */
+  start_at_ms?: string | null;
+  /** True after `cancel_lifecycle_battle`; absent on an older contract. */
+  cancelled?: boolean;
 }
+
+/** Maximum communities in one battle (contract MAX_COMMUNITIES). */
+export const MAX_COMMUNITIES = 16;
+
+/** A community is "entered" (funded) only when its vault holds a deposit; zero-vault ones are pending. */
+export const isFunded = (c: Pick<CommunityView, "vault">): boolean => /^[0-9]+$/.test(c.vault) && BigInt(c.vault) > 0n;
 
 export interface RoundView {
   round_id: string;
