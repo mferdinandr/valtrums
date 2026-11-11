@@ -114,24 +114,31 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             role="group"
             aria-label="Scoring mode"
           >
-            {SCORING_MODES.filter((m) => config.createModes.includes(m)).map((m) => (
-              <button
-                key={m}
-                className="lifecycle-mode"
-                type="button"
-                aria-pressed={mode === m}
-                onClick={() => {
-                  setMode(m);
-                  setCopied(false);
-                }}
-              >
-                <strong>{MODE_COPY[m].name}</strong>
-                <span>{MODE_COPY[m].description}</span>
-              </button>
-            ))}
+            {SCORING_MODES.map((m) => {
+              const available = config.createModes.includes(m);
+              return (
+                <button
+                  key={m}
+                  className="lifecycle-mode"
+                  type="button"
+                  aria-pressed={available && mode === m}
+                  disabled={!available}
+                  onClick={() => {
+                    setMode(m);
+                    setCopied(false);
+                  }}
+                >
+                  <strong>
+                    {MODE_COPY[m].name}
+                    {!available && <em className="lifecycle-mode-soon">Coming soon</em>}
+                  </strong>
+                  <span>{MODE_COPY[m].description}</span>
+                </button>
+              );
+            })}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Only the challenges this arena can run live are offered.
+            Challenges marked "Coming soon" are not live on this arena yet.
           </p>
         </Card>
 
