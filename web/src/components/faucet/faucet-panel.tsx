@@ -1,6 +1,7 @@
 "use client";
 
 import { TokenIcon } from "@/components/token-icon";
+import { SkeletonGroup, TokenCardSkeleton } from "@/components/ui/skeleton";
 import { useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ export function FaucetPanel() {
   return (
     <div className="space-y-6">
       <Card className="space-y-3">
-        <CardTitle>01 / Your account</CardTitle>
+        <CardTitle>Your account</CardTitle>
         {!f.accountId ? (
           <Button type="button" variant="primary" onClick={() => void signIn()}>Connect wallet</Button>
         ) : (
@@ -41,7 +42,7 @@ export function FaucetPanel() {
 
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>02 / Test tokens</CardTitle>
+          <CardTitle>Test tokens</CardTitle>
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={() => void f.refresh()} disabled={f.loading || busy}>Refresh</Button>
             <Button type="button" onClick={() => void f.claim(claimable)} disabled={!f.connected || busy || claimable.length === 0}>
@@ -49,7 +50,11 @@ export function FaucetPanel() {
             </Button>
           </div>
         </div>
-        {f.loading && !f.state && <p role="status" className="text-xs text-mute">Reading the faucet…</p>}
+        {f.loading && !f.state && (
+          <SkeletonGroup label="Reading the faucet…" className="token-grid">
+            {[0, 1, 2, 3, 4, 5].map((i) => <TokenCardSkeleton key={i} />)}
+          </SkeletonGroup>
+        )}
         {f.state && f.state.tokens.length === 0 && (
           <p role="status" className="lifecycle-callout">
             <strong>No tokens yet.</strong> The faucet contract is live, but the operator has not offered any token. Check back soon.

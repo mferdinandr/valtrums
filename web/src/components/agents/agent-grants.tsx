@@ -175,7 +175,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
             <Input value={form.representation} maxLength={64} onChange={(e) => set({ representation: e.target.value.trim().toLowerCase() })} />
           </Label>
           <div className="sm:col-span-2">
-            <span className="mb-2 block font-pixel text-[11px] font-medium text-mute">
+            <span className="mb-2 block font-pixel text-xs font-medium text-mute">
               Strategy (how the agent chooses; it carries no authority, the limits below do)
             </span>
             <Select<AgentStrategy>
@@ -256,7 +256,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>03 / Your agents</CardTitle>
+          <CardTitle>Your agents</CardTitle>
           <Button type="button" variant="ghost" onClick={() => void refresh()} disabled={!accountId || saved.length === 0}>Refresh</Button>
         </div>
         {!accountId && <p className="text-sm text-mute">Connect your wallet to see the grants you created in this browser.</p>}

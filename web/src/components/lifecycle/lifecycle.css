@@ -21,7 +21,7 @@
   margin: 0.8rem 0;
   font-size: clamp(2rem, 4vw, 3.5rem);
   line-height: 1.08;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
   color: #354358;
 }
 .lifecycle-hero p {
@@ -41,7 +41,7 @@
   border: 1px solid #ccdcd4;
   background: #ffffffa8;
   color: #327f7d;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 .lifecycle-actions {
@@ -74,7 +74,7 @@
 }
 .lifecycle-heading h2 {
   font-size: 1.5rem;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
 }
 .lifecycle-section-title {
   display: flex;
@@ -94,7 +94,7 @@
 }
 .lifecycle-section-title h2 {
   font-size: 1.15rem;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
 }
 .lifecycle-crew-grid {
   display: grid;
@@ -143,7 +143,7 @@
 }
 .lifecycle-crew h3 {
   font-size: 1.15rem;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
 }
 .lifecycle-crew .lifecycle-amount {
   margin: 0.9rem 0 0.25rem;
@@ -373,7 +373,7 @@
   color: #354358;
 }
 .token-card span:last-child {
-  font-size: 11px;
+  font-size: 12px;
   color: #526777;
 }
 .token-card:hover:not(:disabled) {
@@ -411,7 +411,7 @@
   background: var(--token-accent);
 }
 .token-card .token-card-state {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--token-accent);
 }
@@ -450,7 +450,7 @@
   border-radius: 999px;
   background: #deeee3;
   color: #286647;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 .battle-preview-roster {
@@ -470,7 +470,7 @@
   background: #ffffffa6;
   min-width: 0;
 }
-.battle-preview-token strong { font-size: 11px; overflow-wrap: anywhere; }
+.battle-preview-token strong { font-size: 12px; overflow-wrap: anywhere; }
 .battle-preview-enter { margin-top: auto; }
 .battle-preview-enter a { width: 100%; justify-content: space-between; }
 

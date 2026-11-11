@@ -332,7 +332,7 @@ export function LifecycleParticipate({
           namespaceKey={applicationKey(namespace)}
           onSigningChange={setRegisterBusy}
           busyElsewhere={depositBusy}
-          title="1 · Save your spot (a small storage fee, not a stake)"
+          title="Save your spot (a small storage fee, not a stake)"
           review={registerReview}
           request={registerReq}
         />
@@ -358,7 +358,7 @@ export function LifecycleParticipate({
           namespaceKey={applicationKey(namespace)}
           onSigningChange={setDepositBusy}
           busyElsewhere={registerBusy}
-          title="2 · Deposit your tokens"
+          title="Deposit your tokens"
           review={depositReview}
           request={depositReq}
           onPreviewed={(id, read) => {

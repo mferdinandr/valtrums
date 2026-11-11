@@ -29,7 +29,7 @@ export function RouteFrame({ children }: { children: ReactNode }) {
   if (pathname === "/") return <>{children}</>;
   return (
     <div ref={ref} className="route-content relative">
-      <p className="mb-5 flex items-center gap-2 text-[10px] text-mute">
+      <p className="mb-5 flex items-center gap-2 text-xs text-mute">
         <span className="status-dot" />
         {config.network}
       </p>

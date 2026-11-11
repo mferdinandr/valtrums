@@ -64,7 +64,7 @@
   background: #fff3db;
   color: #526777;
   font:
-    600 16px "Space Grotesk",
+    600 16px "Bricolage Grotesque",
     sans-serif;
   animation: arena-enter 1s ease-in-out forwards;
 }
@@ -89,7 +89,7 @@
   right: 1rem;
   text-align: center;
   pointer-events: none;
-  font-size: 10px;
+  font-size: 12px;
   color: #526777;
 }
 .battle-arena-roster {
@@ -119,7 +119,7 @@
   color: var(--community);
 }
 .battle-arena-roster span {
-  font-size: 10px;
+  font-size: 12px;
   color: #526777;
 }
 .battle-arena-chart {
@@ -127,7 +127,7 @@
 }
 .battle-arena-note {
   padding: 0.5rem 1rem 1rem;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.8;
   color: #526777;
 }
@@ -151,6 +151,6 @@
     padding: 0.8rem;
   }
   .battle-arena-toolbar .eyebrow {
-    font-size: 9px;
+    font-size: 12px;
   }
 }

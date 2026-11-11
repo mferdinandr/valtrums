@@ -359,7 +359,7 @@ export function LandingJourney() {
             {...panelProps(1)}
             aria-labelledby="journey-gateway-title"
           >
-            <span className="journey-tag">01 / Through the gates</span>
+            <span className="journey-tag">Through the gates</span>
             <h2 id="journey-gateway-title">
               Come on in.
               <br />
@@ -375,7 +375,7 @@ export function LandingJourney() {
             {...panelProps(2)}
             aria-labelledby="journey-community-title"
           >
-            <span className="journey-tag">02 / A place for your crew</span>
+            <span className="journey-tag">A place for your crew</span>
             <h2 id="journey-community-title">
               Many personalities.
               <br />
@@ -410,7 +410,7 @@ export function LandingJourney() {
             {...panelProps(3)}
             aria-labelledby="journey-create-title"
           >
-            <span className="journey-tag">03 / Create Battle</span>
+            <span className="journey-tag">Create Battle</span>
             <h2 id="journey-create-title">
               A rivalry starts
               <br />
@@ -439,7 +439,7 @@ export function LandingJourney() {
             {...panelProps(4)}
             aria-labelledby="journey-overlook-title"
           >
-            <span className="journey-tag">04 / The Arena</span>
+            <span className="journey-tag">The Arena</span>
             <h2 id="journey-overlook-title">
               Big personalities.
               <br />
@@ -461,7 +461,7 @@ export function LandingJourney() {
             {...panelProps(5)}
             aria-labelledby="journey-vault-title"
           >
-            <span className="journey-tag">05 / Your Portfolio</span>
+            <span className="journey-tag">Your Portfolio</span>
             <h2 id="journey-vault-title">
               Your journey.
               <br />
@@ -493,7 +493,7 @@ export function LandingJourney() {
             {...panelProps(6)}
             aria-labelledby="journey-events-title"
           >
-            <span className="journey-tag">06 / Your next chapter</span>
+            <span className="journey-tag">Your next chapter</span>
             <h2 id="journey-events-title">
               The world is open.
               <br />

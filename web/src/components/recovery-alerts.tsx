@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { orderAlerts, provenance, type RecoveryAlert, type Sourced } from "@/lib/arena-read/account-state";
@@ -49,7 +50,11 @@ export function RecoveryAlerts() {
   return (
     <Card className="space-y-3 p-4">
       <h2 className="text-lg text-neon-green">Recovery alerts</h2>
-      {!alerts && !error && <p role="status" className="text-sm text-mute">Checking for alerts…</p>}
+      {!alerts && !error && (
+        <SkeletonGroup label="Checking for alerts…" className="space-y-3">
+          {[220, 260, 200].map((w, i) => <Skeleton key={i} style={{ width: w, height: 16 }} />)}
+        </SkeletonGroup>
+      )}
       {error && (
         <p role="alert" className="text-base text-neon-amber">
           Alerts unavailable: {error}. This is not &quot;no alerts&quot;.

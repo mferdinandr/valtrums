@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SkeletonGroup, TokenCardSkeleton } from "@/components/ui/skeleton";
 import gsap from "gsap";
 import { Check, X } from "lucide-react";
 import { TokenIcon } from "@/components/token-icon";
@@ -103,10 +104,15 @@ export function TokenPicker({
           onChange={(e) => setQ(e.target.value)}
         />
       </Label>
-      {loading && (
+      {loading && items.length > 0 && (
         <p role="status" className="text-xs text-mute">
           Searching…
         </p>
+      )}
+      {loading && items.length === 0 && (
+        <SkeletonGroup label="Searching…" className="token-grid">
+          {[0, 1, 2, 3, 4, 5].map((i) => <TokenCardSkeleton key={i} />)}
+        </SkeletonGroup>
       )}
       {error && (
         <p role="alert" className="text-xs text-neon-red">

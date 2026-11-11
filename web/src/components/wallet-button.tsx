@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import gsap from "gsap";
 import { Button } from "@/components/ui/button";
 import { TokenIcon } from "@/components/token-icon";
@@ -44,17 +45,22 @@ function BalanceMenu({ accountId }: { accountId: string }) {
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => { setOpen((v) => !v); if (!open) void refresh(); }}
-        className="max-w-[110px] sm:max-w-[150px] truncate rounded-xl border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-[11px] text-neon-green"
+        className="max-w-[110px] sm:max-w-[150px] truncate rounded-xl border border-neon-green/30 bg-neon-green/5 px-3 py-3 font-pixel text-xs text-neon-green"
         title={accountId}
       >
         {shorten(accountId)} ▾
       </button>
       {open && (
         <div ref={panel} role="region" aria-label="My balance" className="absolute right-0 z-50 mt-2 w-72 space-y-2 rounded-xl border border-edge bg-void p-3 text-sm shadow-xl">
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-mute">My balance</p>
+          <p className="font-pixel text-xs text-mute">My balance</p>
           <p className="break-all text-xs text-mute">{accountId}</p>
           {error && <p role="alert" className="text-xs text-neon-red">Could not read balances. {error}</p>}
-          {!balances && !error && <p role="status" className="text-xs text-mute">{loading ? "Reading balances…" : "No balances yet."}</p>}
+          {!balances && !error && loading && (
+            <SkeletonGroup label="Reading balances…" className="space-y-2">
+              {[0, 1, 2, 3].map((i) => <Skeleton key={i} style={{ height: 20 }} />)}
+            </SkeletonGroup>
+          )}
+          {!balances && !error && !loading && <p role="status" className="text-xs text-mute">No balances yet.</p>}
           {balances && (
             <ul className="space-y-1.5">
               <li className="flex items-center justify-between gap-2">

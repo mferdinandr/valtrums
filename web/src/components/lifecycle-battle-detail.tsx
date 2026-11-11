@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { CrewCardSkeleton, Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import gsap from "gsap";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -62,9 +63,20 @@ export function LifecycleBattleDetail({
   }, [ready]);
   if (loading && !data)
     return (
-      <p role="status" className="text-sm text-mute">
-        Preparing battle #{battleId}…
-      </p>
+      <SkeletonGroup label={`Preparing battle #${battleId}…`} className="lifecycle-page">
+        <div className="lifecycle-hero" aria-hidden="true">
+          <div className="space-y-4">
+            <Skeleton style={{ width: 150, height: 26, borderRadius: 999 }} />
+            <Skeleton style={{ width: 320, height: 44 }} />
+            <Skeleton style={{ width: 240, height: 16 }} />
+          </div>
+          <Skeleton style={{ height: 120, borderRadius: 18 }} />
+        </div>
+        <Skeleton style={{ height: 360, borderRadius: 24 }} />
+        <div className="lifecycle-crew-grid">
+          {[0, 1, 2].map((i) => <CrewCardSkeleton key={i} />)}
+        </div>
+      </SkeletonGroup>
     );
   if (!data)
     return (

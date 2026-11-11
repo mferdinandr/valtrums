@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { ArrowUpRight, Plus, Search } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
         </div>
         <CarnivalScene
           mode="arena"
-          caption="Your fairground hosts · decorative, not battle evidence"
+          caption="Your fairground hosts"
         />
       </header>
       <div className="lifecycle-heading">
@@ -99,7 +100,19 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           </button>
         ))}
       </div>
-      {loading && <p role="status">Loading battles…</p>}
+      {loading && result && <p role="status">Loading battles…</p>}
+      {loading && !result && (
+        <SkeletonGroup label="Loading battles…" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="lifecycle-crew skeleton-card space-y-4" aria-hidden="true">
+              <div className="flex justify-between"><Skeleton style={{ width: 120, height: 12 }} /><Skeleton style={{ width: 70, height: 24, borderRadius: 999 }} /></div>
+              <Skeleton style={{ width: 190, height: 22 }} />
+              <div className="grid grid-cols-3 gap-2">{[0, 1, 2, 3, 4, 5].map((n) => <Skeleton key={n} style={{ height: 64, borderRadius: 14 }} />)}</div>
+              <Skeleton style={{ height: 44, borderRadius: 14 }} />
+            </div>
+          ))}
+        </SkeletonGroup>
+      )}
       {error && (
         <Card role="alert" className="border-neon-red text-neon-red">
           Battle reads unavailable: {error}
