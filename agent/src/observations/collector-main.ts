@@ -190,8 +190,10 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
   );
   log.info("observation collector starting", { arena, network, intervalMs, termsConfigured: terms.size, qualifiedModes: [...qualified] });
   while (!stop.aborted) {
+    const startedAt = Date.now();
     try { await runner.pass(stop); } catch (err) { log.error("observation collector pass failed", { error: errorMessage(err) }); }
-    await abortableSleep(intervalMs, stop);
+    // Fixed rate: the RPC round trip counts toward the interval, so one pass starts every `intervalMs`.
+    await abortableSleep(Math.max(0, intervalMs - (Date.now() - startedAt)), stop);
   }
   } finally {
     await journal.close();
@@ -202,7 +204,7 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
 const invokedDirectly = (() => { try { return fileURLToPath(import.meta.url) === process.argv[1]; } catch { return false; } })();
 if (invokedDirectly) {
   const stop = new AbortController();
-  for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => stop.abort());
+  for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => stop.abort()); // not `once`: a repeated SIGTERM must not kill the process before the lock is released
   runCollector(process.env, stop.signal).catch((err) => {
     console.error(JSON.stringify({ level: "fatal", msg: errorMessage(err) }));
     process.exitCode = 1;

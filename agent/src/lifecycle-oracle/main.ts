@@ -57,7 +57,7 @@ export async function runOracle(env: NodeJS.ProcessEnv, stop: AbortSignal): Prom
 const invokedDirectly = (() => { try { return fileURLToPath(import.meta.url) === process.argv[1]; } catch { return false; } })();
 if (invokedDirectly) {
   const stop = new AbortController();
-  for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => stop.abort());
+  for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => stop.abort()); // not `once`: a repeated SIGTERM must not kill the process before the lock is released
   runOracle(process.env, stop.signal).catch((err) => {
     console.error(JSON.stringify({ level: "fatal", msg: errorMessage(err) }));
     process.exitCode = 1;
