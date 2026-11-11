@@ -2251,6 +2251,8 @@ impl Arena {
             }),
         )
         .unwrap_or_else(|_| env::panic_str("Fixture backing rejected"));
+        // Same as the approval calls: a creator escrow becomes the creator's position (D41).
+        self.lifecycle_convert_creator_escrow(battle_id);
     }
 
     /// Synthetic accounting credit for gas tests only; no token moves.

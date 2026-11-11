@@ -303,6 +303,57 @@ impl Env {
             .await?)
     }
 
+    /// Creates a battle the way the product does (D41): `creator` prepays storage, then sends `amount` of
+    /// `token` to the arena with a `lifecycle_create` message, which creates the battle and holds the
+    /// deposit in escrow. `asset` is the identity of `token` on the joinable allowlist (the protocol account
+    /// is the treasury). Returns the new battle id, or `None` when the arena refused and returned the tokens.
+    pub async fn create_with_deposit(
+        &self,
+        creator: &Account,
+        token: &Contract,
+        asset: Value,
+        amount: u128,
+        start_at_ms: u64,
+    ) -> anyhow::Result<Option<u64>> {
+        self.treasury
+            .call(self.arena.id(), "set_lifecycle_joinable_asset")
+            .args_json(json!({ "asset": asset }))
+            .deposit(yocto())
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+        creator
+            .call(self.arena.id(), "lifecycle_storage_deposit")
+            .args_json(json!({}))
+            .deposit(NearToken::from_millinear(100))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+        self.mint(token, creator.id(), amount).await?;
+        let before = self.lifecycle_count().await?;
+        self.transfer_call(
+            creator,
+            token,
+            self.arena.id(),
+            amount,
+            json!({ "action": "lifecycle_create", "mode": "PriceGain", "start_at_ms": start_at_ms.to_string() }),
+        )
+        .await?
+        .into_result()?;
+        let after = self.lifecycle_count().await?;
+        Ok((after > before).then_some(after))
+    }
+
+    pub async fn lifecycle_count(&self) -> anyhow::Result<u64> {
+        Ok(self
+            .arena_view("get_lifecycle_battle_count", json!({}))
+            .await?
+            .as_u64()
+            .unwrap_or_default())
+    }
+
     /// Calls an arena method as `who` (no attached deposit).
     pub async fn arena_call(
         &self,
