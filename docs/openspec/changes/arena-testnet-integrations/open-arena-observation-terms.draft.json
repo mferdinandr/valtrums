@@ -1,6 +1,6 @@
 {
   "policy_version": 1,
-  "source": "geckoterminal-v2:robinhood:pools",
+  "source": "robinhood-4663:uniswap-v3-slot0:latest-block:usd-via-weth-usdg",
   "quote_currency": "USD",
   "eligible_pools": [
     "0xa70fc67c9f69da90b63a0e4c05d229954574e313",
@@ -9,7 +9,7 @@
     "0x8a3ae9184141c085bad6abfefcc626de288be3d3",
     "0x5408ad4b4f1d5091b99953af963500a792f47bc3"
   ],
-  "finality": "aggregator-unfinalized",
+  "finality": "latest-unfinalized",
   "price_decimals": 18,
   "supply_decimals": 18,
   "volume_decimals": 18,
