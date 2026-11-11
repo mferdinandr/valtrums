@@ -28,6 +28,21 @@ Check tasks only after implementation and verification. Coordinate audit and bac
 - [x] Verify unresolved governance does not block independently backed losing-token rewards.
 - [x] Verify lifecycle integration with backing, audit and scoring before claiming live acceptance.
 
+## Open arena (D34 to D38)
+
+Contract and agent work is on `feat/open-arena-contract` and `feat/open-arena-agent`; see [contract notes](open-arena-contract-notes.md) and [agent notes](open-arena-agent-notes.md). Checked items are sandbox- or fixture-verified only.
+
+- [x] Accept creation with zero to sixteen communities and an optional start time between now + 60 s and now + 7 days; move the two-community minimum to the lock.
+- [x] Add the protocol-only joinable-asset allowlist (one yocto, at most 64 entries) with paged views and set/remove events.
+- [x] Add `join_lifecycle_battle`: allowlisted representation only, appends a new community or reuses an existing one, registers the caller's position and refunds excess storage.
+- [x] Refuse join, registration and deposit from the start time on and after a cancel; refuse the lock before the start time.
+- [x] Gate deposits on the target community's approvals only; lock on fresh approvals for every funded community with at least two funded; exclude empty vaults from rounds and principal.
+- [x] Add permissionless cancel below two funded communities after the start and pull-based refunds with rollback on a failed transfer.
+- [x] Prove state compatibility by redeploying over the previous main wasm in the sandbox (no layout change; new state in appended storage keys).
+- [x] Agent: create with a start time, join, cancel and refund actions; lock at the start over funded communities; backing refresh on by default; optional cancel pass; index the new events.
+- [ ] Model `lifecycle_refund_failed`, `lifecycle_joinable_asset_set` and `lifecycle_joinable_asset_removed` in the indexer so allowlist proposals do not report degraded.
+- [ ] Testnet: redeploy the arena in place, register the five allowlisted tokens through DAO proposals, remove AI's backing from the trusted list, and run one start-time arena and one cancel-and-refund drill.
+
 ## Application read/view compatibility follow-up
 
 New application requirements discovered during integration mapping; completed contract work above is preserved. The [read API](../arena-application-read-api/tasks.md) consumes views; [testnet integrations](../arena-testnet-integrations/tasks.md) owns live indexing. Review corresponding capability deltas before implementing new ABI/state requirements.
