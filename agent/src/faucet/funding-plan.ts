@@ -183,13 +183,13 @@ export function buildPlan(facts: FundingFacts, o: PlanOptions): Step[] {
     });
     add({
       id: `${t}-verify`, title: `${b.symbol}: verify the finalized deposit with the custody verifier`, chain: "local", signer: "none (read-only)", mutating: false,
-      command: `node dist/custody-verify-cli.js --rpc "$ROBINHOOD_RPC_URL" --tx <TX_HASH> --log-index <LOG_INDEX> --token ${b.token} --custody ${facts.forwarder} --holder ${facts.holder} --payout-sender ${facts.holder} --custody-domain ${facts.custodyDomain} --retired ${facts.retired.join(",")} --mapping-version ${facts.mappingVersion} --battle ${o.battleId} --representation ${b.account} > verify-${t}.json`,
-      note: "Run from the agent folder after pnpm build. Add --state-rpc <dRPC url> if the official RPC cannot serve state. Stop if the verdict is not verified.",
+      command: `node dist/custody-verify-cli.js --rpc "$ROBINHOOD_RPC_URL" --tx <TX_HASH> --log-index <LOG_INDEX> --token ${b.token} --custody ${facts.forwarder} --holder ${facts.holder} --payout-sender ${facts.holder} --custody-domain ${facts.custodyDomain} --retired ${facts.retired.join(",")} --mapping-version ${facts.mappingVersion} --battle ${o.battleId} --representation ${b.account} --wait-seconds 7200 --poll-seconds 10 --max-depth 12000 > verify-${t}.json`,
+      note: "Run from the agent folder after pnpm build. Add --state-rpc <dRPC url> if the official RPC cannot serve state. Stop if the verdict is not verified. Start it right after the deposit and keep --poll-seconds low: the finalized head moves in steps of thousands of blocks and the verifier only walks --max-depth blocks below it (default 256, which is too small), so a late first poll ends as pending \"receipt too far below finalized head\". The public RPC rate limits (429); keep batches small.",
     });
     add({
       id: `${t}-attest`, title: `${b.symbol}: the verifier attests the claim to the receipt registry`, chain: "near", signer: `the verifier account ${facts.verifier}`, mutating: true,
       command: `pnpm -C agent faucet:plan attest --file verify-${t}.json   # prints the exact near command with the attest arguments`,
-      note: "Generates, but does not send, the registry attest call (1 yoctoNEAR) from the verified attestation. Review the arguments before signing.",
+      note: "Generates, but does not send, the registry attest call from the verified attestation, with 0.02 NEAR attached to pay the receipt record's storage (the registry refunds the rest; 1 yoctoNEAR fails with \"Insufficient storage deposit\"). Review the arguments before signing.",
     });
     add({
       id: `${t}-register`, title: `${b.symbol}: register the operator account for storage on the representation`, chain: "near", signer: `the operator ${o.operator}`, mutating: true,
@@ -272,5 +272,5 @@ export function attestArgsFromVerifyOutput(output: unknown): { key: Record<strin
 }
 
 export function attestCommand(facts: FundingFacts, args: { key: unknown; claim: unknown }): string {
-  return `near contract call-function as-transaction ${facts.registry} attest json-args '${JSON.stringify(args)}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as ${facts.verifier} network-config testnet sign-with-keychain send`;
+  return `near contract call-function as-transaction ${facts.registry} attest json-args '${JSON.stringify(args)}' prepaid-gas '100 Tgas' attached-deposit '0.02 NEAR' sign-as ${facts.verifier} network-config testnet sign-with-keychain send`;
 }

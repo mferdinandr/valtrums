@@ -94,7 +94,7 @@ describe("attest call", () => {
     const cmd = attestCommand(facts, a);
     expect(cmd).toContain(`${facts.registry} attest json-args`);
     expect(cmd).toContain(`sign-as ${facts.verifier}`);
-    expect(cmd).toContain("attached-deposit '1 yoctoNEAR'");
+    expect(cmd).toContain("attached-deposit '0.02 NEAR'");
   });
   it("refuses anything that is not a verified verdict or is malformed", () => {
     expect(() => attestArgsFromVerifyOutput(output("pending"))).toThrow(/not verified/);
