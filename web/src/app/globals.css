@@ -1,9 +1,10 @@
-@import "@fontsource/space-grotesk/400.css";
-@import "@fontsource/space-grotesk/500.css";
-@import "@fontsource/space-grotesk/600.css";
-@import "@fontsource/space-grotesk/700.css";
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
+@import "@fontsource/bricolage-grotesque/500.css";
+@import "@fontsource/bricolage-grotesque/600.css";
+@import "@fontsource/bricolage-grotesque/700.css";
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/figtree/700.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -16,6 +17,7 @@
   }
   body {
     @apply bg-void font-term text-sm text-ink antialiased;
+    font-variant-numeric: tabular-nums;
     background-image: radial-gradient(
       ellipse at 0 0,
       #dfefe488,
@@ -54,7 +56,7 @@
     box-shadow: 0 4px 0 #e8e2d5;
   }
   .eyebrow {
-    @apply font-pixel text-[10px] font-semibold uppercase tracking-[.14em] text-mute;
+    @apply font-pixel text-xs font-semibold tracking-normal text-mute;
   }
   .status-dot {
     display: inline-block;
@@ -103,12 +105,12 @@
   padding: 2rem 1.5rem;
   border-top: 1px solid #ded9cd;
   color: #718087;
-  font-size: 11px;
+  font-size: 12px;
 }
 .site-footer strong {
   color: #a96576;
   font:
-    700 20px "Space Grotesk",
+    700 20px "Bricolage Grotesque",
     sans-serif;
 }
 .site-footer p {
@@ -127,7 +129,7 @@
 }
 .route-content .font-pixel.text-\[8px\],
 .route-content .font-pixel.text-\[9px\] {
-  font-size: 10px;
+  font-size: 12px;
 }
 .route-content select {
   border-radius: 12px;
@@ -144,7 +146,7 @@
   margin-top: 0.75rem;
   font-size: clamp(2rem, 4.3vw, 3.5rem);
   line-height: 1.06;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.02em;
 }
 .page-heading p:last-child {
   margin-top: 1rem;
@@ -166,7 +168,7 @@
   background: #fff3d7;
   color: #927044;
   font:
-    11px/1.3 "Space Grotesk",
+    12px/1.3 "Bricolage Grotesque",
     sans-serif;
 }
 .carnival-note {
@@ -233,24 +235,24 @@
   margin-bottom: 2rem;
 }
 .carnival-page-hero > div:first-child {
-  padding: 2.5rem;
+  padding: 1.75rem 2.5rem;
 }
 .carnival-page-hero h1 {
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-size: clamp(1.9rem, 3.2vw, 2.8rem);
   line-height: 1.05;
   margin: 0.8rem 0;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.02em;
 }
 .carnival-page-hero p {
   font-size: 13px;
   line-height: 1.9;
-  color: #607780;
+  color: #4a606b;
 }
 .carnival-page-hero .carnival-scene {
-  min-height: 320px;
+  min-height: 220px;
 }
 .carnival-page-hero .carnival-scene-caption {
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .carnival-scene {
@@ -273,7 +275,7 @@
   background: #fffaf0d9;
   border-radius: 10px;
   padding: 0.3rem 0.5rem;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .carnival-scene-pause {
@@ -312,7 +314,7 @@
   box-shadow: 0 8px 0 #d7e1c9;
 }
 .carnival-scene-poster span {
-  font-size: 11px;
+  font-size: 12px;
 }
 .festival-welcome {
   text-align: center;
@@ -324,7 +326,7 @@
   max-width: 900px;
   font-size: clamp(3rem, 6.5vw, 6rem);
   line-height: 0.98;
-  letter-spacing: -0.075em;
+  letter-spacing: -0.02em;
 }
 .festival-welcome h1 em {
   color: #b2697a;
@@ -365,7 +367,7 @@
   background: #fff9e9c9;
   border: 1px solid #eadfc6;
   color: #947a57;
-  font-size: 10px;
+  font-size: 12px;
 }
 .festival-world-ticket {
   position: absolute;
@@ -374,7 +376,7 @@
   z-index: 2;
   color: #9f6b7a;
   font:
-    11px "Space Grotesk",
+    12px "Bricolage Grotesque",
     sans-serif;
 }
 .festival-picker {
@@ -410,14 +412,14 @@
   display: block;
   color: #48566a;
   font:
-    600 12px "Space Grotesk",
+    600 12px "Bricolage Grotesque",
     sans-serif;
 }
 .festival-picker small {
   display: block;
   margin-top: 0.3rem;
   color: #7a8687;
-  font-size: 9px;
+  font-size: 12px;
 }
 .festival-crew-note {
   display: flex;
@@ -426,7 +428,7 @@
   gap: 2rem;
   padding: 1rem 0.4rem 0;
   color: #74818a;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
 }
 .festival-crew-note p {
@@ -451,7 +453,7 @@
   font-size: clamp(1.8rem, 3vw, 2.8rem);
   line-height: 1.1;
   margin-top: 0.7rem;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
 }
 .festival-section-heading > p {
   max-width: 360px;
@@ -479,7 +481,7 @@
 .festival-path-card h3 {
   font-size: 1.7rem;
   margin-top: 1rem;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
 }
 .festival-path-card p {
   font-size: 13px;
@@ -522,7 +524,7 @@
   background: #f4dbad;
   color: #9c773f;
   font:
-    600 15px "Space Grotesk",
+    600 15px "Bricolage Grotesque",
     sans-serif;
 }
 .festival-how article:nth-child(2) > span {
@@ -558,7 +560,7 @@
   min-height: 44px;
   list-style: none;
   font:
-    600 18px "Space Grotesk",
+    600 18px "Bricolage Grotesque",
     sans-serif;
 }
 .festival-roadmap summary::after {
@@ -588,7 +590,7 @@
 .festival-finale h2 {
   font-size: clamp(2rem, 4vw, 3.5rem);
   line-height: 1.1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
 }
 .festival-finale p {
   margin: 0.9rem auto 1.5rem;
@@ -641,7 +643,7 @@
   padding: 0.2rem 0.4rem;
   border-radius: 7px;
   background: #eee8db;
-  font-size: 10px;
+  font-size: 12px;
 }
 .arena-filter-bar {
   display: flex;
@@ -717,7 +719,7 @@
 }
 .battle-card-id {
   color: #8b9293;
-  font: 10px monospace;
+  font: 12px monospace;
 }
 .battle-token-stack {
   display: flex;
@@ -735,7 +737,7 @@
   border-radius: 50%;
   background: #d6e6cf;
   color: #52765c;
-  font: 600 10px monospace;
+  font: 600 12px monospace;
 }
 .battle-token-avatar + .battle-token-avatar {
   margin-left: -0.55rem;
@@ -803,7 +805,7 @@
   background: #eaf1e4;
   color: #65816d;
   font:
-    10px/1.5 "Space Grotesk",
+    12px/1.5 "Bricolage Grotesque",
     sans-serif;
 }
 .flow-notice {
@@ -826,7 +828,7 @@
   border-radius: 99px;
   background: #fff5d8;
   color: #8c713b;
-  font: 9px/1.4 monospace;
+  font: 12px/1.4 monospace;
   white-space: nowrap;
 }
 .flow-section,
@@ -867,7 +869,7 @@
 .track-grid span,
 .target-flow-steps span {
   color: #a47a4c;
-  font: 10px monospace;
+  font: 12px monospace;
 }
 .flow-step h3,
 .track-grid h3 {
@@ -917,7 +919,7 @@
 }
 .meme-paths span {
   color: #7f927b;
-  font: 10px monospace;
+  font: 12px monospace;
 }
 .meme-example {
   margin-top: 1.5rem;
@@ -938,12 +940,12 @@
 }
 .meme-example-intro span {
   color: #967545;
-  font-size: 11px;
+  font-size: 12px;
 }
 .meme-example-intro small,
 .meme-example-row small {
   color: #7e8a87;
-  font-size: 11px;
+  font-size: 12px;
 }
 .meme-example-row small {
   display: block;
@@ -1024,12 +1026,12 @@
   .festival-world-stamp {
     left: 0.8rem;
     top: 0.8rem;
-    font-size: 8px;
+    font-size: 12px;
   }
   .festival-world-ticket {
     right: 0.8rem;
     top: 0.9rem;
-    font-size: 9px;
+    font-size: 12px;
   }
   .festival-picker {
     display: flex;
@@ -1043,10 +1045,10 @@
     text-align: left;
   }
   .festival-picker strong {
-    font-size: 10px;
+    font-size: 12px;
   }
   .festival-picker small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .festival-picker svg {
     width: 19px;
@@ -1119,4 +1121,46 @@
   .kinetic-card:hover {
     transform: none;
   }
+}
+
+/* Skeleton placeholders: one slow shimmer, off for visitors who prefer reduced motion. */
+.skeleton {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #eee6d2 30%, #f9f4e6 50%, #eee6d2 70%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.skeleton-circle {
+  border-radius: 14px;
+}
+.skeleton-card {
+  padding: 1.25rem;
+  border: 1px solid #d8dfd3;
+  border-radius: 22px;
+  background: #fffaf0;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+.route-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  height: 3px;
+  background: #ac667d;
+  transform: scaleX(0);
+  transform-origin: left;
+  opacity: 0;
+  pointer-events: none;
 }

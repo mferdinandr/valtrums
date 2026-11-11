@@ -15,9 +15,9 @@
 }
 .score-chart-header h2 {
   font:
-    600 15px/1.4 "Space Grotesk",
+    600 15px/1.4 "Bricolage Grotesque",
     sans-serif;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .score-chart-header button {
   display: grid;
@@ -29,7 +29,7 @@
   color: #526777;
 }
 .score-chart-source {
-  font: 10px/1.6 monospace;
+  font: 12px/1.6 monospace;
   color: #627382;
 }
 .score-chart-lead {
@@ -53,7 +53,7 @@
 }
 .score-chart-plot svg text {
   font:
-    10px Inter,
+    12px Figtree,
     sans-serif;
   fill: #596d78;
 }
@@ -73,7 +73,7 @@
   padding: 0.4rem 0.6rem;
   border: 1px solid #dddcd0;
   border-radius: 12px;
-  font-size: 10px;
+  font-size: 12px;
   background: #fffdf5;
 }
 .score-chart-legend button[aria-pressed="true"] {
@@ -93,7 +93,7 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  font-size: 10px;
+  font-size: 12px;
   color: #526777;
 }
 .score-chart-inspect input {
@@ -108,7 +108,7 @@
 }
 .score-chart-note {
   margin-top: 0.5rem;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   color: #596d78;
 }

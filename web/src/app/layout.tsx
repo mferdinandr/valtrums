@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar";
 import { Providers } from "@/components/providers";
 import { RouteFrame } from "@/components/kinetic/route-frame";
 import { Brand } from "@/components/brand";
+import { RouteProgress } from "@/components/route-progress";
 
 export const metadata: Metadata = {
   title: "Valtrum | A little rivalry. Big community energy.",
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         >
           Skip to content
         </a>
+        <RouteProgress />
         <Providers>
           <Navbar />
           <main

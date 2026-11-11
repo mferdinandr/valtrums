@@ -306,9 +306,7 @@ export function RecordedArena({
       </div>
       {chart && <div className="battle-arena-chart">{chart}</div>}
       <p className="battle-arena-note">
-        Animation pause affects visuals only. The battle clock, data and
-        deposits follow the backend. Characters act on their own reactors;
-        animation never assigns scores or a winner.
+        Animation is for show only. It never assigns scores or a winner.
       </p>
       {notice && (
         <p className="battle-arena-note" role="status">

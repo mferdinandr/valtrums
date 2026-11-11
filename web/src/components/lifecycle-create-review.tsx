@@ -46,6 +46,8 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
   const [assets, setAssets] = useState<AssetDraft[]>([]);
   const [copied, setCopied] = useState(false);
   const [available, setAvailable] = useState<number | null>(null);
+  // The picker reports once the registry list has loaded; until then the summary says only what is already certain.
+  const [registryRead, setRegistryRead] = useState(false);
   const review = buildCreateReview(namespace.arenaContract, assets, mode);
   const request = useMemo(() => toActionRequest(assets, mode), [assets, mode]);
   const { signIn } = useWallet();
@@ -103,14 +105,14 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             every detail before your wallet signs.
           </p>
           <div className="lifecycle-facts">
-            <span>{available === null ? "Choose at least 2 communities" : `${MIN_COMMUNITIES}–${pickerCapacity(available, MAX_COMMUNITIES)} communities`}</span>
+            <span>2–5 communities</span>
             <span>30-second rounds</span>
             <span>No proposal bond</span>
           </div>
         </div>
         <CarnivalScene
           mode="create"
-          caption="A little assembly required · decorative workshop"
+          caption="A little assembly required"
         />
       </section>
 
@@ -142,15 +144,16 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Whether a mode can run live depends on provider qualification; the
-            arena and oracle report that, this page does not.
+            Some challenges may not be able to run live yet.
           </p>
         </Card>
 
         <Card className="space-y-4">
           <CardTitle>02 / Choose your communities</CardTitle>
           <p className="text-xs text-mute">
-            {pickerSummary(assets.length, available, MIN_COMMUNITIES, MAX_COMMUNITIES)}
+            {registryRead
+              ? pickerSummary(assets.length, available, MIN_COMMUNITIES, MAX_COMMUNITIES)
+              : `${assets.length} chosen · at least ${MIN_COMMUNITIES} needed`}
           </p>
           <div className="token-chips" aria-label="Chosen communities">
             {assets.map((a, i) => (
@@ -163,7 +166,10 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             chosen={chosen}
             full={assets.length >= pickerCapacity(available, MAX_COMMUNITIES)}
             onPick={add}
-            onAvailable={setAvailable}
+            onAvailable={(n) => {
+              setAvailable(n);
+              setRegistryRead(true);
+            }}
           />
           {assets.map((a, i) => (
             <details

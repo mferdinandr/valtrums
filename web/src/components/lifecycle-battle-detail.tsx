@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { CrewCardSkeleton, Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
+import gsap from "gsap";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -46,11 +48,35 @@ export function LifecycleBattleDetail({
   );
   const [highlighted, setHighlighted] = useState("");
   const now = useNow(1000);
+  const page = useRef<HTMLDivElement>(null);
+  const entered = useRef(false);
+  const ready = !!data;
+  // One entrance when the battle first appears: the crew cards rise in one after another.
+  useEffect(() => {
+    if (!ready || entered.current || !page.current) return;
+    entered.current = true;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const ctx = gsap.context(() => {
+      gsap.from(".lifecycle-crew", { autoAlpha: 0, y: 24, duration: 0.5, stagger: 0.07, ease: "power3.out", delay: 0.15, clearProps: "opacity,visibility,transform" });
+    }, page.current);
+    return () => ctx.revert();
+  }, [ready]);
   if (loading && !data)
     return (
-      <p role="status" className="text-sm text-mute">
-        Preparing battle #{battleId}…
-      </p>
+      <SkeletonGroup label={`Preparing battle #${battleId}…`} className="lifecycle-page">
+        <div className="lifecycle-hero" aria-hidden="true">
+          <div className="space-y-4">
+            <Skeleton style={{ width: 150, height: 26, borderRadius: 999 }} />
+            <Skeleton style={{ width: 320, height: 44 }} />
+            <Skeleton style={{ width: 240, height: 16 }} />
+          </div>
+          <Skeleton style={{ height: 120, borderRadius: 18 }} />
+        </div>
+        <Skeleton style={{ height: 360, borderRadius: 24 }} />
+        <div className="lifecycle-crew-grid">
+          {[0, 1, 2].map((i) => <CrewCardSkeleton key={i} />)}
+        </div>
+      </SkeletonGroup>
     );
   if (!data)
     return (
@@ -83,7 +109,7 @@ export function LifecycleBattleDetail({
       ? Number(detail.battleId)
       : null;
   return (
-    <div className="lifecycle-page">
+    <div ref={page} className="lifecycle-page">
       <Link href="/arena" className="text-xs text-neon-green">
         ← Back to battles
       </Link>
@@ -95,8 +121,8 @@ export function LifecycleBattleDetail({
           <h1>{modeName(detail.battle.mode)}</h1>
           <p className="text-sm text-mute">
             {detail.battle.locked
-              ? "Your crews are in. Follow the round, inspect the evidence and cheer on your community."
-              : "Meet the crews. Pick your community, review your deposit and bring a little energy."}
+              ? "The crews are locked in. Follow the round."
+              : "Pick a crew and join the battle."}
           </p>
           <div className="lifecycle-facts">
             <span>30-second rounds</span>
@@ -174,20 +200,48 @@ export function LifecycleBattleDetail({
                 )}
               />
               <p className="py-3 text-sm text-mute">
-                Round observations appear once the crews lock in and evidence
-                is available.
+                Round results appear after the crews lock in.
               </p>
             </section>
           )
         }
       />
 
+      {blockers.length > 0 && (
+        <div className="lifecycle-callout">
+          <strong>Deposits are not open yet</strong>
+          <details className="lifecycle-tech">
+            <summary>Why?</summary>
+            <ul className="list-disc pl-4">
+              {blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
+      {safeBattleId === null ? (
+        <Card role="status">
+          Wallet actions are unavailable for this ID until the action service
+          supports it losslessly. Read-only arena and evidence remain available.
+        </Card>
+      ) : (
+        <LifecycleParticipate
+          namespace={namespace}
+          battleId={safeBattleId}
+          communities={rows.map((r) => ({
+            index: r.index,
+            representation: r.representation,
+            label: name(r.index),
+          }))}
+          locked={detail.battle.locked}
+        />
+      )}
+
       <section aria-label="Communities">
         <div className="lifecycle-heading">
           <h2>Meet the competing crews</h2>
-          <p className="text-xs text-mute">
-            Highlighting a crew never changes your deposit.
-          </p>
         </div>
         <div className="lifecycle-crew-grid mt-4">
           {rows.map((r) => {
@@ -205,24 +259,23 @@ export function LifecycleBattleDetail({
                   { "--crew-color": roster[r.index]?.color } as CSSProperties
                 }
               >
-                <div className="lifecycle-crew-header">
-                  <span className="lifecycle-crew-mark" aria-hidden="true">
-                    {String(r.index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <p className="eyebrow text-mute">
-                      {communityName(r.index)}
-                    </p>
-                    <h3 className="token-title">
-                      {r.label && <TokenIcon symbol={displaySymbol(r.label, "")} size={28} />}
-                      {name(r.index)}
-                    </h3>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  className="lifecycle-crew-header lifecycle-crew-select"
+                  aria-pressed={selected === r.representation}
+                  onClick={() => setHighlighted(r.representation)}
+                >
+                  {r.label ? (
+                    <TokenIcon symbol={displaySymbol(r.label, "")} size={44} />
+                  ) : (
+                    <span className="lifecycle-crew-mark" aria-hidden="true">
+                      {String(r.index + 1).padStart(2, "0")}
+                    </span>
+                  )}
+                  <h3>{name(r.index)}</h3>
+                </button>
                 <p className="lifecycle-amount">{exactUnits(r.vault)}</p>
-                <p className="text-xs text-mute">
-                  Vault · exact base units · token decimals unavailable
-                </p>
+                <p className="text-xs text-mute">Deposited so far</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {r.recordedWinner && (
                     <Badge tone="green">recorded winner</Badge>
@@ -231,36 +284,27 @@ export function LifecycleBattleDetail({
                     <Badge tone="mute">eliminated · recorded candidates</Badge>
                   )}
                   <Badge tone={r.audit.state === "valid" ? "green" : "amber"}>
-                    audit {r.audit.state}
+                    {r.audit.state === "valid" ? "Safety check passed" : "Safety check pending"}
                   </Badge>
                   <Badge tone={approved ? "green" : "amber"}>
-                    backing{" "}
-                    {approved
-                      ? "approved"
-                      : r.backing.known
-                        ? "not ready"
-                        : "unknown"}
+                    {approved ? "Fully backed" : "Backing pending"}
                   </Badge>
                 </div>
-                <button
-                  type="button"
-                  className="mt-4 text-xs font-semibold text-neon-green underline"
-                  onClick={() => setHighlighted(r.representation)}
-                >
-                  Highlight {name(r.index)}
-                </button>
                 {!detail.battle.locked && r.blockers.length > 0 && (
-                  <ul
-                    className="mt-3 list-disc pl-4 text-xs text-neon-amber"
-                    aria-label={`Why community ${r.index + 1} is not ready`}
-                  >
-                    {r.blockers.map((b) => (
-                      <li key={b}>{b}</li>
-                    ))}
-                  </ul>
+                  <details className="lifecycle-tech">
+                    <summary>Why deposits are closed</summary>
+                    <ul
+                      className="list-disc pl-4 text-xs text-neon-amber"
+                      aria-label={`Why community ${r.index + 1} is not ready`}
+                    >
+                      {r.blockers.map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
                 <details className="lifecycle-tech">
-                  <summary>Asset identity &amp; evidence</summary>
+                  <summary>Token details</summary>
                   {r.label && (
                     <p>
                       Token label: {displaySymbol(r.label, "")} ({r.label.name}). A display name only; the identity is the chain
@@ -283,35 +327,6 @@ export function LifecycleBattleDetail({
           })}
         </div>
       </section>
-
-      {blockers.length > 0 && (
-        <div className="lifecycle-callout">
-          <strong>Arena readiness</strong>
-          <ul className="list-disc pl-4">
-            {blockers.map((b) => (
-              <li key={b}>{b}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {safeBattleId === null ? (
-        <Card role="status">
-          Wallet actions are unavailable for this ID until the action service
-          supports it losslessly. Read-only arena and evidence remain available.
-        </Card>
-      ) : (
-        <LifecycleParticipate
-          namespace={namespace}
-          battleId={safeBattleId}
-          communities={rows.map((r) => ({
-            index: r.index,
-            representation: r.representation,
-            label: name(r.index),
-          }))}
-          locked={detail.battle.locked}
-        />
-      )}
 
       <Card>
         <CardTitle>Round history</CardTitle>

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { NearProvider, useNearWallet } from "near-connect-hooks";
 import { config, configProblems } from "@/lib/config";
+import { SmoothDetails } from "@/components/ui/smooth-details";
 import type { Namespace } from "@/lib/arena-read/application";
 import type { WalletLike } from "@/lib/arena-read/action-session";
 
@@ -71,7 +72,10 @@ export function Providers({ children }: { children: ReactNode }) {
   };
   return (
     <NearProvider config={{ network: config.network }}>
-      <WalletBridge namespace={namespace}>{children}</WalletBridge>
+      <WalletBridge namespace={namespace}>
+        <SmoothDetails />
+        {children}
+      </WalletBridge>
     </NearProvider>
   );
 }

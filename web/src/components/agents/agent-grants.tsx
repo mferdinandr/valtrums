@@ -3,6 +3,7 @@ import { TransactionLink } from "@/components/transaction-link";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
+import { Select } from "@/components/ui/select";
 import { TokenChip, TokenPicker, assetSymbol, type RegistryAsset } from "@/components/token-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -163,7 +164,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
         <div className="token-chips" aria-label="Chosen token">
           {picked ? <TokenChip symbol={picked} onRemove={() => { setPicked(""); set({ chainId: "", token: "" }); }} /> : <span className="text-xs text-mute">Pick the token the agent may play with.</span>}
         </div>
-        <TokenPicker namespace={namespace} chosen={NO_CHOSEN} full={!!picked} onPick={onPick} />
+        <TokenPicker namespace={namespace} chosen={form.token ? new Set([`${form.chainId}:${form.token.toLowerCase()}`]) : NO_CHOSEN} full={!!picked} onPick={onPick} />
         <fieldset disabled={busy} className="grid min-w-0 gap-3 sm:grid-cols-2">
           <Label>
             Agent account (NEAR)
@@ -173,19 +174,18 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
             Representation (NEAR account of the NEP-141 token)
             <Input value={form.representation} maxLength={64} onChange={(e) => set({ representation: e.target.value.trim().toLowerCase() })} />
           </Label>
-          <Label className="sm:col-span-2">
-            Strategy (how the agent chooses; it carries no authority, the limits below do)
-            <select
-              className="mt-1 block w-full rounded-lg border border-edge bg-transparent p-2 text-sm"
+          <div className="sm:col-span-2">
+            <span className="mb-2 block font-pixel text-xs font-medium text-mute">
+              Strategy (how the agent chooses; it carries no authority, the limits below do)
+            </span>
+            <Select<AgentStrategy>
+              label="Strategy"
               value={strategy}
-              onChange={(e) => setStrategy(e.target.value as AgentStrategy)}
-              aria-label="Strategy"
-            >
-              {STRATEGY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.title} · {o.description}</option>
-              ))}
-            </select>
-          </Label>
+              options={STRATEGY_OPTIONS}
+              onChange={setStrategy}
+              disabled={busy}
+            />
+          </div>
           <Label>
             Per-action limit (base units)
             <Input inputMode="numeric" autoComplete="off" value={form.perAction} onChange={(e) => set({ perAction: e.target.value.trim() })} />
@@ -256,7 +256,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>03 / Your agents</CardTitle>
+          <CardTitle>Your agents</CardTitle>
           <Button type="button" variant="ghost" onClick={() => void refresh()} disabled={!accountId || saved.length === 0}>Refresh</Button>
         </div>
         {!accountId && <p className="text-sm text-mute">Connect your wallet to see the grants you created in this browser.</p>}

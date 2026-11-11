@@ -65,7 +65,7 @@ export function ReferencePreviewChart({ symbols }: { symbols: string[] }) {
             ? `Stale · ${view.error ?? "refresh failed"}`
             : "Live"
         }
-        note="Preview only. This is a market reference price, not scoring evidence. The arena scores a round from the oracle's recorded observations after the crews lock in, and this chart never decides a winner."
+        note="Preview only: a market price for reference, not scoring evidence. It never decides a winner."
         series={series}
         selected={selected}
         onSelect={setSelected}
