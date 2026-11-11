@@ -6,10 +6,13 @@ import { useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/input";
+import { Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
+import { useJoinableAssets } from "@/hooks/use-joinable-assets";
+import { useNow } from "@/hooks/use-now";
 import { applicationKey, fetchApplication, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
-import { buildCreateReview, type AssetDraft, type CallReview } from "@/lib/arena-read/create-review";
+import { buildCreateReview, type CallReview } from "@/lib/arena-read/create-review";
+import { buildCancelReview, buildJoinReview, buildRefundReview, openPhase } from "@/lib/arena-read/open-arena";
 import {
   buildDepositReview,
   buildRegisterReview,
@@ -27,14 +30,14 @@ import {
   type LifecycleParseResult,
 } from "@/lib/terminal/lifecycle-intent";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
-import { resolveAssetRefs, type RegistryAsset, type ResolveResult } from "@/lib/terminal/lifecycle-resolve";
-import { TokenIcon } from "@/components/token-icon";
-import { displaySymbol } from "@/lib/arena-read/token-style";
+import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/lib/terminal/lifecycle-resolve";
 
 const EXAMPLES = [
-  "daftar di battle 7 komunitas 2",
+  "join battle 7 with CASHCAT",
   "deposit 250 ke battle 7 komunitas 2",
-  "create price gain battle with 0x…, 0x…, 0x…",
+  "create price gain battle in 15 minutes",
+  "cancel battle 7",
+  "refund battle 7 komunitas 2",
 ];
 
 export const PAYOUT_BLOCKED_REASON =
@@ -249,86 +252,92 @@ async function searchAssets(namespace: Namespace, q: string): Promise<RegistryAs
   return res.data.items;
 }
 
+/**
+ * Create an open arena (D34). The exact start time is fixed once, when this plan first renders, so the reviewed
+ * call does not drift with the clock; reading the request again fixes a new one.
+ */
 function CreatePlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "create_battle" }> }) {
-  const [resolved, setResolved] = useState<ResolveResult | "pending">("pending");
-  const [setup, setSetup] = useState<Array<{ representation: string; custodyDomain: string }>>(() => intent.assetRefs.map(() => ({ representation: "", custodyDomain: "" })));
+  const [startAtMs] = useState(() => String(Date.now() + intent.startInMinutes * 60_000));
+  const now = useNow(1000);
+  const review = now > 0 ? buildCreateReview(namespace.arenaContract, [], intent.mode, startAtMs, now) : null;
+  const request = useMemo(() => intentToRequest(intent, { startAtMs }), [intent, startAtMs]);
+  if (!review || !request) return null;
+  if (!review.ok) return <Problems problems={[...review.problems, "Read the request again to fix a new start time."]} />;
+  return <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />;
+}
+
+/** Join with a token: the representation always comes from the arena's allowlist, never from the prompt. */
+function JoinPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "join_battle" }> }) {
+  const { detail, error, loading } = useBattle(namespace, intent.battleId);
+  const joinable = useJoinableAssets(namespace.arenaContract);
+  const [resolved, setResolved] = useState<JoinTokenResult | null>(null);
+  const now = useNow(1000);
   useEffect(() => {
+    if (!joinable.items) return;
     let live = true;
-    setResolved("pending");
-    void resolveAssetRefs(intent.assetRefs, (q) => searchAssets(namespace, q)).then((r) => live && setResolved(r));
+    setResolved(null);
+    void resolveJoinToken(intent.tokenRef, joinable.items, (q) => searchAssets(namespace, q)).then((r) => live && setResolved(r));
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intent, applicationKey(namespace)]);
-
-  const drafts: AssetDraft[] | null = useMemo(
-    () =>
-      resolved !== "pending" && resolved.ok
-        ? resolved.assets.map((r, i) => ({
-            chainId: r.asset.chainId,
-            tokenAddress: r.asset.token,
-            referenceChainId: r.asset.referenceChainId,
-            referenceAddress: r.asset.referenceToken,
-            representation: setup[i]?.representation ?? "",
-            custodyDomain: setup[i]?.custodyDomain ?? "",
-          }))
-        : null,
-    [resolved, setup],
+  }, [intent, joinable.items, applicationKey(namespace)]);
+  const representation = resolved?.ok ? resolved.representation : undefined;
+  const request = useMemo(() => intentToRequest(intent, { representation }), [intent, representation]);
+  const review = useMemo(
+    () => (resolved?.ok ? buildJoinReview(namespace.arenaContract, intent.battleId, resolved.representation, resolved.symbol ?? undefined) : null),
+    [resolved, namespace.arenaContract, intent.battleId],
   );
-  const review = drafts ? buildCreateReview(namespace.arenaContract, drafts, intent.mode) : null;
-  const request = useMemo(() => (drafts ? intentToRequest(intent, drafts) : null), [drafts, intent]);
 
-  if (resolved === "pending") return <p role="status" className="text-xs text-mute">Resolving tokens in the asset registry…</p>;
-  if (!resolved.ok) return <p role="alert" className="text-sm text-neon-amber">{resolved.question}</p>;
-  const touched = setup.some((s) => s.representation || s.custodyDomain);
-  return (
-    <div className="space-y-4">
-      <ul className="space-y-1 text-xs">
-        {resolved.assets.map((r, i) => (
-          <li key={r.asset.assetKey} className="break-all">
-            <span className="token-title">
-              {(r.asset.label ?? r.asset.referenceLabel) && (
-                <TokenIcon symbol={displaySymbol(r.asset.label ?? r.asset.referenceLabel, "")} size={22} />
-              )}
-              Community {i + 1}:{" "}
-              {(r.asset.label ?? r.asset.referenceLabel) && <strong>{displaySymbol(r.asset.label ?? r.asset.referenceLabel, "")} · </strong>}
-              registry asset {r.asset.chainId}:{r.asset.token} (from &quot;{r.ref}&quot;)
-            </span>
-          </li>
-        ))}
-      </ul>
-      <details className="lifecycle-tech" open>
-        <summary>Required token setup</summary>
-        <p className="mb-3 text-xs">The registry does not provide a trusted representation or custody domain yet. Enter values from your deployment operator; they are never taken from the prompt or guessed.</p>
-        {resolved.assets.map((r, i) => (
-          <div key={r.asset.assetKey} className="mb-3 grid gap-2 sm:grid-cols-2">
-            <Label>
-              Community {i + 1} representation (NEP-141 account)
-              <Input
-                value={setup[i]?.representation ?? ""}
-                maxLength={64}
-                onChange={(e) => setSetup((all) => all.map((s, j) => (j === i ? { ...s, representation: e.target.value.trim().toLowerCase() } : s)))}
-              />
-            </Label>
-            <Label>
-              Community {i + 1} custody domain
-              <Input
-                value={setup[i]?.custodyDomain ?? ""}
-                maxLength={64}
-                onChange={(e) => setSetup((all) => all.map((s, j) => (j === i ? { ...s, custodyDomain: e.target.value } : s)))}
-              />
-            </Label>
-          </div>
-        ))}
-      </details>
-      {review && !review.ok ? (
-        touched ? <Problems problems={review.problems} /> : <p className="text-sm text-mute">Fill each community&apos;s representation and custody domain to build the review.</p>
-      ) : review && request ? (
-        <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />
-      ) : null}
-    </div>
-  );
+  if (loading || (!joinable.items && !joinable.error) || (joinable.items && !resolved)) {
+    return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId} and the joinable tokens…</p>;
+  }
+  if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
+  if (joinable.error) return <p role="alert" className="text-xs text-neon-red">The joinable-token allowlist could not be read: {joinable.error}. No review was built.</p>;
+  if (resolved && !resolved.ok) return <p role="alert" className="text-sm text-neon-amber">{resolved.question}</p>;
+  const phase = openPhase(detail, now);
+  if (phase.kind !== "gathering") return <Problems problems={[`Battle #${intent.battleId} is not open for joining: ${PHASE_REASON[phase.kind]}.`]} />;
+  if (!review || !request) return null;
+  if (!review.ok) return <Problems problems={review.problems} />;
+  return <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />;
+}
+
+const PHASE_REASON: Record<ReturnType<typeof openPhase>["kind"], string> = {
+  no_start: "it has no start time, so communities cannot join it",
+  gathering: "it is open",
+  awaiting_lock: "the start time has passed with at least two funded communities",
+  cancellable: "the start time has passed",
+  cancelled: "it was cancelled",
+  locked: "it is locked",
+};
+
+function CancelPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "cancel_battle" }> }) {
+  const { detail, error, loading } = useBattle(namespace, intent.battleId);
+  const now = useNow(1000);
+  const request = useMemo(() => intentToRequest(intent), [intent]);
+  const review = useMemo(() => buildCancelReview(namespace.arenaContract, intent.battleId), [namespace.arenaContract, intent.battleId]);
+  if (loading) return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId}…</p>;
+  if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
+  const phase = openPhase(detail, now);
+  if (phase.kind !== "cancellable") {
+    return <Problems problems={[`Battle #${intent.battleId} cannot be cancelled: ${phase.kind === "gathering" ? "the start time has not passed" : PHASE_REASON[phase.kind]}.`]} />;
+  }
+  if (!request) return null;
+  if (!review.ok) return <Problems problems={review.problems} />;
+  return <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />;
+}
+
+function RefundPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "claim_refund" }> }) {
+  const { detail, error, loading } = useBattle(namespace, intent.battleId);
+  const request = useMemo(() => intentToRequest(intent), [intent]);
+  const review = useMemo(() => buildRefundReview(namespace.arenaContract, intent.battleId, intent.community), [namespace.arenaContract, intent.battleId, intent.community]);
+  if (loading) return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId}…</p>;
+  if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
+  if (detail.battle.cancelled !== true) return <Problems problems={[`Battle #${intent.battleId} is not cancelled: only a cancelled battle refunds deposits.`]} />;
+  if (!detail.battle.communities[intent.community]) return <Problems problems={[`Battle #${intent.battleId} has ${detail.battle.communities.length} communities; community ${intent.community + 1} does not exist.`]} />;
+  if (!request) return null;
+  if (!review.ok) return <Problems problems={review.problems} />;
+  return <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />;
 }
 
 function PayoutPlan({ intent }: { intent: Extract<LifecycleIntent, { kind: "payout" }> }) {
@@ -412,7 +421,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="text-xs text-mute">
-            Reading a request sends nothing to your wallet or the action service. Communities are numbered from 1; amounts are exact whole numbers in token base units; tokens are matched by registry address.
+            Reading a request sends nothing to your wallet or the action service. Communities are numbered from 1; amounts are exact whole numbers in token base units; a join only uses tokens on the arena&apos;s joinable allowlist.
           </p>
         </form>
       </Card>
@@ -437,6 +446,12 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             <PayoutPlan intent={intent} />
           ) : intent.kind === "create_battle" ? (
             <CreatePlan namespace={namespace} intent={intent} />
+          ) : intent.kind === "join_battle" ? (
+            <JoinPlan namespace={namespace} intent={intent} />
+          ) : intent.kind === "cancel_battle" ? (
+            <CancelPlan namespace={namespace} intent={intent} />
+          ) : intent.kind === "claim_refund" ? (
+            <RefundPlan namespace={namespace} intent={intent} />
           ) : (
             <ParticipationPlan namespace={namespace} intent={intent} />
           )}

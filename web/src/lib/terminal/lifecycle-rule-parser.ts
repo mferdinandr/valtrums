@@ -16,6 +16,12 @@ const CREATE = /\b(create|make|new|start|launch|buat|bikin|bikinkan|buatkan|mula
 const BATTLE_WORD = /\b(battle|arena|duel|pertarungan)\b/;
 const REGISTER = /\b(register|registration|sign up|signup|join|daftar|mendaftar|daftarkan|registrasi|gabung|ikut)\b/;
 const DEPOSIT = /\b(deposit|depositkan|setor|setorkan|menyetor|top up|topup)\b/;
+const JOIN = /\b(join|gabung|bergabung|ikut)\b/;
+const CANCEL = /\b(cancel|batalkan|membatalkan|batal)\b/;
+const REFUND = /\b(refund|pengembalian dana|kembalikan dana|uang kembali)\b/;
+/** "with CASHCAT", "dengan $WALLET", "pakai token GOOD": the token reference after the joiner word. */
+const JOIN_TOKEN = /\b(?:with|using|dengan|pakai|memakai|menggunakan)\s+(?:token\s+)?(\$?[a-z0-9][a-z0-9._$-]{0,79})/;
+const START_IN = /\b(?:in|dalam|mulai|start(?:s|ing)?(?:\s+in)?)\s+(\d{1,5})\s*(minutes?|mins?|m|menit|hours?|hrs?|h|jam|days?|d|hari)\b/;
 
 const BATTLE_ID = /\b(?:battle|arena|duel|pertarungan)\s*(?:ke-?|no\.?|number|nomor)?\s*#?\s*([0-9]+)\b/;
 const COMMUNITY_NO = /\b(?:community|communities|komunitas|crew|kubu|tim)\s*(?:ke-?|no\.?|number|nomor)?\s*#?\s*([0-9]+)\b/;
@@ -47,17 +53,28 @@ function amountOf(text: string, keywords: RegExp): { amount: string } | Lifecycl
 
 const isResult = (v: { amount: string } | LifecycleParseResult): v is LifecycleParseResult => "ok" in v;
 
+/** Minutes until the start from "in 15 minutes", "dalam 2 jam", "start in 1 day". Null when no start is given. */
+function startMinutes(text: string): number | null {
+  const m = START_IN.exec(text);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2]!;
+  if (/^(h|hrs?|hours?|jam)$/.test(unit)) return n * 60;
+  if (/^(d|days?|hari)$/.test(unit)) return n * 24 * 60;
+  return n;
+}
+
 function parseCreate(text: string): LifecycleParseResult {
   const mode = MODES.find(([re]) => re.test(text))?.[1];
   if (!mode) return clarify("Which scoring mode: price gain, market cap growth, volume ratio or lowest drawdown?");
-  const split = /\b(?:with|between|using|dengan|antara|bersama)\b|:/.exec(text);
-  const rest = split ? text.slice(split.index + split[0].length) : "";
-  const refs = rest
-    .split(/\s*(?:,|;|\band\b|\bdan\b|\bvs\.?\b|\bversus\b|\bplus\b)\s*/)
-    .map((p) => p.replace(/^(?:the|tokens?|communit(?:y|ies)|komunitas)\s+/, "").trim())
-    .filter(Boolean);
-  if (refs.length < 2) return clarify("Which communities compete? List 2 to 16 token addresses from the registry, separated by commas.");
-  return validateLifecycleIntent({ kind: "create_battle", mode, assetRefs: refs });
+  const minutes = startMinutes(text);
+  if (minutes === null) return clarify("When should it start? For example: in 15 minutes (1 minute to 7 days). Communities join before the start.");
+  return validateLifecycleIntent({ kind: "create_battle", mode, startInMinutes: minutes });
+}
+
+function battleOnly(text: string): number | LifecycleParseResult {
+  const battle = BATTLE_ID.exec(text)?.[1];
+  return battle ? Number(battle) : clarify("Which battle? For example: battle 7.");
 }
 
 function parseIds(text: string): { battleId: number; communityNumber: number } | LifecycleParseResult {
@@ -75,6 +92,26 @@ export const lifecycleRuleParser: LifecycleIntentParser = {
     if (raw === "") return fail("Type what you want to do");
     if (raw.length > MAX_PROMPT_CHARS) return fail(`Prompt is too long (max ${MAX_PROMPT_CHARS} characters)`);
     const text = raw.toLowerCase().replace(/\s+/g, " ");
+
+    // Refund before payout: "claim refund" also matches the payout words.
+    if (REFUND.test(text)) {
+      const ids = parseIds(text);
+      if ("ok" in ids) return ids;
+      return validateLifecycleIntent({ kind: "claim_refund", ...ids });
+    }
+    if (CANCEL.test(text) && BATTLE_ID.test(text)) {
+      const battleId = battleOnly(text);
+      if (typeof battleId !== "number") return battleId;
+      return validateLifecycleIntent({ kind: "cancel_battle", battleId });
+    }
+    // "join battle 7 with CASHCAT" joins by token; "join battle 7 community 2" stays a position registration.
+    if (JOIN.test(text) && BATTLE_ID.test(text) && !COMMUNITY_NO.test(text)) {
+      const battleId = battleOnly(text);
+      if (typeof battleId !== "number") return battleId;
+      const token = JOIN_TOKEN.exec(text)?.[1];
+      if (!token) return clarify("Which token do you join with? For example: join battle 7 with CASHCAT.");
+      return validateLifecycleIntent({ kind: "join_battle", battleId, tokenRef: token });
+    }
 
     if (PAYOUT.test(text)) {
       const destination = ADDRESS.exec(text)?.[0];
@@ -99,6 +136,6 @@ export const lifecycleRuleParser: LifecycleIntentParser = {
       return validateLifecycleIntent({ kind: "deposit", ...ids, amount: amount.amount });
     }
     if (CREATE.test(text) && BATTLE_WORD.test(text)) return parseCreate(text);
-    return clarify("I can create a battle, register a position, deposit into a community or request a payout. Which one?");
+    return clarify("I can create a battle, join one with a token, deposit, cancel, claim a refund or request a payout. Which one?");
   },
 };
