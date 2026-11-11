@@ -12,6 +12,7 @@ import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
+import { BattleStartLoader, startStage } from "@/components/lifecycle/battle-start-loader";
 import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { lifecycleRoster } from "@/components/colosseum/lifecycle-runtime";
 import { useCreatorEscrow } from "@/hooks/use-creator-escrow";
@@ -119,6 +120,15 @@ export function LifecycleBattleDetail({
   const status = battleStatus(detail);
   const open = openPhase(detail, now);
   const phase = roundPhase(detail.round, now);
+  const stage = now > 0
+    ? startStage({
+        status,
+        open,
+        locked: detail.battle.locked,
+        phaseKind: phase.kind,
+        roundId: detail.round?.round_id ?? null,
+      })
+    : null;
   const rows = communityRows(detail, now);
   const roster = lifecycleRoster(detail.battle.communities);
   const selected = rows.some((r) => r.representation === highlighted)
@@ -174,10 +184,12 @@ export function LifecycleBattleDetail({
               (status === "cancelled"
                 ? "No round was played."
                 : detail.battle.locked
-                  ? "Waiting for round one. The recorded result will appear here."
+                  ? "Crews locked. Opening round 1…"
                   : open.kind === "gathering" && now > 0
                     ? `Starts in ${formatCountdown(open.msLeft)}. No round has started.`
-                    : "No round has started.")}
+                    : open.kind === "awaiting_lock"
+                      ? "Starting… locking the crews and opening round 1."
+                      : "No round has started.")}
             {phase.kind === "awaiting_open" &&
               `Round ${detail.round!.round_id} is preparing its next window. ${phase.candidates.length} crews remain.`}
             {phase.kind === "window_open" &&
@@ -199,18 +211,26 @@ export function LifecycleBattleDetail({
         </p>
       )}
 
+      {stage && <BattleStartLoader stage={stage} variant="sticky" />}
+
       <LifecycleArena
         detail={detail}
         selected={selected}
         onSelect={setHighlighted}
         fixture={fixture}
         chart={
-          detail.battle.locked ? (
+          stage ? (
+            <section>
+              <h2 className="my-3 text-lg">Round observations</h2>
+              <BattleStartLoader stage={stage} variant="panel" />
+            </section>
+          ) : detail.battle.locked ? (
             <section>
               <h2 className="my-3 text-lg">Round observations</h2>
               <ObservationChart
                 namespace={namespace}
                 battleId={detail.battleId}
+                names={rows.map((_, i) => name(i))}
               />
             </section>
           ) : (
