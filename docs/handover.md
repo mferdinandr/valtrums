@@ -54,12 +54,10 @@ Still do not casually change: the faucet owner is `valtrum-operator.testnet` (on
 
 ```bash
 pnpm install
-pnpm -C agent build
-pnpm -C web dev                      # http://localhost:3000
-pnpm -C agent read:serve             # read service on 127.0.0.1:8790, needed for terminal previews
-python3 scripts/rpc-relay.py 18546 rpc.mainnet.chain.robinhood.com   # only if your network blocks the Robinhood hosts
-python3 scripts/rpc-relay.py 18545                                   # same for Robinhood testnet
+pnpm dev     # web on :3000, agent read service on 127.0.0.1:8790 and the mainnet RPC relay on 127.0.0.1:18546; Ctrl+C stops all
 ```
+
+`pnpm dev` runs `scripts/dev.sh`. `DEV_RELAY=0 pnpm dev` skips the relay when your network reaches the Robinhood RPC directly, `DEV_RELAY_TESTNET=1 pnpm dev` also starts the testnet relay on `127.0.0.1:18545` (custody verification). A relay whose port is already in use is left alone. `pnpm dev:apps` starts only web and agent.
 
 The relay resolves the real address through Cloudflare DNS over HTTPS, listens on 127.0.0.1 only and holds no key. Point `PRICE_PREVIEW_RPC_URL` (web, server only) and `REFERENCE_RPC_URL` (agent) at a relay or any reachable RPC. A `REFERENCE_RPC_URL` exported in your shell overrides the env files for a dev server, which is why the preview uses its own variable name. The Robinhood hosts also had an expired TLS certificate on 2026-08-19, so a reachable RPC may not be the official host.
 

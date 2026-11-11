@@ -11,10 +11,11 @@ One Next.js application for the lifecycle arena on NEAR testnet. There is no leg
 | `/agents` | Grant and revoke player-agent budgets on the player-policy contract |
 | `/faucet` | Claim test tokens from the faucet contract (up to two tokens per wallet approval) |
 
-From repository root:
+From repository root (`pnpm dev` starts web, the agent read service and the local RPC relay together; see `scripts/dev.sh`):
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm dev
 pnpm -F @valtrum/web dev
 pnpm -F @valtrum/web typecheck
 pnpm -F @valtrum/web test
