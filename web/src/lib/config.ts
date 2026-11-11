@@ -2,8 +2,10 @@ export type NearNetwork = "testnet" | "mainnet";
 
 const network: NearNetwork = process.env.NEXT_PUBLIC_NEAR_NETWORK === "mainnet" ? "mainnet" : "testnet";
 
+// The official public testnet RPC rate limits per IP and answers 429 without CORS headers, which a browser reports
+// as "Failed to fetch". FastNEAR answers with CORS open. Set NEXT_PUBLIC_NEAR_RPC_URL to use another provider.
 const DEFAULT_RPC: Record<NearNetwork, string> = {
-  testnet: "https://rpc.testnet.near.org",
+  testnet: "https://test.rpc.fastnear.com",
   mainnet: "https://rpc.mainnet.near.org",
 };
 
