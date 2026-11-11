@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCreateReview, CREATE_DEPOSIT_YOCTO, type AssetDraft } from "./create-review";
+import { buildCreateReview, CREATE_DEPOSIT_YOCTO, parseCreateModes, type AssetDraft } from "./create-review";
 
 const asset = (i: number, over: Partial<AssetDraft> = {}): AssetDraft => ({
   chainId: "46630", tokenAddress: `0x${String(i).repeat(40)}`, representation: `c${i}.rep.testnet`, custodyDomain: "custody-v1", referenceChainId: "", referenceAddress: "", ...over,
@@ -39,6 +39,15 @@ describe("create_lifecycle_battle review", () => {
     expect(ok(Array.from({ length: 17 }, (_, i) => asset(i % 9 + 1, { chainId: String(i + 1) }))).ok).toBe(false);
     expect((ok([asset(1), asset(2)], "") as { problems: string[] }).problems).toContain("choose a scoring mode");
     expect((buildCreateReview("", [], "PriceGain", START, NOW) as { problems: string[] }).problems).toContain("the arena contract id is not configured");
+  });
+
+  it("offers only the modes the arena's observation policy can run", () => {
+    expect(parseCreateModes(undefined)).toEqual(["PriceGain"]);
+    expect(parseCreateModes(" VolumeRatio , PriceGain,TWAP,PriceGain")).toEqual(["VolumeRatio", "PriceGain"]);
+    expect(parseCreateModes("TWAP")).toEqual(["PriceGain"]);
+    const refused = buildCreateReview("arena.testnet", [], "VolumeRatio", START, NOW, ["PriceGain"]);
+    expect(!refused.ok && refused.problems[0]).toMatch(/only runs PriceGain battles/);
+    expect(buildCreateReview("arena.testnet", [], "PriceGain", START, NOW, ["PriceGain"]).ok).toBe(true);
   });
 
   it("requires a start time between 1 minute and 7 days from now", () => {

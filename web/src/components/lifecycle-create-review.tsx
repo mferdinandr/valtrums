@@ -9,6 +9,7 @@ import { Input, Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { useNow } from "@/hooks/use-now";
 import { useWallet } from "@/components/providers";
+import { config } from "@/lib/config";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { applicationKey } from "@/lib/arena-read/application";
 import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
@@ -32,7 +33,7 @@ const DEFAULT_LEAD_MS = 15 * 60 * 1000;
  * session token is memory-only; a wallet rejection leaves the review intact for a retry.
  */
 export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
-  const [mode, setMode] = useState<string>("PriceGain");
+  const [mode, setMode] = useState<string>(config.createModes[0] ?? "PriceGain");
   const [startInput, setStartInput] = useState("");
   const [copied, setCopied] = useState(false);
   const now = useNow(1000);
@@ -41,7 +42,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
     if (now > 0 && startInput === "") setStartInput(msToLocalInput(now + DEFAULT_LEAD_MS));
   }, [now, startInput]);
   const startAtMs = localInputToMs(startInput);
-  const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now);
+  const review = buildCreateReview(namespace.arenaContract, NO_ASSETS, mode, startAtMs, now, config.createModes);
   const request = useMemo(() => toActionRequest(NO_ASSETS, mode, startAtMs), [mode, startAtMs]);
   const { signIn } = useWallet();
   const create = useLifecycleCreate(
@@ -91,7 +92,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             role="group"
             aria-label="Scoring mode"
           >
-            {SCORING_MODES.map((m) => (
+            {SCORING_MODES.filter((m) => config.createModes.includes(m)).map((m) => (
               <button
                 key={m}
                 className="lifecycle-mode"
@@ -108,7 +109,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             ))}
           </div>
           <p className="mt-3 text-xs text-mute">
-            Some challenges may not be able to run live yet.
+            Only the challenges this arena can run live are offered.
           </p>
         </Card>
 

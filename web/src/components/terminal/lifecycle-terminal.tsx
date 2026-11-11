@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { useNow } from "@/hooks/use-now";
+import { config } from "@/lib/config";
 import { applicationKey, fetchApplication, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
 import { buildCreateReview, type CallReview } from "@/lib/arena-read/create-review";
 import { buildCancelReview, buildJoinReview, buildRefundReview, openPhase } from "@/lib/arena-read/open-arena";
@@ -259,7 +260,7 @@ async function searchAssets(namespace: Namespace, q: string): Promise<RegistryAs
 function CreatePlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "create_battle" }> }) {
   const [startAtMs] = useState(() => String(Date.now() + intent.startInMinutes * 60_000));
   const now = useNow(1000);
-  const review = now > 0 ? buildCreateReview(namespace.arenaContract, [], intent.mode, startAtMs, now) : null;
+  const review = now > 0 ? buildCreateReview(namespace.arenaContract, [], intent.mode, startAtMs, now, config.createModes) : null;
   const request = useMemo(() => intentToRequest(intent, { startAtMs }), [intent, startAtMs]);
   if (!review || !request) return null;
   if (!review.ok) return <Problems problems={[...review.problems, "Read the request again to fix a new start time."]} />;

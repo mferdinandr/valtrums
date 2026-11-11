@@ -18,6 +18,18 @@ export const MIN_COMMUNITIES = 0;
 /** Mirrors `MAX_COMMUNITIES` in contracts/arena/src/lifecycle.rs. */
 export const MAX_COMMUNITIES = 16;
 export const SCORING_MODES: readonly ScoringMode[] = ["PriceGain", "MarketCapGrowth", "VolumeRatio", "LowestDrawdown"];
+
+/**
+ * Modes a new battle may use on this deployment. The arena keeps one observation policy and its hash binds one
+ * mode, so a battle of another mode could lock and then never start its rounds, keeping its deposits locked.
+ * Read from a comma-separated list (NEXT_PUBLIC_LIFECYCLE_CREATE_MODES); unknown names are ignored; the default
+ * is PriceGain, the mode of the draft testnet policy.
+ */
+export function parseCreateModes(raw: string | undefined): ScoringMode[] {
+  const picked = (raw ?? "").split(",").map((m) => m.trim()).filter((m): m is ScoringMode => (SCORING_MODES as readonly string[]).includes(m));
+  const unique = [...new Set(picked)];
+  return unique.length > 0 ? unique : ["PriceGain"];
+}
 /** Upper bound of the storage deposit the agent previews; the arena keeps actual storage and refunds the rest. */
 export const CREATE_DEPOSIT_YOCTO = "100000000000000000000000";
 export const CREATE_GAS_TGAS = "100";
@@ -69,9 +81,13 @@ const EVM = /^0x[0-9a-fA-F]{40}$/;
 
 export function buildCreateReview(
   arenaContract: string, assets: readonly AssetDraft[], mode: string, startAtMs: string | null, nowMs: number,
+  allowedModes: readonly ScoringMode[] = SCORING_MODES,
 ): ReviewResult {
   const problems: string[] = [];
   if (!(SCORING_MODES as readonly string[]).includes(mode)) problems.push("choose a scoring mode");
+  else if (!(allowedModes as readonly string[]).includes(mode)) {
+    problems.push(`this deployment only runs ${allowedModes.join(", ")} battles: rounds of another mode could not start and deposits would stay locked`);
+  }
   problems.push(...startTimeProblems(startAtMs, nowMs));
   if (assets.length > MAX_COMMUNITIES) problems.push(`a battle has at most ${MAX_COMMUNITIES} communities`);
   const seen = new Set<string>();
