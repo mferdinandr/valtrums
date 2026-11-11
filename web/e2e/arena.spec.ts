@@ -131,7 +131,7 @@ test("creation is review-only without a wallet and sends no action request", asy
   await expect(page.getByPlaceholder("Search a token name (CASHCAT) or address")).toHaveCount(0);
   const review = page.getByLabel("Transaction review");
   await expect(
-    review.getByText("create_lifecycle_battle").first(),
+    review.getByText("ft_transfer_call").first(),
   ).toBeVisible();
   await review
     .getByText("Exact transaction arguments", { exact: true })
@@ -275,15 +275,13 @@ test.describe("lifecycle intent terminal", () => {
     expect(calls).toEqual([]);
   });
 
-  test("create asks for a start time and reviews an open arena with no communities", async ({ page }) => {
+  test("create sends the user to the create page, where the first deposit is chosen (D41)", async ({ page }) => {
     const calls = watchActions(page);
     await page.goto("/terminal");
     await ask(page, "create price gain battle");
     await expect(page.getByText(/When should it start/)).toBeVisible();
     await ask(page, "create price gain battle in 15 minutes");
-    const reviewed = page.getByLabel("Reviewed call");
-    await expect(reviewed.getByText("create_lifecycle_battle").first()).toBeVisible();
-    await expect(reviewed.getByText(/none: communities join before the start/)).toBeVisible();
+    await expect(page.getByText(/created together with your first deposit/)).toBeVisible();
     expect(calls).toEqual([]);
   });
 

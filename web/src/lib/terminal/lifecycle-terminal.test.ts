@@ -167,10 +167,10 @@ describe("intentToRequest", () => {
     expect(intentToRequest({ kind: "deposit", battleId: 7, community: 1, amount: "250" })).toEqual({ kind: "deposit", battleId: 7, community: 1, amount: "250" });
     expect(intentToRequest({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 })).toEqual({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 });
   });
-  it("needs the fixed start time for a create and lists no communities", () => {
+  it("builds no request for a create: a battle is created with the creator's deposit on the create page (D41)", () => {
     const intent: LifecycleIntent = { kind: "create_battle", mode: "PriceGain", startInMinutes: 15 };
     expect(intentToRequest(intent)).toBeNull();
-    expect(intentToRequest(intent, { startAtMs: "1800000900000" })).toEqual({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs: "1800000900000" });
+    expect(intentToRequest(intent, { startAtMs: "1800000900000" })).toBeNull();
   });
   it("needs the allowlisted representation for a join; cancel and refund need nothing else", () => {
     const join: LifecycleIntent = { kind: "join_battle", battleId: 7, tokenRef: "cashcat" };

@@ -2,6 +2,7 @@
 import { TransactionLink } from "@/components/transaction-link";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { useNow } from "@/hooks/use-now";
 import { config } from "@/lib/config";
 import { applicationKey, fetchApplication, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
-import { buildCreateReview, type CallReview } from "@/lib/arena-read/create-review";
+import type { CallReview } from "@/lib/arena-read/create-review";
 import { buildCancelReview, buildJoinReview, buildRefundReview, openPhase } from "@/lib/arena-read/open-arena";
 import {
   buildDepositReview,
@@ -255,17 +256,17 @@ async function searchAssets(namespace: Namespace, q: string): Promise<RegistryAs
 }
 
 /**
- * Create an open arena (D34). The exact start time is fixed once, when this plan first renders, so the reviewed
- * call does not drift with the clock; reading the request again fixes a new one.
+ * Create a battle (D41): a battle exists only with its creator's deposit (a token and an amount), which a prompt
+ * does not carry, so the terminal sends the user to the create page instead of building a call.
  */
-function CreatePlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "create_battle" }> }) {
-  const [startAtMs] = useState(() => String(Date.now() + intent.startInMinutes * 60_000));
-  const now = useNow(1000);
-  const review = now > 0 ? buildCreateReview(namespace.arenaContract, [], intent.mode, startAtMs, now, config.createModes) : null;
-  const request = useMemo(() => intentToRequest(intent, { startAtMs }), [intent, startAtMs]);
-  if (!review || !request) return null;
-  if (!review.ok) return <Problems problems={[...review.problems, "Read the request again to fix a new start time."]} />;
-  return <ReviewedCall namespace={namespace} review={review} request={request} trackCredit={false} />;
+function CreatePlan({ intent }: { intent: Extract<LifecycleIntent, { kind: "create_battle" }> }) {
+  return (
+    <p className="text-sm leading-7" role="status">
+      A battle is created together with your first deposit, so it is made on the{" "}
+      <Link href="/arena/new" className="underline">create page</Link>, where you pick the token and the amount.
+      Your challenge ({intent.mode}) and start time can be set there.
+    </p>
+  );
 }
 
 /** Join with a token: the representation always comes from the arena's allowlist, never from the prompt. */
@@ -447,7 +448,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
           {intent.kind === "payout" ? (
             <PayoutPlan intent={intent} />
           ) : intent.kind === "create_battle" ? (
-            <CreatePlan namespace={namespace} intent={intent} />
+            <CreatePlan intent={intent} />
           ) : intent.kind === "join_battle" ? (
             <JoinPlan namespace={namespace} intent={intent} />
           ) : intent.kind === "cancel_battle" ? (

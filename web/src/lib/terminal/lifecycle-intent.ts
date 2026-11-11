@@ -4,7 +4,7 @@
 // the backend asset registry after resolution (`lifecycle-resolve.ts`), receivers from the battle read.
 
 import { registerRequest, depositRequest } from "@/lib/arena-read/deposit-flow";
-import { toActionRequest, SCORING_MODES } from "@/lib/arena-read/create-review";
+import { SCORING_MODES } from "@/lib/arena-read/create-review";
 import { cancelRequest, joinRequest, refundRequest } from "@/lib/arena-read/open-arena";
 import type { ScoringMode } from "@/lib/arena-read/lifecycle";
 
@@ -117,8 +117,9 @@ export function validateLifecycleIntent(raw: unknown): LifecycleParseResult {
 }
 
 /**
- * The action-service request for an intent. `create_battle` needs the exact start time fixed by the caller, and
- * `join_battle` the representation resolved from the arena's allowlist; without them there is no request. The
+ * The action-service request for an intent. `create_battle` has no request here (a battle is created with the
+ * creator's deposit on the create page), and `join_battle` needs the representation resolved from the arena's
+ * allowlist; without it there is no request. The
  * returned object is what the preview call posts and what the review is compared against; it never contains free text.
  */
 export function intentToRequest(
@@ -132,7 +133,9 @@ export function intentToRequest(
     case "payout":
       return { kind: "payout", backing: intent.backing, amount: intent.amount, destination: intent.destination };
     case "create_battle":
-      return resolved.startAtMs ? toActionRequest([], intent.mode, resolved.startAtMs) : null;
+      // D41: a battle is created with the creator's deposit (token and amount), which this prompt does not
+      // carry, so creation is done on the create page and the terminal builds no request for it.
+      return null;
     case "join_battle":
       return resolved.representation ? joinRequest(intent.battleId, resolved.representation) : null;
     case "cancel_battle":
