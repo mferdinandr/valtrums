@@ -8,7 +8,9 @@ import { executeTerminalAction } from "@/lib/terminal/actions";
 const ACCOUNT = "alice.testnet";
 const draft = (i: number): AssetDraft => ({ chainId: "46630", tokenAddress: `0x${String(i).repeat(40)}`, representation: `c${i}.rep.testnet`, custodyDomain: "custody-v1", referenceChainId: "", referenceAddress: "" });
 const drafts = [draft(1), draft(2)];
-const review = (() => { const r = buildCreateReview("arena.testnet", drafts, "PriceGain"); if (!r.ok) throw new Error("fixture"); return r; })();
+const NOW = 1_800_000_000_000;
+const START = String(NOW + 15 * 60_000);
+const review = (() => { const r = buildCreateReview("arena.testnet", drafts, "PriceGain", START, NOW); if (!r.ok) throw new Error("fixture"); return r; })();
 
 function world(over: { previewArgs?: unknown; confirm?: boolean } = {}) {
   const calls: string[] = [];
@@ -33,7 +35,7 @@ function world(over: { previewArgs?: unknown; confirm?: boolean } = {}) {
   const deps = { session: "tok", wallet: action, fetchImpl: gateway as never, sleep: async () => undefined, maxPolls: 1 };
   return { calls, deps, wallet };
 }
-const request = toActionRequest(drafts, "PriceGain");
+const request = toActionRequest(drafts, "PriceGain", START);
 
 describe("create flow sequencing", () => {
   it("previews first, authorizes and signs only after the preview matches, and confirms from a verified receipt", async () => {

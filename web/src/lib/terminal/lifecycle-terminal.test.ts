@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { intentToRequest, validateLifecycleIntent, type LifecycleIntent } from "./lifecycle-intent";
 import { lifecycleRuleParser } from "./lifecycle-rule-parser";
 import { interpretLifecycleReply, createLifecycleLlmParser } from "./lifecycle-llm-parser";
-import { resolveAssetRefs, type RegistryAsset } from "./lifecycle-resolve";
+import { resolveAssetRefs, resolveJoinToken, type AllowlistEntry, type RegistryAsset } from "./lifecycle-resolve";
 import { handleLifecycleParse } from "./lifecycle-parse-route";
 import { createLifecycleRouteParser } from "./lifecycle-parse-client";
 
@@ -62,28 +62,44 @@ describe("rule parser: register and deposit", () => {
   });
 });
 
-describe("rule parser: create battle", () => {
-  it("lists asset references without inventing addresses", async () => {
-    const intent = await intentOf(`create price gain battle with ${A1}, ${A2} and ${A3}`);
-    expect(intent).toEqual({ kind: "create_battle", mode: "PriceGain", assetRefs: [A1, A2, A3] });
+describe("rule parser: create an open battle", () => {
+  it("takes a mode and a start, and lists no communities", async () => {
+    expect(await intentOf("create price gain battle in 15 minutes")).toEqual({ kind: "create_battle", mode: "PriceGain", startInMinutes: 15 });
   });
-  it("understands Bahasa Indonesia and other modes", async () => {
-    expect(await intentOf(`buat battle drawdown terendah dengan ${A1} dan ${A2}`)).toMatchObject({ mode: "LowestDrawdown", assetRefs: [A1, A2] });
-    expect(await intentOf(`create market cap growth battle between ${A1} vs ${A2}`)).toMatchObject({ mode: "MarketCapGrowth" });
-    expect(await intentOf(`create volume ratio battle with ${A1}, ${A2}`)).toMatchObject({ mode: "VolumeRatio" });
+  it("understands Bahasa Indonesia, hours, days and other modes", async () => {
+    expect(await intentOf("buat battle drawdown terendah mulai dalam 2 jam")).toMatchObject({ mode: "LowestDrawdown", startInMinutes: 120 });
+    expect(await intentOf("create market cap growth battle starting in 1 day")).toMatchObject({ mode: "MarketCapGrowth", startInMinutes: 1440 });
+    expect(await intentOf("bikin battle volume ratio dalam 30 menit")).toMatchObject({ mode: "VolumeRatio", startInMinutes: 30 });
   });
-  it("accepts 2 to 16 communities only", async () => {
-    const list = (n: number) => Array.from({ length: n }, (_, i) => `0x${(i + 10).toString(16).padStart(2, "0").repeat(20)}`);
-    expect((await parse(`create price gain battle with ${list(16).join(", ")}`)).ok).toBe(true);
-    expect((await parse(`create price gain battle with ${list(17).join(", ")}`)).ok).toBe(false);
-    expect(await parse(`create price gain battle with ${A1}`)).toMatchObject({ ok: false, clarify: true });
-    expect((await parse(`create price gain battle with ${A1}, ${A1}`)).ok).toBe(false);
+  it("keeps the start between 1 minute and 7 days", async () => {
+    expect((await parse("create price gain battle in 7 days")).ok).toBe(true);
+    expect((await parse("create price gain battle in 8 days")).ok).toBe(false);
+    expect((await parse("create price gain battle in 0 minutes")).ok).toBe(false);
   });
-  it("asks for a missing mode", async () => {
-    expect(await parse(`create battle with ${A1}, ${A2}`)).toMatchObject({ ok: false, clarify: true });
+  it("asks for a missing mode or start", async () => {
+    expect(await parse("create battle in 15 minutes")).toMatchObject({ ok: false, clarify: true });
+    expect(await parse("create price gain battle")).toMatchObject({ ok: false, clarify: true });
   });
-  it("keeps names as references, to be refused by the registry", async () => {
-    expect(await intentOf("create price gain battle with PEPE, DOGE")).toMatchObject({ assetRefs: ["pepe", "doge"] });
+});
+
+describe("rule parser: join, cancel and refund", () => {
+  it("joins with a token as written, never an address it invented", async () => {
+    expect(await intentOf("join battle 7 with CASHCAT")).toEqual({ kind: "join_battle", battleId: 7, tokenRef: "cashcat" });
+    expect(await intentOf("gabung battle 7 dengan $WALLET")).toEqual({ kind: "join_battle", battleId: 7, tokenRef: "$wallet" });
+    expect(await intentOf("ikut battle 3 pakai token backing-good.owner.testnet")).toEqual({ kind: "join_battle", battleId: 3, tokenRef: "backing-good.owner.testnet" });
+  });
+  it("keeps a join with a community number as a position registration, and asks for a missing token", async () => {
+    expect(await intentOf("join battle 7 community 2")).toEqual({ kind: "register_position", battleId: 7, community: 1 });
+    expect(await parse("join battle 7")).toMatchObject({ ok: false, clarify: true });
+  });
+  it("cancels a battle", async () => {
+    expect(await intentOf("cancel battle 7")).toEqual({ kind: "cancel_battle", battleId: 7 });
+    expect(await intentOf("batalkan battle 12")).toEqual({ kind: "cancel_battle", battleId: 12 });
+  });
+  it("claims a refund for one community, not a payout", async () => {
+    expect(await intentOf("refund battle 7 komunitas 2")).toEqual({ kind: "claim_refund", battleId: 7, community: 1 });
+    expect(await intentOf("claim refund from battle 7 community 1")).toEqual({ kind: "claim_refund", battleId: 7, community: 0 });
+    expect(await parse("refund battle 7")).toMatchObject({ ok: false, clarify: true });
   });
 });
 
@@ -122,11 +138,17 @@ describe("validateLifecycleIntent: untrusted output", () => {
     ["battle unsafe", { ...ok, battleId: 2 ** 60 }],
     ["community 0", { ...ok, communityNumber: 0 }],
     ["community 17", { ...ok, communityNumber: 17 }],
-    ["modes", { kind: "create_battle", mode: "TWAP", assetRefs: ["a", "b"] }],
-    ["one asset", { kind: "create_battle", mode: "PriceGain", assetRefs: [A1] }],
-    ["17 assets", { kind: "create_battle", mode: "PriceGain", assetRefs: Array.from({ length: 17 }, (_, i) => `0x${i}`) }],
-    ["object ref", { kind: "create_battle", mode: "PriceGain", assetRefs: [{ a: 1 }, "b"] }],
-    ["html ref", { kind: "create_battle", mode: "PriceGain", assetRefs: ["<script>", "b"] }],
+    ["modes", { kind: "create_battle", mode: "TWAP", startInMinutes: 15 }],
+    ["old asset list", { kind: "create_battle", mode: "PriceGain", assetRefs: [A1, A2] }],
+    ["start 0", { kind: "create_battle", mode: "PriceGain", startInMinutes: 0 }],
+    ["start over 7 days", { kind: "create_battle", mode: "PriceGain", startInMinutes: 10081 }],
+    ["start float", { kind: "create_battle", mode: "PriceGain", startInMinutes: 1.5 }],
+    ["create with an address", { kind: "create_battle", mode: "PriceGain", startInMinutes: 15, startAtMs: "1" }],
+    ["join object ref", { kind: "join_battle", battleId: 7, tokenRef: { a: 1 } }],
+    ["join html ref", { kind: "join_battle", battleId: 7, tokenRef: "<script>" }],
+    ["join receiver", { kind: "join_battle", battleId: 7, tokenRef: "cashcat", representation: "evil.near" }],
+    ["cancel battle 0", { kind: "cancel_battle", battleId: 0 }],
+    ["refund community 17", { kind: "claim_refund", battleId: 7, communityNumber: 17 }],
     ["bad destination", { kind: "payout", backing: "t.testnet", amount: "1", destination: "0x123" }],
     ["zero destination", { kind: "payout", backing: "t.testnet", amount: "1", destination: `0x${"0".repeat(40)}` }],
     ["bad backing", { kind: "payout", backing: "Not An Account", amount: "1", destination: A1 }],
@@ -145,12 +167,32 @@ describe("intentToRequest", () => {
     expect(intentToRequest({ kind: "deposit", battleId: 7, community: 1, amount: "250" })).toEqual({ kind: "deposit", battleId: 7, community: 1, amount: "250" });
     expect(intentToRequest({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 })).toEqual({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 });
   });
-  it("needs resolved assets for a create and carries only their data", () => {
-    const intent: LifecycleIntent = { kind: "create_battle", mode: "PriceGain", assetRefs: [A1, A2] };
+  it("needs the fixed start time for a create and lists no communities", () => {
+    const intent: LifecycleIntent = { kind: "create_battle", mode: "PriceGain", startInMinutes: 15 };
     expect(intentToRequest(intent)).toBeNull();
-    const draft = (token: string) => ({ chainId: "46630", tokenAddress: token, representation: "c.rep.testnet", custodyDomain: "d", referenceChainId: "", referenceAddress: "" });
-    expect(intentToRequest(intent, [draft(A1)])).toBeNull();
-    expect(intentToRequest(intent, [draft(A1), draft(A2)])).toMatchObject({ kind: "create_battle", mode: "PriceGain", assets: [{ tokenAddress: A1 }, { tokenAddress: A2 }] });
+    expect(intentToRequest(intent, { startAtMs: "1800000900000" })).toEqual({ kind: "create_battle", assets: [], mode: "PriceGain", startAtMs: "1800000900000" });
+  });
+  it("needs the allowlisted representation for a join; cancel and refund need nothing else", () => {
+    const join: LifecycleIntent = { kind: "join_battle", battleId: 7, tokenRef: "cashcat" };
+    expect(intentToRequest(join)).toBeNull();
+    expect(intentToRequest(join, { representation: "backing-cashcat.o.testnet" })).toEqual({ kind: "join_battle", battleId: 7, representation: "backing-cashcat.o.testnet" });
+    expect(intentToRequest({ kind: "cancel_battle", battleId: 7 })).toEqual({ kind: "cancel_battle", battleId: 7 });
+    expect(intentToRequest({ kind: "claim_refund", battleId: 7, community: 1 })).toEqual({ kind: "claim_refund", battleId: 7, community: 1 });
+  });
+});
+
+describe("resolveJoinToken", () => {
+  const entry = (token: string, rep: string): AllowlistEntry => ({ chain_id: "46630", token_address: token, representation: rep, reference_chain_id: "4663", reference_address: A3 });
+  const allow = [entry(A1, "backing-cashcat.o.testnet")];
+  const reg = (token: string, symbol: string): RegistryAsset => ({ chainId: "46630", token, referenceChainId: "4663", referenceToken: `0x${"9".repeat(40)}`, assetKey: `46630:${token}`, registryVersion: "1", label: { symbol, name: symbol, kind: "testnet-mock" } });
+  const search = async () => [reg(A1, "CASHCAT"), reg(A2, "AI")];
+  it("takes the representation from the allowlist for a name or a listed account", async () => {
+    expect(await resolveJoinToken("CASHCAT", allow, search)).toEqual({ ok: true, representation: "backing-cashcat.o.testnet", symbol: "CASHCAT" });
+    expect(await resolveJoinToken("backing-cashcat.o.testnet", allow, search)).toMatchObject({ ok: true, representation: "backing-cashcat.o.testnet" });
+  });
+  it("refuses a registered token that is not allowlisted and an unlisted account", async () => {
+    expect(await resolveJoinToken("AI", allow, search)).toMatchObject({ ok: false });
+    expect(await resolveJoinToken("evil.testnet", allow, search)).toMatchObject({ ok: false });
   });
 });
 

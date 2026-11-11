@@ -32,7 +32,7 @@ export interface BattleSummary {
   mode: string;
   creator: string;
   protocolCreated: boolean;
-  status: "open" | "locked" | "decided";
+  status: "open" | "locked" | "decided" | "cancelled";
   winner: number | null;
   communities: Array<{ index: number; representation: string; tokenAddress: string; chainId: string; label?: { symbol: string; name: string; kind: "testnet-mock" | "mainnet-reference" } | null }>;
 }

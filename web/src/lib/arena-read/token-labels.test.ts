@@ -8,17 +8,20 @@ const draft = (i: number, label?: string): AssetDraft => ({
   referenceChainId: "", referenceAddress: "", ...(label ? { label } : {}),
 });
 
+const NOW = 1_800_000_000_000;
+const START = String(NOW + 15 * 60_000);
+
 describe("token labels in the create flow", () => {
   it("never puts the display label into the action request or the reviewed arguments", () => {
     const drafts = [draft(1, "mCASHCAT"), draft(2, "mWALLET")];
-    const request = JSON.stringify(toActionRequest(drafts, "PriceGain"));
+    const request = JSON.stringify(toActionRequest(drafts, "PriceGain", START));
     expect(request).not.toMatch(/mCASHCAT|mWALLET|label/);
-    const review = buildCreateReview("arena.testnet", drafts, "PriceGain");
+    const review = buildCreateReview("arena.testnet", drafts, "PriceGain", START, NOW);
     expect(review.ok).toBe(true);
     if (review.ok) expect(JSON.stringify(review.args)).not.toMatch(/mCASHCAT|mWALLET|label/);
   });
   it("produces the same request with or without labels", () => {
-    expect(toActionRequest([draft(1, "mCASHCAT"), draft(2, "mWALLET")], "PriceGain")).toEqual(toActionRequest([draft(1), draft(2)], "PriceGain"));
+    expect(toActionRequest([draft(1, "mCASHCAT"), draft(2, "mWALLET")], "PriceGain", START)).toEqual(toActionRequest([draft(1), draft(2)], "PriceGain", START));
   });
 });
 
