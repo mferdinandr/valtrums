@@ -143,6 +143,21 @@ export async function buildLifecyclePreview(
     );
   }
 
+  if (request.kind === "claim_escrow_refund") {
+    const battle = await battleOf(source, request.battleId);
+    if (!battle.cancelled) fail("not_cancelled", "an escrow is refunded only for a cancelled battle");
+    const escrow = await source.creatorEscrow(request.battleId);
+    if (!escrow) return fail("nothing_to_refund", "this battle holds no creator escrow");
+    if (escrow.creator !== caller) fail("not_creator", "only the creator can take the escrow back");
+    return user(
+      base, "claim_escrow_refund", caller, ctx.arena,
+      { methodName: "claim_lifecycle_escrow_refund", args: { battle_id: request.battleId }, deposit: ONE_YOCTO, gasTgas: 60n },
+      { arena: ctx.arena, battleId: request.battleId, representation: escrow.representation, amount: escrow.amount },
+      ["one yocto is required by the refund's ft_transfer"],
+      [...limitations, "the escrow is removed before the transfer; if the token transfer fails the arena restores it and the claim can be repeated"],
+    );
+  }
+
   if (request.kind === "settle_battle") {
     await battleOf(source, request.battleId);
     const progress = await source.settlementProgress(request.battleId);

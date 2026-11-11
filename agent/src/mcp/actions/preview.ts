@@ -64,6 +64,7 @@ export type ActionKind =
   | "join_battle"
   | "cancel_battle"
   | "claim_refund"
+  | "claim_escrow_refund"
   | "settle_battle"
   | "reserve_escrow"
   | "vote_disposition"
@@ -114,6 +115,8 @@ export type ActionRequest =
   | { kind: "join_battle"; battleId: number; /** NEAR representation of an allowlisted token; never a community index. */ representation: string }
   | { kind: "cancel_battle"; battleId: number }
   | { kind: "claim_refund"; battleId: number; community: number }
+  /** D41: the creator takes the deposit held in escrow back after a cancel. */
+  | { kind: "claim_escrow_refund"; battleId: number }
   | { kind: "settle_battle"; battleId: number }
   | { kind: "reserve_escrow"; battleId: number }
   | { kind: "vote_disposition"; battleId: number; choice: "burn" | "return" }
@@ -191,6 +194,7 @@ export type ActionErrorCode =
   | "battle_locked"
   | "audit_missing"
   | "storage_balance_low"
+  | "not_creator"
   | "audit_expired"
   | "backing_missing"
   | "battle_cancelled"
@@ -276,6 +280,7 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
     join_battle: ["kind", "battleId", "representation"],
     cancel_battle: ["kind", "battleId"],
     claim_refund: ["kind", "battleId", "community"],
+    claim_escrow_refund: ["kind", "battleId"],
     settle_battle: ["kind", "battleId"],
     reserve_escrow: ["kind", "battleId"],
     vote_disposition: ["kind", "battleId", "choice"],
@@ -292,7 +297,7 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
     return battleId;
   };
   if (r.kind === "join_battle") return { kind: "join_battle", battleId: battleIdOf(), representation: account(r.representation, "representation") };
-  if (r.kind === "cancel_battle" || r.kind === "settle_battle" || r.kind === "reserve_escrow" || r.kind === "execute_disposition" || r.kind === "request_dao_burn") {
+  if (r.kind === "cancel_battle" || r.kind === "claim_escrow_refund" || r.kind === "settle_battle" || r.kind === "reserve_escrow" || r.kind === "execute_disposition" || r.kind === "request_dao_burn") {
     return { kind: r.kind, battleId: battleIdOf() };
   }
   if (r.kind === "claim_refund") {

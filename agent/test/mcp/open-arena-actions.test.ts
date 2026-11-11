@@ -84,6 +84,33 @@ describe("create_battle is a creator deposit (D41)", () => {
   });
 });
 
+describe("claim_escrow_refund (D41)", () => {
+  const cancelled = () => battle({ communities: [], start_at_ms: String(START), cancelled: true });
+  const escrow = { creator: "alice.testnet", representation: REP, amount: "100" };
+  const request = { kind: "claim_escrow_refund", battleId: 1 };
+
+  it("is one claim_lifecycle_escrow_refund by the creator of a cancelled battle", async () => {
+    const p = await prev(request, mk({ battles: new Map([[1, cancelled()]]), escrows: new Map([[1, escrow]]) }));
+    const call = p.transaction.actions[0]!;
+    expect(p.transaction.receiverId).toBe("arena.testnet");
+    expect(call.methodName).toBe("claim_lifecycle_escrow_refund");
+    expect(call.args).toEqual({ battle_id: 1 });
+    expect(call.deposit).toBe("1");
+    expect(p.binding).toMatchObject({ battleId: 1, representation: REP, amount: "100" });
+  });
+  it("refuses a battle that is not cancelled, an account that is not the creator and a battle without escrow", async () => {
+    const open = battle({ communities: [], start_at_ms: String(START), cancelled: false });
+    expect(await code(prev(request, mk({ battles: new Map([[1, open]]), escrows: new Map([[1, escrow]]) })))).toBe("not_cancelled");
+    expect(await code(prev(request, mk({ battles: new Map([[1, cancelled()]]), escrows: new Map([[1, escrow]]) }), "mallory.testnet"))).toBe("not_creator");
+    expect(await code(prev(request, mk({ battles: new Map([[1, cancelled()]]) })))).toBe("nothing_to_refund");
+  });
+  it("validates the request shape", () => {
+    expect(() => validateRequest({ kind: "claim_escrow_refund" })).toThrow(ActionError);
+    expect(() => validateRequest({ kind: "claim_escrow_refund", battleId: 1, community: 0 })).toThrow(ActionError);
+    expect(validateRequest({ kind: "claim_escrow_refund", battleId: 3 })).toEqual({ kind: "claim_escrow_refund", battleId: 3 });
+  });
+});
+
 describe("prepay_storage", () => {
   it("is one payable lifecycle_storage_deposit on the arena", async () => {
     const p = await prev({ kind: "prepay_storage", amountYocto: "50000000000000000000000" }, mk());

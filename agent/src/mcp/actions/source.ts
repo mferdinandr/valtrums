@@ -65,6 +65,8 @@ export interface ActionReadSource {
   grant(user: string, localId: number[]): Promise<GrantView | null>;
   budget(user: string, localId: number[]): Promise<BudgetView | null>;
   reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null>;
+  /** `get_lifecycle_creator_escrow`: the deposit the creator still has in escrow (D41), or null. */
+  creatorEscrow(battleId: number): Promise<{ creator: string; representation: string; amount: string } | null>;
   /** `get_lifecycle_storage_balance`: NEAR (yocto) the account prepaid on the arena for battle storage. */
   storageBalance(account: string): Promise<bigint>;
   /** `get_lifecycle_joinable_asset`: the identity the arena (not the joiner) supplies for a token. */
@@ -125,6 +127,11 @@ export class NearActionReadSource implements ActionReadSource {
     return ((await this.view(this.contracts.policy, "get_reservation", { user, local_id: localId, request_id: requestId })) ??
       null) as ReservationView | null;
   }
+  async creatorEscrow(battleId: number) {
+    return ((await this.view(this.contracts.arena, "get_lifecycle_creator_escrow", { battle_id: battleId })) ?? null) as
+      | { creator: string; representation: string; amount: string }
+      | null;
+  }
   async storageBalance(account: string): Promise<bigint> {
     return big(await this.view(this.contracts.arena, "get_lifecycle_storage_balance", { account_id: account }), "storage balance");
   }
@@ -163,6 +170,8 @@ export class FixtureActionReadSource implements ActionReadSource {
       joinable?: Map<string, JoinableAssetView>;
       /** Prepaid arena storage balance (yocto) per account. */
       storage?: Map<string, bigint>;
+      /** Creator escrow held per battle. */
+      escrows?: Map<number, { creator: string; representation: string; amount: string }>;
       settlement?: Map<number, SettlementProgressView>;
       dispositions?: Map<number, DispositionView>;
       releases?: Map<number, ReleaseView[]>;
@@ -197,6 +206,9 @@ export class FixtureActionReadSource implements ActionReadSource {
   }
   async reservation(user: string, localId: number[], requestId: number[]) {
     return this.data.reservations?.get(FixtureActionReadSource.key(user, localId.join(","), requestId.join(","))) ?? null;
+  }
+  async creatorEscrow(battleId: number) {
+    return this.data.escrows?.get(battleId) ?? null;
   }
   async storageBalance(account: string) {
     return this.data.storage?.get(account) ?? 0n;
