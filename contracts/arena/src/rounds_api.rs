@@ -564,7 +564,7 @@ pub(crate) mod tests {
                 )
                 .expect("backing");
         }
-        // Credits are accepted only once every community is approved.
+        // A credit is accepted once its target community is approved.
         for index in 0..3usize {
             let identity = asset(index as u8 + 1);
             let sender = account(if index == 0 {

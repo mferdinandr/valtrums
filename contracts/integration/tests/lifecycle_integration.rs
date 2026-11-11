@@ -1022,7 +1022,7 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn three_communities_and_protocol_created_battles_need_every_vault_and_a_protocol_position(
+async fn three_communities_and_protocol_created_battles_need_two_funded_vaults_and_a_protocol_position(
 ) -> anyhow::Result<()> {
     let mut w = world(3).await?;
     // The protocol account is the owner-configured protocol identity.
@@ -1051,7 +1051,7 @@ async fn three_communities_and_protocol_created_battles_need_every_vault_and_a_p
         w.deposit(&player, index, id, 100).await?;
     }
     assert!(!w.try_lock(id).await?, "no protocol position");
-    // The protocol deposits too, so every vault is nonempty and the protocol has a position.
+    // The protocol deposits too, so the protocol has a position.
     w.mint(0, &protocol, id, 10).await?;
     w.deposit(&protocol, 0, id, 10).await?;
     assert!(w.try_lock(id).await?);
@@ -1060,7 +1060,8 @@ async fn three_communities_and_protocol_created_battles_need_every_vault_and_a_p
     assert_eq!(view["locked"], true);
     assert_eq!(vault(&view, 0), "110");
 
-    // A second battle with an empty vault stays unlockable.
+    // A second battle: one funded community cannot lock, two can, and the empty
+    // third community is excluded instead of blocking the lock.
     let second = w
         .create(&protocol, vec![w.asset(0), w.asset(1), w.asset(2)])
         .await?
@@ -1069,7 +1070,19 @@ async fn three_communities_and_protocol_created_battles_need_every_vault_and_a_p
     w.register(&protocol, second, 0).await?;
     w.mint(0, &protocol, second, 10).await?;
     w.deposit(&protocol, 0, second, 10).await?;
-    assert!(!w.try_lock(second).await?, "two vaults are empty");
+    assert!(!w.try_lock(second).await?, "only one community is funded");
+    w.register(&player, second, 1).await?;
+    w.mint(1, &player, second, 100).await?;
+    w.deposit(&player, 1, second, 100).await?;
+    assert!(
+        w.try_lock(second).await?,
+        "two funded communities lock; the empty third is excluded"
+    );
+    let view = w.view(second).await?;
+    assert_eq!(view["communities"].as_array().map(Vec::len), Some(3));
+    assert_eq!(vault(&view, 0), "10");
+    assert_eq!(vault(&view, 1), "100");
+    assert_eq!(vault(&view, 2), "0");
     Ok(())
 }
 
