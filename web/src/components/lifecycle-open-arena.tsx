@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { TransactionLink } from "@/components/transaction-link";
-import { Card, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Step } from "@/components/lifecycle-participate";
 import { useWallet } from "@/components/providers";
 import { useRefund } from "@/hooks/use-refund";
@@ -49,21 +49,15 @@ export function OpenArenaPanel({
   if (phase.kind === "no_start" || phase.kind === "locked") return null;
   return (
     <Card aria-label="Open arena">
-      <CardTitle>Open arena</CardTitle>
-      <div role="status" aria-live="polite" className="space-y-2 text-sm leading-7">
-        {phase.kind === "gathering" && (
-          <p>
-            Join until {utc(phase.startAtMs)}.
-          </p>
-        )}
-        {phase.kind === "awaiting_lock" && (
-          <p>Started. Waiting for the lock.</p>
-        )}
-        {phase.kind === "cancellable" && (
-          <p>Not enough funded communities ({entered} of {MIN_FUNDED}). Anyone can cancel it; depositors then get a refund.</p>
-        )}
-        {phase.kind === "cancelled" && <p>Cancelled. Depositors can claim a refund.</p>}
-      </div>
+      <p role="status" aria-live="polite" className="text-base font-bold">
+        Open arena
+        {phase.kind === "gathering" && <> · Join until {utc(phase.startAtMs)}</>}
+        {phase.kind === "awaiting_lock" && <> · Started, waiting for the lock</>}
+        {phase.kind === "cancellable" && <> · Not enough funded communities ({entered} of {MIN_FUNDED})</>}
+        {phase.kind === "cancelled" && <> · Cancelled</>}
+      </p>
+      {phase.kind === "cancellable" && <p className="mt-2 text-xs text-mute">Anyone can cancel it; depositors then get a refund.</p>}
+      {phase.kind === "cancelled" && <p className="mt-2 text-xs text-mute">Depositors can claim a refund.</p>}
       {battleId === null ? null : (
         <div className="mt-6 space-y-8">
           {phase.kind === "cancellable" && <CancelStep namespace={namespace} battleId={battleId} />}
