@@ -151,7 +151,7 @@ export function LifecycleBattleDetail({
       </div>
 
       {safeBattleId !== null && phase.kind === "decided" && (
-        <div>
+        <div className="space-y-4">
           <BattleResult
             namespace={namespace}
             arena={namespace.arenaContract}

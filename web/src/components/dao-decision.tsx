@@ -1,5 +1,6 @@
 "use client";
 
+import { Flame, Timer, Undo2, Vote } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -87,41 +88,83 @@ export function DaoDecision({
 
   const vote = (choice: "burn" | "return") => send(voteRequest(battleId, choice), buildVoteReview(arena, battleId, choice, weightLabel));
 
+  const totalMs = view?.window_secs ? Number(view.window_secs) * 1000 : 0;
+  const pct = totalMs > 0 ? Math.min(100, Math.max(0, (msLeft / totalMs) * 100)) : 0;
+  const tallied = view && (view.status === "voting" || view.status === "decided" || view.status === "undecided_escrowed");
+  const pill =
+    step.kind === "voting" ? { text: "Voting open", color: "#327f7d" }
+    : step.kind === "none" ? { text: "Waiting", color: "#8a8f98" }
+    : step.kind === "undecided" ? { text: "No votes", color: "#a8802f" }
+    : step.kind === "done" ? { text: "Complete", color: "#327f7d" }
+    : { text: "Decided", color: "#5b6fb5" };
+
   return (
-    <Card aria-label="DAO decision">
-      <CardTitle>DAO decision on the winning principal</CardTitle>
-      <p className="text-xs text-mute">
-        {token} winners vote to burn their principal or take it back.{view?.window_secs ? ` Voting lasts ${view.window_secs}s.` : ""}
-      </p>
+    <Card aria-label="DAO decision" className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: "#ad527322", color: "#ad5273" }}>
+            <Vote size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold leading-tight">DAO decision</h3>
+            <p className="text-xs text-mute">
+              {token} winners burn or keep their principal{view?.window_secs ? ` · ${view.window_secs}s vote` : ""}
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: `${pill.color}22`, color: pill.color }}>
+          {pill.text}
+        </span>
+      </div>
 
-      {readError && <p role="alert" className="mt-3 text-xs text-neon-amber">Could not read the decision state: {readError}</p>}
-      {!view && !readError && <p role="status" className="mt-3 text-xs text-mute">Reading the decision state…</p>}
-      {step.kind === "none" && <p className="mt-3 text-sm">{step.reason}</p>}
+      {readError && <p role="alert" className="text-xs text-neon-amber">Could not read the decision state: {readError}</p>}
+      {!view && !readError && <p role="status" className="text-xs text-mute">Reading the decision state…</p>}
+      {step.kind === "none" && <p className="text-sm text-mute">{step.reason}</p>}
 
-      {view && (view.status === "voting" || view.status === "decided" || view.status === "undecided_escrowed") && (
-        <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          <dt className="text-mute">Burn weight</dt>
-          <dd>{units(view.burn_weight)}</dd>
-          <dt className="text-mute">Return weight</dt>
-          <dd>{units(view.return_weight)}</dd>
-          <dt className="text-mute">Burn share</dt>
-          <dd>{share === null ? "no votes yet" : `${share}%`}</dd>
-          {view.status === "decided" && (
-            <>
-              <dt className="text-mute">To be burned</dt>
-              <dd>{units(view.burn_total)}</dd>
-              <dt className="text-mute">To be returned</dt>
-              <dd>{units(view.return_total)}</dd>
-            </>
-          )}
-        </dl>
+      {step.kind === "voting" && (
+        <div className="space-y-1">
+          <div className="flex items-end justify-between">
+            <span className="flex items-center gap-1 text-xs text-mute"><Timer size={14} aria-hidden="true" /> Closes in</span>
+            <span className="text-xl font-bold tabular-nums">{now <= 0 ? "…" : formatCountdown(msLeft)}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} role="progressbar" aria-label="Vote time left" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+            <div className="h-full rounded-full transition-[width] duration-1000 ease-linear" style={{ width: `${pct}%`, background: "#327f7d" }} />
+          </div>
+        </div>
+      )}
+
+      {tallied && view && (
+        <div className="space-y-2">
+          <div className="flex h-3 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} aria-label="Burn versus return weight">
+            {share !== null && (
+              <>
+                <div style={{ width: `${share}%`, background: "#ad5273" }} />
+                <div style={{ width: `${100 - share}%`, background: "#327f7d" }} />
+              </>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl p-3" style={{ background: "#ad527314" }}>
+              <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#ad5273" }}>
+                <Flame size={14} aria-hidden="true" /> Burn{share !== null ? ` · ${share}%` : ""}
+              </p>
+              <p className="text-sm font-semibold tabular-nums">{units(view.burn_weight)}</p>
+              {view.status === "decided" && <p className="text-xs text-mute">burns {units(view.burn_total)}</p>}
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#327f7d14" }}>
+              <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#327f7d" }}>
+                <Undo2 size={14} aria-hidden="true" /> Return{share !== null ? ` · ${100 - share}%` : ""}
+              </p>
+              <p className="text-sm font-semibold tabular-nums">{units(view.return_weight)}</p>
+              {view.status === "decided" && <p className="text-xs text-mute">returns {units(view.return_total)}</p>}
+            </div>
+          </div>
+          {share === null && <p className="text-center text-xs text-mute">No votes yet</p>}
+        </div>
       )}
 
       {step.kind === "voting" && (
-        <div className="mt-3 space-y-2">
-          <p className="text-sm font-semibold">
-            {now <= 0 ? "Voting is open." : msLeft > 0 ? `Voting closes in ${formatCountdown(msLeft)}.` : "Voting window is ending."}
-          </p>
+        <div className="space-y-2">
           {!accountId ? (
             <p className="text-xs text-mute">Connect your wallet to vote.</p>
           ) : weight === 0n ? (
@@ -129,12 +172,12 @@ export function DaoDecision({
           ) : (
             <>
               <p className="text-xs text-mute">Your weight: {weightLabel}. One vote, final.</p>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("burn")}>
-                  Vote burn
+                  <Flame size={16} aria-hidden="true" /> Vote burn
                 </Button>
                 <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("return")}>
-                  Vote return
+                  <Undo2 size={16} aria-hidden="true" /> Vote return
                 </Button>
               </div>
             </>
@@ -142,13 +185,11 @@ export function DaoDecision({
         </div>
       )}
 
-      {step.kind === "undecided" && (
-        <p className="mt-3 text-sm">The window closed with no vote. The winning principal stays escrowed.</p>
-      )}
+      {step.kind === "undecided" && <p className="text-sm">The window closed with no vote. The winning principal stays escrowed.</p>}
 
       {step.kind === "reserve_escrow" && (
-        <div className="mt-3 space-y-2">
-          <p className="text-sm">The vote is decided. Reserve the escrow first; anyone can do this.</p>
+        <div className="space-y-2">
+          <p className="text-sm">Reserve the escrow first; anyone can do this.</p>
           <Button type="button" disabled={action.busy || !connected} onClick={() => void send(reserveEscrowRequest(battleId), buildReserveEscrowReview(arena, battleId))}>
             Reserve escrow
           </Button>
@@ -156,10 +197,11 @@ export function DaoDecision({
       )}
 
       {step.kind === "execute" && view && (
-        <div className="mt-3 space-y-2">
-          <p className="text-sm">
-            {view.released} of {view.total_releases} releases recorded. Anyone can execute the next batch of {step.batch}.
-          </p>
+        <div className="space-y-2">
+          <div className="h-2 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} role="progressbar" aria-label="Releases recorded" aria-valuemin={0} aria-valuemax={view.total_releases} aria-valuenow={view.released}>
+            <div className="h-full rounded-full" style={{ width: `${(view.released / Math.max(1, view.total_releases)) * 100}%`, background: "#5b6fb5" }} />
+          </div>
+          <p className="text-xs text-mute">{view.released} of {view.total_releases} releases recorded</p>
           <Button type="button" disabled={action.busy || !connected} onClick={() => void send(executeRequest(battleId), buildExecuteReview(arena, battleId, step.batch, step.remaining))}>
             Execute {step.batch} release{step.batch === 1 ? "" : "s"}
           </Button>
@@ -167,15 +209,15 @@ export function DaoDecision({
       )}
 
       {step.kind === "done" && view && (
-        <p className="mt-3 text-sm">
+        <p className="text-sm">
           All {view.total_releases} releases are recorded. A burn is reserved for the sink and is confirmed only after the transfer
           is finalized on Robinhood.
         </p>
       )}
 
-      {action.busy && <p role="status" className="mt-3 text-xs text-mute">Waiting for the preview and your wallet…</p>}
-      {action.error && <p role="alert" className="mt-3 text-xs text-neon-red">{action.error}</p>}
-      {lastTx && <p className="mt-3 break-all text-xs text-mute">Last transaction: {lastTx}</p>}
+      {action.busy && <p role="status" className="text-xs text-mute">Waiting for the preview and your wallet…</p>}
+      {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+      {lastTx && <p className="break-all text-xs text-mute">Last transaction: {lastTx}</p>}
     </Card>
   );
 }
