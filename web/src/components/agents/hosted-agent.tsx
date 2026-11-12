@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FundAgent, symbolOf } from "@/components/agents/fund-agent";
 import { useActionWallet, useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-gra
 import type { Namespace } from "@/lib/arena-read/application";
 import { readAgentStatus, type AgentStatus } from "@/lib/arena-read/autonomous-agent";
 import { config } from "@/lib/config";
-import { HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
+import { getHostedClient, type HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
 
 const POLL_MS = 15_000;
 const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
@@ -114,10 +114,14 @@ function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentVi
  * stops it (OpenSpec `hosted-player-agents`). The wallet signs a challenge once to prove ownership.
  */
 export function HostedAgent({ namespace }: { namespace: Namespace }) {
-  const { accountId, signIn } = useWallet();
+  const { accountId, loading, signIn } = useWallet();
   const getWallet = useActionWallet();
-  const client = useMemo(() => new HostedAgentsClient(config.hostedAgentsUrl), []);
+  const client = getHostedClient(config.hostedAgentsUrl);
+  // Starts false on both server and client so the markup matches; a session restored from the tab is applied below.
   const [signed, setSigned] = useState(false);
+  useEffect(() => {
+    if (client.signedIn) setSigned(true);
+  }, [client]);
   const [agents, setAgents] = useState<HostedAgentView[]>([]);
   const [style, setStyle] = useState<AgentStrategy>("underdog");
   const [sweep, setSweep] = useState(false);
@@ -139,12 +143,14 @@ export function HostedAgent({ namespace }: { namespace: Namespace }) {
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
   }, [signed, load]);
-  // A different wallet is a different owner: drop the session.
+  // A different wallet (or a disconnected one) is a different owner: drop the session. While the wallet is still
+  // loading nothing is dropped, and coming back to this page with the same wallet keeps the session.
   useEffect(() => {
+    if (loading || client.owner === null || client.owner === accountId) return;
     client.signOut();
     setSigned(false);
     setAgents([]);
-  }, [accountId, client]);
+  }, [accountId, loading, client]);
 
   const guarded = async (action: () => Promise<unknown>) => {
     setBusy(true);
