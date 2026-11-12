@@ -73,9 +73,10 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
     resolveArchivePath(env) ?? (env.AUDIT_REPORT_ARCHIVE_ENABLED?.trim() === "true" ? DEFAULT_REPORT_ARCHIVE_PATH : undefined);
   // With APP_DATABASE_URL the action store and the audit archive live in Postgres (the files are not used).
   const db = appDb(env);
-  // Actions are enabled only with a durable store; the service never holds a key either.
+  // Actions stay opt-in: they are enabled only when ACTION_STORE_PATH is set (the service never holds a key either).
+  // With APP_DATABASE_URL the records are kept in Postgres instead of that file.
   const storePath = env.ACTION_STORE_PATH?.trim();
-  const actions = storePath || db
+  const actions = storePath
     ? new ActionService({
         source: new NearActionReadSource(
           { network: `near-${network}`, kind: "live", name: required(env, "ARENA_CONTRACT_ID") },
@@ -90,7 +91,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
           // Testnet only: ActionService refuses to start with this flag on any other network.
           ...(env.INTENTS_FIXTURE?.trim() === "1" ? { intentsFixture: true } : {}),
         },
-        store: db ? new PgActionStore(db) : new ActionStore(storePath!),
+        store: db ? new PgActionStore(db) : new ActionStore(storePath),
         recipient: env.ACTION_RECIPIENT?.trim() || required(env, "READ_SESSION_RECIPIENT"),
         verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
         receipts: new NearRpcReceiptVerifier(env.NEAR_RPC_URL?.trim() || `https://rpc.${network}.near.org`),
