@@ -1,7 +1,7 @@
 "use client";
 
-import { Wallet } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ClaimAllButton, type ClaimRow } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
 import { Button } from "@/components/ui/button";
 import { useAction } from "@/hooks/use-action";
@@ -9,30 +9,18 @@ import { useActionRunner } from "@/hooks/use-action-runner";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import {
-  buildClaimReview,
-  buildRegisterReview,
   buildSettleReview,
-  claimRequest,
   readEntitlement,
-  readRegistered,
   readSettlement,
-  registerRequest,
   settleBatch,
   settleRequest,
+  symbolOf,
   type SettlementProgress,
 } from "@/lib/arena-read/claim";
 import { daoStep, readDisposition } from "@/lib/arena-read/dao";
 import { config } from "@/lib/config";
 
 const POLL_MS = 5_000;
-
-/** The token symbol of a representation account such as `backing-cashcat.<owner>.testnet`, for display only. */
-const symbolOf = (backing: string): string => ((backing.split(".")[0] ?? backing).replace(/^backing-/, "")).toUpperCase();
-
-interface Row {
-  backing: string;
-  available: string;
-}
 
 /**
  * Prize claim on the battle page, into the connected NEAR account as representation tokens, 1:1 with the custody
@@ -42,10 +30,9 @@ interface Row {
 export function BattleClaim({ arena, battleId, backings, winnerBacking }: { arena: string; battleId: number; backings: readonly string[]; winnerBacking: string }) {
   const { act, accountId, connected } = useActionRunner();
   const action = useAction();
-  const [rows, setRows] = useState<Row[] | null>(null);
+  const [rows, setRows] = useState<ClaimRow[] | null>(null);
   const [step, setStep] = useState<ReturnType<typeof daoStep> | null>(null);
   const [progress, setProgress] = useState<SettlementProgress | null>(null);
-  const [step2, setStep2] = useState<{ done: number; total: number } | null>(null);
   const key = backings.join(",");
 
   const refresh = useCallback(async () => {
@@ -67,32 +54,6 @@ export function BattleClaim({ arena, battleId, backings, winnerBacking }: { aren
     const timer = setInterval(tick, POLL_MS);
     return () => clearInterval(timer);
   }, [refresh]);
-
-  // One click claims everything owed, token by token: each one registers the account first when needed. A failure
-  // stops the run and the next click continues from what is still owed, so nothing is claimed twice.
-  const claimAll = () =>
-    action.run(async () => {
-      if (!accountId || !rows) throw new Error("connect a wallet first");
-      const todo = rows;
-      try {
-        for (const [i, r] of todo.entries()) {
-          setStep2({ done: i, total: todo.length });
-          const label = symbolOf(r.backing);
-          if (!(await readRegistered(config.rpcUrl, r.backing, accountId))) {
-            const register = buildRegisterReview(r.backing, accountId, label);
-            await act(registerRequest(r.backing), register.ok ? register : null);
-          }
-          // What is owed right now, not what the page showed a moment ago.
-          const available = await readEntitlement(config.rpcUrl, r.backing, accountId);
-          if (BigInt(available) === 0n) continue;
-          const review = buildClaimReview(r.backing, available, label);
-          await act(claimRequest(r.backing, available), review.ok ? review : null);
-        }
-      } finally {
-        setStep2(null);
-        await refresh().catch(() => undefined);
-      }
-    });
 
   const settle = () =>
     action.run(async () => {
@@ -136,12 +97,7 @@ export function BattleClaim({ arena, battleId, backings, winnerBacking }: { aren
           </div>
         </div>
       ))}
-      <Button type="button" className="w-full" disabled={action.busy || !connected} onClick={() => void claimAll()}>
-        <Wallet size={16} aria-hidden="true" />{" "}
-        {step2 ? `Claiming ${step2.done + 1} of ${step2.total}…` : rows.length > 1 ? "Claim all to my NEAR wallet" : "Claim to my NEAR wallet"}
-      </Button>
-      {step2 && <p role="status" className="text-xs text-mute">Confirm each step in your wallet.</p>}
-      {action.error && <p role="alert" className="text-xs text-neon-red">{action.error} Press the button to continue.</p>}
+      <ClaimAllButton rows={rows} onDone={refresh} />
     </div>
   );
 }
