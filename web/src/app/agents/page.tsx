@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { AgentGrants } from "@/components/agents/agent-grants";
 import { AutonomousAgent } from "@/components/agents/autonomous-agent";
+import { HostedAgent } from "@/components/agents/hosted-agent";
+import { config } from "@/lib/config";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { Card } from "@/components/ui/card";
 import { useApplicationDeployment } from "@/components/providers";
@@ -51,7 +53,21 @@ export default function AgentsPage() {
               </button>
             ))}
           </div>
-          {mode === "new" ? <AutonomousAgent namespace={namespace} /> : <AgentGrants namespace={namespace} />}
+          {mode === "budget" ? (
+            <AgentGrants namespace={namespace} />
+          ) : config.hostedAgentsUrl ? (
+            <>
+              <HostedAgent namespace={namespace} />
+              <details className="lifecycle-tech">
+                <summary>Advanced: run an agent yourself</summary>
+                <div className="mt-3">
+                  <AutonomousAgent namespace={namespace} />
+                </div>
+              </details>
+            </>
+          ) : (
+            <AutonomousAgent namespace={namespace} />
+          )}
         </>
       ) : (
         <Card role="alert">Agents are currently unavailable. Please try again later.</Card>

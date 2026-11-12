@@ -1,36 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useActionWallet, useWallet } from "@/components/providers";
+import { useWallet } from "@/components/providers";
+import { FundAgent, symbolOf } from "@/components/agents/fund-agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { TransactionLink } from "@/components/transaction-link";
 import { formatUnits } from "@/lib/amounts";
 import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-grant";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
   buildAutonomousConfig,
-  fundNearTransaction,
-  fundTokenTransaction,
   newAgentKey,
-  nearToYocto,
   readAgentStatus,
   runCommand,
-  tokensToBase,
   type AgentKey,
   type AgentStatus,
-  type WalletTransaction,
 } from "@/lib/arena-read/autonomous-agent";
 import { config } from "@/lib/config";
 
-type Tx = { step: "idle" } | { step: "signing" } | { step: "done"; hash: string | null } | { step: "error"; message: string };
-
 const POLL_MS = 15_000;
 const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
-const symbolOf = (representation: string) => representation.replace(/^backing-/, "").split(".")[0]!.toUpperCase();
 
 const download = (name: string, text: string) => {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -48,16 +40,11 @@ const download = (name: string, text: string) => {
  */
 export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
   const { accountId } = useWallet();
-  const getWallet = useActionWallet();
   const [key, setKey] = useState<AgentKey | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [strategy, setStrategy] = useState<AgentStrategy>("underdog");
   const [sweep, setSweep] = useState(false);
   const [keepWhole, setKeepWhole] = useState("100");
-  const [nearAmount, setNearAmount] = useState("0.5");
-  const [token, setToken] = useState("");
-  const [tokenAmount, setTokenAmount] = useState("100");
-  const [tx, setTx] = useState<Tx>({ step: "idle" });
   const [status, setStatus] = useState<AgentStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
@@ -81,23 +68,6 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
   const settings = { strategy, sweepTo: sweep && accountId ? accountId : "", keepWhole: Number.isInteger(keep) && keep >= 0 ? keep : 0 };
   const configText = key ? JSON.stringify(buildAutonomousConfig(key.account, settings), null, 2) : "";
 
-  const send = async (transaction: WalletTransaction) => {
-    setTx({ step: "signing" });
-    try {
-      if (!getWallet) throw new Error("connect a wallet first");
-      const wallet = await getWallet();
-      const out = await wallet.signAndSendTransaction(transaction as never);
-      setTx({ step: "done", hash: (out as { transaction?: { hash?: string } } | null)?.transaction?.hash ?? null });
-      void refresh();
-    } catch (e) {
-      setTx({ step: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const yocto = nearToYocto(nearAmount);
-  const base = tokensToBase(tokenAmount);
-  const chosenToken = token || status?.tokens[0]?.representation || "";
-
   return (
     <Card aria-label="Autonomous agent" className="space-y-4">
       <CardTitle>Agent with its own wallet</CardTitle>
@@ -107,7 +77,7 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
       </p>
 
       {!key ? (
-        <Button onClick={() => { setKey(newAgentKey()); setRevealed(false); setTx({ step: "idle" }); }}>Create agent</Button>
+        <Button onClick={() => { setKey(newAgentKey()); setRevealed(false); }}>Create agent</Button>
       ) : (
         <>
           <section className="space-y-2">
@@ -148,47 +118,7 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">3. Fund it from your wallet</h3>
-            {!accountId ? (
-              <p className="text-sm text-mute">Connect a wallet to fund the agent.</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <Label htmlFor="near">NEAR for fees</Label>
-                    <Input id="near" inputMode="decimal" value={nearAmount} onChange={(e) => setNearAmount(e.target.value)} />
-                  </div>
-                  <Button size="sm" disabled={!yocto || tx.step === "signing"} onClick={() => yocto && void send(fundNearTransaction(key.account, yocto))}>
-                    Send NEAR
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <Label htmlFor="token">Token</Label>
-                    <Select
-                      label="Token"
-                      className="min-w-40"
-                      value={chosenToken}
-                      options={(status?.tokens ?? []).map((t) => ({ value: t.representation, title: symbolOf(t.representation) }))}
-                      onChange={setToken}
-                      disabled={(status?.tokens.length ?? 0) === 0}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="amount">Whole tokens</Label>
-                    <Input id="amount" inputMode="numeric" value={tokenAmount} onChange={(e) => setTokenAmount(e.target.value)} />
-                  </div>
-                  <Button size="sm" disabled={!base || !chosenToken || tx.step === "signing"} onClick={() => base && chosenToken && void send(fundTokenTransaction(chosenToken, key.account, base))}>
-                    Send tokens
-                  </Button>
-                </div>
-                <p className="text-xs text-mute">Sending tokens also registers the agent on that token. Get test tokens from the Faucet first.</p>
-                {tx.step === "signing" && <p role="status" className="text-xs text-mute">Waiting for your wallet…</p>}
-                {tx.step === "done" && (
-                  <p role="status" className="text-xs">Sent. {tx.hash ? <TransactionLink hash={tx.hash} /> : null}</p>
-                )}
-                {tx.step === "error" && <p role="alert" className="text-xs text-neon-amber">{tx.message}</p>}
-              </>
-            )}
+            <FundAgent account={key.account} tokens={status?.tokens ?? []} onSent={() => void refresh()} />
           </section>
 
           <section className="space-y-2">
