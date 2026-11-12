@@ -60,8 +60,8 @@ export type ArenaChoice =
   | { kind: "none"; message: string; /** Open arenas that exist but do not have the token yet, for "join one with it". */ joinable: OpenArena[] };
 
 /**
- * Which open arenas fit the intent. A deposit that names a token needs an arena that already has a community of that
- * token; if none has, the user is told so and offered the open arenas to join with it first. Never picks among several.
+ * Which open arenas fit the intent. A deposit that names a token prefers arenas that already have a community of that
+ * token; if none has, every open arena fits, because the deposit adds the community itself. Never picks among several.
  */
 export function chooseArena(intent: Extract<LifecycleIntent, { kind: "join_battle" | "register_position" | "deposit" }>, arenas: readonly OpenArena[]): ArenaChoice {
   if (arenas.length === 0) return { kind: "none", message: "There is no open arena right now. Arenas accept communities until their start time.", joinable: [] };
@@ -69,7 +69,10 @@ export function chooseArena(intent: Extract<LifecycleIntent, { kind: "join_battl
     const ref = intent.tokenRef;
     const fits = arenas.filter((a) => a.communities.some((c) => matchesToken(ref, c)));
     if (fits.length === 0) {
-      return { kind: "none", message: `No open arena has a ${ref} community yet. Join one with ${ref} first, then deposit.`, joinable: [...arenas] };
+      // No arena has the token yet: the deposit adds it as a community first (join, approval, deposit in one flow).
+      return arenas.length === 1
+        ? { kind: "one", arena: arenas[0]!, why: `the only open arena; ${ref} will be added to it` }
+        : { kind: "many", arenas: [...arenas], why: `${arenas.length} arenas are open and none has a ${ref} community yet (it will be added)` };
     }
     return fits.length === 1 ? { kind: "one", arena: fits[0]!, why: `the only open arena with a ${ref} community` } : { kind: "many", arenas: fits, why: `${fits.length} open arenas have a ${ref} community` };
   }

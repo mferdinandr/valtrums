@@ -68,14 +68,12 @@ describe("choosing an arena", () => {
     const single = chooseArena(dep("wallet"), openArenasOf([battle(1, { communities: [community(0, "WALLET")] }), battle(2)], NOW));
     expect(single).toMatchObject({ kind: "one" });
   });
-  it("offers to join first when no open arena has the token", () => {
-    const arenas = openArenasOf([battle(1), battle(2)], NOW);
-    const r = chooseArena(dep("good"), arenas);
-    expect(r.kind).toBe("none");
-    if (r.kind === "none") {
-      expect(r.message).toMatch(/Join one with good first/);
-      expect(r.joinable.map((a) => a.battleId)).toEqual([1, 2]);
-    }
+  it("a deposit by token fits every open arena when none has the token yet (it joins first)", () => {
+    const two = openArenasOf([battle(1), battle(2)], NOW);
+    const r = chooseArena(dep("good"), two);
+    expect(r.kind).toBe("many");
+    if (r.kind === "many") expect(r.arenas.map((a) => a.battleId)).toEqual([1, 2]);
+    expect(chooseArena(dep("good"), openArenasOf([battle(1)], NOW))).toMatchObject({ kind: "one" });
   });
   it("a deposit by community number does not filter by token", () => {
     const arenas = openArenasOf([battle(1), battle(2)], NOW);

@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/card";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
+import { useBalances } from "@/hooks/use-balances";
+import { JOIN_STAGE_TEXT, useJoinAndDeposit } from "@/hooks/use-join-and-deposit";
+import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
 import { useNow } from "@/hooks/use-now";
 import { formatUnits } from "@/lib/amounts";
 import { applicationKey, fetchApplication, type ApplicationBattlePage, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
@@ -23,6 +26,7 @@ import {
   type Review,
 } from "@/lib/arena-read/deposit-flow";
 import { battleStatus, communityRows, fetchLifecycleBattle, type LifecycleDetail } from "@/lib/arena-read/lifecycle";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { MODE_COPY } from "@/lib/arena-read/lifecycle-presentation";
 import {
   MAX_PROMPT_CHARS,
@@ -31,7 +35,7 @@ import {
   type LifecycleIntent,
   type LifecycleParseResult,
 } from "@/lib/terminal/lifecycle-intent";
-import { chooseArena, communityForToken, openArenasOf, type OpenArena } from "@/lib/terminal/lifecycle-open";
+import { chooseArena, openArenasOf, type OpenArena } from "@/lib/terminal/lifecycle-open";
 import { answer, ask, emptyChat, followUp, isInteractive, isThinking, type Chat, type Turn } from "@/lib/terminal/chat";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
 import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/lib/terminal/lifecycle-resolve";
@@ -81,8 +85,7 @@ function ReviewedCall({
   const [after, setAfter] = useState<string | null>(null);
   const [baselineFor, setBaselineFor] = useState<string | null>(null);
   const seen = useRef<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
+  
   useEffect(() => {
     if (flow.step === "previewed" && trackCredit && seen.current !== flow.previewed.record.actionId) {
       const id = flow.previewed.record.actionId;
@@ -104,36 +107,21 @@ function ReviewedCall({
   const waitingBaseline = trackCredit && flow.step === "previewed" && baselineFor !== flow.previewed.record.actionId;
   return (
     <div className="space-y-3" aria-label="Reviewed call">
-      <dl className="grid gap-1 text-xs sm:grid-cols-[12rem_1fr]">
-        {review.lines.map((l) => (
-          <div key={l.label} className="contents">
-            <dt className="text-mute">{l.label}</dt>
-            <dd className="break-all">{l.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <ul className="list-disc pl-4 text-xs text-mute">
-        {review.notes.map((n) => (
-          <li key={n}>{n}</li>
-        ))}
-      </ul>
       <details className="lifecycle-tech">
-        <summary>Exact transaction arguments</summary>
+        <summary>Details</summary>
+        <dl className="mt-3 grid gap-1 text-xs sm:grid-cols-[12rem_1fr]">
+          {review.lines.map((l) => (
+            <div key={l.label} className="contents">
+              <dt className="text-mute">{l.label}</dt>
+              <dd className="break-all">{l.value}</dd>
+            </div>
+          ))}
+        </dl>
         <pre aria-label="Exact arguments" className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3 text-xs">
           {JSON.stringify(review.args, null, 2)}
         </pre>
       </details>
       <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={async () => {
-            await navigator.clipboard?.writeText(JSON.stringify(review.args));
-            setCopied(true);
-          }}
-        >
-          {copied ? "Copied" : "Copy exact arguments"}
-        </Button>
         {run.connected ? (
           <Button type="button" onClick={run.preview} disabled={flow.step === "previewing" || flow.step === "signing"}>
             {flow.step === "previewing" ? "Checking your review…" : "Check transaction preview"}
@@ -160,7 +148,6 @@ function ReviewedCall({
       {flow.step === "previewed" && (
         <div role="status" className="space-y-2">
           <p className="text-xs text-neon-green">Your request is ready to review in your wallet. Nothing has been signed yet.</p>
-          <p className="break-all text-xs text-mute">Preview {flow.previewed.record.previewHash}</p>
           <Button type="button" onClick={run.execute} disabled={waitingBaseline}>
             {waitingBaseline ? "Reading your current position…" : "Authorize and sign with wallet"}
           </Button>
@@ -229,7 +216,109 @@ function useBattle(namespace: Namespace, battleId: number) {
 type Known<K extends LifecycleIntent["kind"]> = Omit<Extract<LifecycleIntent, { kind: K }>, "battleId"> & { battleId: number };
 type Replace = (next: LifecycleIntent) => void;
 
+/**
+ * Deposit by token: one button does what the manual deposit does. It adds the token as a community and registers the
+ * account when the battle does not have it yet, waits for the approvals, then deposits. The representation comes from
+ * the arena's allowlist, never from the prompt, and every step is previewed and compared before the wallet is asked.
+ */
+function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: Known<"deposit"> & { tokenRef: string } }) {
+  const { signIn } = useWallet();
+  const { detail, error, loading } = useBattle(namespace, intent.battleId);
+  const joinable = useJoinableAssets(namespace.arenaContract);
+  const { balances } = useBalances();
+  const flow = useJoinAndDeposit(namespace.arenaContract, intent.battleId);
+  const [resolved, setResolved] = useState<JoinTokenResult | null>(null);
+  const now = useNow(1000);
+  useEffect(() => {
+    if (!joinable.items) return;
+    let live = true;
+    setResolved(null);
+    void resolveJoinToken(intent.tokenRef, joinable.items, (q) => searchAssets(namespace, q)).then((r) => live && setResolved(r));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent.tokenRef, joinable.items, applicationKey(namespace)]);
+
+  if (loading || (!joinable.items && !joinable.error) || (joinable.items && !resolved)) {
+    return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId} and the joinable tokens…</p>;
+  }
+  if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
+  if (joinable.error) return <p role="alert" className="text-xs text-neon-red">The joinable-token allowlist could not be read: {joinable.error}. Nothing was prepared.</p>;
+  if (resolved && !resolved.ok) return <p role="alert" className="text-sm text-neon-amber">{resolved.question}</p>;
+  if (!resolved || !resolved.ok) return null;
+  const phase = openPhase(detail, now);
+  if (phase.kind !== "gathering") return <Problems problems={[`Battle #${intent.battleId} is not open for deposits: ${PHASE_REASON[phase.kind]}.`]} />;
+
+  const symbol = resolved.symbol ?? intent.tokenRef;
+  const held = balances?.tokens.find((t) => t.token === resolved.representation)?.balance ?? null;
+  const problems = firstDepositProblems(resolved.representation, intent.amount, held);
+  const st = flow.state;
+  const label = `${formatUnits(BigInt(intent.amount), TOKEN_DECIMALS, 4)} ${symbol}`;
+  return (
+    <div className="space-y-3" aria-label="Deposit">
+      {problems.length > 0 && (
+        <ul role="status" className="list-disc pl-4 text-xs text-neon-amber">
+          {problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      )}
+      {flow.connected ? (
+        <Button type="button" disabled={problems.length > 0 || st.step === "running"} onClick={() => void flow.run(resolved.representation, symbol, intent.amount)}>
+          {st.step === "failed" ? "Continue" : `Deposit ${label}`}
+        </Button>
+      ) : (
+        <Button type="button" variant="ghost" onClick={() => void signIn()}>
+          Connect wallet to deposit
+        </Button>
+      )}
+      <p className="text-xs text-mute">If {symbol} is not in battle #{intent.battleId} yet, it is added automatically before the deposit. Your wallet asks you to confirm each step.</p>
+      {st.step === "running" && (
+        <p role="status" className="text-xs text-mute">
+          {JOIN_STAGE_TEXT[st.stage]} Confirm in your wallet when asked.
+        </p>
+      )}
+      {st.step === "failed" && (
+        <p role="alert" className="text-xs text-neon-amber">
+          Deposit failed: {st.message}
+        </p>
+      )}
+      {st.step === "done" && (
+        <p role="status" className="text-xs text-neon-green">
+          Deposited {label} into battle #{intent.battleId}.
+        </p>
+      )}
+      {flow.txHashes.length > 0 && (
+        <div className="space-y-1">
+          {flow.txHashes.map((hash, i) => (
+            <div key={hash} className="text-xs">
+              <span>Transaction {i + 1}</span>
+              <TransactionLink hash={hash} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ParticipationPlan({
+  namespace,
+  intent,
+  onReplace,
+}: {
+  namespace: Namespace;
+  intent: Known<"register_position"> | Known<"deposit">;
+  onReplace: Replace;
+}) {
+  if (intent.kind === "deposit" && intent.community === null && intent.tokenRef !== null) {
+    return <JoinDepositPlan namespace={namespace} intent={{ ...intent, tokenRef: intent.tokenRef }} />;
+  }
+  return <CommunityPlan namespace={namespace} intent={intent} onReplace={onReplace} />;
+}
+
+function CommunityPlan({
   namespace,
   intent,
   onReplace,
@@ -241,12 +330,7 @@ function ParticipationPlan({
   const { detail, error, loading } = useBattle(namespace, intent.battleId);
   const rows = useMemo(() => (detail ? communityRows(detail, 0) : []), [detail]);
   const status = detail ? battleStatus(detail) : null;
-  // A deposit may name its community by token. It is looked up in this battle's own communities and never guessed.
-  const byToken = useMemo(
-    () => (intent.kind === "deposit" && intent.community === null && intent.tokenRef !== null ? communityForToken(intent.tokenRef, rows) : null),
-    [intent, rows],
-  );
-  const community: number | null = intent.community !== null ? intent.community : byToken?.kind === "one" ? byToken.index : null;
+  const community: number | null = intent.community;
   const concrete = useMemo(() => (community === null ? null : { ...intent, community }), [intent, community]);
   const request = useMemo(() => (concrete ? intentToRequest(concrete) : null), [concrete]);
   const row = community === null ? undefined : rows[community];
@@ -264,33 +348,6 @@ function ParticipationPlan({
 
   if (loading) return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId}…</p>;
   if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
-  if (intent.kind === "deposit" && intent.community === null && intent.tokenRef !== null) {
-    if (byToken?.kind === "none") {
-      return (
-        <div className="space-y-2" role="status">
-          <p className="text-sm text-neon-amber">Battle #{intent.battleId} has no {intent.tokenRef} community yet.</p>
-          <Button type="button" variant="ghost" onClick={() => onReplace({ kind: "join_battle", battleId: intent.battleId, tokenRef: intent.tokenRef! })}>
-            Join battle #{intent.battleId} with {intent.tokenRef} first
-          </Button>
-          <p className="text-xs text-mute">Joining adds the community; then ask for the deposit again.</p>
-        </div>
-      );
-    }
-    if (byToken?.kind === "many") {
-      return (
-        <div className="space-y-2" role="status">
-          <p className="text-sm">More than one community in battle #{intent.battleId} uses {intent.tokenRef}. Which one?</p>
-          <div className="flex flex-wrap gap-2">
-            {byToken.indexes.map((i) => (
-              <Button key={i} type="button" variant="ghost" onClick={() => onReplace({ ...intent, community: i, tokenRef: null })}>
-                Community {i + 1}
-              </Button>
-            ))}
-          </div>
-        </div>
-      );
-    }
-  }
   if (community === null || !row) return <Problems problems={[`Battle #${intent.battleId} has ${rows.length} communities; that community does not exist.`]} />;
   if (status !== "open") return <Problems problems={[`Battle #${intent.battleId} is ${status}: positions can no longer be registered and a deposit would be returned.`]} />;
   if (!review || !request) return null;
@@ -486,18 +543,6 @@ function OpenArenaPlan({
     return (
       <div className="space-y-2" role="status">
         <p className="text-sm text-neon-amber">{choice.message}</p>
-        {choice.joinable.length > 0 && intent.kind === "deposit" && intent.tokenRef !== null && (
-          <ul className="space-y-2">
-            {choice.joinable.map((a) => (
-              <li key={a.battleId} className="flex flex-wrap items-center gap-2 text-xs">
-                <ArenaLine arena={a} />
-                <Button type="button" variant="ghost" onClick={() => onReplace({ kind: "join_battle", battleId: a.battleId, tokenRef: intent.tokenRef! })}>
-                  Join with {intent.tokenRef}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     );
   }
@@ -653,7 +698,6 @@ function Answer({ namespace, turn, live, onReplace }: { namespace: Namespace; tu
     );
   }
   const intent = result.intent;
-  const parserLine = result.via ? (result.via === "near-ai" ? "Understood by NEAR AI" : "Understood by the built-in rules") : null;
   return (
     <div className="space-y-3" aria-label="Understood request">
       <div>
@@ -661,12 +705,6 @@ function Answer({ namespace, turn, live, onReplace }: { namespace: Namespace; tu
           {describeIntent(intent)}
           {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
         </p>
-        {parserLine && (
-          <p className="mt-1 text-xs text-mute" data-testid="parser-line">
-            {parserLine}
-            {result.note ? `. ${result.note}` : ""}
-          </p>
-        )}
       </div>
       {live ? (
         <div className="space-y-2 border-t border-edge pt-3">
