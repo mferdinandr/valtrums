@@ -21,6 +21,8 @@ import { assessCustody, type CustodyFacts } from "../custody-compat.js";
 
 /** Battles the list reads at the same time. */
 const LIST_READ_CONCURRENCY = 6;
+/** How long one battle-list scan is reused (battle count is part of the key, so a new battle bypasses it). */
+const LIST_CACHE_TTL_MS = 8_000;
 
 export interface ApplicationBinding {
   source?: ArenaReadSource;
@@ -61,6 +63,7 @@ export const applicationRoute = (path: string): boolean =>
 export class ApplicationReads {
   readonly deployments: Deployment[];
   private readonly bindings: ReadonlyMap<string, ApplicationBinding>;
+  private readonly scanCache = new Map<string, { at: number; rows: Promise<any[]> }>();
   constructor(manifest: unknown, bindings: ReadonlyMap<string, ApplicationBinding>, private readonly now = Date.now) {
     this.deployments = manifestSchema.parse(manifest);
     this.bindings = new Map(bindings);
@@ -282,8 +285,22 @@ export class ApplicationReads {
         const round = b.locked ? binding.versioned ? await binding.versioned.round(String(id)) : await readApplicationRound(source, String(id)) : null;
         return { id, b, round };
       };
-      const rows: Array<Awaited<ReturnType<typeof readOne>>> = [];
-      for (let i = 0; i < ids.length; i += LIST_READ_CONCURRENCY) rows.push(...(await Promise.all(ids.slice(i, i + LIST_READ_CONCURRENCY).map(readOne))));
+      // The RPC scan is the slow part (3 to 16 s on testnet), so concurrent and repeat requests share one scan for a
+      // few seconds. A failed scan is never cached.
+      const cacheKey = `${d.deploymentId}:${count}`;
+      const hit = this.scanCache.get(cacheKey);
+      let scan: Promise<Array<Awaited<ReturnType<typeof readOne>>>>;
+      if (hit && this.now() - hit.at < LIST_CACHE_TTL_MS) scan = hit.rows;
+      else {
+        scan = (async () => {
+          const out: Array<Awaited<ReturnType<typeof readOne>>> = [];
+          for (let i = 0; i < ids.length; i += LIST_READ_CONCURRENCY) out.push(...(await Promise.all(ids.slice(i, i + LIST_READ_CONCURRENCY).map(readOne))));
+          return out;
+        })();
+        this.scanCache.set(cacheKey, { at: this.now(), rows: scan });
+        scan.catch(() => { if (this.scanCache.get(cacheKey)?.rows === scan) this.scanCache.delete(cacheKey); });
+      }
+      const rows = await scan;
       for (const row of rows) {
         if (!row) continue;
         const { id, b, round } = row;

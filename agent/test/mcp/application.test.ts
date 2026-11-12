@@ -81,9 +81,11 @@ describe("application boundary", () => {
     expect((await invoke(s, "battles", params(d2, { limit: "1", cursor }))).status).toBe(400);
     expect((await invoke(s, "battles", params(d1, { limit: "1", cursor, q: "pepe" }))).status).toBe(400);
     expect((await invoke(s, "battles", new URLSearchParams({ deployment: d1.deploymentId, protocol: "legacy-v1", cursor }))).status).toBe(400);
-    const source = makeSource(); const changed = service(d1, { source });
+    const source = makeSource(); let clock = NOW;
+    const changed = new ApplicationReads([d1], new Map([[d1.deploymentId, { source }]]), () => clock);
     const page = await invoke(changed, "battles", params(d1, { limit: "1" }));
     vi.spyOn(source, "battle").mockResolvedValue(battle());
+    clock += 60_000; // past the list-scan cache TTL, so the changed battle is read again
     expect((await invoke(changed, "battles", params(d1, { limit: "1", cursor: page.body.data.nextCursor }))).body.error.code).toBe("snapshot_changed");
   });
   it("rejects unsafe ID before lookup and reports outages without zero/demo data", async () => {

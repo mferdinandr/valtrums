@@ -28,7 +28,7 @@ function baseUrl(env: Record<string, string | undefined>): string | null {
 
 async function forward(url: string, init: RequestInit, doFetch: FetchLike, signal?: AbortSignal): Promise<ProxyResult> {
   try {
-    const timeout = AbortSignal.timeout(10_000);
+    const timeout = AbortSignal.timeout(25_000);
     const res = await doFetch(url, { ...init, cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     const body = await res.json().catch(() => ({ error: "read API returned an invalid response" }));
     return { status: res.status, body };
