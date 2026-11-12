@@ -800,7 +800,6 @@ function PositionsPlan() {
           ))}
         </ul>
       )}
-      <p className="text-xs text-mute">Winnings are paid out on Robinhood Chain; see Portfolio.</p>
     </div>
   );
 }

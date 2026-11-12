@@ -26,6 +26,7 @@ export interface AgentActivity {
   event: string;
   battleId?: number;
   community?: number;
+  burnPercent?: number;
   amount?: string;
   step?: string;
   decidedBy?: string;

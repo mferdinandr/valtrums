@@ -38,6 +38,11 @@ function describeActivity(a: AgentActivity): string {
     case "sent": return `Sent a step for ${where}${a.step ? ` (${a.step})` : ""}`;
     case "played": return `Played ${where}${amount ? `: deposited ${amount}` : ""}${a.decidedBy === "near-ai" ? " (picked by NEAR AI)" : ""}`;
     case "error": return `Problem: ${plainError(a.message)}`;
+    case "claimed": return `Claimed the prize${amount ? `: ${amount}` : ""} into the agent's wallet`;
+    case "claim_error": return `Could not claim the prize yet: ${plainError(a.message)}`;
+    case "voted": return `Voted on ${where}: ${a.burnPercent ?? 0}% burn, ${100 - (a.burnPercent ?? 0)}% return (picked by NEAR AI)`;
+    case "vote_skipped": return `Waiting to vote on ${where}: the AI's answer was not usable`;
+    case "vote_error": return `Could not vote on ${where}: ${plainError(a.message)}`;
     case "sweep_skipped": return `Did not send surplus back: ${a.reason ?? "not possible yet"}`;
     case "swept": return `Sent surplus tokens back to your wallet${amount ? ` (${amount})` : ""}`;
     default: return a.event;
@@ -49,11 +54,15 @@ const LOG_TONE: Record<string, string> = {
   error: "text-[#f2a07b]",
   played: "text-[#7fd6a4]",
   swept: "text-[#7fd6a4]",
+  claimed: "text-[#7fd6a4]",
+  voted: "text-[#7fd6a4]",
+  claim_error: "text-[#f2a07b]",
+  vote_error: "text-[#f2a07b]",
   sent: "text-[#8fb8ff]",
   start: "text-[#e6eadf]",
   stop: "text-[#e6eadf]",
 };
-const LOG_MARK: Record<string, string> = { error: "!", played: "✓", swept: "✓", sent: "→", start: "▶", stop: "■" };
+const LOG_MARK: Record<string, string> = { error: "!", claim_error: "!", vote_error: "!", claimed: "✓", voted: "✓", played: "✓", swept: "✓", sent: "→", start: "▶", stop: "■" };
 
 function ActivityLog({ account, client, running }: { account: string; client: HostedAgentsClient; running: boolean }) {
   const [items, setItems] = useState<AgentActivity[] | null>(null);
@@ -194,7 +203,6 @@ function AgentRow({ agent, name, namespace, client, onChange }: { agent: HostedA
             ))}
           </ul>
         )}
-        <p className="text-xs text-mute">Winnings are paid out on Robinhood Chain; see Portfolio.</p>
       </section>
 
       <details className="lifecycle-tech">

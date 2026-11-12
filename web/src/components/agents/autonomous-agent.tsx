@@ -22,7 +22,6 @@ import {
 import { config } from "@/lib/config";
 
 const POLL_MS = 15_000;
-const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
 
 const download = (name: string, text: string) => {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -158,9 +157,6 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
                 )}
               </>
             )}
-            <p className="text-xs text-mute">
-              Winnings are not tokens in this balance. They are entitlements paid out on Robinhood Chain; see Portfolio. Agent: {short(key.account)}.
-            </p>
           </section>
         </>
       )}
