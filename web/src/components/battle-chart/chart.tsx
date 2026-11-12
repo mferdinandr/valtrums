@@ -107,6 +107,8 @@ const score = (value: number, signed = true, digits = 2) =>
  * 12 decimals stay equal: a real tie is shown as a tie, never stretched into a fake difference.
  */
 export const MAX_SCORE_DIGITS = 16;
+/** Scores closer than this (in percentage points) are rounding noise, not a real difference. */
+export const NOISE_SPREAD = 1e-6;
 export function scoreDigits(values: readonly number[]): number {
   const distinct = new Set(values.map((v) => v.toFixed(MAX_SCORE_DIGITS))).size;
   for (let d = 2; d <= MAX_SCORE_DIGITS; d++) {
@@ -240,12 +242,14 @@ function Plot({
     sample === null ? null : times[Math.min(sample, times.length - 1)];
   // Digits for the legend: as many as it takes for different scores to look different.
   const legendRows = legendSeries ?? series;
-  const legendDigits = scoreDigits(
-    legendRows.flatMap((s) => {
-      const p = inspected === null ? s.points.findLast((q) => q.value !== null && Number.isFinite(q.value)) : s.points.find((q) => q.x === inspected);
-      return p?.value !== null && p?.value !== undefined && Number.isFinite(p.value) ? [p.value] : [];
-    }),
-  );
+  const legendValues = legendRows.flatMap((s) => {
+    const p = inspected === null ? s.points.findLast((q) => q.value !== null && Number.isFinite(q.value)) : s.points.find((q) => q.x === inspected);
+    return p?.value !== null && p?.value !== undefined && Number.isFinite(p.value) ? [p.value] : [];
+  });
+  // Scores that differ only below NOISE_SPREAD are rounding noise: show them rounded (exact value in the tooltip)
+  // instead of a 14-digit number that wraps and reads as a huge percentage.
+  const level = legendValues.length > 1 && Math.max(...legendValues) !== Math.min(...legendValues) && Math.max(...legendValues) - Math.min(...legendValues) < NOISE_SPREAD;
+  const legendDigits = level ? 4 : scoreDigits(legendValues);
   return (
     <div ref={root} className="score-chart-plot">
       <svg
@@ -475,7 +479,7 @@ function Plot({
                 {s.name}
                 {s.inactive ? " · out" : ""}
               </span>
-              <strong>
+              <strong title={point?.value !== null && point?.value !== undefined ? `${point.value.toFixed(MAX_SCORE_DIGITS)}%` : undefined}>
                 {point?.value !== null && point?.value !== undefined
                   ? score(point.value, signed, legendDigits)
                   : "—"}
@@ -484,6 +488,11 @@ function Plot({
           );
         })}
       </div>
+      {level && (
+        <p className="mt-2 text-xs text-mute">
+          Prices moved together: scores are level to 6 decimals. Differences below that are rounding noise.
+        </p>
+      )}
     </div>
   );
 }
@@ -494,7 +503,7 @@ export function ScoreChart(props: Props) {
   // The companion strip exists only for a connected round chart of two or more tokens whose scores differ at all.
   const diffs = props.connected !== false && !props.range && props.series.length >= 2 ? relativeToField(props.series) : null;
   const diffValues = diffs?.flatMap((s) => s.points.flatMap((p) => (p.value !== null && Number.isFinite(p.value) ? [p.value] : []))) ?? [];
-  const microDiff = diffs && diffValues.length > 0 && Math.max(...diffValues) > Math.min(...diffValues) ? diffs : null;
+  const microDiff = diffs && diffValues.length > 0 && Math.max(...diffValues) - Math.min(...diffValues) >= NOISE_SPREAD ? diffs : null;
   const standings = displayStandings(props.series, !!props.lowerIsBetter);
   const unique = standings.leaders.length === 1 ? standings.leaders[0] : null;
   const headline =
