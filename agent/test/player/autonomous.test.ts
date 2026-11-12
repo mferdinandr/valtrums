@@ -49,7 +49,7 @@ const ai = (pick: (input: ModelInput) => string | null, chatId: string | null = 
 const answer = (battleId: number, community: number, amount: string, over: Record<string, unknown> = {}) =>
   JSON.stringify({ action: "deposit", user: ME, battleId, community, amount, rationale: "because", ...over });
 
-function setup(opts: { battles: Record<number, LifecycleBattleView>; balances: Record<string, bigint>; registered?: boolean; live?: boolean; clock?: { t: number }; model?: ModelProposer }) {
+function setup(opts: { battles: Record<number, LifecycleBattleView>; balances: Record<string, bigint>; registered?: boolean; position?: string; live?: boolean; clock?: { t: number }; model?: ModelProposer }) {
   const calls: FunctionCallRequest[] = [];
   const logs: Record<string, unknown>[] = [];
   const clock = opts.clock ?? { t: NOW };
@@ -58,7 +58,7 @@ function setup(opts: { battles: Record<number, LifecycleBattleView>; balances: R
     arena: ARENA,
     source: {
       battle: async (id) => battles[id] ?? null,
-      position: async () => ({ registered: opts.registered ?? false, amount: "0" }),
+      position: async () => ({ registered: opts.registered ?? false, amount: opts.position ?? "0" }),
       tokenBalance: async (token) => opts.balances[token] ?? 0n,
     },
     joinable: async () => [CASHCAT, WALLET],
@@ -123,6 +123,52 @@ describe("autonomous agent (NEAR AI decides)", () => {
     expect(out.rationale).toContain("NEAR AI: back the big vault");
     expect(out.rationale).toContain("/v1/signature/chatcmpl-1");
     expect(calls).toHaveLength(0);
+  });
+
+  it("never deposits again into a battle where the chain already shows its deposit", async () => {
+    const model = ai(() => answer(1, 1, "200"));
+    const { deps, calls } = setup({ battles: board(), balances: both, model, registered: true, position: "250", live: true });
+    const out = await playOnce(agent(), deps);
+    expect(out).toMatchObject({ kind: "skipped", reason: "already_deposited" });
+    expect(calls).toHaveLength(0);
+    // The note is kept per token: the next round no longer offers CASHCAT in that battle (WALLET, another token, stays open).
+    await playOnce(agent(), deps);
+    expect(model.seen[1]!.options.map((o) => o.community)).not.toContain(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("deposits once per token in a battle, and another token in the same battle is still open", async () => {
+    let n = 0;
+    const model = ai(() => (n++ === 0 ? answer(1, 1, "100") : answer(1, 0, "10")));
+    const { deps, calls } = setup({ battles: board(), balances: both, model, registered: true, live: true });
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "played", community: 1 });
+    // CASHCAT is done in battle 1; WALLET (community 0) is a different token, so it is still offered.
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "played", community: 0 });
+    expect(model.seen[1]!.options).toEqual([{ battleId: 1, community: 0, vault: 100n }]);
+    // Both tokens are done in that battle: nothing more to play there.
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "no_option" });
+    expect(calls.filter((c) => c.methodName === "ft_transfer_call")).toHaveLength(2);
+  });
+
+  it("holds the battle back before the deposit leaves, so a lost answer cannot cause a second deposit", async () => {
+    const model = ai(() => answer(1, 1, "200"));
+    const ctx = setup({ battles: board(), balances: both, model, live: true });
+    const { deps } = ctx;
+    let heldAtSend = false;
+    const sign = deps.sign;
+    deps.sign = async (a, call) => {
+      if (call.methodName === "ft_transfer_call") {
+        heldAtSend = deps.state.isBlocked(`auto:${agent().account}:1:${CASHCAT}`, deps.now());
+        throw new Error("the answer was lost");
+      }
+      return sign(a, call);
+    };
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "error" });
+    expect(heldAtSend).toBe(true);
+    // Next round: the battle is held back, so nothing is sent again.
+    const before = ctx.calls.length;
+    await playOnce(agent(), deps);
+    expect(ctx.calls.length).toBe(before);
   });
 
   it("offers the model only options it can fund, with the style hint and the largest limit", async () => {

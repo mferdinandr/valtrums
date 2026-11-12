@@ -147,7 +147,8 @@ export function parseAutonomousAgents(raw: unknown): AutonomousAgentConfig[] {
 }
 
 const gas = (tgas: bigint): string => (tgas * TGAS).toString();
-const actedKey = (account: string, battleId: number): string => `auto:${account}:${battleId}`;
+/** One deposit per battle and per token: another token in the same battle is still open to this agent. */
+const actedKey = (account: string, battleId: number, representation: string): string => `auto:${account}:${battleId}:${representation}`;
 
 export interface Candidate {
   battleId: number;
@@ -181,19 +182,19 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
   const candidates: Candidate[] = [];
   const count = await deps.battleCount();
   for (let id = count, scanned = 0; id >= 1 && scanned < agent.scanBattles; id--, scanned++) {
-    if (state.has(actedKey(agent.account, id)) || state.isBlocked(actedKey(agent.account, id), now())) continue;
     const battle = await deps.source.battle(id);
     if (!battle || battle.locked || battle.cancelled) continue;
     const startAt = battle.start_at_ms ? Number(battle.start_at_ms) : null;
     if (startAt === null || !Number.isFinite(startAt) || startAt - now() < agent.minStartLeadMs) continue;
     const present = new Set(battle.communities.map((c) => c.representation));
+    const done = (rep: string) => state.has(actedKey(agent.account, id, rep)) || state.isBlocked(actedKey(agent.account, id, rep), now());
     for (const [community, c] of battle.communities.entries()) {
       const balance = balances.get(c.representation);
-      if (balance === undefined) continue;
+      if (balance === undefined || done(c.representation)) continue;
       candidates.push({ battleId: id, community, representation: c.representation, needsJoin: false, balance, vault: BigInt(c.vault) });
     }
     for (const [rep, balance] of balances) {
-      if (present.has(rep)) continue;
+      if (present.has(rep) || done(rep)) continue;
       candidates.push({ battleId: id, community: battle.communities.length, representation: rep, needsJoin: true, balance, vault: 0n });
     }
   }
@@ -225,7 +226,7 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
     ? await deps.model.proposeDetailed(input)
     : await deps.model.propose(input).then((t) => (t === null ? null : { text: t, chatId: null }));
   const coolOff = () => {
-    for (const battleId of new Set(pool.map((c) => c.battleId))) state.markBlocked(actedKey(agent.account, battleId), now() + MODEL_RETRY_MS);
+    for (const c of pool) state.markBlocked(actedKey(agent.account, c.battleId, c.representation), now() + MODEL_RETRY_MS);
   };
   if (!asked) {
     coolOff();
@@ -244,7 +245,15 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
   if (amount <= 0n) return skip("nothing_to_spend");
 
   const steps: PlannedStep[] = [];
-  const registered = picked.needsJoin ? false : (await deps.source.position(picked.battleId, picked.community, agent.account)).registered;
+  const position = picked.needsJoin ? null : await deps.source.position(picked.battleId, picked.community, agent.account);
+  // The chain is the record of what was deposited: a battle where this account already holds a deposit is never
+  // deposited into again, even when the local note of it was lost (a restart, a failed save, a second process).
+  if (position && /^[0-9]+$/.test(position.amount) && BigInt(position.amount) > 0n) {
+    const heldKey = actedKey(agent.account, picked.battleId, picked.representation);
+    state.markActed(heldKey, { at: now(), actionId: heldKey, txHash: null, status: "sent" });
+    return skip("already_deposited");
+  }
+  const registered = position ? position.registered : false;
   if (picked.needsJoin) {
     steps.push({
       label: "join",
@@ -278,7 +287,7 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
 
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const hashes: string[] = [];
-  const key = actedKey(agent.account, picked.battleId);
+  const key = actedKey(agent.account, picked.battleId, picked.representation);
   try {
     let community = picked.community;
     for (const step of steps) {
@@ -298,6 +307,9 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
           await sleep(APPROVAL_POLL_MS);
         }
       }
+      // Hold this battle back for a while before a deposit leaves: if the transaction goes out but its answer is lost,
+      // the next round must not send it again. After the hold the chain read above decides.
+      if (step.label === "deposit") state.markBlocked(key, now() + BLOCK_MS);
       const hash = await deps.sign(agent, step.call);
       hashes.push(hash);
       log({ event: "sent", agent: agent.account, step: step.label, battleId: picked.battleId, txHash: hash });
