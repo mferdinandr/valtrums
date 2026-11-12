@@ -10,6 +10,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { JoinDeposit } from "@/components/lifecycle-join-deposit";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { BattleResult } from "@/components/battle-result";
+import { WinnerCelebration } from "@/components/winner-celebration";
 import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
@@ -317,6 +318,14 @@ export function LifecycleBattleDetail({
         <span className="match-navigation-brand">VALTRUM <span>/ ARENA</span></span>
         <WalletButton />
       </nav>
+      {phase.kind === "decided" && (
+        <WinnerCelebration
+          key={detail.battleId}
+          battleId={detail.battleId}
+          winnerName={name(phase.winner)}
+          winnerSymbol={rows[phase.winner]?.label ? displaySymbol(rows[phase.winner]!.label, "") : undefined}
+        />
+      )}
       {stale && (
         <p role="alert" className="lifecycle-callout">
           Refresh failed ({error}); showing the last read. The arena does not
