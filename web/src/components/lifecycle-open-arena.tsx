@@ -26,6 +26,20 @@ const tokenName = (representation: string): string => {
   return first.replace(/^backing-/, "").toUpperCase();
 };
 
+/** The one-line open arena status shown above everything else, without a card. */
+export function OpenArenaHeader({ phase }: { phase: OpenPhase }) {
+  if (phase.kind === "no_start" || phase.kind === "locked") return null;
+  return (
+    <p role="status" aria-live="polite" className="text-base font-bold">
+      Open arena
+      {phase.kind === "gathering" && <> · Join until {utc(phase.startAtMs)}</>}
+      {phase.kind === "awaiting_lock" && <> · Started, waiting for the lock</>}
+      {phase.kind === "cancellable" && <> · Not enough funded communities</>}
+      {phase.kind === "cancelled" && <> · Cancelled</>}
+    </p>
+  );
+}
+
 /**
  * The open arena controls of one battle (D34 to D36): start time and countdown, entered versus pending
  * communities, join by an allowlisted token, cancel when allowed and a refund per community after a cancel.
@@ -44,20 +58,16 @@ export function OpenArenaPanel({
   phase: OpenPhase;
   name: (index: number) => string;
 }) {
-  const communities = detail.battle.communities;
-  const entered = communities.filter((c) => isFunded(c.vault)).length;
-  if (phase.kind === "no_start" || phase.kind === "locked") return null;
+  if (phase.kind !== "cancellable" && phase.kind !== "cancelled") return null;
+  const entered = detail.battle.communities.filter((c) => isFunded(c.vault)).length;
   return (
     <Card aria-label="Open arena">
-      <p role="status" aria-live="polite" className="text-base font-bold">
-        Open arena
-        {phase.kind === "gathering" && <> · Join until {utc(phase.startAtMs)}</>}
-        {phase.kind === "awaiting_lock" && <> · Started, waiting for the lock</>}
-        {phase.kind === "cancellable" && <> · Not enough funded communities ({entered} of {MIN_FUNDED})</>}
-        {phase.kind === "cancelled" && <> · Cancelled</>}
-      </p>
-      {phase.kind === "cancellable" && <p className="mt-2 text-xs text-mute">Anyone can cancel it; depositors then get a refund.</p>}
-      {phase.kind === "cancelled" && <p className="mt-2 text-xs text-mute">Depositors can claim a refund.</p>}
+      {phase.kind === "cancellable" && (
+        <p className="text-sm">
+          Not enough funded communities ({entered} of {MIN_FUNDED}). Anyone can cancel it; depositors then get a refund.
+        </p>
+      )}
+      {phase.kind === "cancelled" && <p className="text-sm">Cancelled. Depositors can claim a refund.</p>}
       {battleId === null ? null : (
         <div className="mt-6 space-y-8">
           {phase.kind === "cancellable" && <CancelStep namespace={namespace} battleId={battleId} />}

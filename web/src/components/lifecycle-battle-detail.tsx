@@ -13,7 +13,7 @@ import { BattleResult } from "@/components/battle-result";
 import { DaoDecision } from "@/components/dao-decision";
 import { WinnerCelebration } from "@/components/winner-celebration";
 import { MyPosition } from "@/components/my-position";
-import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
+import { OpenArenaHeader, OpenArenaPanel } from "@/components/lifecycle-open-arena";
 import { openPhase, type OpenPhase } from "@/lib/arena-read/open-arena";
 import { LifecycleArena } from "@/components/lifecycle/lifecycle-arena";
 import { startStage } from "@/components/lifecycle/battle-start-loader";
@@ -133,6 +133,7 @@ export function LifecycleBattleDetail({
       : null;
   const actionsContent = (
       <div className="match-position-content">
+      <OpenArenaHeader phase={open} />
 
       <div>
       {blockers.length > 0 && (
