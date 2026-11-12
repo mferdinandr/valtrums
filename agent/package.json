@@ -28,10 +28,13 @@
     "player:run": "node --env-file-if-exists=.env.local dist/player/cli.js",
     "player:auto": "node --env-file-if-exists=.env.local dist/player/autonomous-cli.js",
     "hosted:agents": "node --env-file-if-exists=.env.local dist/hosted/main.js",
+    "hosted:import": "node --env-file-if-exists=.env.local dist/hosted/import.js",
     "intents:fixture": "node dist/intents-fixture/cli.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.6.0",
     "vitest": "^5.1.0"
   },
@@ -39,6 +42,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@noble/hashes": "^2.4.0",
     "near-kit": "^0.20.2",
+    "pg": "^8.23.1",
     "zod": "^4.6.7"
   }
 }

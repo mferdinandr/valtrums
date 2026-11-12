@@ -46,7 +46,7 @@ if (workers) {
 }
 // Hosted testnet agents (openspec hosted-player-agents): started only when HOSTED_AGENT_KEK is set in agent/.env.local.
 // Unlike the workers it never blocks a plain `pnpm dev`: no KEK means it is simply off.
-const HOSTED_PORT = 8791;
+const HOSTED_PORT = 8792; // 8790 is the read API, 8791 the intents fixture
 const hosted = Boolean(env.HOSTED_AGENT_KEK);
 if (hosted) {
   const needed = ["NEAR_AI_API_KEY", "HOSTED_AGENT_MAX_PER_OWNER", "HOSTED_AGENT_MODEL_CALLS_PER_AGENT_HOUR", "HOSTED_AGENT_MODEL_CALLS_GLOBAL_HOUR", "HOSTED_AGENT_MAX_TOKEN_WHOLE"]
