@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: no chain is read.
 import { describe, expect, it } from "vitest";
-import { buildClaimReview, buildRegisterReview, claimRequest, readRegistered, REGISTER_DEPOSIT_YOCTO } from "./claim";
+import { buildClaimReview, buildRegisterReview, claimRequest, readEntitlement, readRegistered, REGISTER_DEPOSIT_YOCTO } from "./claim";
 
 describe("claim to the NEAR wallet", () => {
   it("is one yocto call with the amount, matching the action service's preview", () => {
@@ -36,6 +36,18 @@ describe("claim to the NEAR wallet", () => {
       expect(await readRegistered("https://rpc", "t.testnet", "a.testnet")).toBe(true);
       globalThis.fetch = answer(null) as never;
       expect(await readRegistered("https://rpc", "t.testnet", "a.testnet")).toBe(false);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+  it("reads the entitlement as a base-unit string and falls back to zero", async () => {
+    const answer = (value: unknown) => async () => new Response(JSON.stringify({ result: { result: Array.from(new TextEncoder().encode(JSON.stringify(value))) } }));
+    const original = globalThis.fetch;
+    try {
+      globalThis.fetch = answer("60") as never;
+      expect(await readEntitlement("https://rpc", "t.testnet", "a.testnet")).toBe("60");
+      globalThis.fetch = answer(null) as never;
+      expect(await readEntitlement("https://rpc", "t.testnet", "a.testnet")).toBe("0");
     } finally {
       globalThis.fetch = original;
     }

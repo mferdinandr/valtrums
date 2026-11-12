@@ -7,7 +7,6 @@ import { useWallet } from "@/components/providers";
 import { readMyPositions, type MyPosition } from "@/lib/arena-read/positions";
 import { TokenIcon } from "@/components/token-icon";
 import { BattleClaim } from "@/components/battle-claim";
-import type { Namespace } from "@/lib/arena-read/application";
 import { config } from "@/lib/config";
 
 /**
@@ -15,15 +14,16 @@ import { config } from "@/lib/config";
  * number here would be a guess.
  */
 export function BattleResult({
-  namespace,
   arena,
   battleId,
   winner,
   communityCount,
+  backings,
   nameOf,
 }: {
-  namespace: Namespace;
   arena: string;
+  /** The representation (backing) contract of every community of the battle. */
+  backings: readonly string[];
   battleId: number;
   winner: number;
   communityCount: number;
@@ -71,7 +71,7 @@ export function BattleResult({
         </div>
       </div>
 
-      {backedWinner && <BattleClaim namespace={namespace} />}
+      {backedWinner && <BattleClaim arena={arena} battleId={battleId} backings={backings} />}
     </Card>
   );
 }
