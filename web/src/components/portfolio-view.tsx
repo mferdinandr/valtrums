@@ -2,7 +2,7 @@
 
 import { Coins, Flame, Layers, Send } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ClaimAllButton } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
 import { Card } from "@/components/ui/card";
@@ -12,6 +12,8 @@ import { daoBlocksClaim } from "@/lib/arena-read/account-state";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { symbolOf } from "@/lib/arena-read/claim";
 import { describePayouts, normalizePositions } from "@/lib/arena-read/portfolio";
+import { readBattleBriefs, STAGE_ORDER, STAGE_TITLE, type BattleBrief, type BattleStage } from "@/lib/arena-read/position-status";
+import { config } from "@/lib/config";
 
 const units = (v: string): string => (/^(0|[1-9][0-9]*)$/.test(v) ? formatUnits(BigInt(v), TOKEN_DECIMALS, 4) : v);
 
@@ -72,21 +74,35 @@ const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm t
  * The portfolio at a glance: four tiles, then what is ready to claim, the positions, the DAO decisions and the
  * transfers. Sources, freshness and limitations stay available under "Details"; nothing is hidden or assumed.
  */
-export function PortfolioView({ data, onChanged }: { data: PortfolioData; onChanged: () => void }) {
+export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData; arena: string; onChanged: () => void }) {
   const positions = data.positions.state === "ok" ? data.positions.env.data.positions : null;
   const state = data.accountState.state === "ok" ? data.accountState.env.data : null;
   const transfers = data.payouts.state === "ok" ? describePayouts(data.payouts.env.data.payouts) : null;
   const claimable = (state?.entitlements ?? []).filter((e) => /^[0-9]+$/.test(e.available) && BigInt(e.available) > 0n);
   const dao = state?.daoPrincipal ?? [];
   const waiting = daoBlocksClaim(state);
-  const battles = new Set((positions ?? []).map((p) => p.battleId)).size;
   const pending = (transfers ?? []).filter((t) => !t.paid).length;
   const groups = data.positions.state === "ok" ? normalizePositions(data.positions.env.data) : [];
+  // Only deposits count as positions; a joined community without a deposit is not shown.
+  const rows = groups.flatMap((g) => g.rows.filter((r) => r.valid && r.amount !== "0").map((r) => ({ ...r, asset: g.asset })));
+  const ids = useMemo(() => [...new Set(rows.map((r) => r.battleId))].sort((a, b) => a - b), [rows]);
+  const idKey = ids.join(",");
+  const [briefs, setBriefs] = useState<Map<number, BattleBrief> | null>(null);
+  useEffect(() => {
+    let live = true;
+    readBattleBriefs(config.rpcUrl, arena, ids).then((m) => live && setBriefs(m)).catch(() => live && setBriefs(new Map()));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arena, idKey]);
+  const byStage = (stage: BattleStage) => rows.filter((r) => briefs?.get(r.battleId)?.stage === stage);
+  const unknown = briefs === null ? rows : rows.filter((r) => !briefs.has(r.battleId));
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Tile icon={<Layers size={18} aria-hidden="true" />} label="Battles joined" value={positions === null ? "–" : battles} tone="blue" />
+        <Tile icon={<Layers size={18} aria-hidden="true" />} label="Battles joined" value={positions === null ? "–" : ids.length} tone="blue" />
         <Tile icon={<Coins size={18} aria-hidden="true" />} label="Ready to claim" value={state === null ? "–" : claimable.length} tone="green" />
         <Tile icon={<Flame size={18} aria-hidden="true" />} label="In DAO decision" value={state === null ? "–" : dao.length} tone="rose" />
         <Tile icon={<Send size={18} aria-hidden="true" />} label="Transfers pending" value={transfers === null ? "–" : pending} tone="amber" />
@@ -113,22 +129,57 @@ export function PortfolioView({ data, onChanged }: { data: PortfolioData; onChan
       <Panel title="Your positions">
         {positions === null ? (
           <Empty>Positions could not be read right now.</Empty>
-        ) : groups.length === 0 ? (
-          <Empty>No positions in recent battles.</Empty>
+        ) : rows.length === 0 ? (
+          <Empty>No deposits in recent battles.</Empty>
         ) : (
-          <ul className="space-y-2">
-            {groups.flatMap((g) =>
-              g.rows.map((r) => (
-                <Row
-                  key={r.key}
-                  symbol={symbolOf(g.asset)}
-                  title={`${units(r.amount)} ${symbolOf(g.asset)}`}
-                  sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
-                  chip={<Chip tone="grey">Community {r.community + 1}</Chip>}
-                />
-              )),
+          <div className="space-y-4">
+            {STAGE_ORDER.map((stage) => {
+              const list = byStage(stage);
+              if (list.length === 0) return null;
+              return (
+                <section key={stage} aria-label={`${STAGE_TITLE[stage]} positions`} className="space-y-2">
+                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mute">
+                    {STAGE_TITLE[stage]}
+                    <span className="rounded-full px-2 py-0.5 text-[11px]" style={TONES.grey}>{list.length}</span>
+                  </h3>
+                  <ul className="space-y-2">
+                    {list.map((r) => {
+                      const winner = briefs?.get(r.battleId)?.winner ?? null;
+                      const chip =
+                        stage === "finished" ? <Chip tone={winner === r.community ? "green" : "grey"}>{winner === r.community ? "Won" : "Lost"}</Chip>
+                        : stage === "open" ? <Chip tone="green">Deposits open</Chip>
+                        : stage === "live" ? <Chip tone="blue">In play</Chip>
+                        : <Chip tone="amber">Refundable</Chip>;
+                      return (
+                        <Row
+                          key={r.key}
+                          symbol={symbolOf(r.asset)}
+                          title={`${units(r.amount)} ${symbolOf(r.asset)}`}
+                          sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
+                          chip={chip}
+                        />
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+            {briefs !== null && unknown.length > 0 && (
+              <section aria-label="Other positions" className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-mute">Status unavailable</h3>
+                <ul className="space-y-2">
+                  {unknown.map((r) => (
+                    <Row
+                      key={r.key}
+                      symbol={symbolOf(r.asset)}
+                      title={`${units(r.amount)} ${symbolOf(r.asset)}`}
+                      sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
+                    />
+                  ))}
+                </ul>
+              </section>
             )}
-          </ul>
+          </div>
         )}
       </Panel>
 

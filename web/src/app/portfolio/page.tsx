@@ -1,26 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { AccountStatePanel } from "@/components/account-state-panel";
-import { PayoutRequest } from "@/components/payout-request";
 import { PortfolioView } from "@/components/portfolio-view";
-import {
-  EntitlementAvailabilitySection,
-  LateFundsSection,
-  PositionsSection,
-  TransfersSection,
-} from "@/components/portfolio-sections";
 import { useApplicationDeployment, useWallet } from "@/components/providers";
 import { RecoveryAlerts } from "@/components/recovery-alerts";
 import { CarnivalScene } from "@/components/carnival/scene";
 import "@/components/lifecycle/lifecycle.css";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useNow } from "@/hooks/use-now";
-import { useDeploymentFacts, usePortfolio } from "@/hooks/use-portfolio";
-import { applicationKey } from "@/lib/arena-read/application";
-import { describePayouts, type Entitlement } from "@/lib/arena-read/portfolio";
+import { usePortfolio } from "@/hooks/use-portfolio";
 
 /**
  * Portfolio of the connected account on the lifecycle deployment. Positions, entitlements, transfers, late funds,
@@ -31,15 +19,8 @@ export default function PortfolioPage() {
   const namespace = useApplicationDeployment();
   const { signIn } = useWallet();
   const portfolio = usePortfolio();
-  const facts = useDeploymentFacts(namespace);
-  const now = useNow(30_000);
 
   const ready = portfolio.state.step === "ready" ? portfolio.state.data : null;
-  const entitlements = useMemo<Entitlement[] | null>(
-    () => (ready?.accountState.state === "ok" ? ready.accountState.env.data.entitlements.map((e) => ({ backing: e.backing, available: e.available })) : null),
-    [ready],
-  );
-  const payoutRows = useMemo(() => (ready?.payouts.state === "ok" ? describePayouts(ready.payouts.env.data.payouts) : null), [ready]);
 
   if (!namespace) {
     return (
@@ -91,36 +72,9 @@ export default function PortfolioPage() {
         </Card>
       )}
 
-      {ready && <PortfolioView data={ready} onChanged={() => void portfolio.load()} />}
+      {ready && <PortfolioView data={ready} arena={namespace.arenaContract} onChanged={() => void portfolio.load()} />}
 
       <RecoveryAlerts />
-
-      {ready && (
-        <details className="lifecycle-tech">
-          <summary>Details, sources and limitations</summary>
-          <div className="mt-3 space-y-4">
-            <PositionsSection part={ready.positions} nowMs={now} />
-            <EntitlementAvailabilitySection part={ready.entitlements} nowMs={now} />
-            <AccountStatePanel part={ready.accountState} nowMs={now} />
-            <TransfersSection part={ready.payouts} nowMs={now} />
-            <LateFundsSection />
-          </div>
-        </details>
-      )}
-
-      <details className="lifecycle-tech">
-        <summary>Advanced: send a claim to Robinhood Chain instead</summary>
-        <div className="mt-3">
-          <PayoutRequest
-            deploymentId={namespace.deploymentId}
-            namespaceKey={applicationKey(namespace)}
-            facts={facts}
-            entitlements={entitlements}
-            payouts={payoutRows}
-            onChanged={() => void portfolio.load()}
-          />
-        </div>
-      </details>
     </div>
   );
 }
