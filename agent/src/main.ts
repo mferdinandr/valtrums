@@ -20,7 +20,8 @@ import { loadRuntimeConfig } from "./runtime-config.js";
 import { TwapFetcher } from "./twap.js";
 import { AuditSubmitter } from "./audit/approval.js";
 import { loadAuditConfig, loadReportArchiveConfig } from "./audit/config.js";
-import { JsonFileReportArchive } from "./audit/report-archive.js";
+import { appDb, createReportArchive } from "./app-state/app-db.js";
+import { PgBaselineStore } from "./app-state/pg-stores.js";
 import { createIndexerRuntime, loadIndexerRuntimeConfig } from "./indexer/wiring.js";
 import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
 import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
@@ -82,7 +83,7 @@ async function main(): Promise<void> {
   const deps = {
     client,
     auditor: new MarketAuditor(liquidity, honeypot, market.minLiquidityUsd),
-    baselines: new JsonFileBaselineStore(rt.baselinePath),
+    baselines: appDb() ? new PgBaselineStore(appDb()!) : new JsonFileBaselineStore(rt.baselinePath),
     twap: new TwapFetcher(priceSource, {
       windowMs: market.twapWindowSecs * 1000,
       sampleIntervalMs: rt.intervalSecs * 1000,
@@ -180,7 +181,7 @@ async function main(): Promise<void> {
           records: auditRecords,
         },
         reports: new AuditReportStore(),
-        ...(archiveCfg ? { archive: new JsonFileReportArchive(archiveCfg.path), arena: cfg.arenaContractId } : {}),
+        ...(archiveCfg ? { archive: createReportArchive(archiveCfg.path), arena: cfg.arenaContractId } : {}),
         log,
       })
     : undefined;

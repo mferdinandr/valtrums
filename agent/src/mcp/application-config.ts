@@ -5,6 +5,8 @@ import { battleSchema, roundSchema, VersionedLifecycleReadSource } from "./appli
 import { manifestSchema, namespaceKey, namespaceOf, safeId } from "./application-contract.js";
 import { ApplicationReads, type ApplicationBinding } from "./application.js";
 import { NearReferenceRegistrySource, staticReferenceRegistry } from "../reference-registry.js";
+import { appDb } from "../app-state/app-db.js";
+import { PgReportArchive } from "../app-state/pg-report-archive.js";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { loadObservationState } from "../observations/journal.js";
 import { loadObservationConfig } from "../observations/config.js";
@@ -44,12 +46,18 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
       });
       binding.registry = staticReferenceRegistry(fixture.registry);
     }
-    if (env.ARENA_APPLICATION_AUDIT_SCOPE && env.AUDIT_ARCHIVE_PATH) {
+    const archiveDb = appDb(env);
+    if (env.ARENA_APPLICATION_AUDIT_SCOPE && (env.AUDIT_ARCHIVE_PATH || archiveDb)) {
       const scope = JSON.parse(env.ARENA_APPLICATION_AUDIT_SCOPE);
       if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
-        const path = env.AUDIT_ARCHIVE_PATH;
-        const archive = new JsonFileReportArchive(path);
-        binding.audits = { archive: { snapshot: async () => { await access(path); return archive.snapshot(); } }, namespace: namespaceOf(d) };
+        if (archiveDb) {
+          // Postgres: a missing or unreadable database is an error from the query, never an empty archive.
+          binding.audits = { archive: new PgReportArchive(archiveDb), namespace: namespaceOf(d) };
+        } else {
+          const path = env.AUDIT_ARCHIVE_PATH!;
+          const archive = new JsonFileReportArchive(path);
+          binding.audits = { archive: { snapshot: async () => { await access(path); return archive.snapshot(); } }, namespace: namespaceOf(d) };
+        }
       }
     }
     const observationConfig = loadObservationConfig(env);

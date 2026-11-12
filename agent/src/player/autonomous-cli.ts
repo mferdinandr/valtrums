@@ -4,6 +4,8 @@ import { Near } from "near-kit";
 import { NearActionReadSource } from "../mcp/actions/source.js";
 import { parseAutonomousAgents, playOnce, sweepOnce, type AutonomousAgentConfig, type FunctionCallRequest } from "./autonomous.js";
 import { createModelProposer } from "./model.js";
+import { appDb, closeAppDb } from "../app-state/app-db.js";
+import { loadPgPlayerState } from "../app-state/pg-stores.js";
 import { PlayerState } from "./state.js";
 
 /**
@@ -60,7 +62,10 @@ export async function runAutonomousCli(argv: string[], env: NodeJS.ProcessEnv = 
     ...(env.NEAR_AI_BASE_URL?.trim() ? { baseUrl: env.NEAR_AI_BASE_URL.trim() } : {}),
   });
 
-  const state = new PlayerState(env.PLAYER_AUTONOMOUS_STATE_PATH?.trim() || "./.agent-state/player-autonomous.json");
+  // With APP_DATABASE_URL the play state lives in Postgres instead of a local file.
+  const db = appDb(env);
+  const pgState = db ? await loadPgPlayerState(db, "player:autonomous") : null;
+  const state = pgState?.state ?? new PlayerState(env.PLAYER_AUTONOMOUS_STATE_PATH?.trim() || "./.agent-state/player-autonomous.json");
   const signers = new Map<string, Near>();
   if (live) {
     for (const a of agents) {
@@ -92,6 +97,8 @@ export async function runAutonomousCli(argv: string[], env: NodeJS.ProcessEnv = 
       await playOnce(agent, { arena, source, joinable, battleCount, sign, state, now: Date.now, log, live, model }).catch((e) =>
         log({ event: "error", agent: agent.account, message: e instanceof Error ? e.message : String(e) }),
       );
+      // Persist what the round did even when it failed part way, so a deposit is never forgotten.
+      await pgState?.flush();
       // Optional: send surplus tokens (above keepWhole) back to the owner. Off unless the agent has sweepTo.
       await sweepOnce(agent, {
         joinable,
@@ -105,6 +112,7 @@ export async function runAutonomousCli(argv: string[], env: NodeJS.ProcessEnv = 
     if (once) break;
     await wait(Math.min(...agents.map((a) => a.intervalSecs)) * 1_000);
   }
+  await closeAppDb();
   log({ event: "stop" });
 }
 
