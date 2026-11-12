@@ -1,6 +1,7 @@
 import type { AutonomousAgentConfig } from "../player/autonomous.js";
 import type { ModelInput, ModelProposer } from "../player/model.js";
 import { isStrategyName } from "../player/strategy.js";
+import { ActivityLog } from "./activity.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
 import type { HostedRepository } from "./repository.js";
 import type { HostedAgent } from "./store.js";
@@ -88,7 +89,19 @@ export function publicView(a: HostedAgent) {
 
 export class HostedAgents {
   private readonly failures = new Map<string, number>();
+  private readonly activity = new ActivityLog();
   constructor(private readonly d: ManagerDeps) {}
+
+  /** Feeds one event of the play loop into the owner-visible activity log. */
+  note(event: Record<string, unknown>): void {
+    this.activity.note(event);
+  }
+
+  /** What the agent did lately, newest first. Only its owner can read it. */
+  async activityOf(owner: string, account: string) {
+    await this.owned(owner, account);
+    return this.activity.recent(account);
+  }
 
   async list(owner: string) {
     return (await this.d.repo.byOwner(owner)).map(publicView);
@@ -146,6 +159,7 @@ export class HostedAgents {
     this.failures.delete(account);
     await this.d.repo.setRunning(account, true, null);
     await this.d.repo.recordEvent(account, "start", {}, this.d.now());
+    this.activity.note({ event: "start" }, account);
     this.d.log({ event: "hosted_start", account });
     return this.get(owner, account);
   }
@@ -154,6 +168,7 @@ export class HostedAgents {
     const a = await this.owned(owner, account);
     await this.d.repo.setRunning(account, false, a.lastError);
     await this.d.repo.recordEvent(account, "stop", {}, this.d.now());
+    this.activity.note({ event: "stop" }, account);
     this.d.log({ event: "hosted_stop", account });
     return this.get(owner, account);
   }
@@ -211,6 +226,7 @@ export class HostedAgents {
         this.failures.set(a.account, n);
         const message = e instanceof Error ? e.message : String(e);
         this.d.log({ event: "hosted_error", account: a.account, message });
+        this.activity.note({ event: "error", message }, a.account);
         if (n >= MAX_ROUND_ERRORS) {
           const reason = `stopped after ${n} errors: ${message}`;
           await this.d.repo.setRunning(a.account, false, reason);

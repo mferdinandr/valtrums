@@ -120,11 +120,12 @@ export function createHostedServer(o: ServerOptions): Server {
       const body = await readJson(req);
       return { body: await o.agents.create(owner, { style: body.style, sweep: body.sweep, keepWhole: body.keepWhole }) };
     }
-    const m = /^\/agents\/([^/]+)(?:\/(start|stop|export))?$/.exec(path);
+    const m = /^\/agents\/([^/]+)(?:\/(start|stop|export|activity))?$/.exec(path);
     if (m) {
       const account = decodeURIComponent(m[1]!);
       const action = m[2];
       if (!action && method === "GET") return { body: await o.agents.get(owner, account) };
+      if (action === "activity" && method === "GET") return { body: { activity: await o.agents.activityOf(owner, account) } };
       if (action === "start" && method === "POST") return { body: await o.agents.start(owner, account) };
       if (action === "stop" && method === "POST") return { body: await o.agents.stop(owner, account) };
       if (action === "export" && method === "POST") return { body: await o.agents.exportKey(owner, account) };

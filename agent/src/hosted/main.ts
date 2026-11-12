@@ -102,6 +102,12 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
     }),
   );
 
+  // Loop events go to the service log and, for the events an owner should see, to that agent's activity log.
+  const agentLog = (event: Record<string, unknown>) => {
+    log(event);
+    manager.note(event);
+  };
+
   const runRound = async (agent: AutonomousAgentConfig, secretKey: string): Promise<void> => {
     let near = signers.get(agent.account);
     if (!near) {
@@ -123,7 +129,7 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       return hash;
     };
     try {
-      await playOnce(agent, { arena, source, joinable, battleCount, sign, state, now: Date.now, log, live: true, model });
+      await playOnce(agent, { arena, source, joinable, battleCount, sign, state, now: Date.now, log: agentLog, live: true, model });
     } finally {
       // Persist what was done even when the round failed part way, so a deposit is never forgotten.
       await states.flush(agent.account);
@@ -133,7 +139,7 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       balance: (token, account) => source.tokenBalance(token, account),
       registered: async (token, account) => (await reader.view(token, "storage_balance_of", { account_id: account })) !== null,
       sign,
-      log,
+      log: agentLog,
       live: true,
     });
   };
