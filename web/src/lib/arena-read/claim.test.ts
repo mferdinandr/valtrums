@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: no chain is read.
 import { describe, expect, it } from "vitest";
-import { buildClaimReview, buildRegisterReview, claimRequest, readEntitlement, readRegistered, REGISTER_DEPOSIT_YOCTO } from "./claim";
+import { buildClaimReview, buildRegisterReview, buildSettleReview, claimRequest, readEntitlement, readRegistered, REGISTER_DEPOSIT_YOCTO, settleBatch, settleRequest } from "./claim";
 
 describe("claim to the NEAR wallet", () => {
   it("is one yocto call with the amount, matching the action service's preview", () => {
@@ -51,5 +51,21 @@ describe("claim to the NEAR wallet", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+describe("settle the prizes", () => {
+  it("sizes the batch and the deposit from the progress", () => {
+    expect(settleBatch({ recorded: 0, total: 4 })).toBe(4);
+    expect(settleBatch({ recorded: 0, total: 20 })).toBe(15);
+    expect(settleBatch({ recorded: 15, total: 20 })).toBe(5);
+    expect(settleBatch({ recorded: 4, total: 4 })).toBe(0);
+    const r = buildSettleReview("arena.testnet", 35, { recorded: 0, total: 4 });
+    expect(r).toMatchObject({ ok: true, method: "settle_lifecycle_battle", args: { battle_id: "35", max_entitlements: 4 }, gasTgas: "300" });
+    if (r.ok) expect(r.depositYocto).toBe((4n * 10n ** 22n).toString());
+    expect(settleRequest(35)).toEqual({ kind: "settle_battle", battleId: 35 });
+  });
+  it("refuses when everything is recorded", () => {
+    expect(buildSettleReview("arena.testnet", 35, { recorded: 4, total: 4 }).ok).toBe(false);
   });
 });

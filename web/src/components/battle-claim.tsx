@@ -8,7 +8,19 @@ import { useAction } from "@/hooks/use-action";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
-import { buildClaimReview, buildRegisterReview, claimRequest, readEntitlement, readRegistered, registerRequest } from "@/lib/arena-read/claim";
+import {
+  buildClaimReview,
+  buildRegisterReview,
+  buildSettleReview,
+  claimRequest,
+  readEntitlement,
+  readRegistered,
+  readSettlement,
+  registerRequest,
+  settleBatch,
+  settleRequest,
+  type SettlementProgress,
+} from "@/lib/arena-read/claim";
 import { daoStep, readDisposition } from "@/lib/arena-read/dao";
 import { config } from "@/lib/config";
 
@@ -32,15 +44,18 @@ export function BattleClaim({ arena, battleId, backings }: { arena: string; batt
   const action = useAction();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [step, setStep] = useState<ReturnType<typeof daoStep> | null>(null);
+  const [progress, setProgress] = useState<SettlementProgress | null>(null);
   const key = backings.join(",");
 
   const refresh = useCallback(async () => {
     if (!accountId) return;
-    const [disposition, found] = await Promise.all([
+    const [disposition, settlement, found] = await Promise.all([
       readDisposition(config.rpcUrl, arena, battleId),
+      readSettlement(config.rpcUrl, arena, battleId),
       Promise.all(backings.map(async (backing) => ({ backing, available: await readEntitlement(config.rpcUrl, backing, accountId) }))),
     ]);
     setStep(daoStep(disposition));
+    setProgress(settlement);
     setRows(found.filter((r) => BigInt(r.available) > 0n));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, arena, battleId, key]);
@@ -65,9 +80,33 @@ export function BattleClaim({ arena, battleId, backings }: { arena: string; batt
       await refresh();
     });
 
+  const settle = () =>
+    action.run(async () => {
+      if (!progress) return;
+      const review = buildSettleReview(arena, battleId, progress);
+      await act(settleRequest(battleId), review.ok ? review : null);
+      await refresh();
+    });
+
   // The claim opens when the DAO is done, never decided, or the battle has no vote at all.
   const open = step !== null && (step.kind === "done" || step.kind === "undecided" || step.kind === "none");
   if (step === null || rows === null) return null;
+  const unsettled = progress !== null && progress.recorded < progress.total;
+  if (unsettled) {
+    const batch = settleBatch(progress);
+    return (
+      <div className="mt-4 space-y-2 rounded-xl p-3" style={{ background: "#a8802f14" }}>
+        <p className="text-sm font-semibold" style={{ color: "#a8802f" }}>Prizes are not settled yet</p>
+        <p className="text-xs text-mute">
+          {progress.recorded} of {progress.total} recorded. The coins of the losing communities reach you only after this step; anyone can run it.
+        </p>
+        <Button type="button" disabled={action.busy || !connected} onClick={() => void settle()}>
+          {action.busy ? "Settling…" : `Settle prizes (${batch} of ${progress.total - progress.recorded})`}
+        </Button>
+        {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+      </div>
+    );
+  }
   if (!open) return <p className="mt-4 text-sm text-mute">Claiming opens after the DAO decision.</p>;
   if (rows.length === 0) return <p className="mt-4 text-sm text-mute">No prize to claim yet. It appears here after the battle is settled.</p>;
 
