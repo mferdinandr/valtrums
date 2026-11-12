@@ -139,3 +139,6 @@ export function buildSettleReview(arena: string, battleId: number, p: Settlement
     ],
   };
 }
+
+/** The token symbol of a representation account such as `backing-cashcat.<owner>.testnet`, for display only. */
+export const symbolOf = (backing: string): string => ((backing.split(".")[0] ?? backing).replace(/^backing-/, "")).toUpperCase();

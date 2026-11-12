@@ -71,7 +71,7 @@ export function BattleResult({
         </div>
       </div>
 
-      {backedWinner && <BattleClaim arena={arena} battleId={battleId} backings={backings} />}
+      {backedWinner && <BattleClaim arena={arena} battleId={battleId} backings={backings} winnerBacking={backings[winner] ?? ""} />}
     </Card>
   );
 }
