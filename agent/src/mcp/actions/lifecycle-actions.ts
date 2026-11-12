@@ -17,6 +17,9 @@ import {
   hexBytes,
 } from "./preview.js";
 import type { ActionReadSource } from "./source.js";
+
+/** NEP-145 registration attach (0.01 NEAR); a registration-only deposit is refunded above the token's minimum. */
+const REGISTER_REPRESENTATION_DEPOSIT_YOCTO = "10000000000000000000000";
 import { isFunded } from "../read-source.js";
 
 /**
@@ -226,6 +229,30 @@ export async function buildLifecyclePreview(
       { arena: ctx.arena, battleId: request.battleId, released, total, batch },
       [`one batch of ${batch} of ${total - released} remaining releases; the arena refunds unused deposit`, "repeat the action until released equals total"],
       [...limitations, "a recorded burn is a reservation for the sink, not a confirmed source burn; request_dao_burn starts its transfer"],
+    );
+  }
+
+  if (request.kind === "register_representation") {
+    if (await source.storageRegistered(request.backing, caller)) fail("already_done", "you are already registered on this token");
+    return user(
+      base, "register_representation", caller, request.backing,
+      { methodName: "storage_deposit", args: { account_id: caller, registration_only: true }, deposit: REGISTER_REPRESENTATION_DEPOSIT_YOCTO, gasTgas: 30n },
+      { backing: request.backing, account: caller },
+      ["NEP-145 storage deposit; with registration_only the token refunds the part above its minimum"],
+      [...limitations, "registration only lets this account hold the token; it moves no tokens"],
+    );
+  }
+
+  if (request.kind === "claim_entitlement") {
+    const available = await source.entitlement(request.backing, caller);
+    if (available < BigInt(request.amount)) fail("insufficient_entitlement", "the available entitlement is lower than the amount");
+    if (!(await source.storageRegistered(request.backing, caller))) fail("not_registered", "register on this token first (register_representation)");
+    return user(
+      base, "claim_entitlement", caller, request.backing,
+      { methodName: "claim_entitlement_as_representation", args: { amount: request.amount }, deposit: "1", gasTgas: 30n },
+      { backing: request.backing, beneficiary: caller, amount: request.amount, available: available.toString() },
+      ["one yoctoNEAR"],
+      [...limitations, "the tokens are minted into your NEAR account 1:1 from your entitlement; the custody on the source chain does not move", "redeeming them to the source chain is a separate payout request"],
     );
   }
 

@@ -305,3 +305,31 @@ describe("inspect_endgame read tool", () => {
     await expect(callReadTool("inspect_endgame", { battleId: 2 }, deps)).rejects.toThrow("not configured");
   });
 });
+
+describe("claim_entitlement and register_representation", () => {
+  const BACKING = "backing.testnet";
+  const withE = (registered: boolean, available = 50n) =>
+    mk({
+      entitlements: new Map([[key(BACKING, "alice.testnet"), available]]),
+      registered: registered ? new Set([key(BACKING, "alice.testnet")]) : undefined,
+    });
+  it("prepares one yocto claim of an entitlement as representation tokens", async () => {
+    const p = await prev({ kind: "claim_entitlement", backing: BACKING, amount: "30" }, withE(true));
+    expect(p.transaction.receiverId).toBe(BACKING);
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "claim_entitlement_as_representation", args: { amount: "30" }, deposit: "1" });
+    expect(p.binding).toMatchObject({ backing: BACKING, beneficiary: "alice.testnet", amount: "30" });
+  });
+  it("refuses more than the entitlement and an unregistered account", async () => {
+    expect(await code(prev({ kind: "claim_entitlement", backing: BACKING, amount: "51" }, withE(true)))).toBe("insufficient_entitlement");
+    expect(await code(prev({ kind: "claim_entitlement", backing: BACKING, amount: "10" }, withE(false)))).toBe("not_registered");
+  });
+  it("registers only an account that is not registered yet", async () => {
+    const p = await prev({ kind: "register_representation", backing: BACKING }, withE(false));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "storage_deposit", args: { account_id: "alice.testnet", registration_only: true } });
+    expect(await code(prev({ kind: "register_representation", backing: BACKING }, withE(true)))).toBe("already_done");
+  });
+  it("rejects a claim without a valid amount", () => {
+    expect(() => validateRequest({ kind: "claim_entitlement", backing: BACKING, amount: "0" })).toThrow(ActionError);
+    expect(() => validateRequest({ kind: "claim_entitlement", backing: BACKING })).toThrow(ActionError);
+  });
+});
