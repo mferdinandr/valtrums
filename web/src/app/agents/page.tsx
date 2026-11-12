@@ -24,16 +24,7 @@ export default function AgentsPage() {
       </header>
       {namespace ? (
         config.hostedAgentsUrl ? (
-          <>
-            <HostedAgent namespace={namespace} />
-            {/* Kept mounted inside the closed details so a key made here is not lost when the section is folded. */}
-            <details className="lifecycle-tech">
-              <summary>Advanced: run an agent yourself</summary>
-              <div className="mt-3">
-                <AutonomousAgent namespace={namespace} />
-              </div>
-            </details>
-          </>
+          <HostedAgent namespace={namespace} />
         ) : (
           <AutonomousAgent namespace={namespace} />
         )
