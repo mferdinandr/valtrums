@@ -159,23 +159,26 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
   return (
     <div className="space-y-6">
       <Card className="space-y-4">
-        <CardTitle>01 / Give an agent a budget</CardTitle>
+        <CardTitle>Give an existing agent a budget</CardTitle>
+        <p className="text-sm text-mute">
+          For an agent you already run. Your tokens stay in your account. The agent can only hold budget and suggest deposits within the token, limits and dates you set here; it cannot execute a deposit yet. You can revoke it at any time.
+        </p>
         <div className="token-chips" aria-label="Chosen token">
           {picked ? <TokenChip symbol={picked} onRemove={() => { setPicked(""); set({ chainId: "", token: "" }); }} /> : <span className="text-xs text-mute">Pick the token the agent may play with.</span>}
         </div>
         <TokenPicker namespace={namespace} chosen={form.token ? new Set([`${form.chainId}:${form.token.toLowerCase()}`]) : NO_CHOSEN} full={!!picked} onPick={onPick} />
         <fieldset disabled={busy} className="grid min-w-0 gap-3 sm:grid-cols-2">
           <Label>
-            Agent account (NEAR)
+            Agent account
             <Input value={form.delegate} maxLength={64} placeholder="agent.testnet" onChange={(e) => set({ delegate: e.target.value.trim().toLowerCase() })} />
           </Label>
           <Label>
-            Representation (NEAR account of the NEP-141 token)
+            Token account on NEAR
             <Input value={form.representation} maxLength={64} onChange={(e) => set({ representation: e.target.value.trim().toLowerCase() })} />
           </Label>
           <div className="sm:col-span-2">
             <span className="mb-2 block font-pixel text-xs font-medium text-mute">
-              Strategy (how the agent chooses; it carries no authority, the limits below do)
+              Play style (only a hint; the limits below are what actually restrict the agent)
             </span>
             <Select<AgentStrategy>
               label="Strategy"
@@ -186,7 +189,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
             />
           </div>
           <Label>
-            Per-action limit (base units)
+            Max per deposit (base units)
             <Input inputMode="numeric" autoComplete="off" value={form.perAction} onChange={(e) => set({ perAction: e.target.value.trim() })} />
           </Label>
           <Label>
@@ -222,7 +225,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
       </Card>
 
       <Card aria-label="Grant review">
-        <CardTitle>02 / Review before you sign</CardTitle>
+        <CardTitle>Review and sign</CardTitle>
         {!review.ok ? (
           <details className="lifecycle-tech">
             <summary>Complete the form to review your agent</summary>
@@ -255,7 +258,7 @@ export function AgentGrants({ namespace }: { namespace: Namespace }) {
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>Your agents</CardTitle>
+          <CardTitle>Your budgets</CardTitle>
           <Button type="button" variant="ghost" onClick={() => void refresh()} disabled={!accountId || saved.length === 0}>Refresh</Button>
         </div>
         {!accountId && <p className="text-sm text-mute">Connect your wallet to see the grants you created in this browser.</p>}

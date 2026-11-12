@@ -100,11 +100,10 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
 
   return (
     <Card aria-label="Autonomous agent" className="space-y-4">
-      <CardTitle>Autonomous agent</CardTitle>
+      <CardTitle>Agent with its own wallet</CardTitle>
       <p className="text-sm text-mute">
-        This agent has its own wallet and plays by itself: NEAR AI Cloud (private inference inside a secure enclave) chooses where to play and how
-        much, then the agent joins, registers and deposits, with no approval step. The most it can lose is what you send it. Its key is made in your
-        browser and shown once; we never store it.
+        A new agent that plays on its own: NEAR AI Cloud (private inference in a secure enclave) picks where to play and how much, and the agent joins and deposits with no approval step.
+        The most it can lose is what you send it. Its key is made in your browser and shown once; we never store it.
       </p>
 
       {!key ? (
@@ -131,8 +130,8 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">2. Play style and owner</h3>
-            <p className="text-xs text-mute">NEAR AI decides every play. The style is only a hint it is given.</p>
+            <h3 className="text-sm font-semibold">2. Play style and surplus</h3>
+            <p className="text-xs text-mute">The agent decides each play with AI. The style is only a hint.</p>
             <Select value={strategy} options={STRATEGY_OPTIONS} onChange={setStrategy} label="Play style" />
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={sweep} disabled={!accountId} onChange={(e) => setSweep(e.target.checked)} />
@@ -155,7 +154,7 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
               <>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
-                    <Label htmlFor="near">NEAR for gas and storage</Label>
+                    <Label htmlFor="near">NEAR for fees</Label>
                     <Input id="near" inputMode="decimal" value={nearAmount} onChange={(e) => setNearAmount(e.target.value)} />
                   </div>
                   <Button size="sm" disabled={!yocto || tx.step === "signing"} onClick={() => yocto && void send(fundNearTransaction(key.account, yocto))}>
@@ -165,11 +164,14 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
                     <Label htmlFor="token">Token</Label>
-                    <select id="token" className="block min-h-11 rounded-xl border border-edge bg-panel px-3" value={chosenToken} onChange={(e) => setToken(e.target.value)}>
-                      {(status?.tokens ?? []).map((t) => (
-                        <option key={t.representation} value={t.representation}>{symbolOf(t.representation)}</option>
-                      ))}
-                    </select>
+                    <Select
+                      label="Token"
+                      className="min-w-40"
+                      value={chosenToken}
+                      options={(status?.tokens ?? []).map((t) => ({ value: t.representation, title: symbolOf(t.representation) }))}
+                      onChange={setToken}
+                      disabled={(status?.tokens.length ?? 0) === 0}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="amount">Whole tokens</Label>
@@ -192,7 +194,7 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">4. Run it</h3>
             <p className="text-sm text-mute">
-              The agent plays while its process runs. Download the config, then run the command with your secret key and your NEAR AI API key (both go in the environment, never in the file).
+              The agent only plays while it is running, on your computer or a server. Download the config, then run the command with two secrets in the environment (never in the file): the agent&apos;s secret key as <code>PLAYER_KEY_MY_AGENT</code> and your NEAR AI Cloud key as <code>NEAR_AI_API_KEY</code>.
             </p>
             <Button size="sm" variant="ghost" onClick={() => download("my-agent.json", configText)}>Download config</Button>
             <pre className="max-h-48 overflow-auto rounded-lg border border-edge p-3 text-xs" aria-label="Run command">{runCommand("my-agent.json")}</pre>
