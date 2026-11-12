@@ -2,7 +2,8 @@ import type { AutonomousAgentConfig } from "../player/autonomous.js";
 import type { ModelInput, ModelProposer } from "../player/model.js";
 import { isStrategyName } from "../player/strategy.js";
 import { decryptSecret, encryptSecret } from "./crypto.js";
-import type { AgentStore, HostedAgent } from "./store.js";
+import type { HostedRepository } from "./repository.js";
+import type { HostedAgent } from "./store.js";
 
 /** Operator-set limits. They have no defaults: the operator chooses them in the environment. */
 export interface HostedLimits {
@@ -26,7 +27,7 @@ export interface Funds {
 }
 
 export interface ManagerDeps {
-  store: AgentStore;
+  repo: HostedRepository;
   kek: Buffer;
   limits: HostedLimits;
   /** True when the operator has stopped all hosted agents. Read every round. */
@@ -89,30 +90,27 @@ export class HostedAgents {
   private readonly failures = new Map<string, number>();
   constructor(private readonly d: ManagerDeps) {}
 
-  list(owner: string) {
-    return this.d.store.byOwner(owner).map(publicView);
+  async list(owner: string) {
+    return (await this.d.repo.byOwner(owner)).map(publicView);
   }
 
-  private owned(owner: string, account: string): HostedAgent {
-    const a = this.d.store.get(account);
+  private async owned(owner: string, account: string): Promise<HostedAgent> {
+    const a = await this.d.repo.get(account);
     // The same answer for "not yours" and "does not exist", so an owner cannot probe other owners' agents.
     if (!a || a.owner !== owner) throw new HostedError("not_found", "no such agent", 404);
     return a;
   }
 
-  get(owner: string, account: string) {
-    return publicView(this.owned(owner, account));
+  async get(owner: string, account: string) {
+    return publicView(await this.owned(owner, account));
   }
 
-  create(owner: string, input: { style: unknown; sweep: unknown; keepWhole: unknown }) {
+  async create(owner: string, input: { style: unknown; sweep: unknown; keepWhole: unknown }) {
     if (this.d.killSwitch()) throw new HostedError("kill_switch", "hosted agents are paused", 503);
     if (!isStrategyName(input.style)) throw new HostedError("bad_style", "style must be crowd or underdog");
     const sweep = input.sweep === true;
     const keepWhole = Number(input.keepWhole ?? 0);
     if (!Number.isInteger(keepWhole) || keepWhole < 0 || keepWhole > 1_000_000_000) throw new HostedError("bad_keep", "keepWhole must be a whole number of tokens");
-    if (this.d.store.byOwner(owner).length >= this.d.limits.maxAgentsPerOwner) {
-      throw new HostedError("agent_limit", `you can have at most ${this.d.limits.maxAgentsPerOwner} hosted agents`, 403);
-    }
     const key = this.d.newKey();
     const agent: HostedAgent = {
       account: key.account,
@@ -128,13 +126,16 @@ export class HostedAgents {
       modelCalls: 0,
       exports: [],
     };
-    this.d.store.put(agent);
+    // The repository checks the per-owner limit and inserts in one atomic step.
+    if (!(await this.d.repo.create(agent, this.d.limits.maxAgentsPerOwner))) {
+      throw new HostedError("agent_limit", `you can have at most ${this.d.limits.maxAgentsPerOwner} hosted agents`, 403);
+    }
     this.d.log({ event: "hosted_create", account: agent.account, owner });
     return publicView(agent);
   }
 
   async start(owner: string, account: string) {
-    const a = this.owned(owner, account);
+    await this.owned(owner, account);
     if (this.d.killSwitch()) throw new HostedError("kill_switch", "hosted agents are paused", 503);
     const funds = await this.d.funds(account);
     if (funds.nearYocto === 0n || funds.tokenBase.every((b) => b === 0n)) throw new HostedError("not_funded", "fund the agent with NEAR and a token first", 409);
@@ -143,29 +144,32 @@ export class HostedAgents {
       throw new HostedError("over_fund_cap", `an agent may hold at most ${this.d.limits.maxTokenWholePerAgent} of any token while it runs`, 409);
     }
     this.failures.delete(account);
-    this.d.store.put({ ...a, running: true, lastError: null });
+    await this.d.repo.setRunning(account, true, null);
+    await this.d.repo.recordEvent(account, "start", {}, this.d.now());
     this.d.log({ event: "hosted_start", account });
     return this.get(owner, account);
   }
 
-  stop(owner: string, account: string) {
-    const a = this.owned(owner, account);
-    this.d.store.put({ ...a, running: false });
+  async stop(owner: string, account: string) {
+    const a = await this.owned(owner, account);
+    await this.d.repo.setRunning(account, false, a.lastError);
+    await this.d.repo.recordEvent(account, "stop", {}, this.d.now());
     this.d.log({ event: "hosted_stop", account });
     return this.get(owner, account);
   }
 
   /** Returns the secret key. The owner takes the agent over; the export is recorded. */
-  exportKey(owner: string, account: string): { account: string; secretKey: string } {
-    const a = this.owned(owner, account);
-    this.d.store.put({ ...a, exports: [...a.exports, this.d.now()] });
+  async exportKey(owner: string, account: string): Promise<{ account: string; secretKey: string }> {
+    const a = await this.owned(owner, account);
+    const secretKey = decryptSecret(this.d.kek, account, a.encryptedKey);
+    await this.d.repo.recordEvent(account, "export", { owner }, this.d.now());
     this.d.log({ event: "hosted_export", account, owner });
-    return { account, secretKey: decryptSecret(this.d.kek, account, a.encryptedKey) };
+    return { account, secretKey };
   }
 
+  /** Counts one NEAR AI call for the agent. A failed write is logged, it never blocks the play. */
   recordModelCall(account: string): void {
-    const a = this.d.store.get(account);
-    if (a) this.d.store.put({ ...a, modelCalls: a.modelCalls + 1 });
+    void this.d.repo.incrementModelCalls(account).catch((e) => this.d.log({ event: "hosted_count_error", account, message: e instanceof Error ? e.message : String(e) }));
   }
 
   /** Config for the shared autonomous loop. The per-agent model cap comes from the operator, not the owner. */
@@ -188,9 +192,13 @@ export class HostedAgents {
 
   /** One round for every running agent. The kill switch stops them all before anything is signed. */
   async tick(): Promise<void> {
-    const running = this.d.store.all().filter((a) => a.running);
+    // If the repository cannot be read, nothing is signed this round (fail closed).
+    const running = await this.d.repo.running();
     if (this.d.killSwitch()) {
-      for (const a of running) this.d.store.put({ ...a, running: false, lastError: "paused by the operator" });
+      for (const a of running) {
+        await this.d.repo.setRunning(a.account, false, "paused by the operator");
+        await this.d.repo.recordEvent(a.account, "kill_switch", {}, this.d.now());
+      }
       if (running.length > 0) this.d.log({ event: "hosted_kill_switch", stopped: running.length });
       return;
     }
@@ -204,8 +212,9 @@ export class HostedAgents {
         const message = e instanceof Error ? e.message : String(e);
         this.d.log({ event: "hosted_error", account: a.account, message });
         if (n >= MAX_ROUND_ERRORS) {
-          const latest = this.d.store.get(a.account) ?? a;
-          this.d.store.put({ ...latest, running: false, lastError: `stopped after ${n} errors: ${message}` });
+          const reason = `stopped after ${n} errors: ${message}`;
+          await this.d.repo.setRunning(a.account, false, reason);
+          await this.d.repo.recordEvent(a.account, "error", { message: reason }, this.d.now());
         }
       }
     }

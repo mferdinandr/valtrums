@@ -4,11 +4,15 @@ import { generateKey, Near } from "near-kit";
 import { NearActionReadSource } from "../mcp/actions/source.js";
 import { playOnce, sweepOnce, type AutonomousAgentConfig, type FunctionCallRequest } from "../player/autonomous.js";
 import { createModelProposer } from "../player/model.js";
-import { PlayerState } from "../player/state.js";
 import { Challenges, rpcKeyCheck } from "./auth.js";
 import { parseKek } from "./crypto.js";
+import { createPgDb } from "./db.js";
 import { HostedAgents, ModelBudget, type Funds, type HostedLimits } from "./manager.js";
+import { PgHostedRepository } from "./pg-store.js";
+import { FileHostedRepository, type HostedRepository } from "./repository.js";
 import { createHostedServer } from "./server.js";
+import { DbSessions, HmacSessions, type SessionStore } from "./sessions.js";
+import { AgentStates } from "./state-sync.js";
 import { AgentStore } from "./store.js";
 
 /**
@@ -71,8 +75,22 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
     tokenBase: await Promise.all((await joinable()).map((t) => source.tokenBalance(t, account))),
   });
 
-  const store = new AgentStore(`${dir}/agents.json`);
-  const states = new Map<string, PlayerState>();
+  // Postgres (Supabase) when HOSTED_AGENT_DATABASE_URL is set, else files under HOSTED_AGENT_STATE_DIR.
+  const databaseUrl = env.HOSTED_AGENT_DATABASE_URL?.trim();
+  let repo: HostedRepository;
+  let sessions: SessionStore;
+  let closeDb: () => Promise<void> = async () => {};
+  if (databaseUrl) {
+    const db = createPgDb(databaseUrl);
+    await db.query("select 1"); // fail at startup, not on the first request, when the database cannot be reached
+    repo = new PgHostedRepository(db);
+    sessions = new DbSessions(db);
+    closeDb = () => db.close();
+  } else {
+    repo = new FileHostedRepository(new AgentStore(`${dir}/agents.json`), dir);
+    sessions = new HmacSessions(kek);
+  }
+  const states = new AgentStates(repo);
   const signers = new Map<string, Near>();
   let manager: HostedAgents;
   const budget = new ModelBudget(limits.maxModelCallsGlobalHour, Date.now, (account) => manager.recordModelCall(account));
@@ -91,11 +109,9 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       signers.set(agent.account, near);
     }
     const signer = near;
-    let state = states.get(agent.account);
-    if (!state) {
-      state = new PlayerState(`${dir}/state-${agent.account}.json`);
-      states.set(agent.account, state);
-    }
+    // Fail closed: state that could not be saved earlier, or that cannot be loaded, stops the agent from playing.
+    const state = await states.state(agent.account);
+    await states.flush(agent.account);
     const sign = async (a: AutonomousAgentConfig, call: FunctionCallRequest): Promise<string> => {
       const out = (await signer.call(call.receiverId, call.methodName, call.args, {
         gas: call.gas as never,
@@ -106,7 +122,12 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       if (!hash) throw new Error("the transaction hash is missing");
       return hash;
     };
-    await playOnce(agent, { arena, source, joinable, battleCount, sign, state, now: Date.now, log, live: true, model });
+    try {
+      await playOnce(agent, { arena, source, joinable, battleCount, sign, state, now: Date.now, log, live: true, model });
+    } finally {
+      // Persist what was done even when the round failed part way, so a deposit is never forgotten.
+      await states.flush(agent.account);
+    }
     await sweepOnce(agent, {
       joinable,
       balance: (token, account) => source.tokenBalance(token, account),
@@ -118,7 +139,7 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
   };
 
   manager = new HostedAgents({
-    store,
+    repo,
     kek,
     limits,
     killSwitch: () => existsSync(killPath),
@@ -135,12 +156,15 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
   const server = createHostedServer({
     agents: manager,
     challenges: new Challenges(),
-    kek,
+    sessions,
     keyBelongsTo: rpcKeyCheck(rpcUrl),
     allowedOrigin: required(env, "HOSTED_AGENT_ALLOWED_ORIGIN"),
+    cookie: {
+      ...(env.HOSTED_AGENT_COOKIE_SAMESITE ? { sameSite: parseSameSite(env.HOSTED_AGENT_COOKIE_SAMESITE) } : {}),
+    },
   });
-  const port = Number(env.PORT ?? 8791); // 8790 is the read API
-  server.listen(port, () => log({ event: "start", port, killSwitchPath: killPath, limits }));
+  const port = Number(env.PORT ?? 8792); // 8790 is the read API, 8791 the intents fixture
+  server.listen(port, () => log({ event: "start", port, killSwitchPath: killPath, limits, store: databaseUrl ? "postgres" : "files" }));
 
   let running = true;
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
@@ -153,8 +177,17 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
     await manager.tick().catch((e) => log({ event: "tick_error", message: e instanceof Error ? e.message : String(e) }));
     await new Promise<void>((r) => setTimeout(r, 15_000));
   }
+  await closeDb();
   log({ event: "stop" });
 }
+
+const parseSameSite = (v: string): "Lax" | "None" | "Strict" => {
+  const s = v.trim().toLowerCase();
+  if (s === "lax") return "Lax";
+  if (s === "none") return "None";
+  if (s === "strict") return "Strict";
+  throw new Error("HOSTED_AGENT_COOKIE_SAMESITE must be Lax, None or Strict");
+};
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runHostedService().catch((err) => {

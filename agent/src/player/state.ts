@@ -24,19 +24,27 @@ export const stateKey = (user: string, localId: string, battleId: number, commun
 
 const empty = (): PlayerStateData => ({ version: 1, acted: {}, blocked: {}, failures: 0 });
 
-function parse(raw: string): PlayerStateData {
-  const v = JSON.parse(raw) as Partial<PlayerStateData>;
-  if (v.version !== 1 || typeof v.acted !== "object" || v.acted === null || typeof v.blocked !== "object" || v.blocked === null || typeof v.failures !== "number") {
+/** Validates a parsed state value (from a file or a database row). Malformed state is an error, never reset. */
+export function validatePlayerState(v: Partial<PlayerStateData> | null): PlayerStateData {
+  if (!v || v.version !== 1 || typeof v.acted !== "object" || v.acted === null || typeof v.blocked !== "object" || v.blocked === null || typeof v.failures !== "number") {
     throw new Error("player state file is malformed");
   }
   return { version: 1, acted: v.acted as Record<string, ActedEntry>, blocked: v.blocked as Record<string, number>, failures: v.failures };
 }
 
-/** A versioned JSON file with atomic writes. A malformed file stops the program instead of being silently reset. */
+const parse = (raw: string): PlayerStateData => validatePlayerState(JSON.parse(raw) as Partial<PlayerStateData>);
+
+/**
+ * A versioned JSON file with atomic writes. A malformed file stops the program instead of being silently reset.
+ * With `init.onSave` the state is handed to that sink on every change instead of being written to `path` (used for
+ * database-backed state), and `init.data` is the state loaded from there.
+ */
 export class PlayerState {
   private data: PlayerStateData;
-  constructor(private readonly path: string | null) {
-    this.data = path && existsSync(path) ? parse(readFileSync(path, "utf8")) : empty();
+  private readonly onSave: ((data: PlayerStateData) => void) | undefined;
+  constructor(private readonly path: string | null, init: { data?: PlayerStateData; onSave?: (data: PlayerStateData) => void } = {}) {
+    this.onSave = init.onSave;
+    this.data = init.data ?? (path && existsSync(path) ? parse(readFileSync(path, "utf8")) : empty());
   }
   has(key: string): boolean {
     return key in this.data.acted;
@@ -70,6 +78,7 @@ export class PlayerState {
     this.save();
   }
   private save(): void {
+    if (this.onSave) return this.onSave(structuredClone(this.data));
     if (!this.path) return;
     mkdirSync(dirname(this.path), { recursive: true });
     const tmp = `${this.path}.tmp`;
