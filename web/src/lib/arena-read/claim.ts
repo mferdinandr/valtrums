@@ -77,3 +77,9 @@ export function buildRegisterReview(backing: string, account: string, label?: st
 export async function readRegistered(rpcUrl: string, backing: string, account: string): Promise<boolean> {
   return (await rpcView<unknown>(rpcUrl, backing, "storage_balance_of", { account_id: account })) != null;
 }
+
+/** The entitlement of `account` on a backing, in base units, read from the backing itself (no wallet signature). */
+export async function readEntitlement(rpcUrl: string, backing: string, account: string): Promise<string> {
+  const value = await rpcView<string>(rpcUrl, backing, "entitlement_of", { account });
+  return typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value) ? value : "0";
+}
