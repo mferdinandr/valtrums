@@ -224,11 +224,15 @@ impl Arena {
     }
 
     /// A participant of the final winning community votes once, inside the
-    /// window, to burn (`burn = true`) or return their battle's principal. The
-    /// weight is the caller's snapshotted position. Attach enough NEAR for the
+    /// window, for the share of principal to burn (`burn_percent`, 0 to 100);
+    /// the rest is returned. The weight is the caller's snapshotted position:
+    /// the tally adds `weight * burn_percent` to the burn side and
+    /// `weight * (100 - burn_percent)` to the return side, so the final burn
+    /// share is the weighted average of the votes. Attach enough NEAR for the
     /// vote's storage; the rest is refunded.
     #[payable]
-    pub fn vote_lifecycle_disposition(&mut self, battle_id: U64, burn: bool) {
+    pub fn vote_lifecycle_disposition(&mut self, battle_id: U64, burn_percent: u8) {
+        require!(burn_percent <= 100, "Burn percent must be 0 to 100");
         require!(!self.paused, "Arena is paused");
         let id = battle_id.0;
         let community = self
@@ -251,17 +255,18 @@ impl Arena {
             "Already voted"
         );
         let (burned, kept) = self.lifecycle_dao_tally.get(&id).copied().unwrap_or((0, 0));
-        let tally = if burn {
-            (burned.checked_add(weight), Some(kept))
-        } else {
-            (Some(burned), kept.checked_add(weight))
-        };
-        let tally = match tally {
+        let burn_part = weight.checked_mul(u128::from(burn_percent));
+        let keep_part = weight.checked_mul(u128::from(100 - burn_percent));
+        let tally = match (
+            burn_part.and_then(|part| burned.checked_add(part)),
+            keep_part.and_then(|part| kept.checked_add(part)),
+        ) {
             (Some(burned), Some(kept)) => (burned, kept),
             _ => env::panic_str("Tally overflow"),
         };
         let before = env::storage_usage();
-        self.lifecycle_dao_votes.insert(key, burn);
+        // Only the presence of a vote is read, so the stored value stays a bool.
+        self.lifecycle_dao_votes.insert(key, burn_percent > 0);
         self.lifecycle_dao_tally.insert(id, tally);
         self.lifecycle_dao_votes.flush();
         self.lifecycle_dao_tally.flush();
@@ -281,7 +286,7 @@ impl Arena {
             json!({
                 "battle_id": battle_id,
                 "voter": voter,
-                "choice": if burn { "burn" } else { "return" },
+                "burn_percent": burn_percent,
                 "weight": U128(weight),
             }),
         );
@@ -463,8 +468,9 @@ impl Arena {
             window_secs: window.map(|ns| U64(ns / NS_PER_SECOND)),
             opens_at_ns: times.map(|(opens, _)| U64(opens)),
             closes_at_ns: times.map(|(_, closes)| U64(closes)),
-            burn_weight: U128(burn),
-            return_weight: U128(keep),
+            // The tally is scaled by 100 (weight x percent); the view shows it in position units.
+            burn_weight: U128(burn / 100),
+            return_weight: U128(keep / 100),
             escrow_reserved: self.lifecycle_escrow.get(&id).copied() == Some(true),
             escrow_id: hold
                 .map(|hold| hex(&escrow_id(&env::current_account_id(), id, hold.community))),
@@ -595,9 +601,9 @@ mod tests {
         arena
     }
 
-    fn vote(arena: &mut Arena, who: &str, burn: bool, now: u64) {
+    fn vote(arena: &mut Arena, who: &str, burn_percent: u8, now: u64) {
         context(who, STORAGE, now);
-        arena.vote_lifecycle_disposition(U64(1), burn);
+        arena.vote_lifecycle_disposition(U64(1), burn_percent);
     }
 
     #[test]
@@ -618,7 +624,7 @@ mod tests {
         // Battle 1 was created before: it has no vote and its principal stays escrowed.
         let view = arena.get_lifecycle_disposition(U64(1)).expect("view");
         assert_eq!(view.status, DispositionStatus::NoVote);
-        assert!(panics(|| vote(&mut arena, "creator.testnet", true, WON_AT)));
+        assert!(panics(|| vote(&mut arena, "creator.testnet", 100, WON_AT)));
     }
 
     #[test]
@@ -631,23 +637,23 @@ mod tests {
             "owner.testnet",
             "oracle.testnet",
         ] {
-            assert!(panics(|| vote(&mut arena, who, true, WON_AT + 1)));
+            assert!(panics(|| vote(&mut arena, who, 100, WON_AT + 1)));
         }
-        vote(&mut arena, "creator.testnet", true, WON_AT + 1);
+        vote(&mut arena, "creator.testnet", 100, WON_AT + 1);
         assert!(panics(|| vote(
             &mut arena,
             "creator.testnet",
-            false,
+            0,
             WON_AT + 2
         )));
         // The window is half-open: a vote at the close is refused.
         assert!(panics(|| vote(
             &mut arena,
             "bob.testnet",
-            false,
+            0,
             WON_AT + 5 * MINUTE
         )));
-        vote(&mut arena, "bob.testnet", false, WON_AT + 5 * MINUTE - 1);
+        vote(&mut arena, "bob.testnet", 0, WON_AT + 5 * MINUTE - 1);
         let view = arena.get_lifecycle_disposition(U64(1)).expect("view");
         assert_eq!(view.status, DispositionStatus::Voting);
         assert_eq!((view.burn_weight, view.return_weight), (U128(60), U128(30)));
@@ -660,14 +666,14 @@ mod tests {
     fn a_vote_must_pay_for_its_storage() {
         let mut arena = decided_arena(Some(5 * MINUTE));
         context("bob.testnet", NearToken::from_yoctonear(1), WON_AT + 2);
-        arena.vote_lifecycle_disposition(U64(1), false);
+        arena.vote_lifecycle_disposition(U64(1), 0);
     }
 
     #[test]
     fn the_burn_share_of_votes_cast_applies_to_every_holder_rounding_to_return() {
         let mut arena = decided_arena(Some(5 * MINUTE));
-        vote(&mut arena, "creator.testnet", true, WON_AT);
-        vote(&mut arena, "bob.testnet", false, WON_AT + 1);
+        vote(&mut arena, "creator.testnet", 100, WON_AT);
+        vote(&mut arena, "bob.testnet", 0, WON_AT + 1);
         // Carol does not vote and follows the voters.
         context(
             "anyone.testnet",
@@ -710,11 +716,43 @@ mod tests {
         assert_eq!(view.total_releases, 4);
     }
 
+    #[test]
+    fn a_partial_burn_percent_burns_the_weighted_average_share() {
+        let mut arena = decided_arena(Some(5 * MINUTE));
+        // Creator (60) votes 50% and bob (30) votes 0%: B = 3000, R = 9000, so one third burns.
+        vote(&mut arena, "creator.testnet", 50, WON_AT);
+        vote(&mut arena, "bob.testnet", 0, WON_AT + 1);
+        context(
+            "anyone.testnet",
+            NearToken::from_yoctonear(0),
+            WON_AT + 5 * MINUTE,
+        );
+        let plan = arena.disposition_plan(1).expect("plan");
+        let burn: u128 = plan
+            .iter()
+            .filter_map(|item| match item.release {
+                Release::Burn { amount } => Some(amount),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(burn, 33);
+        let view = arena.get_lifecycle_disposition(U64(1)).expect("view");
+        assert_eq!((view.burn_total, view.return_total), (U128(33), U128(67)));
+        assert_eq!((view.burn_weight, view.return_weight), (U128(30), U128(60)));
+    }
+
+    #[test]
+    fn a_burn_percent_above_100_is_refused() {
+        let mut arena = decided_arena(Some(5 * MINUTE));
+        context("creator.testnet", STORAGE, WON_AT);
+        assert!(panics(|| arena.vote_lifecycle_disposition(U64(1), 101)));
+    }
+
     // Each test gets its own mocked storage; two arenas in one test would share it.
     #[test]
     fn a_unanimous_burn_vote_burns_everything() {
         let mut burn = decided_arena(Some(5 * MINUTE));
-        vote(&mut burn, "carol.testnet", true, WON_AT);
+        vote(&mut burn, "carol.testnet", 100, WON_AT);
         context(
             "anyone.testnet",
             NearToken::from_yoctonear(0),
@@ -728,7 +766,7 @@ mod tests {
     #[test]
     fn a_unanimous_return_vote_returns_everything() {
         let mut keep = decided_arena(Some(5 * MINUTE));
-        vote(&mut keep, "bob.testnet", false, WON_AT);
+        vote(&mut keep, "bob.testnet", 0, WON_AT);
         context(
             "anyone.testnet",
             NearToken::from_yoctonear(0),
@@ -763,7 +801,7 @@ mod tests {
         assert!(panics(|| vote(
             &mut arena,
             "creator.testnet",
-            true,
+            100,
             WON_AT + 6 * MINUTE
         )));
     }
@@ -772,8 +810,8 @@ mod tests {
     fn execution_needs_the_escrow_a_closed_vote_a_bounded_batch_and_the_deposit() {
         let mut arena = decided_arena(Some(5 * MINUTE));
         // A split vote, so the plan has four releases (three returns and a burn).
-        vote(&mut arena, "creator.testnet", true, WON_AT);
-        vote(&mut arena, "bob.testnet", false, WON_AT);
+        vote(&mut arena, "creator.testnet", 100, WON_AT);
+        vote(&mut arena, "bob.testnet", 0, WON_AT);
         let after = WON_AT + 5 * MINUTE;
         let four = NearToken::from_yoctonear(ENTITLEMENT_DEPOSIT.as_yoctonear() * 4);
         context("anyone.testnet", four, after);
