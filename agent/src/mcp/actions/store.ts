@@ -53,7 +53,14 @@ export class ActionStoreError extends Error {
   }
 }
 
-export class ActionStore {
+/** What the action service needs from a store. The file store below and the Postgres store both implement it. */
+export interface ActionStorePort {
+  get(actionId: string): Promise<ActionRecord | null>;
+  /** Atomically reads, transforms and commits one record. `update` may throw to abort. */
+  update(actionId: string, update: (current: ActionRecord | null) => ActionRecord): Promise<ActionRecord>;
+}
+
+export class ActionStore implements ActionStorePort {
   private actions: Map<string, ActionRecord> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
