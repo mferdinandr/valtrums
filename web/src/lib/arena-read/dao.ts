@@ -98,32 +98,33 @@ const arenaProblems = (arena: string): string[] => (arena.length >= 2 ? [] : ["t
 
 export type Review = ({ ok: true } & CallReview) | { ok: false; problems: string[] };
 
-export const voteRequest = (battleId: number, choice: "burn" | "return") => ({ kind: "vote_disposition", battleId, choice });
+export const voteRequest = (battleId: number, burnPercent: number) => ({ kind: "vote_disposition", battleId, burnPercent });
 export const reserveEscrowRequest = (battleId: number) => ({ kind: "reserve_escrow", battleId });
 export const executeRequest = (battleId: number) => ({ kind: "execute_disposition", battleId });
 
-export function buildVoteReview(arena: string, battleId: number, choice: "burn" | "return", weightLabel?: string): Review {
+export function buildVoteReview(arena: string, battleId: number, burnPercent: number, weightLabel?: string): Review {
   const problems = [...idProblems(battleId), ...arenaProblems(arena)];
+  if (!Number.isInteger(burnPercent) || burnPercent < 0 || burnPercent > 100) problems.push("the burn share must be a whole number from 0 to 100");
   if (problems.length > 0) return { ok: false, problems };
   return {
     ok: true,
     receiver: arena,
     method: "vote_lifecycle_disposition",
-    args: { battle_id: String(battleId), burn: choice === "burn" },
+    args: { battle_id: String(battleId), burn_percent: burnPercent },
     depositYocto: VOTE_DEPOSIT_YOCTO,
     gasTgas: VOTE_GAS_TGAS,
     lines: [
       { label: "Contract", value: arena },
       { label: "Method", value: "vote_lifecycle_disposition" },
       { label: "Battle", value: `#${battleId}` },
-      { label: "Vote", value: choice },
+      { label: "Burn share", value: `${burnPercent}% burned, ${100 - burnPercent}% returned` },
       ...(weightLabel ? [{ label: "Your weight", value: weightLabel }] : []),
       { label: "Storage deposit (upper bound)", value: `${VOTE_DEPOSIT_YOCTO} yoctoNEAR` },
       { label: "Gas", value: `${VOTE_GAS_TGAS} Tgas` },
     ],
     notes: [
       "One vote per account, and it is final.",
-      "No quorum: the burn share of the weight cast applies to every winner's principal, rounding toward return.",
+      "No quorum: the weighted average of all burn shares applies to every winner's principal, rounding toward return.",
       "The arena refunds the part of the deposit the vote does not use.",
     ],
   };

@@ -63,9 +63,9 @@ describe("next step", () => {
 
 describe("reviews match the action service's calls", () => {
   it("vote carries the string battle id, the burn flag and the storage deposit", () => {
-    const r = buildVoteReview("arena.testnet", 31, "burn");
-    expect(r).toMatchObject({ ok: true, method: "vote_lifecycle_disposition", args: { battle_id: "31", burn: true }, depositYocto: "10000000000000000000000", gasTgas: "30" });
-    expect(buildVoteReview("arena.testnet", 31, "return")).toMatchObject({ args: { battle_id: "31", burn: false } });
+    const r = buildVoteReview("arena.testnet", 31, 100);
+    expect(r).toMatchObject({ ok: true, method: "vote_lifecycle_disposition", args: { battle_id: "31", burn_percent: 100 }, depositYocto: "10000000000000000000000", gasTgas: "30" });
+    expect(buildVoteReview("arena.testnet", 31, 25)).toMatchObject({ args: { battle_id: "31", burn_percent: 25 } });
   });
   it("reserve escrow uses its own deposit and gas", () => {
     expect(buildReserveEscrowReview("arena.testnet", 31)).toMatchObject({ ok: true, method: "reserve_lifecycle_escrow", args: { battle_id: "31" }, depositYocto: "10000000000000000000000", gasTgas: "80" });
@@ -76,7 +76,9 @@ describe("reviews match the action service's calls", () => {
     if (r.ok) expect(r.depositYocto).toBe((ENTITLEMENT_DEPOSIT_YOCTO * 3n).toString());
   });
   it("rejects a bad battle id, a missing arena and an out-of-range batch", () => {
-    expect(buildVoteReview("arena.testnet", 0, "burn").ok).toBe(false);
+    expect(buildVoteReview("arena.testnet", 0, 100).ok).toBe(false);
+    expect(buildVoteReview("arena.testnet", 31, 101).ok).toBe(false);
+    expect(buildVoteReview("arena.testnet", 31, 12.5).ok).toBe(false);
     expect(buildReserveEscrowReview("", 31).ok).toBe(false);
     expect(buildExecuteReview("arena.testnet", 31, 11, 11).ok).toBe(false);
   });
