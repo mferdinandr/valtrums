@@ -65,6 +65,29 @@ export function DaoDecision({
   const [readError, setReadError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [burnPercent, setBurnPercent] = useState(0);
+  // The arena has no view of who voted, so a vote is remembered per account and battle in this browser; a refusal
+  // with "Already voted" (another browser, a retry) marks it too. The contract still decides.
+  const voteKey = accountId ? `valtrum.dao-vote:${arena}:${battleId}:${accountId}` : null;
+  const [voted, setVoted] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const saved = voteKey ? window.localStorage.getItem(voteKey) : null;
+      setVoted(saved === null ? null : Number(saved));
+    } catch {
+      setVoted(null);
+    }
+  }, [voteKey]);
+  useEffect(() => {
+    if (action.error?.includes("Already voted")) setVoted((previous) => previous ?? -1);
+  }, [action.error]);
+  const markVoted = useCallback((percent: number) => {
+    setVoted(percent);
+    try {
+      if (voteKey) window.localStorage.setItem(voteKey, String(percent));
+    } catch {
+      /* the contract still refuses a second vote */
+    }
+  }, [voteKey]);
   const [burn, setBurn] = useState<BurnFacts | null>(null);
   const facts = useDeploymentFacts(namespace);
   const payout = facts?.capabilities?.companions.payout ?? null;
@@ -100,14 +123,16 @@ export function DaoDecision({
   const share = view ? burnSharePercent(view) : null;
   const weightLabel = `${formatUnits(weight, TOKEN_DECIMALS, 4)} ${token}`;
 
-  const send = (request: Record<string, unknown>, review: ReturnType<typeof buildVoteReview>) =>
+  const send = (request: Record<string, unknown>, review: ReturnType<typeof buildVoteReview>): Promise<boolean> =>
     action.run(async () => {
       const result = await act(request, review.ok ? review : null);
       if (result.txHash) setLastTx(result.txHash);
       await refresh();
     });
 
-  const vote = (percent: number) => send(voteRequest(battleId, percent), buildVoteReview(arena, battleId, percent, weightLabel));
+  const vote = async (percent: number) => {
+    if (await send(voteRequest(battleId, percent), buildVoteReview(arena, battleId, percent, weightLabel))) markVoted(percent);
+  };
 
   const totalMs = view?.window_secs ? Number(view.window_secs) * 1000 : 0;
   const pct = totalMs > 0 ? Math.min(100, Math.max(0, (msLeft / totalMs) * 100)) : 0;
@@ -192,6 +217,17 @@ export function DaoDecision({
             <p className="text-xs text-mute">Only participants who deposited in {token} can vote.</p>
           ) : (
             <>
+              {voted !== null ? (
+                <>
+                  <p className="text-sm font-semibold" style={{ color: "#327f7d" }}>
+                    {voted >= 0 ? `You voted ${voted}% burn.` : "You already voted."} One vote per account, and it is final.
+                  </p>
+                  <Button type="button" className="w-full" disabled>
+                    Voted
+                  </Button>
+                </>
+              ) : (
+                <>
               <p className="text-xs text-mute">Your weight: {weightLabel}. One vote, final.</p>
               <div className="space-y-2 rounded-xl p-3" style={{ background: "#f6f1e6" }}>
                 <div className="flex items-center justify-between gap-3">
@@ -244,6 +280,8 @@ export function DaoDecision({
               <Button type="button" className="w-full" disabled={action.busy || !connected} onClick={() => void vote(burnPercent)}>
                 Vote {burnPercent}% burn
               </Button>
+                </>
+              )}
             </>
           )}
         </div>
