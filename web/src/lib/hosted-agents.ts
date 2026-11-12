@@ -20,6 +20,20 @@ export interface HostedAgentView {
   createdAt: number;
 }
 
+/** One thing an agent did, as the service reports it (newest first). */
+export interface AgentActivity {
+  at: number;
+  event: string;
+  battleId?: number;
+  community?: number;
+  amount?: string;
+  step?: string;
+  decidedBy?: string;
+  txHash?: string;
+  reason?: string;
+  message?: string;
+}
+
 export class HostedAgentsError extends Error {
   constructor(message: string, readonly code: string, readonly status: number) {
     super(message);
@@ -92,6 +106,9 @@ export class HostedAgentsClient {
   }
   stop(account: string): Promise<HostedAgentView> {
     return this.request(`/agents/${encodeURIComponent(account)}/stop`, { method: "POST" });
+  }
+  async activity(account: string): Promise<AgentActivity[]> {
+    return (await this.request<{ activity: AgentActivity[] }>(`/agents/${encodeURIComponent(account)}/activity`)).activity;
   }
   exportKey(account: string): Promise<{ account: string; secretKey: string }> {
     return this.request(`/agents/${encodeURIComponent(account)}/export`, { method: "POST" });

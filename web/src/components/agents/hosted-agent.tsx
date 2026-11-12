@@ -13,13 +13,69 @@ import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-gra
 import type { Namespace } from "@/lib/arena-read/application";
 import { readAgentStatus, type AgentStatus } from "@/lib/arena-read/autonomous-agent";
 import { config } from "@/lib/config";
-import { getHostedClient, type HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
+import { TransactionLink } from "@/components/transaction-link";
+import { getHostedClient, type AgentActivity, type HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
 
 const POLL_MS = 15_000;
-const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentView; namespace: Namespace; client: HostedAgentsClient; onChange: () => void }) {
+const ACTIVITY_POLL_MS = 5_000;
+const amountText = (base?: string) => (base && /^[0-9]{1,60}$/.test(base) ? formatUnits(BigInt(base), 18, 2) : null);
+
+/** One plain-language line for an agent event. No addresses or arguments; the transaction link is separate. */
+function describeActivity(a: AgentActivity): string {
+  const where = a.battleId !== undefined ? `battle #${a.battleId}` : "a battle";
+  const amount = amountText(a.amount);
+  switch (a.event) {
+    case "start": return "Started playing";
+    case "stop": return "Stopped";
+    case "skipped": return `Waiting: ${a.reason ?? "nothing to do right now"}`;
+    case "no_option": return "No open battle fits right now";
+    case "model_answer_rejected": return "The AI's pick was not usable, so the agent waited";
+    case "sent": return `Sent a step for ${where}${a.step ? ` (${a.step})` : ""}`;
+    case "played": return `Played ${where}${amount ? `: deposited ${amount}` : ""}${a.decidedBy === "near-ai" ? " (picked by NEAR AI)" : ""}`;
+    case "error": return `Problem: ${a.message ?? "unknown error"}`;
+    case "sweep_skipped": return `Did not send surplus back: ${a.reason ?? "not possible yet"}`;
+    case "swept": return `Sent surplus tokens back to your wallet${amount ? ` (${amount})` : ""}`;
+    default: return a.event;
+  }
+}
+
+function ActivityLog({ account, client }: { account: string; client: HostedAgentsClient }) {
+  const [items, setItems] = useState<AgentActivity[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => client.activity(account).then((list) => live && setItems(list)).catch(() => undefined);
+    void load();
+    const timer = setInterval(() => void load(), ACTIVITY_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [account, client]);
+  return (
+    <section className="space-y-2" aria-label="Agent activity" aria-live="polite">
+      <h3 className="text-sm font-semibold">Activity</h3>
+      {items === null ? (
+        <p className="h-48 text-xs text-mute">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="h-48 text-xs text-mute">Nothing yet. Press Start and the agent&apos;s moves will show up here.</p>
+      ) : (
+        <ul className="h-48 space-y-1 overflow-y-auto text-xs">
+          {items.map((a, i) => (
+            <li key={`${a.at}:${i}`} className="flex flex-wrap gap-x-2">
+              <span className="text-mute">{new Date(a.at).toLocaleTimeString()}</span>
+              <span className={a.event === "error" ? "text-neon-amber" : undefined}>{describeActivity(a)}</span>
+              {a.txHash && <TransactionLink hash={a.txHash} />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AgentRow({ agent, name, namespace, client, onChange }: { agent: HostedAgentView; name: string; namespace: Namespace; client: HostedAgentsClient; onChange: () => void }) {
   const [status, setStatus] = useState<AgentStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,23 +109,21 @@ function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentVi
 
   const funded = !!status?.nearYocto;
   return (
-    <Card className="space-y-3" aria-label={`Agent ${short(agent.account)}`}>
+    <Card className="space-y-3" aria-label={name}>
       <div className="flex flex-wrap items-center gap-2">
-        <strong className="text-sm" title={agent.account}>{short(agent.account)}</strong>
+        <strong className="text-sm">{name}</strong>
         <Badge tone={agent.running ? "green" : "mute"}>{agent.running ? "running" : "stopped"}</Badge>
         <Badge tone={funded ? "green" : "amber"}>{funded ? "funded" : "not funded yet"}</Badge>
         <span className="text-xs text-mute">{STRATEGY_OPTIONS.find((o) => o.value === agent.style)?.title ?? agent.style}</span>
       </div>
-      {agent.lastError && <p role="alert" className="text-xs text-neon-amber">Stopped: {agent.lastError}</p>}
-
       <div className="flex flex-wrap gap-2">
         {agent.running ? (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => client.stop(agent.account))}>Stop</Button>
+          <Button size="sm" variant="ghost" className="min-w-20" disabled={busy} onClick={() => void run(() => client.stop(agent.account))}>Stop</Button>
         ) : (
-          <Button size="sm" disabled={busy} onClick={() => void run(() => client.start(agent.account))}>Start</Button>
+          <Button size="sm" className="min-w-20" disabled={busy} onClick={() => void run(() => client.start(agent.account))}>Start</Button>
         )}
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => setSecret((await client.exportKey(agent.account)).secretKey))}>Export key</Button>
       </div>
+      {agent.lastError && <p role="alert" className="text-xs text-neon-amber">Stopped: {agent.lastError}</p>}
       {error && <p role="alert" className="text-xs text-neon-amber">{error}</p>}
       {secret && (
         <p role="alert" className="break-all rounded-lg border border-edge p-3 text-xs">
@@ -81,9 +135,10 @@ function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentVi
 
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Fund it from your wallet</h3>
-        <p className="break-all text-xs text-mute">Agent account: {agent.account}</p>
         <FundAgent account={agent.account} tokens={status?.tokens ?? []} onSent={() => void refresh()} />
       </section>
+
+      <ActivityLog account={agent.account} client={client} />
 
       <section className="space-y-1" aria-live="polite">
         <h3 className="text-sm font-semibold">Status</h3>
@@ -103,8 +158,16 @@ function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentVi
             ))}
           </ul>
         )}
-        <p className="text-xs text-mute">Winnings are not tokens in this balance. They are paid out on Robinhood Chain; see Portfolio.</p>
+        <p className="text-xs text-mute">Winnings are paid out on Robinhood Chain; see Portfolio.</p>
       </section>
+
+      <details className="lifecycle-tech">
+        <summary>Advanced</summary>
+        <div className="mt-3 space-y-2">
+          <p className="break-all text-xs text-mute">Agent account: {agent.account}</p>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => setSecret((await client.exportKey(agent.account)).secretKey))}>Export key</Button>
+        </div>
+      </details>
     </Card>
   );
 }
@@ -184,8 +247,7 @@ export function HostedAgent({ namespace }: { namespace: Namespace }) {
       <Card role="note" className="space-y-1 border-neon-amber/60">
         <CardTitle>Testnet only</CardTitle>
         <p className="text-sm text-mute">
-          We run your agent for you and keep its key, so use only valueless testnet tokens. You can export the key at any time and
-          stop the agent whenever you like. The most it can lose is what you send it.
+          Use only test tokens. We run the agent for you, you can stop it any time, and the most it can lose is what you send it.
         </p>
       </Card>
 
@@ -224,7 +286,7 @@ export function HostedAgent({ namespace }: { namespace: Namespace }) {
           {agents.length === 0 ? (
             <p className="text-sm text-mute">No agents yet.</p>
           ) : (
-            agents.map((a) => <AgentRow key={a.account} agent={a} namespace={namespace} client={client} onChange={() => void load()} />)
+            agents.map((a, i) => <AgentRow key={a.account} agent={a} name={`Agent ${i + 1}`} namespace={namespace} client={client} onChange={() => void load()} />)
           )}
         </>
       )}

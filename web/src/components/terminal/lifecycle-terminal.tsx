@@ -258,15 +258,8 @@ function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: 
   const label = `${formatUnits(BigInt(intent.amount), TOKEN_DECIMALS, 4)} ${symbol}`;
   return (
     <div className="space-y-3" aria-label="Deposit">
-      {st.step !== "done" && problems.length > 0 && (
-        <ul role="status" className="list-disc pl-4 text-xs text-neon-amber">
-          {problems.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-      )}
       {st.step === "done" ? null : flow.connected ? (
-        <Button type="button" disabled={problems.length > 0 || st.step === "running"} onClick={() => void flow.run(resolved.representation, symbol, intent.amount)}>
+        <Button type="button" className="min-w-48" disabled={problems.length > 0 || st.step === "running"} onClick={() => void flow.run(resolved.representation, symbol, intent.amount)}>
           {st.step === "failed" ? "Continue" : `Deposit ${label}`}
         </Button>
       ) : (
@@ -275,21 +268,31 @@ function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: 
         </Button>
       )}
       {st.step !== "done" && <p className="text-xs text-mute">If {symbol} is not in battle #{intent.battleId} yet, it is added automatically before the deposit. Your wallet asks you to confirm each step.</p>}
-      {st.step === "running" && (
-        <p role="status" className="text-xs text-mute">
-          {JOIN_STAGE_TEXT[st.stage]} Confirm in your wallet when asked.
-        </p>
-      )}
-      {st.step === "failed" && (
-        <p role="alert" className="text-xs text-neon-amber">
-          Deposit failed: {st.message}
-        </p>
-      )}
-      {st.step === "done" && (
-        <p role="status" className="text-xs text-neon-green">
-          Deposited {label} into battle #{intent.battleId}.
-        </p>
-      )}
+      {/* Messages sit below the button and share one reserved area, so the button never moves when they change. */}
+      <div className="min-h-[3.5rem] space-y-1">
+        {st.step !== "done" && problems.length > 0 && st.step !== "running" && (
+          <ul role="status" className="list-disc pl-4 text-xs text-neon-amber">
+            {problems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        )}
+        {st.step === "running" && (
+          <p role="status" className="text-xs text-mute">
+            {JOIN_STAGE_TEXT[st.stage]} Confirm in your wallet when asked.
+          </p>
+        )}
+        {st.step === "failed" && (
+          <p role="alert" className="text-xs text-neon-amber">
+            Deposit failed: {st.message}
+          </p>
+        )}
+        {st.step === "done" && (
+          <p role="status" className="text-xs text-neon-green">
+            Deposited {label} into battle #{intent.battleId}.
+          </p>
+        )}
+      </div>
       {flow.txHashes.length > 0 && (
         <div className="space-y-1">
           {flow.txHashes.map((hash, i) => (

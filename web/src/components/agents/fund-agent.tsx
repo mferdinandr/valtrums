@@ -71,7 +71,7 @@ export function FundAgent({ account, tokens, onSent }: { account: string; tokens
           Send tokens
         </Button>
       </div>
-      <p className="text-xs text-mute">Sending tokens also registers the agent on that token. Get test tokens from the Faucet first.</p>
+      <p className="text-xs text-mute">Get test tokens from the Faucet first.</p>
       {tx.step === "signing" && <p role="status" className="text-xs text-mute">Waiting for your wallet…</p>}
       {tx.step === "done" && <p role="status" className="text-xs">Sent. {tx.hash ? <TransactionLink hash={tx.hash} /> : null}</p>}
       {tx.step === "error" && <p role="alert" className="text-xs text-neon-amber">{tx.message}</p>}
