@@ -64,7 +64,20 @@ export function useJoinAndDeposit(arena: string, battleId: number) {
         }
         setState({ step: "running", stage: "deposit" });
         const review = buildDepositReview({ arena, representation, battleId, community: current.index, amount });
-        const deposited = await act(depositRequest(battleId, current.index, amount), review.ok ? review : null);
+        const index = current.index;
+        // The action service reads the chain on its own and can be a moment behind this page, so a deposit it
+        // rejects only because it has not seen the registration or approval yet is tried again for a short while.
+        const lag = /register a position|no passing audit|no backing approval|approval has expired/i;
+        let deposited;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            deposited = await act(depositRequest(battleId, index, amount), review.ok ? review : null);
+            break;
+          } catch (e) {
+            if (attempt >= 8 || !(e instanceof Error) || !lag.test(e.message)) throw e;
+            await sleep(2_500);
+          }
+        }
         remember(deposited.txHash);
         setState({ step: "done" });
       } catch (e) {

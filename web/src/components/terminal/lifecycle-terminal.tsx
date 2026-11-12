@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
+import { plainSymbol } from "@/lib/arena-read/token-name";
 import { useBalances } from "@/hooks/use-balances";
 import { JOIN_STAGE_TEXT, useJoinAndDeposit } from "@/hooks/use-join-and-deposit";
 import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
@@ -250,21 +251,21 @@ function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: 
   const phase = openPhase(detail, now);
   if (phase.kind !== "gathering") return <Problems problems={[`Battle #${intent.battleId} is not open for deposits: ${PHASE_REASON[phase.kind]}.`]} />;
 
-  const symbol = resolved.symbol ?? intent.tokenRef;
+  const symbol = plainSymbol(resolved.symbol ?? intent.tokenRef);
   const held = balances?.tokens.find((t) => t.token === resolved.representation)?.balance ?? null;
   const problems = firstDepositProblems(resolved.representation, intent.amount, held);
   const st = flow.state;
   const label = `${formatUnits(BigInt(intent.amount), TOKEN_DECIMALS, 4)} ${symbol}`;
   return (
     <div className="space-y-3" aria-label="Deposit">
-      {problems.length > 0 && (
+      {st.step !== "done" && problems.length > 0 && (
         <ul role="status" className="list-disc pl-4 text-xs text-neon-amber">
           {problems.map((p) => (
             <li key={p}>{p}</li>
           ))}
         </ul>
       )}
-      {flow.connected ? (
+      {st.step === "done" ? null : flow.connected ? (
         <Button type="button" disabled={problems.length > 0 || st.step === "running"} onClick={() => void flow.run(resolved.representation, symbol, intent.amount)}>
           {st.step === "failed" ? "Continue" : `Deposit ${label}`}
         </Button>
@@ -273,7 +274,7 @@ function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: 
           Connect wallet to deposit
         </Button>
       )}
-      <p className="text-xs text-mute">If {symbol} is not in battle #{intent.battleId} yet, it is added automatically before the deposit. Your wallet asks you to confirm each step.</p>
+      {st.step !== "done" && <p className="text-xs text-mute">If {symbol} is not in battle #{intent.battleId} yet, it is added automatically before the deposit. Your wallet asks you to confirm each step.</p>}
       {st.step === "running" && (
         <p role="status" className="text-xs text-mute">
           {JOIN_STAGE_TEXT[st.stage]} Confirm in your wallet when asked.

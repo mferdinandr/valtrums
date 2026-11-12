@@ -7,6 +7,7 @@ import { TransactionLink } from "@/components/transaction-link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { useWallet } from "@/components/providers";
+import { plainSymbol } from "@/lib/arena-read/token-name";
 import { useBalances } from "@/hooks/use-balances";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { JOIN_STAGE_TEXT, useJoinAndDeposit } from "@/hooks/use-join-and-deposit";
@@ -46,7 +47,7 @@ export function JoinDeposit({
   const chosen = options.find((o) => o.token === token) ?? null;
   const amountBase = parseUnits(amount, TOKEN_DECIMALS)?.toString() ?? "";
   const problems = firstDepositProblems(token, amountBase, chosen ? chosen.balance : null);
-  const label = chosen && amountBase ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${chosen.symbol}` : null;
+  const label = chosen && amountBase ? `${formatUnits(BigInt(amountBase), TOKEN_DECIMALS, 4)} ${plainSymbol(chosen.symbol)}` : null;
   const st = flow.state;
 
   return (
@@ -74,7 +75,7 @@ export function JoinDeposit({
                 disabled={st.step === "running"}
                 onClick={() => setToken(o.token)}
               >
-                <strong>{o.symbol}</strong>
+                <strong>{plainSymbol(o.symbol)}</strong>
                 <span>
                   {o.inBattle ? "In this battle · " : "New · "}Balance {formatUnits(BigInt(o.balance), TOKEN_DECIMALS, 4)}
                 </span>
