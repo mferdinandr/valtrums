@@ -29,6 +29,7 @@
     "player:auto": "node --env-file-if-exists=.env.local dist/player/autonomous-cli.js",
     "hosted:agents": "node --env-file-if-exists=.env.local dist/hosted/main.js",
     "hosted:import": "node --env-file-if-exists=.env.local dist/hosted/import.js",
+    "app:import": "node --env-file-if-exists=.env.local dist/app-state/import.js",
     "intents:fixture": "node dist/intents-fixture/cli.js"
   },
   "devDependencies": {
