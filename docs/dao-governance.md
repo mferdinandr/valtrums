@@ -43,7 +43,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 
 **Execution.** Each portion is executed at most once through exclusive backing reservations, so the same backing cannot be returned, redeemed and burned:
 
-- Return portions become payout entitlements to each participant's bound destination, paid through the existing payout path. Their states are available, pending and confirmed, as for rewards.
+- Return portions become entitlements for each participant, handled exactly like rewards. The holder can claim them into their own NEAR account as representation tokens, 1:1 with the custody (`claim_entitlement_as_representation`, D44), or redeem them to Robinhood through the existing payout path. Payout states are available, pending and confirmed, as for rewards.
 - The burn portion becomes one payout to the frozen sink address on Robinhood. The matching NEAR representations are retired only after the finalized receipt confirms the transfer. Until then the UI shows "pending", never "burned".
 - Retries reuse the recorded decision and reservations; they never re-tally.
 
