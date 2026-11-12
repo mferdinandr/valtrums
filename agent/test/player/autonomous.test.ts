@@ -186,17 +186,17 @@ describe("autonomous agent (NEAR AI decides)", () => {
     expect(model.seen).toHaveLength(0); // the model is not asked when there is nothing to choose
   });
 
-  it("joins a battle that lacks the token it holds, registers, waits for approvals and deposits", async () => {
+  it("joins a battle that lacks the token it holds (the join registers), waits for approvals and deposits", async () => {
     const model = ai(() => answer(1, 1, "100"));
     const { deps, calls } = setup({ battles: { 1: battle([community(CASHCAT, "500")]) }, balances: { [WALLET]: 400n }, model, live: true });
     const out = await playOnce(agent(), deps);
     expect(out.kind).toBe("played");
-    expect(calls.map((c) => c.methodName)).toEqual(["join_lifecycle_battle", "register_lifecycle_position", "ft_transfer_call"]);
-    // The new community is index 1; register and deposit use the index the arena gave it.
-    expect(calls[1]!.args).toEqual({ battle_id: 1, community: 1 });
-    expect(JSON.parse(String(calls[2]!.args.msg))).toEqual({ action: "lifecycle_deposit", battle_id: 1, community: 1 });
-    expect(calls[2]).toMatchObject({ receiverId: WALLET, deposit: "1" });
-    expect(calls[2]!.args.amount).toBe("100");
+    expect(calls.map((c) => c.methodName)).toEqual(["join_lifecycle_battle", "ft_transfer_call"]);
+    // The join already registered the position: a second register would be refused by the arena. The new community is
+    // index 1, and the deposit uses the index the arena gave it.
+    expect(JSON.parse(String(calls[1]!.args.msg))).toEqual({ action: "lifecycle_deposit", battle_id: 1, community: 1 });
+    expect(calls[1]).toMatchObject({ receiverId: WALLET, deposit: "1" });
+    expect(calls[1]!.args.amount).toBe("100");
   });
 
   it("plays a battle only once", async () => {

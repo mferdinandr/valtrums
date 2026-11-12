@@ -251,7 +251,9 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
       call: { receiverId: deps.arena, methodName: "join_lifecycle_battle", args: { battle_id: picked.battleId, representation: picked.representation }, gas: gas(30n), deposit: JOIN_DEPOSIT_YOCTO },
     });
   }
-  if (!registered) {
+  // A join already registers the caller's position in the arena, so registering again would be refused
+  // ("Cannot register position"). Only a community that already existed needs its own register step.
+  if (!registered && !picked.needsJoin) {
     steps.push({
       label: "register",
       call: { receiverId: deps.arena, methodName: "register_lifecycle_position", args: { battle_id: picked.battleId, community: picked.community }, gas: gas(30n), deposit: REGISTER_DEPOSIT_YOCTO },
