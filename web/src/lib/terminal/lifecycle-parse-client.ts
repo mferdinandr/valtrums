@@ -2,12 +2,16 @@
 // reply again, since the wire is not trusted. If the route cannot be reached the deterministic rules answer locally.
 
 import { validateLifecycleIntent, type LifecycleIntentParser, type LifecycleParseResult } from "./lifecycle-intent";
+import { parseRequests } from "./multi-request";
 import { lifecycleRuleParser } from "./lifecycle-rule-parser";
 
 export function createLifecycleRouteParser(fetchImpl: typeof fetch = fetch, url = "/api/terminal/lifecycle"): LifecycleIntentParser {
   return {
     name: "route",
     async parse(prompt) {
+      // More than one request in a prompt is split and read locally; a single request goes to the route as before.
+      const multi = await parseRequests(prompt);
+      if (multi) return multi;
       let body: { ok?: boolean; intent?: unknown; error?: unknown; clarify?: unknown; parser?: unknown; note?: unknown };
       try {
         const res = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt }) });

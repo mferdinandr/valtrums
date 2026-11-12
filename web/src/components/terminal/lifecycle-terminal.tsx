@@ -11,6 +11,19 @@ import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { plainSymbol } from "@/lib/arena-read/token-name";
+import { useAction } from "@/hooks/use-action";
+import { useActionRunner } from "@/hooks/use-action-runner";
+import { buildVoteReview, daoStep, readDisposition, voteMsLeft, voteRequest, type Disposition } from "@/lib/arena-read/dao";
+import { readMyPositions } from "@/lib/arena-read/positions";
+import {
+  buildClaimReview,
+  buildRegisterReview as buildTokenRegisterReview,
+  claimRequest,
+  readRegistered as readTokenRegistered,
+  registerRequest as tokenRegisterRequest,
+} from "@/lib/arena-read/claim";
+import { config } from "@/lib/config";
+import { loadPlans, removePlan, savePlan, type SavedVote } from "@/lib/terminal/saved-plans";
 import { useBalances } from "@/hooks/use-balances";
 import { JOIN_STAGE_TEXT, useJoinAndDeposit } from "@/hooks/use-join-and-deposit";
 import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
@@ -49,6 +62,9 @@ const EXAMPLES = [
   "my positions",
   "create price gain battle in 15 minutes",
   "cancel battle 7",
+  "claim my winnings",
+  "vote burn 50% battle 7",
+  "deposit 2 CASHCAT dan 2 VLAD di arena open, lalu vote burn 50% di battle tersebut kalau menang",
 ];
 
 export const PAYOUT_BLOCKED_REASON =
@@ -222,7 +238,7 @@ type Replace = (next: LifecycleIntent) => void;
  * account when the battle does not have it yet, waits for the approvals, then deposits. The representation comes from
  * the arena's allowlist, never from the prompt, and every step is previewed and compared before the wallet is asked.
  */
-function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: Known<"deposit"> & { tokenRef: string } }) {
+function JoinDepositPlan({ namespace, intent, onDone }: { namespace: Namespace; intent: Known<"deposit"> & { tokenRef: string }; onDone?: () => void }) {
   const { signIn } = useWallet();
   const { detail, error, loading } = useBattle(namespace, intent.battleId);
   const joinable = useJoinableAssets(namespace.arenaContract);
@@ -230,6 +246,15 @@ function JoinDepositPlan({ namespace, intent }: { namespace: Namespace; intent: 
   const flow = useJoinAndDeposit(namespace.arenaContract, intent.battleId);
   const [resolved, setResolved] = useState<JoinTokenResult | null>(null);
   const now = useNow(1000);
+  const finished = useRef(false);
+  const deposited = flow.state.step === "done";
+  useEffect(() => {
+    if (deposited && !finished.current) {
+      finished.current = true;
+      onDone?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deposited]);
   useEffect(() => {
     if (!joinable.items) return;
     let live = true;
@@ -478,6 +503,145 @@ function PayoutPlan({ intent }: { intent: Extract<LifecycleIntent, { kind: "payo
   );
 }
 
+/** The prize into the connected NEAR wallet: one button per claimable token, the same call as the battle page. */
+function ClaimPlan() {
+  const portfolio = usePortfolio();
+  const { act, accountId, connected } = useActionRunner();
+  const action = useAction();
+  const { signIn } = useWallet();
+  const [claimed, setClaimed] = useState<string[]>([]);
+  const ready = portfolio.state.step === "ready" ? portfolio.state.data : null;
+  const claimable = useMemo(() => {
+    if (!ready || ready.accountState.state !== "ok") return null;
+    return ready.accountState.env.data.entitlements
+      .filter((e) => /^[0-9]+$/.test(e.available) && BigInt(e.available) > 0n && !claimed.includes(e.backing))
+      .map((e) => ({ backing: e.backing, available: e.available }));
+  }, [ready, claimed]);
+  const reading = portfolio.state.step === "opening-session" || portfolio.state.step === "reading";
+
+  const claim = (e: { backing: string; available: string }) =>
+    action.run(async () => {
+      if (!accountId) throw new Error("connect a wallet first");
+      const label = symbolOf(e.backing);
+      if (!(await readTokenRegistered(config.rpcUrl, e.backing, accountId))) {
+        const register = buildTokenRegisterReview(e.backing, accountId, label);
+        await act(tokenRegisterRequest(e.backing), register.ok ? register : null);
+      }
+      const review = buildClaimReview(e.backing, e.available, label);
+      await act(claimRequest(e.backing, e.available), review.ok ? review : null);
+      setClaimed((c) => [...c, e.backing]);
+    });
+
+  if (!connected || !accountId) {
+    return (
+      <div className="space-y-2" role="status">
+        <p className="text-sm">Connect your wallet to see your winnings.</p>
+        <Button type="button" variant="ghost" onClick={() => void signIn()}>Connect wallet</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3" aria-label="Claim winnings">
+      {!ready && (
+        <Button type="button" className="min-w-48" disabled={reading} onClick={() => void portfolio.load()}>
+          {reading ? "Checking your winnings…" : "Check my winnings"}
+        </Button>
+      )}
+      {claimable?.map((e) => (
+        <Button key={e.backing} type="button" className="min-w-48" disabled={action.busy} onClick={() => void claim(e)}>
+          {action.busy ? "Claiming…" : `Claim ${formatUnits(BigInt(e.available), TOKEN_DECIMALS, 4)} ${symbolOf(e.backing)}`}
+        </Button>
+      ))}
+      <div className="min-h-[1.5rem] space-y-1">
+        {claimable?.length === 0 && (
+          <p role="status" className={claimed.length > 0 ? "text-xs text-neon-green" : "text-sm text-mute"}>
+            {claimed.length > 0 ? "Claimed. The tokens are in your NEAR wallet." : "No winnings to claim yet. They appear after a battle is settled."}
+          </p>
+        )}
+        {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+        {portfolio.state.step === "error" && <p role="alert" className="text-xs text-neon-red">{portfolio.state.message}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** The winners' vote on their principal. Only the winning token's depositors can vote, once. */
+function DaoVotePlan({ namespace, battleId, burnPercent, onDone }: { namespace: Namespace; battleId: number; burnPercent: number; onDone?: () => void }) {
+  const intent = { battleId, burnPercent };
+  const { detail, error, loading } = useBattle(namespace, intent.battleId);
+  const { act, accountId, connected } = useActionRunner();
+  const { signIn } = useWallet();
+  const action = useAction();
+  const now = useNow(1000);
+  const [view, setView] = useState<Disposition | null>(null);
+  const [weight, setWeight] = useState<bigint | null>(null);
+  const [voted, setVoted] = useState(false);
+  const rows = useMemo(() => (detail ? communityRows(detail, 0) : []), [detail]);
+  const winner = detail?.round?.winner ?? null;
+  const count = detail?.battle.communities.length ?? 0;
+  const token = winner !== null ? plainSymbol(rows[winner]?.label?.symbol ?? "the winning token") : "the winning token";
+
+  useEffect(() => {
+    if (winner === null) return;
+    let live = true;
+    void Promise.all([
+      readDisposition(config.rpcUrl, namespace.arenaContract, intent.battleId),
+      accountId ? readMyPositions(config.rpcUrl, namespace.arenaContract, intent.battleId, accountId, count) : Promise.resolve([]),
+    ])
+      .then(([d, positions]) => {
+        if (!live) return;
+        setView(d);
+        setWeight(BigInt(positions.find((p) => p.community === winner)?.amount ?? "0"));
+      })
+      .catch(() => live && setView(null));
+    return () => {
+      live = false;
+    };
+  }, [winner, count, accountId, intent.battleId, namespace.arenaContract]);
+
+  if (loading) return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId}…</p>;
+  if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. Nothing was prepared.</p>;
+  if (winner === null) return <Problems problems={[`Battle #${intent.battleId} has no final winner yet, so there is nothing to vote on.`]} />;
+  if (!view) return <p role="status" className="text-xs text-mute">Reading the vote…</p>;
+  const step = daoStep(view);
+  if (step.kind !== "voting" || voteMsLeft(view, now) <= 0) {
+    return <Problems problems={[step.kind === "none" ? step.reason : "Voting is not open for this battle."]} />;
+  }
+  if (!connected || !accountId) {
+    return (
+      <div className="space-y-2" role="status">
+        <p className="text-sm">Connect your wallet to vote.</p>
+        <Button type="button" variant="ghost" onClick={() => void signIn()}>Connect wallet</Button>
+      </div>
+    );
+  }
+  if (weight === null) return <p role="status" className="text-xs text-mute">Reading your position…</p>;
+  if (weight === 0n) return <Problems problems={[`Only people who deposited in ${token} can vote.`]} />;
+
+  const weightLabel = `${formatUnits(weight, TOKEN_DECIMALS, 4)} ${token}`;
+  const vote = () =>
+    action.run(async () => {
+      const review = buildVoteReview(namespace.arenaContract, intent.battleId, intent.burnPercent, weightLabel);
+      await act(voteRequest(intent.battleId, intent.burnPercent), review.ok ? review : null);
+      setVoted(true);
+      onDone?.();
+    });
+  return (
+    <div className="space-y-3" aria-label="DAO vote">
+      <p className="text-xs text-mute">Your weight: {weightLabel}. One vote per account, and it is final.</p>
+      {!voted && (
+        <Button type="button" className="min-w-48" disabled={action.busy} onClick={() => void vote()}>
+          {action.busy ? "Voting…" : `Vote: ${intent.burnPercent}% burn, ${100 - intent.burnPercent}% return`}
+        </Button>
+      )}
+      <div className="min-h-[1.5rem]">
+        {voted && <p role="status" className="text-xs text-neon-green">Your vote is cast.</p>}
+        {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+      </div>
+    </div>
+  );
+}
+
 const symbolOf = (representation: string): string => representation.replace(/^backing-/, "").split(".")[0]!.toUpperCase();
 
 /** Reads the open arenas once (backend filter), keeping only the ones that still accept communities. */
@@ -641,6 +805,118 @@ function PositionsPlan() {
   );
 }
 
+const browserStore = (): Storage | null => {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+/** The deferred step of a prompt: a vote that can only happen once the battle is settled. It is saved, never run. */
+function SaveVoteStep({ battleId, burnPercent, onDone }: { battleId: number; burnPercent: number; onDone: () => void }) {
+  const { accountId, signIn } = useWallet();
+  const saved = useRef(false);
+  useEffect(() => {
+    if (!accountId || saved.current) return;
+    saved.current = true;
+    savePlan(browserStore(), { account: accountId, battleId, burnPercent });
+    onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+  if (!accountId) {
+    return (
+      <div className="space-y-2" role="status">
+        <p className="text-xs text-mute">Connect your wallet to save this vote for later.</p>
+        <Button type="button" variant="ghost" onClick={() => void signIn()}>Connect wallet</Button>
+      </div>
+    );
+  }
+  return (
+    <p role="status" className="text-xs text-neon-green">
+      Saved in this browser. Once battle #{battleId} is settled and your token won, a vote button appears at the top of the Terminal.
+    </p>
+  );
+}
+
+type DepositIntent = Extract<LifecycleIntent, { kind: "deposit" }>;
+
+/**
+ * Several requests from one prompt, run in order: the open arena is chosen once for all of them, each deposit adds its
+ * token first when needed, and the next step only opens after the one before it is done. A vote is saved for later.
+ */
+function MultiPlan({ namespace, intents }: { namespace: Namespace; intents: LifecycleIntent[] }) {
+  const { arenas, error } = useOpenArenas(namespace);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [done, setDone] = useState(0);
+  const firstOpen = intents.find((i): i is DepositIntent => i.kind === "deposit" && i.battleId === null);
+  const explicit = intents.flatMap((i) => (i.kind === "deposit" || i.kind === "dao_vote") && i.battleId !== null ? [i.battleId] : [])[0] ?? null;
+  const choice = useMemo(() => (arenas && firstOpen ? chooseArena(firstOpen, arenas) : null), [arenas, firstOpen]);
+  const shared = picked ?? (choice?.kind === "one" ? choice.arena.battleId : explicit);
+
+  if (firstOpen && error) return <p role="alert" className="text-xs text-neon-red">The open arenas could not be read: {error}. Nothing was prepared.</p>;
+  if (firstOpen && !choice && explicit === null) return <p role="status" className="text-xs text-mute">Looking for open arenas…</p>;
+  if (shared === null) {
+    if (choice?.kind === "none") return <p className="text-sm text-neon-amber" role="status">{choice.message}</p>;
+    if (choice?.kind === "many") {
+      return (
+        <div className="space-y-2" role="status">
+          <p className="text-sm">{choice.why}. Which one should all of these use?</p>
+          <ul className="space-y-2">
+            {choice.arenas.map((a) => (
+              <li key={a.battleId} className="flex flex-wrap items-center gap-2 text-xs">
+                <ArenaLine arena={a} />
+                <Button type="button" variant="ghost" onClick={() => setPicked(a.battleId)}>Use #{a.battleId}</Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+    return <Problems problems={["Which battle? For example: battle 7."]} />;
+  }
+  const steps = intents.map((i) => (i.kind === "deposit" || i.kind === "dao_vote" ? { ...i, battleId: i.battleId ?? shared } : i));
+  return (
+    <ol className="space-y-4" aria-label="Steps">
+      {steps.map((step, i) => (
+        <li key={i} className="space-y-2">
+          <p className={i < done ? "text-sm text-neon-green" : i === done ? "text-sm font-semibold" : "text-sm text-mute"}>
+            {i < done ? "✓" : `${i + 1}.`} {describeIntent(step)}
+          </p>
+          {i === done && step.kind === "deposit" && step.tokenRef !== null && step.battleId !== null && (
+            <JoinDepositPlan namespace={namespace} intent={{ ...step, battleId: step.battleId, tokenRef: step.tokenRef }} onDone={() => setDone((d) => Math.max(d, i + 1))} />
+          )}
+          {i === done && step.kind === "dao_vote" && step.battleId !== null && (
+            <SaveVoteStep battleId={step.battleId} burnPercent={step.burnPercent} onDone={() => setDone((d) => Math.max(d, i + 1))} />
+          )}
+        </li>
+      ))}
+      {done >= steps.length && <p role="status" className="text-xs text-neon-green">All steps are done.</p>}
+    </ol>
+  );
+}
+
+/** Votes saved from an earlier prompt. Each one is the normal reviewed vote button; it removes itself once the vote is cast. */
+function SavedPlans({ namespace }: { namespace: Namespace }) {
+  const { accountId } = useWallet();
+  const [plans, setPlans] = useState<SavedVote[]>([]);
+  useEffect(() => setPlans(loadPlans(browserStore())), []);
+  const mine = plans.filter((p) => p.account === accountId);
+  if (mine.length === 0) return null;
+  return (
+    <Card className="space-y-4 p-4 sm:p-6" aria-label="Saved plans">
+      <p className="eyebrow text-neon-green">SAVED PLANS</p>
+      {mine.map((p) => (
+        <div key={p.id} className="space-y-2 border-t border-edge pt-3 first:border-0 first:pt-0">
+          <p className="text-sm">Vote {p.burnPercent}% burn, {100 - p.burnPercent}% return on battle #{p.battleId}</p>
+          <DaoVotePlan namespace={namespace} battleId={p.battleId} burnPercent={p.burnPercent} onDone={() => setPlans(removePlan(browserStore(), p.id))} />
+          <Button type="button" variant="ghost" size="sm" onClick={() => setPlans(removePlan(browserStore(), p.id))}>Remove this plan</Button>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 /** One chat bubble: the user on the right, the Terminal on the left. */
 function Bubble({ side, label, children }: { side: "user" | "terminal"; label: string; children: React.ReactNode }) {
   const mine = side === "user";
@@ -670,6 +946,12 @@ function PlanFor({ namespace, intent, onReplace }: { namespace: Namespace; inten
   if (intent.kind === "create_battle") return <CreatePlan intent={intent} />;
   if (intent.kind === "list_battles") return <ListBattlesPlan namespace={namespace} intent={intent} />;
   if (intent.kind === "show_positions") return <PositionsPlan />;
+  if (intent.kind === "claim_winnings") return <ClaimPlan />;
+  if (intent.kind === "dao_vote") {
+    return intent.battleId === null
+      ? <Problems problems={["Which battle? For example: vote burn 50% on battle 7."]} />
+      : <DaoVotePlan namespace={namespace} battleId={intent.battleId} burnPercent={intent.burnPercent} />;
+  }
   if (intent.kind === "cancel_battle") return <CancelPlan namespace={namespace} intent={intent} />;
   if (intent.kind === "claim_refund") return <RefundPlan namespace={namespace} intent={intent} />;
   if (intent.battleId === null) return <OpenArenaPlan namespace={namespace} intent={intent} onReplace={onReplace} />;
@@ -705,16 +987,24 @@ function Answer({ namespace, turn, live, onReplace }: { namespace: Namespace; tu
   return (
     <div className="space-y-3" aria-label="Understood request">
       <div>
-        <p data-testid="intent-summary">
-          {describeIntent(intent)}
-          {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
-        </p>
+        {result.intents ? (
+          <ul className="list-disc pl-4" data-testid="intent-summary">
+            {result.intents.map((it, i) => (
+              <li key={i}>{describeIntent(it)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p data-testid="intent-summary">
+            {describeIntent(intent)}
+            {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
+          </p>
+        )}
       </div>
       {live ? (
         <div className="space-y-2 border-t border-edge pt-3">
           <p className="eyebrow text-neon-green">{isReadOnly(intent) ? "YOUR ANSWER" : "REVIEW YOUR ACTION"}</p>
           <p className="text-xs text-mute">{isReadOnly(intent) ? "This only reads; nothing can be signed from here." : "Review the action below before signing."}</p>
-          <PlanFor namespace={namespace} intent={intent} onReplace={onReplace} />
+          {result.intents ? <MultiPlan namespace={namespace} intents={result.intents} /> : <PlanFor namespace={namespace} intent={intent} onReplace={onReplace} />}
         </div>
       ) : (
         // An earlier answer is a record, not a control: its review and sign buttons are gone, so it cannot be signed by accident.
@@ -764,6 +1054,8 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
   };
 
   return (
+    <div className="space-y-4">
+    <SavedPlans namespace={namespace} />
     <Card className="flex flex-col gap-0 p-0">
       <div
         ref={logRef}
@@ -830,5 +1122,6 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
         </Button>
       </form>
     </Card>
+    </div>
   );
 }
