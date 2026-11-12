@@ -94,8 +94,11 @@ export function createHostedServer(o: ServerOptions): Server {
     if (method === "POST" && path === "/auth/verify") {
       const body = await readJson(req);
       const proof = { account: String(body.accountId ?? ""), publicKey: String(body.publicKey ?? ""), signature: String(body.signature ?? ""), nonce: String(body.nonce ?? "") };
-      if (!ACCOUNT.test(proof.account) || !(await o.challenges.redeem(proof, o.keyBelongsTo))) {
-        throw new HostedError("unauthorized", "the sign-in proof was not accepted", 401);
+      const result = ACCOUNT.test(proof.account) ? await o.challenges.redeem(proof, o.keyBelongsTo) : ({ ok: false, reason: "bad_account" } as const);
+      if (!result.ok) {
+        // The reason names the failing step only (no key, signature or nonce), so a failed sign-in can be diagnosed.
+        console.log(JSON.stringify({ t: new Date().toISOString(), event: "hosted_auth_failed", reason: result.reason, account: proof.account, publicKeyFormat: proof.publicKey.startsWith("ed25519:") ? "ed25519:" : "bare", signatureFormat: proof.signature.startsWith("ed25519:") ? "ed25519:" : "base64", signatureLength: proof.signature.length }));
+        throw new HostedError("unauthorized", `the sign-in proof was not accepted (${result.reason})`, 401);
       }
       const token = await o.sessions.issue(proof.account, ttl);
       // The token is only in the cookie; the body carries no secret.
