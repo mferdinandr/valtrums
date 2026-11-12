@@ -12,6 +12,7 @@ import { PgHostedRepository } from "./pg-store.js";
 import { FileHostedRepository, type HostedRepository } from "./repository.js";
 import { createHostedServer } from "./server.js";
 import { DbSessions, HmacSessions, type SessionStore } from "./sessions.js";
+import { claimOnce, voteOnce } from "../player/rewards.js";
 import { AgentStates } from "./state-sync.js";
 import { AgentStore } from "./store.js";
 
@@ -32,6 +33,15 @@ const limit = (env: NodeJS.ProcessEnv, name: string): number => {
   if (!Number.isInteger(n) || n < 1) throw new Error(`${name} must be a positive whole number`);
   return n;
 };
+
+/** How long a wallet sign-in lasts: 24 hours unless HOSTED_AGENT_SESSION_HOURS says otherwise (1 to 168). */
+export function sessionTtlMs(env: NodeJS.ProcessEnv): number {
+  const raw = env.HOSTED_AGENT_SESSION_HOURS?.trim();
+  if (!raw) return 24 * 3_600_000;
+  const hours = Number(raw);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 168) throw new Error("HOSTED_AGENT_SESSION_HOURS must be a whole number of hours from 1 to 168");
+  return hours * 3_600_000;
+}
 
 export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   // The same guard as the agent CLI, but there is no default: hosting is a deliberate testnet choice.
@@ -134,6 +144,17 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       // Persist what was done even when the round failed part way, so a deposit is never forgotten.
       await states.flush(agent.account);
     }
+    // After the play: take any prize into the agent's own account, then cast its vote where it won.
+    await claimOnce(agent, {
+      joinable,
+      entitlement: (backing, account) => source.entitlement(backing, account),
+      registered: async (token, account) => (await reader.view(token, "storage_balance_of", { account_id: account })) !== null,
+      sign,
+      log: agentLog,
+      live: true,
+    });
+    await voteOnce(agent, { source, battleCount, arena, model, state, now: Date.now, sign, log: agentLog, live: true });
+    await states.flush(agent.account);
     await sweepOnce(agent, {
       joinable,
       balance: (token, account) => source.tokenBalance(token, account),
@@ -163,6 +184,7 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
     agents: manager,
     challenges: new Challenges(),
     sessions,
+    sessionTtlMs: sessionTtlMs(env),
     keyBelongsTo: rpcKeyCheck(rpcUrl),
     allowedOrigin: required(env, "HOSTED_AGENT_ALLOWED_ORIGIN"),
     cookie: {
