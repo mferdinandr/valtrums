@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
+import { TokenIcon } from "@/components/token-icon";
 import { useWallet } from "@/components/providers";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
@@ -57,23 +58,46 @@ export function MyPosition({
       ) : positions.length === 0 && !mine ? (
         <p className="text-sm text-mute">You have no deposit in this battle yet.</p>
       ) : (
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-2">
           {mine && (
-            <li>
-              <strong>{nameOf(0)}</strong>: {formatUnits(BigInt(mine.amount), TOKEN_DECIMALS, 4)} held in escrow, waiting for
-              the audit and backing approvals. It becomes your position when both are in.
-            </li>
+            <Row
+              name={nameOf(0)}
+              amount={formatUnits(BigInt(mine.amount), TOKEN_DECIMALS, 4)}
+              chip="In escrow"
+              tone="amber"
+              hint="Held in escrow while the audit and backing approvals are pending. It becomes your position when both are in."
+            />
           )}
           {positions.filter((p) => !(mine && p.community === 0 && p.amount === "0")).map((p) => (
-            <li key={p.community}>
-              <strong>{nameOf(p.community)}</strong>:{" "}
-              {p.amount === "0"
-                ? "joined, no deposit yet"
-                : `${formatUnits(BigInt(p.amount), TOKEN_DECIMALS, 4)} deposited`}
-            </li>
+            <Row
+              key={p.community}
+              name={nameOf(p.community)}
+              amount={p.amount === "0" ? null : formatUnits(BigInt(p.amount), TOKEN_DECIMALS, 4)}
+              chip={p.amount === "0" ? "Joined" : "Deposited"}
+              tone={p.amount === "0" ? "grey" : "green"}
+            />
           ))}
         </ul>
       )}
     </Card>
+  );
+}
+
+const TONES = {
+  green: { background: "#327f7d22", color: "#327f7d" },
+  amber: { background: "#a8802f22", color: "#a8802f" },
+  grey: { background: "#e6e2d6", color: "#526777" },
+} as const;
+
+function Row({ name, amount, chip, tone, hint }: { name: string; amount: string | null; chip: string; tone: keyof typeof TONES; hint?: string }) {
+  return (
+    <li className="flex items-center gap-3 rounded-xl p-3" style={{ background: "#fffdf6", border: "1px solid #d8dfd3" }} title={hint}>
+      <TokenIcon symbol={name} size={36} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{name}</p>
+        <p className="text-xs tabular-nums text-mute">{amount === null ? "No deposit yet" : amount}</p>
+      </div>
+      <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold" style={TONES[tone]}>{chip}</span>
+    </li>
   );
 }
