@@ -153,6 +153,7 @@ export function LifecycleBattleDetail({
       {safeBattleId !== null && phase.kind === "decided" && (
         <div>
           <BattleResult
+            namespace={namespace}
             arena={namespace.arenaContract}
             battleId={safeBattleId}
             winner={phase.winner}

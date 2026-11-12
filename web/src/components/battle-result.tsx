@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { useWallet } from "@/components/providers";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { readMyPositions, type MyPosition } from "@/lib/arena-read/positions";
+import { BattleClaim } from "@/components/battle-claim";
+import type { Namespace } from "@/lib/arena-read/application";
 import { config } from "@/lib/config";
 
 /**
@@ -15,12 +16,14 @@ import { config } from "@/lib/config";
  * number here would be a guess.
  */
 export function BattleResult({
+  namespace,
   arena,
   battleId,
   winner,
   communityCount,
   nameOf,
 }: {
+  namespace: Namespace;
   arena: string;
   battleId: number;
   winner: number;
@@ -53,7 +56,6 @@ export function BattleResult({
     <Card aria-label="Battle result">
       <CardTitle>Result</CardTitle>
       <p className="text-base font-semibold">{nameOf(winner)} won this battle.</p>
-      <p className="text-xs text-mute">Recorded by the arena contract from the round evidence.</p>
 
       {accountId && error && (
         <p role="alert" className="mt-3 text-xs text-neon-amber">
@@ -68,21 +70,14 @@ export function BattleResult({
       {positions !== null && (
         <p className="mt-3 text-sm">
           {backedWinner
-            ? `You backed the winner with ${amount(backedWinner)}. Your share of the losing tokens is worked out when prizes are paid.`
+            ? `You backed the winner with ${amount(backedWinner)}.`
             : deposits.length > 0
-              ? `You deposited ${deposits.map(amount).join(", ")}, not in the winning community.`
+              ? `You backed ${deposits.map(amount).join(", ")}, which did not win.`
               : "You had no deposit in this battle."}
         </p>
       )}
 
-      <p className="mt-3 text-sm">
-        Prizes are claimed in{" "}
-        <Link href="/portfolio" className="underline">
-          Portfolio
-        </Link>
-        . The claim stays disabled until this deployment&apos;s custody check passes; Portfolio lists every reason that is
-        still open.
-      </p>
+      {backedWinner && <BattleClaim namespace={namespace} />}
     </Card>
   );
 }
