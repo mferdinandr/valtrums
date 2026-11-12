@@ -11,9 +11,13 @@
 - [x] 2.2 Render the open-arena resolver (use the only one and say why, or list and ask), the "join with it first" step, community-by-token, the arena list answer and the positions answer.
 - [x] 2.3 Show which parser understood the request and why NEAR AI was not used; update examples and helper text.
 
-## 3. Configuration, docs and verification
+## 3. Spend limits
 
-- [x] 3.1 Pass the NEAR AI variables from `agent/.env.local` to the web server in `pnpm dev`; document them in `.env.example`.
-- [x] 3.2 Try the Terminal against NEAR AI Cloud with a small, bounded number of prompts and record the result.
-- [x] 3.3 Run `scripts/pre-commit.sh` and `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`.
-- [ ] 3.4 Chaining several actions in one prompt (left open; see design).
+- [x] 3.0 Bound NEAR AI use on the public route (per visitor, total hour and day, concurrency, kill switch, request-rate limit, optional rules-first), with tests that count the model calls actually made.
+
+## 4. Configuration, docs and verification
+
+- [x] 4.1 Pass the NEAR AI variables from `agent/.env.local` to the web server in `pnpm dev`; document them in `.env.example`.
+- [x] 4.2 Try the Terminal against NEAR AI Cloud with a small, bounded number of prompts and record the result.
+- [x] 4.3 Run `scripts/pre-commit.sh` and `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`.
+- [ ] 4.4 Chaining several actions in one prompt (left open; see design).

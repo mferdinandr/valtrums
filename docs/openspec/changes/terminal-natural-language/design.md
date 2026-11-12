@@ -23,6 +23,7 @@ The Terminal already maps a prompt to a strict intent (`web/src/lib/terminal/lif
 5. **Read intents are intents too** (`list_battles`, `show_positions`): validated, described and routed to read-only plans. `intentToRequest` returns null for them, so no code path from them reaches the action service. Positions reuse `usePortfolio` (wallet read session).
 6. **NEAR AI plumbing.** The default model becomes `deepseek-ai/DeepSeek-V4.1-Flash-1017` (served; V3.1 is not). The route reports `parser` and a `note` when it fell back, and the client carries them to the UI. In development `scripts/dev.mjs` passes the key from `agent/.env.local` to the web server only; it is never `NEXT_PUBLIC_`.
 7. **Cost control.** One model call per prompt; the rule parser answers locally when no key is set and on any model failure, so credits are never required.
+8. **Spend limits on the public route** (`rate-limit.ts`). Sliding-window counters: model calls per visitor per hour, in total per hour and per day, concurrent calls, and requests of any kind per visitor per minute (HTTP 429). A refused model call is not an error: the rules answer and the reply carries the reason. Values come from `TERMINAL_*` environment variables with conservative defaults (10 per visitor per hour, 200 per hour and 1,000 per day in total, 4 concurrent, 30 requests per minute); an invalid value keeps the default and never switches a limit off. `TERMINAL_AI_ENABLED=false` is a kill switch, and `TERMINAL_AI_MODE=rules_first` asks the model only when the rules cannot understand a prompt. The visitor is the first `x-forwarded-for` hop or `x-real-ip` (one shared bucket when neither is present, which only limits more). Alternative: require a wallet sign-in to use the model; rejected because the prompt is read before any wallet is involved.
 
 ## Risks / Trade-offs
 
@@ -30,6 +31,9 @@ The Terminal already maps a prompt to a strict intent (`web/src/lib/terminal/lif
 - **A model proposes a wrong token or battle** → resolution is against backend data, the list/ask step handles ambiguity, and the review is shown before any signature.
 - **An open arena list can be stale** → the resolved battle is re-read by the plan and the action service revalidates before signing.
 - **Read question over-matching in the rule parser** → question detection yields to action verbs (deposit, cancel, refund, payout, create) and to an explicit battle id.
+
+- **Counters are per server instance** → on a multi-instance host the effective limit is the configured value times the number of instances, and the daily budget is per instance. The total cap still bounds each instance. A shared store (a small server-side service, not the browser) is the follow-up for a strict global cap; the NEAR AI account's own spending limit is the final backstop.
+- **`x-forwarded-for` can be spoofed** when the app is not behind a trusted proxy → then every visitor must be treated as one bucket; the limits only get stricter, never looser, without the header.
 
 ## Open Questions
 

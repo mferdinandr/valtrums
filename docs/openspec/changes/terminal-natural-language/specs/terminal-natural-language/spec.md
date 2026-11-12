@@ -65,3 +65,27 @@ The Terminal SHALL show whether NEAR AI or the built-in rules understood the req
 #### Scenario: NEAR AI fails
 - **WHEN** NEAR AI answers with an error or an invalid reply
 - **THEN** the rules answer and the Terminal shows that NEAR AI could not answer and why
+
+### Requirement: Bounded model use
+The Terminal route SHALL bound how much NEAR AI one visitor and the whole server can spend: a per-visitor hourly limit, a total hourly and daily limit, a limit on concurrent calls, an operator kill switch and a per-visitor request-rate limit. Limit values SHALL come from server configuration, an invalid value MUST keep the safe default rather than disable a limit, and a model call refused by a limit MUST cost nothing: the built-in rules answer and the reply says why. A request flood SHALL be refused before any work is done.
+
+#### Scenario: A visitor reaches the hourly limit
+- **WHEN** one visitor has caused the configured number of model calls in the hour
+- **THEN** their next prompt is answered by the built-in rules with the reason, and no model call is made
+
+#### Scenario: The total budget is used up
+- **WHEN** the hourly or daily total is reached
+- **THEN** every visitor's prompts are answered by the built-in rules until the window passes
+
+#### Scenario: Kill switch
+- **WHEN** the operator switches the model off
+- **THEN** no model call is made for anyone and the built-in rules answer
+
+#### Scenario: Request flood
+- **WHEN** one visitor exceeds the per-minute request limit
+- **THEN** the route answers HTTP 429 and does no parsing or model work
+
+#### Scenario: Rules first
+- **WHEN** the operator sets rules-first mode and the built-in rules understand the prompt
+- **THEN** no model call is made for it
+
