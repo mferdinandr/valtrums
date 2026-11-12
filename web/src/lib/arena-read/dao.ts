@@ -178,3 +178,74 @@ export function buildExecuteReview(arena: string, battleId: number, batch: numbe
     ],
   };
 }
+
+// ---------------------------------------------------------------- burn to the sink
+
+/** `request_dao_burn` storage deposit (30 mNEAR); the unused part is refunded. Mirrors agent/src/mcp/actions/preview.ts. */
+export const BURN_REQUEST_DEPOSIT_YOCTO = "30000000000000000000000";
+export const BURN_REQUEST_GAS_TGAS = "150";
+
+const HEX32 = /^[0-9a-f]{64}$/;
+const EVM = /^0x[0-9a-fA-F]{40}$/;
+const bytes = (hex: string): number[] => (hex.match(/../g) ?? []).map((b) => parseInt(b, 16));
+
+export const burnRequest = (battleId: number) => ({ kind: "request_dao_burn", battleId });
+
+export interface BurnFacts {
+  /** The id of the recorded burn release; it is also the payout request id. */
+  releaseId: string;
+  amount: string;
+  recorded: boolean;
+  /** The frozen EVM sink of the winning token, or null while unset. */
+  sink: string | null;
+  /** Burn confirmed by a finalized debit to the sink, in base units. */
+  confirmed: string;
+}
+
+/** The decided burn release of a battle with its sink and confirmed amount; null when the vote burns nothing. */
+export async function readBurnFacts(rpcUrl: string, arena: string, battleId: number, backing: string): Promise<BurnFacts | null> {
+  const releases = await rpcView<Array<{ id: string; kind: string; amount: string; recorded: boolean }>>(rpcUrl, arena, "get_lifecycle_disposition_releases", { battle_id: String(battleId) });
+  const burn = (releases ?? []).find((r) => r.kind === "burn");
+  if (!burn || !HEX32.test(burn.id)) return null;
+  const [sink, escrow] = await Promise.all([
+    rpcView<string>(rpcUrl, backing, "get_dao_sink", {}),
+    rpcView<{ escrow_id: string }>(rpcUrl, arena, "get_lifecycle_escrow", { battle_id: String(battleId) }),
+  ]);
+  const status = escrow?.escrow_id && HEX32.test(escrow.escrow_id)
+    ? await rpcView<{ burn_confirmed: string }>(rpcUrl, backing, "get_escrow_disposition", { escrow_id: bytes(escrow.escrow_id) })
+    : null;
+  return { releaseId: burn.id, amount: burn.amount, recorded: burn.recorded, sink: typeof sink === "string" ? sink : null, confirmed: status?.burn_confirmed ?? "0" };
+}
+
+/** The `request_dao_burn` call the wallet will be asked to sign; amount and destination come from the chain, not the caller. */
+export function buildBurnReview(payout: string | null, arena: string, backing: string, facts: BurnFacts): Review {
+  const problems: string[] = [];
+  if (!payout || payout.length < 2) problems.push("the payout contract is not configured for this deployment");
+  if (!facts.recorded) problems.push("execute the disposition first: the burn release is not recorded yet");
+  if (!facts.sink || !EVM.test(facts.sink)) problems.push("the token has no frozen burn sink yet");
+  if (problems.length > 0 || !payout || !facts.sink) return { ok: false, problems };
+  const destination = facts.sink.toLowerCase();
+  return {
+    ok: true,
+    receiver: payout,
+    method: "request_dao_burn",
+    args: { backing, holder: arena, request_id: bytes(facts.releaseId), destination: bytes(destination.slice(2)) },
+    depositYocto: BURN_REQUEST_DEPOSIT_YOCTO,
+    gasTgas: BURN_REQUEST_GAS_TGAS,
+    lines: [
+      { label: "Contract", value: payout },
+      { label: "Method", value: "request_dao_burn" },
+      { label: "Token", value: backing },
+      { label: "Sink (Robinhood Chain)", value: destination },
+      { label: "Amount (base units)", value: facts.amount },
+      { label: "Request id", value: facts.releaseId },
+      { label: "Storage deposit (upper bound)", value: `${BURN_REQUEST_DEPOSIT_YOCTO} yoctoNEAR` },
+      { label: "Gas", value: `${BURN_REQUEST_GAS_TGAS} Tgas` },
+    ],
+    notes: [
+      "The amount and the sink come from the arena's recorded burn release and the token's frozen sink, never from you.",
+      "This requests the transfer of the underlying token to the sink on Robinhood Chain. It counts as burned only after a finalized debit to the sink is confirmed.",
+      "Asking again reuses the same request id, so it cannot create a second burn.",
+    ],
+  };
+}

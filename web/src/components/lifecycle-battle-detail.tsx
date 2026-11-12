@@ -162,6 +162,8 @@ export function LifecycleBattleDetail({
             nameOf={name}
           />
           <DaoDecision
+            namespace={namespace}
+            backing={rows[phase.winner]?.representation ?? ""}
             arena={namespace.arenaContract}
             battleId={safeBattleId}
             winner={phase.winner}

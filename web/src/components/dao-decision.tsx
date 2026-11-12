@@ -6,24 +6,30 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { useWallet } from "@/components/providers";
 import { useAction } from "@/hooks/use-action";
+import { useDeploymentFacts } from "@/hooks/use-portfolio";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { useNow } from "@/hooks/use-now";
 import { formatCountdown, formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import {
+  buildBurnReview,
   buildExecuteReview,
   buildReserveEscrowReview,
   buildVoteReview,
+  burnRequest,
   burnSharePercent,
   daoStep,
   executeRequest,
+  readBurnFacts,
   readDisposition,
+  type BurnFacts,
   reserveEscrowRequest,
   voteMsLeft,
   voteRequest,
   type Disposition,
 } from "@/lib/arena-read/dao";
 import { readMyPositions } from "@/lib/arena-read/positions";
+import type { Namespace } from "@/lib/arena-read/application";
 import { config } from "@/lib/config";
 
 const POLL_MS = 5_000;
@@ -38,8 +44,11 @@ const clampPercent = (raw: string): number => {
  * never as burned supply. Each button prepares one reviewed call; nothing is signed without the wallet.
  */
 export function DaoDecision({
-  arena, battleId, winner, communityCount, nameOf,
+  namespace, arena, battleId, winner, communityCount, backing, nameOf,
 }: {
+  namespace: Namespace;
+  /** The representation (backing) contract of the winning community. */
+  backing: string;
   arena: string;
   battleId: number;
   winner: number;
@@ -55,6 +64,9 @@ export function DaoDecision({
   const [readError, setReadError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
   const [burnPercent, setBurnPercent] = useState(0);
+  const [burn, setBurn] = useState<BurnFacts | null>(null);
+  const facts = useDeploymentFacts(namespace);
+  const payout = facts?.capabilities?.companions.payout ?? null;
 
   const refresh = useCallback(async () => {
     const [d, positions] = await Promise.all([
@@ -62,9 +74,10 @@ export function DaoDecision({
       accountId ? readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount) : Promise.resolve([]),
     ]);
     setView(d);
+    setBurn(d?.status === "decided" && BigInt(d.burn_total) > 0n && d.escrow_reserved ? await readBurnFacts(config.rpcUrl, arena, battleId, backing).catch(() => null) : null);
     setWeight(BigInt(positions.find((p) => p.community === winner)?.amount ?? "0"));
     setReadError(null);
-  }, [arena, battleId, accountId, communityCount, winner]);
+  }, [arena, battleId, accountId, communityCount, winner, backing]);
 
   useEffect(() => {
     let live = true;
@@ -267,10 +280,33 @@ export function DaoDecision({
       )}
 
       {step.kind === "done" && view && (
-        <p className="text-sm">
-          All {view.total_releases} releases are recorded. A burn is reserved for the sink and is confirmed only after the transfer
-          is finalized on Robinhood.
-        </p>
+        <p className="text-sm">All {view.total_releases} releases are recorded.</p>
+      )}
+
+      {step.kind === "done" && burn && (
+        <div className="space-y-2 rounded-xl p-3" style={{ background: "#ad527314" }}>
+          <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#ad5273" }}>
+            <Flame size={14} aria-hidden="true" /> Burn to the sink
+          </p>
+          {BigInt(burn.confirmed) >= BigInt(burn.amount) ? (
+            <p className="text-sm">{units(burn.amount)} sent to the sink and confirmed on Robinhood Chain.</p>
+          ) : (
+            <>
+              <p className="text-sm">
+                {units(burn.amount)} is reserved for the sink. It counts as burned only after the transfer on Robinhood Chain is confirmed.
+              </p>
+              {isWinner && (
+                <Button
+                  type="button"
+                  disabled={action.busy || !connected}
+                  onClick={() => void send(burnRequest(battleId), buildBurnReview(payout, arena, backing, burn))}
+                >
+                  <Flame size={16} aria-hidden="true" /> Send burn to sink
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       )}
 
       {action.busy && <p role="status" className="text-xs text-mute">Waiting for the preview and your wallet…</p>}

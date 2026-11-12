@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildExecuteReview,
   buildReserveEscrowReview,
+  buildBurnReview,
   buildVoteReview,
   burnSharePercent,
   daoStep,
@@ -81,5 +82,27 @@ describe("reviews match the action service's calls", () => {
     expect(buildVoteReview("arena.testnet", 31, 12.5).ok).toBe(false);
     expect(buildReserveEscrowReview("", 31).ok).toBe(false);
     expect(buildExecuteReview("arena.testnet", 31, 11, 11).ok).toBe(false);
+  });
+});
+
+describe("burn to the sink", () => {
+  const facts = { releaseId: "ab".repeat(32), amount: "33", recorded: true, sink: "0x000000000000000000000000000000000000dEaD", confirmed: "0" };
+  it("builds the request from the recorded release and the frozen sink", () => {
+    const r = buildBurnReview("payout.testnet", "arena.testnet", "backing-cashcat.testnet", facts);
+    expect(r).toMatchObject({ ok: true, receiver: "payout.testnet", method: "request_dao_burn", depositYocto: "30000000000000000000000", gasTgas: "150" });
+    if (r.ok) {
+      const args = r.args as { backing: string; holder: string; request_id: number[]; destination: number[] };
+      expect(args.backing).toBe("backing-cashcat.testnet");
+      expect(args.holder).toBe("arena.testnet");
+      expect(args.request_id).toHaveLength(32);
+      expect(args.request_id[0]).toBe(0xab);
+      expect(args.destination).toHaveLength(20);
+      expect(args.destination[19]).toBe(0xad);
+    }
+  });
+  it("refuses an unrecorded release, an unset sink and a missing payout contract", () => {
+    expect(buildBurnReview("payout.testnet", "arena.testnet", "b.testnet", { ...facts, recorded: false }).ok).toBe(false);
+    expect(buildBurnReview("payout.testnet", "arena.testnet", "b.testnet", { ...facts, sink: null }).ok).toBe(false);
+    expect(buildBurnReview(null, "arena.testnet", "b.testnet", facts).ok).toBe(false);
   });
 });
