@@ -17,6 +17,7 @@ import {
   buildReserveEscrowReview,
   buildVoteReview,
   burnRequest,
+  canRequestBurn,
   burnSharePercent,
   daoStep,
   executeRequest,
@@ -74,10 +75,10 @@ export function DaoDecision({
       accountId ? readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount) : Promise.resolve([]),
     ]);
     setView(d);
-    setBurn(d?.status === "decided" && BigInt(d.burn_total) > 0n && d.escrow_reserved ? await readBurnFacts(config.rpcUrl, arena, battleId, backing).catch(() => null) : null);
+    setBurn(d?.status === "decided" && BigInt(d.burn_total) > 0n && d.escrow_reserved ? await readBurnFacts(config.rpcUrl, arena, battleId, backing, payout).catch(() => null) : null);
     setWeight(BigInt(positions.find((p) => p.community === winner)?.amount ?? "0"));
     setReadError(null);
-  }, [arena, battleId, accountId, communityCount, winner, backing]);
+  }, [arena, battleId, accountId, communityCount, winner, backing, payout]);
 
   useEffect(() => {
     let live = true;
@@ -295,13 +296,21 @@ export function DaoDecision({
               <p className="text-sm">
                 {units(burn.amount)} is reserved for the sink. It counts as burned only after the transfer on Robinhood Chain is confirmed.
               </p>
+              {burn.requestStatus !== null && burn.requestStatus !== "restored" && (
+                <p className="text-xs font-semibold" style={{ color: "#a8802f" }}>
+                  Requested · {burn.requestStatus.replace(/_/g, " ")}. Nothing more to do; it updates here on its own.
+                </p>
+              )}
+              {burn.requestStatus === "restored" && (
+                <p className="text-xs text-mute">The earlier transfer did not happen and was restored. You can request it again.</p>
+              )}
               {isWinner && (
                 <Button
                   type="button"
-                  disabled={action.busy || !connected}
+                  disabled={action.busy || !connected || !canRequestBurn(burn)}
                   onClick={() => void send(burnRequest(battleId), buildBurnReview(payout, arena, backing, burn))}
                 >
-                  <Flame size={16} aria-hidden="true" /> Send burn to sink
+                  <Flame size={16} aria-hidden="true" /> {canRequestBurn(burn) ? "Send burn to sink" : "Burn requested"}
                 </Button>
               )}
             </>
