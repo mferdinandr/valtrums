@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { AccountStatePanel } from "@/components/account-state-panel";
 import { PayoutRequest } from "@/components/payout-request";
+import { PortfolioView } from "@/components/portfolio-view";
 import {
   EntitlementAvailabilitySection,
   LateFundsSection,
@@ -71,42 +72,55 @@ export default function PortfolioPage() {
           </Button>
         </Card>
       ) : (
-        <Card className="space-y-2 p-4">
-          <p className="break-all text-base">Account {portfolio.accountId}</p>
-          <p className="text-sm text-mute">
-            Sign once to view your portfolio. This read-only request cannot move your funds.
-          </p>
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <p className="text-xs text-mute">Connected account</p>
+            <p className="truncate text-base font-semibold">{portfolio.accountId}</p>
+            {portfolio.state.step !== "ready" && (
+              <p className="text-xs text-mute">Sign once to view your portfolio. This read-only request cannot move your funds.</p>
+            )}
+          </div>
           <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>
-            {busy ? "Loading…" : portfolio.state.step === "ready" ? "Refresh portfolio" : "Sign and view portfolio"}
+            {busy ? "Loading…" : portfolio.state.step === "ready" ? "Refresh" : "Sign and view portfolio"}
           </Button>
           {portfolio.state.step === "error" && (
-            <p role="alert" className="text-base text-neon-amber">
+            <p role="alert" className="w-full text-sm text-neon-amber">
               {portfolio.state.message}. Nothing was loaded.
             </p>
           )}
         </Card>
       )}
 
-      {ready && (
-        <>
-          <PositionsSection part={ready.positions} nowMs={now} />
-          <EntitlementAvailabilitySection part={ready.entitlements} nowMs={now} />
-          <AccountStatePanel part={ready.accountState} nowMs={now} />
-          <TransfersSection part={ready.payouts} nowMs={now} />
-          <LateFundsSection />
-        </>
-      )}
+      {ready && <PortfolioView data={ready} onChanged={() => void portfolio.load()} />}
 
       <RecoveryAlerts />
 
-      <PayoutRequest
-        deploymentId={namespace.deploymentId}
-        namespaceKey={applicationKey(namespace)}
-        facts={facts}
-        entitlements={entitlements}
-        payouts={payoutRows}
-        onChanged={() => void portfolio.load()}
-      />
+      {ready && (
+        <details className="lifecycle-tech">
+          <summary>Details, sources and limitations</summary>
+          <div className="mt-3 space-y-4">
+            <PositionsSection part={ready.positions} nowMs={now} />
+            <EntitlementAvailabilitySection part={ready.entitlements} nowMs={now} />
+            <AccountStatePanel part={ready.accountState} nowMs={now} />
+            <TransfersSection part={ready.payouts} nowMs={now} />
+            <LateFundsSection />
+          </div>
+        </details>
+      )}
+
+      <details className="lifecycle-tech">
+        <summary>Advanced: send a claim to Robinhood Chain instead</summary>
+        <div className="mt-3">
+          <PayoutRequest
+            deploymentId={namespace.deploymentId}
+            namespaceKey={applicationKey(namespace)}
+            facts={facts}
+            entitlements={entitlements}
+            payouts={payoutRows}
+            onChanged={() => void portfolio.load()}
+          />
+        </div>
+      </details>
     </div>
   );
 }

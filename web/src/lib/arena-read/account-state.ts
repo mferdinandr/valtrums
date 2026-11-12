@@ -96,3 +96,10 @@ export function describeAccountState(data: AccountStateData, nowMs: number): { e
 export function orderAlerts(alerts: RecoveryAlert[]): RecoveryAlert[] {
   return [...alerts].sort((a, b) => (a.severity === b.severity ? a.id.localeCompare(b.id) : a.severity === "critical" ? -1 : 1));
 }
+
+/** What blocks claiming: a battle whose DAO decision is still running (vote open, or decided with principal left in escrow). */
+export function daoBlocksClaim(state: AccountStateData | null): boolean {
+  return (state?.daoPrincipal ?? []).some(
+    (d) => d.voteStatus === "voting" || (d.voteStatus === "decided" && (d.escrow === null || BigInt(d.escrow.still_escrowed) > 0n)),
+  );
+}

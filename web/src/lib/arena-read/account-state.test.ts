@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: synthetic account state; not observed on any network.
 import { describe, expect, it } from "vitest";
-import { type AccountStateData, describeAccountState, orderAlerts, provenance } from "./account-state";
+import { type AccountStateData, daoBlocksClaim, describeAccountState, orderAlerts, provenance } from "./account-state";
 
 const NOW = Date.parse("2026-11-09T10:00:00.000Z");
 const live = { source: { kind: "live" as const, name: "arena.testnet" }, observedAt: "2026-11-09T09:59:30.000Z" };
@@ -70,5 +70,25 @@ describe("account state display", () => {
       { id: "a", kind: "backing_deficit", severity: "critical", subject: "x", message: "" },
     ]);
     expect(ordered.map((a) => a.id)).toEqual(["a", "c", "b"]);
+  });
+});
+
+describe("daoBlocksClaim", () => {
+  const row = (voteStatus: string, escrow: { still_escrowed: string } | null = null) =>
+    ({ battleId: 1, community: 0, position: "5", voteStatus, voteClosesAtNs: null, myReturn: null, escrow, source: { kind: "live", name: "t" }, observedAt: "2026-11-12T00:00:00Z" }) as never;
+  const data = (...daoPrincipal: never[]) => ({ accountId: "a.testnet", entitlements: [], transfers: [], daoPrincipal }) as never;
+  it("does not block when there is nothing in a DAO decision", () => {
+    expect(daoBlocksClaim(null)).toBe(false);
+    expect(daoBlocksClaim(data())).toBe(false);
+  });
+  it("blocks while a vote is open or a decided disposition still holds principal", () => {
+    expect(daoBlocksClaim(data(row("voting")))).toBe(true);
+    expect(daoBlocksClaim(data(row("decided")))).toBe(true);
+    expect(daoBlocksClaim(data(row("decided", { still_escrowed: "10" })))).toBe(true);
+  });
+  it("does not block once everything is released or no vote was cast", () => {
+    expect(daoBlocksClaim(data(row("decided", { still_escrowed: "0" })))).toBe(false);
+    expect(daoBlocksClaim(data(row("undecided_escrowed")))).toBe(false);
+    expect(daoBlocksClaim(data(row("no_vote")))).toBe(false);
   });
 });
