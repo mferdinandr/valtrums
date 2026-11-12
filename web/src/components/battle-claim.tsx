@@ -39,12 +39,13 @@ interface Row {
  * on the source chain. It opens only once the DAO decision is finished (or there is no DAO outcome to wait for).
  * Entitlements are read from the backing contracts directly, so no wallet signature is needed to see them.
  */
-export function BattleClaim({ arena, battleId, backings }: { arena: string; battleId: number; backings: readonly string[] }) {
+export function BattleClaim({ arena, battleId, backings, winnerBacking }: { arena: string; battleId: number; backings: readonly string[]; winnerBacking: string }) {
   const { act, accountId, connected } = useActionRunner();
   const action = useAction();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [step, setStep] = useState<ReturnType<typeof daoStep> | null>(null);
   const [progress, setProgress] = useState<SettlementProgress | null>(null);
+  const [step2, setStep2] = useState<{ done: number; total: number } | null>(null);
   const key = backings.join(",");
 
   const refresh = useCallback(async () => {
@@ -67,17 +68,30 @@ export function BattleClaim({ arena, battleId, backings }: { arena: string; batt
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const claim = (r: Row) =>
+  // One click claims everything owed, token by token: each one registers the account first when needed. A failure
+  // stops the run and the next click continues from what is still owed, so nothing is claimed twice.
+  const claimAll = () =>
     action.run(async () => {
-      if (!accountId) throw new Error("connect a wallet first");
-      const label = symbolOf(r.backing);
-      if (!(await readRegistered(config.rpcUrl, r.backing, accountId))) {
-        const register = buildRegisterReview(r.backing, accountId, label);
-        await act(registerRequest(r.backing), register.ok ? register : null);
+      if (!accountId || !rows) throw new Error("connect a wallet first");
+      const todo = rows;
+      try {
+        for (const [i, r] of todo.entries()) {
+          setStep2({ done: i, total: todo.length });
+          const label = symbolOf(r.backing);
+          if (!(await readRegistered(config.rpcUrl, r.backing, accountId))) {
+            const register = buildRegisterReview(r.backing, accountId, label);
+            await act(registerRequest(r.backing), register.ok ? register : null);
+          }
+          // What is owed right now, not what the page showed a moment ago.
+          const available = await readEntitlement(config.rpcUrl, r.backing, accountId);
+          if (BigInt(available) === 0n) continue;
+          const review = buildClaimReview(r.backing, available, label);
+          await act(claimRequest(r.backing, available), review.ok ? review : null);
+        }
+      } finally {
+        setStep2(null);
+        await refresh().catch(() => undefined);
       }
-      const review = buildClaimReview(r.backing, r.available, label);
-      await act(claimRequest(r.backing, r.available), review.ok ? review : null);
-      await refresh();
     });
 
   const settle = () =>
@@ -110,23 +124,24 @@ export function BattleClaim({ arena, battleId, backings }: { arena: string; batt
   if (!open) return <p className="mt-4 text-sm text-mute">Claiming opens after the DAO decision.</p>;
   if (rows.length === 0) return <p className="mt-4 text-sm text-mute">No prize to claim yet. It appears here after the battle is settled.</p>;
 
+  const kindOf = (backing: string) => (backing === winnerBacking ? "Your coins that were not burned" : "Prize from the losing community");
   return (
     <div className="mt-4 space-y-3">
       {rows.map((r) => (
-        <div key={r.backing} className="flex items-center justify-between gap-3 rounded-xl p-3" style={{ background: "#fffdf6", border: "1px solid #d8dfd3" }}>
-          <div className="flex min-w-0 items-center gap-3">
-            <TokenIcon symbol={symbolOf(r.backing)} size={36} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tabular-nums">{formatUnits(BigInt(r.available), TOKEN_DECIMALS, 4)} {symbolOf(r.backing)}</p>
-              <p className="text-xs text-mute">Goes to your NEAR wallet</p>
-            </div>
+        <div key={r.backing} className="flex items-center gap-3 rounded-xl p-3" style={{ background: "#fffdf6", border: "1px solid #d8dfd3" }}>
+          <TokenIcon symbol={symbolOf(r.backing)} size={36} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold tabular-nums">{formatUnits(BigInt(r.available), TOKEN_DECIMALS, 4)} {symbolOf(r.backing)}</p>
+            <p className="text-xs text-mute">{kindOf(r.backing)}</p>
           </div>
-          <Button type="button" disabled={action.busy || !connected} onClick={() => void claim(r)}>
-            <Wallet size={16} aria-hidden="true" /> {action.busy ? "Claiming…" : "Claim"}
-          </Button>
         </div>
       ))}
-      {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+      <Button type="button" className="w-full" disabled={action.busy || !connected} onClick={() => void claimAll()}>
+        <Wallet size={16} aria-hidden="true" />{" "}
+        {step2 ? `Claiming ${step2.done + 1} of ${step2.total}…` : rows.length > 1 ? "Claim all to my NEAR wallet" : "Claim to my NEAR wallet"}
+      </Button>
+      {step2 && <p role="status" className="text-xs text-mute">Confirm each step in your wallet.</p>}
+      {action.error && <p role="alert" className="text-xs text-neon-red">{action.error} Press the button to continue.</p>}
     </div>
   );
 }
