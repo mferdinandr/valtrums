@@ -132,6 +132,31 @@ describe("rule parser: join, cancel and refund", () => {
   });
 });
 
+describe("rule parser: claiming winnings and the DAO vote", () => {
+  it("claims the prize to the NEAR wallet", async () => {
+    for (const text of ["claim my winnings", "klaim hadiah saya", "tarik hadiah", "claim", "claim my prize"]) {
+      expect(await intentOf(text)).toEqual({ kind: "claim_winnings" });
+    }
+  });
+  it("keeps a Robinhood payout for an address or a payout word, and a refund for a refund", async () => {
+    expect(await intentOf(`claim 500 to ${A1} from token.testnet`)).toMatchObject({ kind: "payout" });
+    expect(await intentOf("claim refund from battle 7 community 1")).toMatchObject({ kind: "claim_refund" });
+  });
+  it("votes burn or return on a battle", async () => {
+    expect(await intentOf("vote burn 50% battle 7")).toEqual({ kind: "dao_vote", battleId: 7, burnPercent: 50 });
+    expect(await intentOf("vote burn battle 7")).toEqual({ kind: "dao_vote", battleId: 7, burnPercent: 100 });
+    expect(await intentOf("vote return battle 7")).toEqual({ kind: "dao_vote", battleId: 7, burnPercent: 0 });
+    expect(await intentOf("vote bakar 30% arena 2")).toEqual({ kind: "dao_vote", battleId: 2, burnPercent: 30 });
+    expect(await parse("vote burn 50%")).toMatchObject({ ok: false, clarify: true });
+    expect(await parse("vote battle 7")).toMatchObject({ ok: false, clarify: true });
+  });
+  it("refuses a burn share outside 0 to 100", () => {
+    expect(validateLifecycleIntent({ kind: "dao_vote", battleId: 7, burnPercent: 101 }).ok).toBe(false);
+    expect(validateLifecycleIntent({ kind: "dao_vote", battleId: 7, burnPercent: -1 }).ok).toBe(false);
+    expect(validateLifecycleIntent({ kind: "dao_vote", battleId: 0, burnPercent: 5 }).ok).toBe(false);
+  });
+});
+
 describe("rule parser: payout and limits", () => {
   it("parses a payout request", async () => {
     expect(await intentOf(`payout 500 to ${A1.toUpperCase().replace("0X", "0x")} from token.testnet`)).toEqual({ kind: "payout", backing: "token.testnet", amount: "500", destination: A1 });

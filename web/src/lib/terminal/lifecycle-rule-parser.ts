@@ -13,6 +13,15 @@ const clarify = (error: string): LifecycleParseResult => ({ ok: false, error, cl
 const fail = (error: string): LifecycleParseResult => ({ ok: false, error });
 
 const PAYOUT = /\b(payout|pay out|withdraw|withdrawal|claim|tarik|penarikan|cairkan|klaim)\b/;
+/** The prize itself, to the NEAR wallet: "claim my winnings", "klaim hadiah". A 0x address or "payout" keeps the Robinhood payout. */
+const CLAIM = /\b(claim|klaim|withdraw|tarik|cairkan|ambil)\b/;
+const PRIZE = /\b(winnings?|prizes?|rewards?|hadiah|kemenangan|menang)\b/;
+const ROBINHOOD_PAYOUT = /\b(payout|pay out|robinhood|penarikan)\b/;
+const DAO_VOTE = /\b(vote|voting|vote-?kan|suara|dao)\b/;
+const BURN = /\b(burn|bakar|burned|dibakar)\b/;
+const KEEP = /\b(return|returned|kembalikan|dikembalikan|keep|simpan)\b/;
+const SAME_BATTLE = /\b(tersebut|itu|tadi|same|that|this)\b/;
+const PERCENT = /(\d{1,3})\s*%/;
 const CREATE = /\b(create|make|new|start|launch|buat|bikin|bikinkan|buatkan|mulai)\b/;
 const BATTLE_WORD = /\b(battle|battles|arena|arenas|duel|pertarungan)\b/;
 const REGISTER = /\b(register|registration|sign up|signup|join|daftar|mendaftar|daftarkan|registrasi|gabung|ikut)\b/;
@@ -117,10 +126,21 @@ export const lifecycleRuleParser: LifecycleIntentParser = {
 
     // Questions first: they never build a request.
     if (MY_POSITIONS.test(text)) return validateLifecycleIntent({ kind: "show_positions" });
-    const isAction = DEPOSIT.test(text) || CANCEL.test(text) || REFUND.test(text) || PAYOUT.test(text) || (CREATE.test(text) && !/\b(any|which|what|show|list)\b/.test(text));
+    const isAction = DAO_VOTE.test(text) || DEPOSIT.test(text) || CANCEL.test(text) || REFUND.test(text) || PAYOUT.test(text) || (CREATE.test(text) && !/\b(any|which|what|show|list)\b/.test(text));
     if (!isAction && BATTLE_WORD.test(text) && ASK_BATTLES.test(text) && !BATTLE_ID.test(text)) {
       return validateLifecycleIntent({ kind: "list_battles", status: OPEN_REF.test(text) ? "open" : "all" });
     }
+
+    // The DAO vote on the winners' principal: "vote burn 50% battle 7", "vote return battle 7", "vote bakar battle 7".
+    if (DAO_VOTE.test(text) && (BURN.test(text) || KEEP.test(text) || PERCENT.test(text))) {
+      // "that battle" (tersebut, itu, same) points at the battle of an earlier request in the same prompt.
+      const id = BATTLE_ID.exec(text)?.[1];
+      if (!id && !SAME_BATTLE.test(text)) return clarify("Which battle? For example: battle 7.");
+      const percent = PERCENT.exec(text)?.[1];
+      const burnPercent = percent !== undefined ? Number(percent) : BURN.test(text) && !KEEP.test(text) ? 100 : 0;
+      return validateLifecycleIntent({ kind: "dao_vote", ...(id ? { battleId: Number(id) } : { battle: "same" }), burnPercent });
+    }
+    if (DAO_VOTE.test(text)) return clarify("Burn or return? For example: vote burn 50% on battle 7, or vote return on battle 7.");
 
     // Refund before payout: "claim refund" also matches the payout words.
     if (REFUND.test(text)) {
@@ -140,6 +160,10 @@ export const lifecycleRuleParser: LifecycleIntentParser = {
       return validateLifecycleIntent({ kind: "join_battle", ...battleRef(text), tokenRef: token });
     }
 
+    // Claiming the prize goes to the NEAR wallet unless a 0x address or a payout word asks for the Robinhood payout.
+    if (CLAIM.test(text) && !ADDRESS.test(text) && !ROBINHOOD_PAYOUT.test(text) && (PRIZE.test(text) || !/\d/.test(text))) {
+      return validateLifecycleIntent({ kind: "claim_winnings" });
+    }
     if (PAYOUT.test(text)) {
       const destination = ADDRESS.exec(text)?.[0];
       const backing = /\b(?:backing|token|from|dari)\s+([a-z0-9][a-z0-9._-]*\.[a-z0-9._-]+|[a-z0-9_-]{2,64})\b/.exec(text)?.[1];

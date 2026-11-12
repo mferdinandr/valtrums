@@ -5,6 +5,7 @@
 
 import { registerRequest, depositRequest } from "@/lib/arena-read/deposit-flow";
 import { SCORING_MODES } from "@/lib/arena-read/create-review";
+import { voteRequest } from "@/lib/arena-read/dao";
 import { cancelRequest, joinRequest, refundRequest } from "@/lib/arena-read/open-arena";
 import type { ScoringMode } from "@/lib/arena-read/lifecycle";
 import { formatUnits } from "@/lib/amounts";
@@ -12,6 +13,8 @@ import { formatUnits } from "@/lib/amounts";
 /** Sixteen full 0x addresses are about 700 characters, so the limit leaves room for a maximal create prompt. */
 export const MAX_PROMPT_CHARS = 1200;
 export const MAX_ASSET_REF_CHARS = 80;
+/** Requests allowed in one prompt (each one may need its own wallet confirmations). */
+export const MAX_REQUESTS = 4;
 /** Users count communities from 1 (as the UI labels them); intents store the contract's 0-based index. */
 export const MAX_COMMUNITY_NUMBER = 16;
 /** The arena's start window in whole minutes: 1 minute to 7 days (D34). */
@@ -45,12 +48,16 @@ export type LifecycleIntent =
    */
   | { kind: "deposit"; battleId: number | null; community: number | null; tokenRef: string | null; amount: string }
   | { kind: "payout"; backing: string; amount: string; destination: string }
+  /** Claim the prize into the connected NEAR account. What is claimable is read from the account, never from the prompt. */
+  | { kind: "claim_winnings" }
+  /** The winners' vote on their principal: `burnPercent` of the vote is burned, the rest returned (0 to 100). */
+  | { kind: "dao_vote"; battleId: number | null; burnPercent: number }
   /** Read-only questions. They never build a request and never sign. */
   | { kind: "list_battles"; status: "open" | "all" }
   | { kind: "show_positions" };
 
 export type LifecycleParseResult =
-  | { ok: true; intent: LifecycleIntent; /** Which parser understood it: "near-ai" or "rules". */ via?: string; /** Why a fallback was used, when one was. */ note?: string }
+  | { ok: true; intent: LifecycleIntent; /** More than one request in one prompt (2 to MAX_REQUESTS, `intent` is the first). */ intents?: LifecycleIntent[]; /** Which parser understood it: "near-ai" or "rules". */ via?: string; /** Why a fallback was used, when one was. */ note?: string }
   | { ok: false; error: string; /** Set when the user should be asked a follow-up question. */ clarify?: boolean; via?: string; note?: string };
 
 /** A parser never throws; every failure is a result. */
@@ -69,6 +76,8 @@ export const LIFECYCLE_INTENT_JSON_SCHEMA = {
     { kind: "register_position", battleId: "positive integer, or battle \"open\"", battle: "\"open\" (optional)", communityNumber: "1 to 16" },
     { kind: "deposit", battleId: "positive integer, or battle \"open\"", battle: "\"open\" (optional)", communityNumber: "1 to 16, or give tokenRef instead", tokenRef: "the token of the community to back, as the user wrote it (optional)", amountTokens: "the amount in tokens exactly as the user wrote it, digits with an optional dot, for example 100 or 0.5; the code converts it" },
     { kind: "payout", backing: "NEAR account id", amount: "digits only, positive integer", destination: "0x + 40 hex" },
+    { kind: "claim_winnings" },
+    { kind: "dao_vote", battleId: "positive integer", burnPercent: "whole number 0 to 100: how much of the winners' principal to burn (0 = return everything)" },
     { kind: "list_battles", status: "open|all (which battles the user asks about)" },
     { kind: "show_positions" },
   ],
@@ -85,6 +94,8 @@ const FIELDS: Record<string, readonly string[]> = {
   register_position: ["kind", "battleId", "battle", "communityNumber"],
   deposit: ["kind", "battleId", "battle", "communityNumber", "tokenRef", "amount", "amountTokens"],
   payout: ["kind", "backing", "amount", "destination"],
+  claim_winnings: ["kind"],
+  dao_vote: ["kind", "battleId", "battle", "burnPercent"],
   list_battles: ["kind", "status"],
   show_positions: ["kind"],
 };
@@ -127,7 +138,7 @@ export function validateLifecycleIntent(raw: unknown): LifecycleParseResult {
   if (!isObject(raw)) return fail("The intent must be an object");
   const kind = String(raw.kind);
   const allowed = FIELDS[kind];
-  if (!allowed) return fail("The intent kind must be create_battle, join_battle, cancel_battle, claim_refund, register_position, deposit, payout, list_battles or show_positions");
+  if (!allowed) return fail("The intent kind must be create_battle, join_battle, cancel_battle, claim_refund, register_position, deposit, payout, claim_winnings, dao_vote, list_battles or show_positions");
   for (const key of Object.keys(raw)) if (!allowed.includes(key)) return fail(`Unknown field: ${key}`);
 
   if (kind === "list_battles") {
@@ -135,6 +146,20 @@ export function validateLifecycleIntent(raw: unknown): LifecycleParseResult {
     return { ok: true, intent: { kind, status: raw.status } };
   }
   if (kind === "show_positions") return { ok: true, intent: { kind } };
+  if (kind === "claim_winnings") return { ok: true, intent: { kind } };
+  if (kind === "dao_vote") {
+    // `battle: "same"` is "the battle of the earlier request in this prompt"; it only means something there.
+    let id: number | null = null;
+    if (raw.battle !== undefined) {
+      if (raw.battle !== "same" || raw.battleId !== undefined) return fail('Give either a battle id or battle "same"');
+    } else {
+      id = wholeNumber(raw.battleId);
+      if (id === null || id < 1) return fail("The battle id must be a positive integer");
+    }
+    const percent = wholeNumber(raw.burnPercent);
+    if (percent === null || percent < 0 || percent > 100) return fail("The burn share must be a whole number from 0 to 100");
+    return { ok: true, intent: { kind, battleId: id, burnPercent: percent } };
+  }
 
   if (kind === "create_battle") {
     if (!SCORING_MODES.includes(raw.mode as ScoringMode)) return fail("The scoring mode must be PriceGain, MarketCapGrowth, VolumeRatio or LowestDrawdown");
@@ -228,6 +253,10 @@ export function intentToRequest(
       return cancelRequest(intent.battleId);
     case "claim_refund":
       return refundRequest(intent.battleId, intent.community);
+    case "claim_winnings":
+      return null; // what is claimable is read from the account when the plan is shown
+    case "dao_vote":
+      return intent.battleId === null ? null : voteRequest(intent.battleId, intent.burnPercent);
     case "list_battles":
     case "show_positions":
       return null; // read-only: nothing is ever previewed or signed
@@ -258,6 +287,10 @@ export function toWireIntent(intent: LifecycleIntent): Record<string, unknown> {
       };
     case "payout":
       return { ...intent };
+    case "claim_winnings":
+      return { kind: intent.kind };
+    case "dao_vote":
+      return { kind: intent.kind, ...(intent.battleId === null ? { battle: "same" } : { battleId: intent.battleId }), burnPercent: intent.burnPercent };
     case "list_battles":
       return { kind: intent.kind, status: intent.status };
     case "show_positions":
@@ -285,6 +318,10 @@ export function describeIntent(intent: LifecycleIntent): string {
       return `Deposit ${tokensText(intent.amount)} into ${battleText(intent.battleId)}, ${intent.community !== null ? `community ${intent.community + 1}` : `the ${intent.tokenRef} community`}`;
     case "payout":
       return `Request a payout of ${intent.amount} base units to ${intent.destination}`;
+    case "claim_winnings":
+      return "Claim my winnings to my NEAR wallet";
+    case "dao_vote":
+      return `Vote on ${intent.battleId === null ? "that battle" : `battle #${intent.battleId}`}: ${intent.burnPercent}% burned, ${100 - intent.burnPercent}% returned`;
     case "list_battles":
       return intent.status === "open" ? "Show the arenas that are open now" : "Show the latest arenas";
     case "show_positions":
