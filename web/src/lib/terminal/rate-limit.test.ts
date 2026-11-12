@@ -11,9 +11,9 @@ describe("limits from the environment", () => {
     const bad = terminalLimitsFromEnv({ TERMINAL_AI_PER_CLIENT_HOUR: "0", TERMINAL_AI_GLOBAL_HOUR: "-5", TERMINAL_AI_GLOBAL_DAY: "abc", TERMINAL_AI_CONCURRENT: "1.5", TERMINAL_REQUESTS_PER_CLIENT_MINUTE: "" });
     expect(bad).toEqual(DEFAULT_TERMINAL_LIMITS); // an invalid value never turns a limit off
   });
-  it("reads the operator's values, the kill switch and the mode", () => {
-    const l = terminalLimitsFromEnv({ TERMINAL_AI_PER_CLIENT_HOUR: "3", TERMINAL_AI_GLOBAL_HOUR: "50", TERMINAL_AI_GLOBAL_DAY: "100", TERMINAL_AI_ENABLED: "false", TERMINAL_AI_MODE: "rules_first" });
-    expect(l).toMatchObject({ aiPerClientHour: 3, aiGlobalHour: 50, aiGlobalDay: 100, aiEnabled: false, aiMode: "rules_first" });
+  it("reads the operator's values and the kill switch", () => {
+    const l = terminalLimitsFromEnv({ TERMINAL_AI_PER_CLIENT_HOUR: "3", TERMINAL_AI_GLOBAL_HOUR: "50", TERMINAL_AI_GLOBAL_DAY: "100", TERMINAL_AI_ENABLED: "false" });
+    expect(l).toMatchObject({ aiPerClientHour: 3, aiGlobalHour: 50, aiGlobalDay: 100, aiEnabled: false });
   });
 });
 
@@ -129,17 +129,6 @@ describe("the route spends only what the limits allow", () => {
     const replies = await Promise.all(r);
     expect(replies.map((x) => x.status)).toEqual([200, 200, 429]);
     expect(calls.n).toBeLessThanOrEqual(2);
-  });
-
-  it("rules_first asks the model only when the rules could not understand the prompt", async () => {
-    const { fetchImpl, calls } = countingModel(DEPOSIT);
-    const guard = new TerminalGuard(limits({ aiMode: "rules_first" }));
-    const clear = await handleLifecycleParse(post("deposit 5 ke battle 7 komunitas 2"), { env, fetchImpl, guard, client: "a" });
-    expect(clear.body).toMatchObject({ ok: true, parser: "rules" });
-    expect(calls.n).toBe(0); // free
-    const vague = await handleLifecycleParse(post("tolong setorkan lima ke battle tujuh komunitas dua"), { env, fetchImpl, guard, client: "a" });
-    expect(calls.n).toBe(1); // only the unclear one reached the model
-    expect(vague.body).toMatchObject({ parser: "near-ai" });
   });
 
   it("frees the concurrency slot even when the model fails", async () => {

@@ -6,8 +6,6 @@
 export interface TerminalLimits {
   /** False turns the model off for everyone (kill switch); the built-in rules still answer. */
   aiEnabled: boolean;
-  /** "always": ask the model for every prompt. "rules_first": ask it only when the rules could not understand the prompt. */
-  aiMode: "always" | "rules_first";
   /** Model calls one client may cause per hour. */
   aiPerClientHour: number;
   /** Model calls in total per hour and per day (a cap on the spend, whoever asks). */
@@ -22,7 +20,6 @@ export interface TerminalLimits {
 /** Conservative defaults: about 0.0003 USD per call, so the daily cap is at most a few tenths of a dollar. */
 export const DEFAULT_TERMINAL_LIMITS: TerminalLimits = {
   aiEnabled: true,
-  aiMode: "always",
   aiPerClientHour: 10,
   aiGlobalHour: 200,
   aiGlobalDay: 1_000,
@@ -40,7 +37,6 @@ export function terminalLimitsFromEnv(env: Record<string, string | undefined>): 
   const d = DEFAULT_TERMINAL_LIMITS;
   return {
     aiEnabled: env.TERMINAL_AI_ENABLED?.trim().toLowerCase() !== "false",
-    aiMode: env.TERMINAL_AI_MODE?.trim().toLowerCase() === "rules_first" ? "rules_first" : "always",
     aiPerClientHour: positive(env.TERMINAL_AI_PER_CLIENT_HOUR, d.aiPerClientHour),
     aiGlobalHour: positive(env.TERMINAL_AI_GLOBAL_HOUR, d.aiGlobalHour),
     aiGlobalDay: positive(env.TERMINAL_AI_GLOBAL_DAY, d.aiGlobalDay),

@@ -85,7 +85,3 @@ The Terminal route SHALL bound how much NEAR AI one visitor and the whole server
 - **WHEN** one visitor exceeds the per-minute request limit
 - **THEN** the route answers HTTP 429 and does no parsing or model work
 
-#### Scenario: Rules first
-- **WHEN** the operator sets rules-first mode and the built-in rules understand the prompt
-- **THEN** no model call is made for it
-

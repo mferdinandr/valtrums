@@ -59,31 +59,24 @@ export async function handleLifecycleParse(req: Request, deps: ParseRouteDeps): 
     result = await lifecycleRuleParser.parse(prompt);
     note = "NEAR AI is not configured on this server (no NEAR_AI_API_KEY); the built-in rules answered";
   } else {
-    // "rules_first" spends nothing when the rules already understand the prompt.
-    const rulesFirst = guard?.settings.aiMode === "rules_first";
-    const early = rulesFirst ? await lifecycleRuleParser.parse(prompt) : null;
-    if (early && early.ok) {
-      result = early;
+    const decision = guard ? guard.tryAi(client) : ({ allowed: true, release: () => undefined } as const);
+    if (!decision.allowed) {
+      result = await lifecycleRuleParser.parse(prompt);
+      note = `${decision.reason.charAt(0).toUpperCase()}${decision.reason.slice(1)}; the built-in rules answered`;
     } else {
-      const decision = guard ? guard.tryAi(client) : ({ allowed: true, release: () => undefined } as const);
-      if (!decision.allowed) {
-        result = early ?? (await lifecycleRuleParser.parse(prompt));
-        note = `${decision.reason.charAt(0).toUpperCase()}${decision.reason.slice(1)}; the built-in rules answered`;
-      } else {
-        try {
-          result = await model.parse(prompt);
-          used = model.name;
-        } finally {
-          decision.release();
-        }
-        // A model outage or a rejected reply falls back to the rules rather than leaving the user stuck.
-        if (!result.ok && !result.clarify) {
-          const fallback = early ?? (await lifecycleRuleParser.parse(prompt));
-          if (fallback.ok || fallback.clarify) {
-            note = `NEAR AI could not answer (${result.error}); the built-in rules answered`;
-            result = fallback;
-            used = lifecycleRuleParser.name;
-          }
+      try {
+        result = await model.parse(prompt);
+        used = model.name;
+      } finally {
+        decision.release();
+      }
+      // A model outage or a rejected reply falls back to the rules rather than leaving the user stuck.
+      if (!result.ok && !result.clarify) {
+        const fallback = await lifecycleRuleParser.parse(prompt);
+        if (fallback.ok || fallback.clarify) {
+          note = `NEAR AI could not answer (${result.error}); the built-in rules answered`;
+          result = fallback;
+          used = lifecycleRuleParser.name;
         }
       }
     }

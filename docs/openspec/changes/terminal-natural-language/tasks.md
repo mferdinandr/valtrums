@@ -13,7 +13,7 @@
 
 ## 3. Spend limits
 
-- [x] 3.0 Bound NEAR AI use on the public route (per visitor, total hour and day, concurrency, kill switch, request-rate limit, optional rules-first), with tests that count the model calls actually made.
+- [x] 3.0 Bound NEAR AI use on the public route (per visitor, total hour and day, concurrency, kill switch, request-rate limit), with tests that count the model calls actually made.
 
 ## 4. Configuration, docs and verification
 
