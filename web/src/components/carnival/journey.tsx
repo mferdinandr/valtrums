@@ -615,7 +615,7 @@ export function LandingJourney() {
               </li>
               <li>
                 <strong>Principal in escrow.</strong> Winning principal awaits a
-                DAO burn-or-return decision. Governance rules remain open.
+                winners' burn-or-return vote, decided by deposit weight with no quorum. Without a vote it stays escrowed.
               </li>
             </ol>
             <p>
