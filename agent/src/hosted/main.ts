@@ -139,7 +139,7 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
     keyBelongsTo: rpcKeyCheck(rpcUrl),
     allowedOrigin: required(env, "HOSTED_AGENT_ALLOWED_ORIGIN"),
   });
-  const port = Number(env.PORT ?? 8790);
+  const port = Number(env.PORT ?? 8791); // 8790 is the read API
   server.listen(port, () => log({ event: "start", port, killSwitchPath: killPath, limits }));
 
   let running = true;
