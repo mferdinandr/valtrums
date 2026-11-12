@@ -171,3 +171,15 @@
   .score-chart-legend button { transition: none; }
   .score-chart-legend button:hover { transform: none; }
 }
+
+.score-chart-idle {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px dashed #c9c3b4;
+  border-radius: 12px;
+  background: #f6f1e6;
+  font: 600 13px/1.5 "Bricolage Grotesque", sans-serif;
+  color: #526777;
+}
+.score-chart.is-idle .score-chart-body { opacity: 0.45; filter: grayscale(0.6); }
+.score-chart.is-idle .score-chart-header button { opacity: 0.4; cursor: not-allowed; }

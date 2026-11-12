@@ -10,6 +10,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { JoinDeposit } from "@/components/lifecycle-join-deposit";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { BattleResult } from "@/components/battle-result";
+import { DaoDecision } from "@/components/dao-decision";
 import { WinnerCelebration } from "@/components/winner-celebration";
 import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
@@ -150,8 +151,16 @@ export function LifecycleBattleDetail({
       </div>
 
       {safeBattleId !== null && phase.kind === "decided" && (
-        <div>
+        <div className="space-y-4">
           <BattleResult
+            namespace={namespace}
+            arena={namespace.arenaContract}
+            battleId={safeBattleId}
+            winner={phase.winner}
+            communityCount={rows.length}
+            nameOf={name}
+          />
+          <DaoDecision
             arena={namespace.arenaContract}
             battleId={safeBattleId}
             winner={phase.winner}
@@ -370,7 +379,7 @@ export function LifecycleBattleDetail({
               />
             </section>
           ) : (
-            <ScoreChart title="Race chart" source={stage?.title ?? "Waiting for the battle"} status="Not started" note="Prices will appear when the round begins." duration={30} pending selected={String(rows.find((r) => r.representation === selected)?.index ?? 0)} onSelect={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }} series={rows.map((r, i) => ({ id: String(r.index), name: name(r.index), color: ["#327f7d", "#ad5273", "#a8802f", "#5b6fb5", "#7c8f3a", "#8a5ca8"][i % 6]!, points: [] }))} />
+            <ScoreChart title="Race chart" source={stage?.title ?? "Waiting for the battle"} status="Not started" note="Prices will appear when the round begins." idle="The race has not started. This chart goes live when the first round opens." duration={30} pending selected={String(rows.find((r) => r.representation === selected)?.index ?? 0)} onSelect={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }} series={rows.map((r, i) => ({ id: String(r.index), name: name(r.index), color: ["#327f7d", "#ad5273", "#a8802f", "#5b6fb5", "#7c8f3a", "#8a5ca8"][i % 6]!, points: [] }))} />
           )}
           </div>
           <div className="match-dock-panel" hidden={panelTab !== "position"}>{actionsContent}</div>

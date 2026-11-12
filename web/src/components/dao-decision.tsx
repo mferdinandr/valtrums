@@ -1,0 +1,223 @@
+"use client";
+
+import { Flame, Timer, Undo2, Vote } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
+import { useWallet } from "@/components/providers";
+import { useAction } from "@/hooks/use-action";
+import { useActionRunner } from "@/hooks/use-action-runner";
+import { useNow } from "@/hooks/use-now";
+import { formatCountdown, formatUnits } from "@/lib/amounts";
+import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
+import {
+  buildExecuteReview,
+  buildReserveEscrowReview,
+  buildVoteReview,
+  burnSharePercent,
+  daoStep,
+  executeRequest,
+  readDisposition,
+  reserveEscrowRequest,
+  voteMsLeft,
+  voteRequest,
+  type Disposition,
+} from "@/lib/arena-read/dao";
+import { readMyPositions } from "@/lib/arena-read/positions";
+import { config } from "@/lib/config";
+
+const POLL_MS = 5_000;
+
+/**
+ * What happens to the winning principal: the winners' burn-or-return vote, then the reserve and execute steps.
+ * Every number comes from the arena's own disposition view. A burn is shown as a reservation for the sink,
+ * never as burned supply. Each button prepares one reviewed call; nothing is signed without the wallet.
+ */
+export function DaoDecision({
+  arena, battleId, winner, communityCount, nameOf,
+}: {
+  arena: string;
+  battleId: number;
+  winner: number;
+  communityCount: number;
+  nameOf: (community: number) => string;
+}) {
+  const { accountId } = useWallet();
+  const { act, connected } = useActionRunner();
+  const action = useAction();
+  const now = useNow(1000);
+  const [view, setView] = useState<Disposition | null>(null);
+  const [weight, setWeight] = useState<bigint>(0n);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [lastTx, setLastTx] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const [d, positions] = await Promise.all([
+      readDisposition(config.rpcUrl, arena, battleId),
+      accountId ? readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount) : Promise.resolve([]),
+    ]);
+    setView(d);
+    setWeight(BigInt(positions.find((p) => p.community === winner)?.amount ?? "0"));
+    setReadError(null);
+  }, [arena, battleId, accountId, communityCount, winner]);
+
+  useEffect(() => {
+    let live = true;
+    const tick = () => refresh().catch((e: unknown) => live && setReadError(e instanceof Error ? e.message : String(e)));
+    void tick();
+    const timer = setInterval(() => void tick(), POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [refresh]);
+
+  const token = nameOf(winner);
+  const units = (v: string) => `${formatUnits(BigInt(v), TOKEN_DECIMALS, 4)} ${token}`;
+  const step = daoStep(view);
+  const msLeft = view ? voteMsLeft(view, now) : 0;
+  const share = view ? burnSharePercent(view) : null;
+  const weightLabel = `${formatUnits(weight, TOKEN_DECIMALS, 4)} ${token}`;
+
+  const send = (request: Record<string, unknown>, review: ReturnType<typeof buildVoteReview>) =>
+    action.run(async () => {
+      const result = await act(request, review.ok ? review : null);
+      if (result.txHash) setLastTx(result.txHash);
+      await refresh();
+    });
+
+  const vote = (choice: "burn" | "return") => send(voteRequest(battleId, choice), buildVoteReview(arena, battleId, choice, weightLabel));
+
+  const totalMs = view?.window_secs ? Number(view.window_secs) * 1000 : 0;
+  const pct = totalMs > 0 ? Math.min(100, Math.max(0, (msLeft / totalMs) * 100)) : 0;
+  const tallied = view && (view.status === "voting" || view.status === "decided" || view.status === "undecided_escrowed");
+  const pill =
+    step.kind === "voting" ? { text: "Voting open", color: "#327f7d" }
+    : step.kind === "none" ? { text: "Waiting", color: "#8a8f98" }
+    : step.kind === "undecided" ? { text: "No votes", color: "#a8802f" }
+    : step.kind === "done" ? { text: "Complete", color: "#327f7d" }
+    : { text: "Decided", color: "#5b6fb5" };
+
+  return (
+    <Card aria-label="DAO decision" className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: "#ad527322", color: "#ad5273" }}>
+            <Vote size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold leading-tight">DAO decision</h3>
+            <p className="text-xs text-mute">
+              {token} winners burn or keep their principal{view?.window_secs ? ` · ${view.window_secs}s vote` : ""}
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: `${pill.color}22`, color: pill.color }}>
+          {pill.text}
+        </span>
+      </div>
+
+      {readError && <p role="alert" className="text-xs text-neon-amber">Could not read the decision state: {readError}</p>}
+      {!view && !readError && <p role="status" className="text-xs text-mute">Reading the decision state…</p>}
+      {step.kind === "none" && <p className="text-sm text-mute">{step.reason}</p>}
+
+      {step.kind === "voting" && (
+        <div className="space-y-1">
+          <div className="flex items-end justify-between">
+            <span className="flex items-center gap-1 text-xs text-mute"><Timer size={14} aria-hidden="true" /> Closes in</span>
+            <span className="text-xl font-bold tabular-nums">{now <= 0 ? "…" : formatCountdown(msLeft)}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} role="progressbar" aria-label="Vote time left" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+            <div className="h-full rounded-full transition-[width] duration-1000 ease-linear" style={{ width: `${pct}%`, background: "#327f7d" }} />
+          </div>
+        </div>
+      )}
+
+      {tallied && view && (
+        <div className="space-y-2">
+          <div className="flex h-3 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} aria-label="Burn versus return weight">
+            {share !== null && (
+              <>
+                <div style={{ width: `${share}%`, background: "#ad5273" }} />
+                <div style={{ width: `${100 - share}%`, background: "#327f7d" }} />
+              </>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl p-3" style={{ background: "#ad527314" }}>
+              <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#ad5273" }}>
+                <Flame size={14} aria-hidden="true" /> Burn{share !== null ? ` · ${share}%` : ""}
+              </p>
+              <p className="text-sm font-semibold tabular-nums">{units(view.burn_weight)}</p>
+              {view.status === "decided" && <p className="text-xs text-mute">burns {units(view.burn_total)}</p>}
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#327f7d14" }}>
+              <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#327f7d" }}>
+                <Undo2 size={14} aria-hidden="true" /> Return{share !== null ? ` · ${100 - share}%` : ""}
+              </p>
+              <p className="text-sm font-semibold tabular-nums">{units(view.return_weight)}</p>
+              {view.status === "decided" && <p className="text-xs text-mute">returns {units(view.return_total)}</p>}
+            </div>
+          </div>
+          {share === null && <p className="text-center text-xs text-mute">No votes yet</p>}
+        </div>
+      )}
+
+      {step.kind === "voting" && (
+        <div className="space-y-2">
+          {!accountId ? (
+            <p className="text-xs text-mute">Connect your wallet to vote.</p>
+          ) : weight === 0n ? (
+            <p className="text-xs text-mute">Only participants who deposited in {token} can vote.</p>
+          ) : (
+            <>
+              <p className="text-xs text-mute">Your weight: {weightLabel}. One vote, final.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("burn")}>
+                  <Flame size={16} aria-hidden="true" /> Vote burn
+                </Button>
+                <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("return")}>
+                  <Undo2 size={16} aria-hidden="true" /> Vote return
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {step.kind === "undecided" && <p className="text-sm">The window closed with no vote. The winning principal stays escrowed.</p>}
+
+      {step.kind === "reserve_escrow" && (
+        <div className="space-y-2">
+          <p className="text-sm">Reserve the escrow first; anyone can do this.</p>
+          <Button type="button" disabled={action.busy || !connected} onClick={() => void send(reserveEscrowRequest(battleId), buildReserveEscrowReview(arena, battleId))}>
+            Reserve escrow
+          </Button>
+        </div>
+      )}
+
+      {step.kind === "execute" && view && (
+        <div className="space-y-2">
+          <div className="h-2 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} role="progressbar" aria-label="Releases recorded" aria-valuemin={0} aria-valuemax={view.total_releases} aria-valuenow={view.released}>
+            <div className="h-full rounded-full" style={{ width: `${(view.released / Math.max(1, view.total_releases)) * 100}%`, background: "#5b6fb5" }} />
+          </div>
+          <p className="text-xs text-mute">{view.released} of {view.total_releases} releases recorded</p>
+          <Button type="button" disabled={action.busy || !connected} onClick={() => void send(executeRequest(battleId), buildExecuteReview(arena, battleId, step.batch, step.remaining))}>
+            Execute {step.batch} release{step.batch === 1 ? "" : "s"}
+          </Button>
+        </div>
+      )}
+
+      {step.kind === "done" && view && (
+        <p className="text-sm">
+          All {view.total_releases} releases are recorded. A burn is reserved for the sink and is confirmed only after the transfer
+          is finalized on Robinhood.
+        </p>
+      )}
+
+      {action.busy && <p role="status" className="text-xs text-mute">Waiting for the preview and your wallet…</p>}
+      {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
+      {lastTx && <p className="break-all text-xs text-mute">Last transaction: {lastTx}</p>}
+    </Card>
+  );
+}

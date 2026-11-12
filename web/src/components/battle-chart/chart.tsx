@@ -98,6 +98,8 @@ interface Props {
   resetKey?: string | number;
   closingTimes?: number[];
   ranks?: { community: number; rank: number }[];
+  /** The race has not started: the chart is dimmed and inert and says why, instead of showing evidence states. */
+  idle?: string;
 }
 const score = (value: number, signed = true, digits = 2) =>
   `${signed && value > 0 ? "+" : ""}${value.toFixed(digits)}%`;
@@ -534,7 +536,7 @@ export function ScoreChart(props: Props) {
         {props.source}
         {props.status ? ` · ${props.status}` : ""}
       </p>
-      {!props.hideLead && (
+      {!props.hideLead && !props.idle && (
         <p
           className="score-chart-lead"
           key={`${props.pending}:${props.result}:${standings.leaders.map((l) => l.id).join()}`}
@@ -544,7 +546,8 @@ export function ScoreChart(props: Props) {
         </p>
       )}
       <span className="sr-only" role="status">
-        {props.result ??
+        {props.idle ??
+          props.result ??
           (props.hideLead
             ? "Live reference prices; no result is assigned from this chart"
             : props.pending
@@ -559,25 +562,31 @@ export function ScoreChart(props: Props) {
           The scale magnifies small gaps, which may reflect price precision.
         </p>
       )}
-      <Plot
-        key={`${props.resetKey}:${microDiff ? "gap" : "score"}`}
-        {...props}
-        series={microDiff ?? props.series}
-        deviation={!!microDiff}
-        legendSeries={props.series}
-      />
-      <p className="score-chart-note">
-        {props.lowerIsBetter ? "Lower is better. " : ""}
-        {props.note}
-      </p>
+      {props.idle && <p className="score-chart-idle">{props.idle}</p>}
+      <div className="score-chart-body" inert={!!props.idle}>
+        <Plot
+          key={`${props.resetKey}:${microDiff ? "gap" : "score"}`}
+          {...props}
+          series={microDiff ?? props.series}
+          deviation={!!microDiff}
+          legendSeries={props.series}
+        />
+        {!props.idle && (
+          <p className="score-chart-note">
+            {props.lowerIsBetter ? "Lower is better. " : ""}
+            {props.note}
+          </p>
+        )}
+      </div>
     </>
   );
   return (
-    <section className="score-chart" aria-label={props.title}>
+    <section className={props.idle ? "score-chart is-idle" : "score-chart"} aria-label={props.title}>
       <div className="score-chart-header">
         <h2>{props.title}</h2>
         <button
           aria-label="Expand score chart"
+          disabled={!!props.idle}
           onClick={() => setExpanded(true)}
         >
           <Expand size={16} />

@@ -119,6 +119,7 @@ All values are live testnet observations through two providers (NEAR official RP
 
 - Six backings `backing-<symbol>.valtrum-owner-b694.testnet` (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN) were initialised with the **DAO as owner** over the six Robinhood testnet mock tokens (FIXTURES). They were wired into registry `set_representation`, arena `set_lifecycle_representation_trusted` and payout `register_backing`. Confirmed: `is_lifecycle_representation_trusted` is true for all six (it was false for `backing1`, the cause of the earlier trusted-flag finding).
 - Proposals 3 to 16 (council1 proposed with the 1 NEAR bond, council2 and council3 approved, 2 of 3): arena vote window set to 30 seconds (read back: 30, was 86400), `set_dao_sink` for each backing (read back: `0x...dead` on all six; this is once-only and irreversible), six `add_reference_entry` mappings of each mock token to its mainnet reference token (read back), and `FactoryInfoUpdate` with `auto_update` false (R2 closed on testnet).
+- Proposal 22 (2026-11-12, owner decision D42): arena vote window set to 60 seconds (read back: 60, was 30). A duplicate proposal 23 from a re-run script was removed by a 2-of-3 `VoteRemove`.
 - Negative checks from `valtrum-user1-b694.testnet`, which is not a council member: `set_lifecycle_dao_window`, `add_reference_entry` and `act_proposal` are all refused; `set_dao_sink` is refused with "Only owner".
 - Not done: a funded battle, and any DAO action on escrowed principal. The no-authority claim over votes and escrow rests on the sandbox test, not on a live run.
 

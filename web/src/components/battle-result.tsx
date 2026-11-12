@@ -1,26 +1,28 @@
 "use client";
 
-import Link from "next/link";
+import { Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Card, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { useWallet } from "@/components/providers";
-import { formatUnits } from "@/lib/amounts";
-import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { readMyPositions, type MyPosition } from "@/lib/arena-read/positions";
+import { TokenIcon } from "@/components/token-icon";
+import { BattleClaim } from "@/components/battle-claim";
+import type { Namespace } from "@/lib/arena-read/application";
 import { config } from "@/lib/config";
 
 /**
- * Shown once the contract has recorded a winner: who won, how the connected account stands, and where prizes
- * are claimed. It states no reward amount: the entitlement is computed and paid by the payout flow, so a
+ * Shown once the contract has recorded a winner: who won and, for a backer of the winner, the prize claim. It states no reward amount: the entitlement is computed and paid by the payout flow, so a
  * number here would be a guess.
  */
 export function BattleResult({
+  namespace,
   arena,
   battleId,
   winner,
   communityCount,
   nameOf,
 }: {
+  namespace: Namespace;
   arena: string;
   battleId: number;
   winner: number;
@@ -29,7 +31,6 @@ export function BattleResult({
 }) {
   const { accountId } = useWallet();
   const [positions, setPositions] = useState<MyPosition[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accountId) {
@@ -38,51 +39,39 @@ export function BattleResult({
     }
     let live = true;
     readMyPositions(config.rpcUrl, arena, battleId, accountId, communityCount)
-      .then((p) => live && (setPositions(p), setError(null)))
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)));
+      .then((p) => live && setPositions(p))
+      .catch(() => undefined);
     return () => {
       live = false;
     };
   }, [accountId, arena, battleId, communityCount]);
 
-  const deposits = (positions ?? []).filter((p) => p.amount !== "0");
-  const backedWinner = deposits.find((p) => p.community === winner);
-  const amount = (p: MyPosition) => `${formatUnits(BigInt(p.amount), TOKEN_DECIMALS, 4)} ${nameOf(p.community)}`;
+  const backedWinner = (positions ?? []).some((p) => p.community === winner && p.amount !== "0");
 
   return (
-    <Card aria-label="Battle result">
-      <CardTitle>Result</CardTitle>
-      <p className="text-base font-semibold">{nameOf(winner)} won this battle.</p>
-      <p className="text-xs text-mute">Recorded by the arena contract from the round evidence.</p>
+    <Card
+      aria-label="Battle result"
+      className="relative overflow-hidden"
+      style={{ background: "linear-gradient(135deg, #fff6dc 0%, #fffdf6 55%, #eaf4e6 100%)" }}
+    >
+      <div className="flex items-center gap-4">
+        <span className="relative grid place-items-center">
+          <TokenIcon symbol={nameOf(winner)} size={64} />
+          <span
+            className="absolute -bottom-2 -right-2 grid h-8 w-8 place-items-center rounded-full border-2 border-white shadow"
+            style={{ background: "#a8802f", color: "#fffaf0" }}
+          >
+            <Trophy size={16} aria-hidden="true" />
+          </span>
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-widest" style={{ color: "#a8802f" }}>WINNER</p>
+          <p className="truncate text-2xl font-bold leading-tight">{nameOf(winner)}</p>
+          <p className="text-xs text-mute">Battle #{battleId}</p>
+        </div>
+      </div>
 
-      {accountId && error && (
-        <p role="alert" className="mt-3 text-xs text-neon-amber">
-          Could not read your position: {error}
-        </p>
-      )}
-      {accountId && !error && positions === null && (
-        <p role="status" className="mt-3 text-xs text-mute">
-          Checking your position…
-        </p>
-      )}
-      {positions !== null && (
-        <p className="mt-3 text-sm">
-          {backedWinner
-            ? `You backed the winner with ${amount(backedWinner)}. Your share of the losing tokens is worked out when prizes are paid.`
-            : deposits.length > 0
-              ? `You deposited ${deposits.map(amount).join(", ")}, not in the winning community.`
-              : "You had no deposit in this battle."}
-        </p>
-      )}
-
-      <p className="mt-3 text-sm">
-        Prizes are claimed in{" "}
-        <Link href="/portfolio" className="underline">
-          Portfolio
-        </Link>
-        . The claim stays disabled until this deployment&apos;s custody check passes; Portfolio lists every reason that is
-        still open.
-      </p>
+      {backedWinner && <BattleClaim namespace={namespace} />}
     </Card>
   );
 }
