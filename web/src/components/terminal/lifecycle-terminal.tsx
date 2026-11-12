@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/input";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
+import { usePortfolio } from "@/hooks/use-portfolio";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
 import { useNow } from "@/hooks/use-now";
-import { config } from "@/lib/config";
-import { applicationKey, fetchApplication, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
+import { formatUnits } from "@/lib/amounts";
+import { applicationKey, fetchApplication, type ApplicationBattlePage, type ApplicationPage, type Namespace } from "@/lib/arena-read/application";
 import type { CallReview } from "@/lib/arena-read/create-review";
 import { buildCancelReview, buildJoinReview, buildRefundReview, openPhase } from "@/lib/arena-read/open-arena";
 import {
@@ -31,16 +32,18 @@ import {
   type LifecycleIntent,
   type LifecycleParseResult,
 } from "@/lib/terminal/lifecycle-intent";
+import { chooseArena, communityForToken, openArenasOf, type OpenArena } from "@/lib/terminal/lifecycle-open";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
 import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/lib/terminal/lifecycle-resolve";
 import { isHiddenAsset } from "@/lib/arena-read/hidden-assets";
 
 const EXAMPLES = [
-  "join battle 7 with CASHCAT",
-  "deposit 250 ke battle 7 komunitas 2",
+  "deposit 100 CASHCAT ke arena yang open",
+  "which arenas are open?",
+  "join the open arena with CASHCAT",
+  "my positions",
   "create price gain battle in 15 minutes",
   "cancel battle 7",
-  "refund battle 7 komunitas 2",
 ];
 
 export const PAYOUT_BLOCKED_REASON =
@@ -223,27 +226,72 @@ function useBattle(namespace: Namespace, battleId: number) {
   return state;
 }
 
-function ParticipationPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "register_position" | "deposit" }> }) {
+type Known<K extends LifecycleIntent["kind"]> = Omit<Extract<LifecycleIntent, { kind: K }>, "battleId"> & { battleId: number };
+type Replace = (next: LifecycleIntent) => void;
+
+function ParticipationPlan({
+  namespace,
+  intent,
+  onReplace,
+}: {
+  namespace: Namespace;
+  intent: Known<"register_position"> | Known<"deposit">;
+  onReplace: Replace;
+}) {
   const { detail, error, loading } = useBattle(namespace, intent.battleId);
   const rows = useMemo(() => (detail ? communityRows(detail, 0) : []), [detail]);
   const status = detail ? battleStatus(detail) : null;
-  const request = useMemo(() => intentToRequest(intent), [intent]);
-  const row = rows[intent.community];
+  // A deposit may name its community by token. It is looked up in this battle's own communities and never guessed.
+  const byToken = useMemo(
+    () => (intent.kind === "deposit" && intent.community === null && intent.tokenRef !== null ? communityForToken(intent.tokenRef, rows) : null),
+    [intent, rows],
+  );
+  const community: number | null = intent.community !== null ? intent.community : byToken?.kind === "one" ? byToken.index : null;
+  const concrete = useMemo(() => (community === null ? null : { ...intent, community }), [intent, community]);
+  const request = useMemo(() => (concrete ? intentToRequest(concrete) : null), [concrete]);
+  const row = community === null ? undefined : rows[community];
   const review: Review | null = useMemo(() => {
-    if (!detail) return null;
-    if (intent.kind === "register_position") return buildRegisterReview(namespace.arenaContract, intent.battleId, intent.community);
+    if (!detail || community === null) return null;
+    if (intent.kind === "register_position") return buildRegisterReview(namespace.arenaContract, intent.battleId, community);
     return buildDepositReview({
       arena: namespace.arenaContract,
       representation: row?.representation ?? "",
       battleId: intent.battleId,
-      community: intent.community,
+      community,
       amount: intent.amount,
     });
-  }, [detail, intent, namespace.arenaContract, row?.representation]);
+  }, [detail, intent, community, namespace.arenaContract, row?.representation]);
 
   if (loading) return <p role="status" className="text-xs text-mute">Reading battle #{intent.battleId}…</p>;
   if (error || !detail) return <p role="alert" className="text-xs text-neon-red">Battle #{intent.battleId} could not be read: {error}. No review was built.</p>;
-  if (!row) return <Problems problems={[`Battle #${intent.battleId} has ${rows.length} communities; community ${intent.community + 1} does not exist.`]} />;
+  if (intent.kind === "deposit" && intent.community === null && intent.tokenRef !== null) {
+    if (byToken?.kind === "none") {
+      return (
+        <div className="space-y-2" role="status">
+          <p className="text-sm text-neon-amber">Battle #{intent.battleId} has no {intent.tokenRef} community yet.</p>
+          <Button type="button" variant="ghost" onClick={() => onReplace({ kind: "join_battle", battleId: intent.battleId, tokenRef: intent.tokenRef! })}>
+            Join battle #{intent.battleId} with {intent.tokenRef} first
+          </Button>
+          <p className="text-xs text-mute">Joining adds the community; then ask for the deposit again.</p>
+        </div>
+      );
+    }
+    if (byToken?.kind === "many") {
+      return (
+        <div className="space-y-2" role="status">
+          <p className="text-sm">More than one community in battle #{intent.battleId} uses {intent.tokenRef}. Which one?</p>
+          <div className="flex flex-wrap gap-2">
+            {byToken.indexes.map((i) => (
+              <Button key={i} type="button" variant="ghost" onClick={() => onReplace({ ...intent, community: i, tokenRef: null })}>
+                Community {i + 1}
+              </Button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+  }
+  if (community === null || !row) return <Problems problems={[`Battle #${intent.battleId} has ${rows.length} communities; that community does not exist.`]} />;
   if (status !== "open") return <Problems problems={[`Battle #${intent.battleId} is ${status}: positions can no longer be registered and a deposit would be returned.`]} />;
   if (!review || !request) return null;
   if (!review.ok) return <Problems problems={review.problems} />;
@@ -270,7 +318,7 @@ function CreatePlan({ intent }: { intent: Extract<LifecycleIntent, { kind: "crea
 }
 
 /** Join with a token: the representation always comes from the arena's allowlist, never from the prompt. */
-function JoinPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "join_battle" }> }) {
+function JoinPlan({ namespace, intent }: { namespace: Namespace; intent: Known<"join_battle"> }) {
   const { detail, error, loading } = useBattle(namespace, intent.battleId);
   const joinable = useJoinableAssets(namespace.arenaContract);
   const [resolved, setResolved] = useState<JoinTokenResult | null>(null);
@@ -369,6 +417,181 @@ function PayoutPlan({ intent }: { intent: Extract<LifecycleIntent, { kind: "payo
   );
 }
 
+const symbolOf = (representation: string): string => representation.replace(/^backing-/, "").split(".")[0]!.toUpperCase();
+
+/** Reads the open arenas once (backend filter), keeping only the ones that still accept communities. */
+function useOpenArenas(namespace: Namespace) {
+  const [state, setState] = useState<{ arenas: OpenArena[] | null; error: string | null }>({ arenas: null, error: null });
+  useEffect(() => {
+    const ctl = new AbortController();
+    setState({ arenas: null, error: null });
+    fetchApplication<ApplicationBattlePage>(namespace, "battles", { status: "open", limit: 30 }, ctl.signal)
+      .then((env) => setState({ arenas: openArenasOf(env.data.items, Date.now()), error: null }))
+      .catch((e: unknown) => {
+        if (!ctl.signal.aborted) setState({ arenas: null, error: e instanceof Error ? e.message : String(e) });
+      });
+    return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationKey(namespace)]);
+  return state;
+}
+
+function ArenaLine({ arena }: { arena: OpenArena }) {
+  const mins = Math.max(0, Math.round((arena.startAtMs - Date.now()) / 60_000));
+  return (
+    <span>
+      #{arena.battleId} · {arena.mode} · starts in {mins} min · {arena.symbols.length} communit{arena.symbols.length === 1 ? "y" : "ies"} ({arena.symbols.join(", ") || "none yet"})
+    </span>
+  );
+}
+
+/**
+ * "An open arena": the terminal reads the open arenas and either uses the only one that fits (saying why) or shows the
+ * list and waits for the user to pick. It never chooses among several, and nothing is signed here.
+ */
+function OpenArenaPlan({
+  namespace,
+  intent,
+  onReplace,
+}: {
+  namespace: Namespace;
+  intent: Extract<LifecycleIntent, { kind: "join_battle" | "register_position" | "deposit" }>;
+  onReplace: Replace;
+}) {
+  const { arenas, error } = useOpenArenas(namespace);
+  const [picked, setPicked] = useState<number | null>(null);
+  const choice = useMemo(() => (arenas ? chooseArena(intent, arenas) : null), [arenas, intent]);
+  if (error) return <p role="alert" className="text-xs text-neon-red">The open arenas could not be read: {error}. Nothing was prepared.</p>;
+  if (!choice) return <p role="status" className="text-xs text-mute">Looking for open arenas…</p>;
+  const use = (id: number) => ({ ...intent, battleId: id }) as Known<"join_battle"> & Known<"register_position"> & Known<"deposit">;
+  const chosenId = picked ?? (choice.kind === "one" ? choice.arena.battleId : null);
+  if (chosenId !== null) {
+    const arena = arenas?.find((a) => a.battleId === chosenId);
+    const why = picked !== null ? "you picked it" : choice.kind === "one" ? choice.why : "";
+    const concrete = use(chosenId);
+    return (
+      <div className="space-y-3">
+        <p role="status" className="text-xs text-mute">
+          Using arena #{chosenId}{arena ? ` (${arena.mode})` : ""}: {why}.
+        </p>
+        {intent.kind === "join_battle" ? (
+          <JoinPlan namespace={namespace} intent={concrete} />
+        ) : (
+          <ParticipationPlan namespace={namespace} intent={concrete} onReplace={onReplace} />
+        )}
+      </div>
+    );
+  }
+  if (choice.kind === "none") {
+    return (
+      <div className="space-y-2" role="status">
+        <p className="text-sm text-neon-amber">{choice.message}</p>
+        {choice.joinable.length > 0 && intent.kind === "deposit" && intent.tokenRef !== null && (
+          <ul className="space-y-2">
+            {choice.joinable.map((a) => (
+              <li key={a.battleId} className="flex flex-wrap items-center gap-2 text-xs">
+                <ArenaLine arena={a} />
+                <Button type="button" variant="ghost" onClick={() => onReplace({ kind: "join_battle", battleId: a.battleId, tokenRef: intent.tokenRef! })}>
+                  Join with {intent.tokenRef}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  if (choice.kind !== "many") return null;
+  return (
+    <div className="space-y-2" role="status">
+      <p className="text-sm">{choice.why}. Which one do you want?</p>
+      <ul className="space-y-2">
+        {choice.arenas.map((a) => (
+          <li key={a.battleId} className="flex flex-wrap items-center gap-2 text-xs">
+            <ArenaLine arena={a} />
+            <Button type="button" variant="ghost" onClick={() => setPicked(a.battleId)}>
+              Use #{a.battleId}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** "Which arenas are open?": a read-only list from the same backend list the Arena page uses. */
+function ListBattlesPlan({ namespace, intent }: { namespace: Namespace; intent: Extract<LifecycleIntent, { kind: "list_battles" }> }) {
+  const [state, setState] = useState<{ items: ApplicationBattlePage["items"] | null; error: string | null }>({ items: null, error: null });
+  useEffect(() => {
+    const ctl = new AbortController();
+    setState({ items: null, error: null });
+    fetchApplication<ApplicationBattlePage>(namespace, "battles", { ...(intent.status === "open" ? { status: "open" } : {}), limit: 12 }, ctl.signal)
+      .then((env) => setState({ items: env.data.items, error: null }))
+      .catch((e: unknown) => {
+        if (!ctl.signal.aborted) setState({ items: null, error: e instanceof Error ? e.message : String(e) });
+      });
+    return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationKey(namespace), intent.status]);
+  if (state.error) return <p role="alert" className="text-xs text-neon-red">The arenas could not be read: {state.error}</p>;
+  if (!state.items) return <p role="status" className="text-xs text-mute">Reading the arenas…</p>;
+  const rows = intent.status === "open" ? openArenasOf(state.items, Date.now()) : null;
+  if (rows && rows.length === 0) return <p role="status" className="text-sm">No arena is open right now.</p>;
+  if (!rows && state.items.length === 0) return <p role="status" className="text-sm">There are no arenas yet.</p>;
+  return (
+    <ul className="space-y-2 text-sm" aria-label="Arenas">
+      {(rows ?? state.items.map((b) => ({ battleId: Number(b.battleId), mode: b.mode, startAtMs: Number(b.startAtMs ?? 0), symbols: b.communities.map((c) => c.label?.symbol ?? "token"), status: b.status }))).map((a) => (
+        <li key={a.battleId} className="flex flex-wrap items-center gap-2">
+          <Link href={`/arena/${a.battleId}`} className="underline">
+            Battle #{a.battleId}
+          </Link>
+          <span className="text-xs text-mute">
+            {a.mode}
+            {"status" in a ? ` · ${a.status}` : ""} · {a.symbols.length ? a.symbols.join(", ") : "no communities yet"}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "My positions": the wallet-signed read the Portfolio page uses. Read-only: it never prepares or signs an action. */
+function PositionsPlan() {
+  const { accountId, connected, state, load } = usePortfolio();
+  const { signIn } = useWallet();
+  if (!connected || !accountId) {
+    return (
+      <div className="space-y-2" role="status">
+        <p className="text-sm">Connect your wallet to read your positions.</p>
+        <Button type="button" variant="ghost" onClick={() => void signIn()}>Connect wallet</Button>
+      </div>
+    );
+  }
+  const positions = state.step === "ready" && state.data.positions.state === "ok" ? state.data.positions.env.data.positions : null;
+  return (
+    <div className="space-y-2">
+      {state.step === "idle" || state.step === "error" ? (
+        <Button type="button" onClick={() => void load()}>Read my positions</Button>
+      ) : null}
+      {(state.step === "opening-session" || state.step === "reading") && <p role="status" className="text-xs text-mute">Reading your positions (your wallet may ask you to sign a read session)…</p>}
+      {state.step === "error" && <p role="alert" className="text-xs text-neon-red">{state.message}</p>}
+      {state.step === "ready" && state.data.positions.state === "error" && <p role="alert" className="text-xs text-neon-red">{state.data.positions.message}</p>}
+      {positions && positions.length === 0 && <p className="text-sm">You have no positions yet.</p>}
+      {positions && positions.length > 0 && (
+        <ul className="space-y-1 text-sm" aria-label="Positions">
+          {positions.map((p) => (
+            <li key={`${p.battleId}:${p.community}`}>
+              <Link href={`/arena/${p.battleId}`} className="underline">Battle #{p.battleId}</Link>, community {p.community + 1}:{" "}
+              {/^[0-9]{1,60}$/.test(p.amount) ? formatUnits(BigInt(p.amount), 18, 4) : p.amount} {p.representation ? symbolOf(p.representation) : "tokens"}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-mute">Winnings are paid out on Robinhood Chain; see Portfolio.</p>
+    </div>
+  );
+}
+
 /**
  * Lifecycle intent terminal. A prompt is parsed (rules, or the optional server-side model) into one validated intent;
  * the intent is shown, turned into the same reviewed call the other lifecycle pages use, and only the user pressing
@@ -389,7 +612,13 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
     setRunId((n) => n + 1);
     setBusy(false);
   }
+  /** A follow-up the user chose (a different arena, "join first"): validated like any intent, shown in the same place. */
+  const replaceIntent: Replace = (next) => {
+    setResult((r) => ({ ok: true, intent: next, ...(r?.via ? { via: r.via } : {}) }));
+    setRunId((n) => n + 1);
+  };
   const intent = result?.ok ? result.intent : null;
+  const parserLine = result?.via ? (result.via === "near-ai" ? "Understood by NEAR AI" : "Understood by the built-in rules") : null;
   return (
     <div className="space-y-6">
       <Card>
@@ -417,14 +646,14 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             <Button type="submit" disabled={busy || !prompt.trim()}>
               {busy ? "Reading…" : "Read my request"}
             </Button>
-            {EXAMPLES.slice(0, 2).map((ex) => (
+            {EXAMPLES.slice(0, 4).map((ex) => (
               <button key={ex} type="button" className="text-xs underline text-mute" onClick={() => setPrompt(ex)}>
                 {ex}
               </button>
             ))}
           </div>
           <p className="text-xs text-mute">
-            Reading your request won’t submit a transaction. Community numbers start at 1; amounts use whole token base units.
+            Reading your request won’t submit a transaction. Write amounts as plain token amounts (100 or 0.5); you can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”.
           </p>
         </form>
       </Card>
@@ -433,6 +662,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
         <Card role="status" aria-label="Clarification">
           <CardTitle>{result.clarify ? "One more thing" : "Could not read that"}</CardTitle>
           <p className="text-sm">{result.error}</p>
+          {result.note && <p className="mt-2 text-xs text-mute">{result.note}</p>}
         </Card>
       )}
 
@@ -443,20 +673,34 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             {describeIntent(intent)}
             {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
           </p>
-          <p className="mb-4 text-xs text-mute">Review the action below before signing.</p>
-          <p className="eyebrow mb-3 text-neon-green">REVIEW YOUR ACTION</p>
+          {parserLine && (
+            <p className="mb-1 text-xs text-mute" data-testid="parser-line">
+              {parserLine}
+              {result?.note ? `. ${result.note}` : ""}
+            </p>
+          )}
+          <p className="mb-4 text-xs text-mute">
+            {intent.kind === "list_battles" || intent.kind === "show_positions" ? "This only reads; nothing can be signed from here." : "Review the action below before signing."}
+          </p>
+          <p className="eyebrow mb-3 text-neon-green">{intent.kind === "list_battles" || intent.kind === "show_positions" ? "YOUR ANSWER" : "REVIEW YOUR ACTION"}</p>
           {intent.kind === "payout" ? (
             <PayoutPlan intent={intent} />
           ) : intent.kind === "create_battle" ? (
             <CreatePlan intent={intent} />
-          ) : intent.kind === "join_battle" ? (
-            <JoinPlan namespace={namespace} intent={intent} />
+          ) : intent.kind === "list_battles" ? (
+            <ListBattlesPlan namespace={namespace} intent={intent} />
+          ) : intent.kind === "show_positions" ? (
+            <PositionsPlan />
           ) : intent.kind === "cancel_battle" ? (
             <CancelPlan namespace={namespace} intent={intent} />
           ) : intent.kind === "claim_refund" ? (
             <RefundPlan namespace={namespace} intent={intent} />
+          ) : intent.battleId === null ? (
+            <OpenArenaPlan namespace={namespace} intent={intent} onReplace={replaceIntent} />
+          ) : intent.kind === "join_battle" ? (
+            <JoinPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} />
           ) : (
-            <ParticipationPlan namespace={namespace} intent={intent} />
+            <ParticipationPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} onReplace={replaceIntent} />
           )}
         </Card>
       )}
