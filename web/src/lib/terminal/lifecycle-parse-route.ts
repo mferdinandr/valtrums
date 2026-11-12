@@ -23,6 +23,7 @@ export function selectLifecycleParser({ env, fetchImpl }: ParseRouteDeps): Lifec
 }
 
 export async function handleLifecycleParse(req: Request, deps: ParseRouteDeps): Promise<{ status: number; body: Record<string, unknown> }> {
+  const env = deps.env;
   let prompt: unknown;
   try {
     prompt = ((await req.json()) as { prompt?: unknown }).prompt;
@@ -33,10 +34,13 @@ export async function handleLifecycleParse(req: Request, deps: ParseRouteDeps): 
   const parser = selectLifecycleParser(deps);
   let result: LifecycleParseResult = await parser.parse(prompt);
   let used = parser.name;
+  let note: string | undefined;
+  if (parser === lifecycleRuleParser && !env.NEAR_AI_API_KEY?.trim()) note = "NEAR AI is not configured on this server (no NEAR_AI_API_KEY); the built-in rules answered";
   // A model outage or a rejected reply falls back to the rules rather than leaving the user stuck.
   if (!result.ok && !result.clarify && parser !== lifecycleRuleParser) {
     const fallback = await lifecycleRuleParser.parse(prompt);
     if (fallback.ok || fallback.clarify) {
+      note = `NEAR AI could not answer (${result.error}); the built-in rules answered`;
       result = fallback;
       used = lifecycleRuleParser.name;
     }
@@ -45,8 +49,8 @@ export async function handleLifecycleParse(req: Request, deps: ParseRouteDeps): 
   if (result.ok) {
     const wire = toWireIntent(result.intent);
     const checked = validateLifecycleIntent(wire);
-    if (!checked.ok) return { status: 200, body: { ...checked, parser: used } };
-    return { status: 200, body: { ok: true, intent: wire, parser: used } };
+    if (!checked.ok) return { status: 200, body: { ...checked, parser: used, ...(note ? { note } : {}) } };
+    return { status: 200, body: { ok: true, intent: wire, parser: used, ...(note ? { note } : {}) } };
   }
-  return { status: 200, body: { ...result, parser: used } };
+  return { status: 200, body: { ...result, parser: used, ...(note ? { note } : {}) } };
 }
