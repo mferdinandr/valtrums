@@ -265,6 +265,20 @@ Two programs exist; read [docs/player-agents.md](../docs/player-agents.md) first
 - **Safety limits** per agent: `fractionBps` (default 2500), `maxPerHour` (6), `maxFailures` (3), `intervalSecs` (60), `scanBattles` (20). It skips communities where the user has no registered position, because registering needs the user's own signature.
 - **Required environment:** `ARENA_CONTRACT_ID`, `PLAYER_POLICY_CONTRACT_ID`, optional `NEAR_RPC_URL`, `PLAYER_AGENTS_PATH`. Testnet only.
 
+## Application database (Postgres / Supabase)
+
+OpenSpec changes `hosted-agents-database` and `app-state-database`. Without any database variable every store keeps its local file, as above. Two connection strings exist, both held only by the agent services (`agent/.env.local`) and never by the web app:
+
+- `HOSTED_AGENT_DATABASE_URL`: the hosted agent service (agents, play state, events, sessions). See [docs/player-agents.md](../docs/player-agents.md).
+- `APP_DATABASE_URL`: the **action store** (read API `read:serve` and `player:run`), the **audit report archive** (the agent, the read API and `audit:report:*`), the **watchdog baselines** and the **play state** of `player:run` and `player:auto`. The matching `*_PATH` variables are then ignored (`ACTION_STORE_PATH` need not be set for actions to be enabled).
+
+Setup: apply `supabase/migrations/*.sql` to the project (every table has row-level security with no policy and the public roles revoked, so only the service connects), set the URL, then move existing files once with `pnpm -C agent build && pnpm -C agent app:import` (and `hosted:import` for hosted agents). Imports are idempotent, never modify the files and stop on a malformed one; audit observations keep their `seq` and timestamps.
+
+- **Audit history is append-only in the database itself**: a trigger refuses `update`, `delete` and `truncate` on `audit_report_observations`, an existing observation id with different decision content is refused, and every row is re-validated on read (a tampered row is an error, never skipped). `PgReportArchive.forBattle(arena, battleId, community?)` reads one battle through an index.
+- **Fail closed**: an unreachable database or a malformed row stops the component with an error and never resets or recreates data. Action updates are atomic per action, and the 10,000-action cap is checked in the creating transaction.
+- **Not moved**: the observation journal (hash-chained, fsync and lock based), the indexer store and the oracle status. Their integrity design is tied to local files and is a separate decision.
+- **Rollback**: unset `APP_DATABASE_URL`; records written since are not copied back to the files.
+
 ## Testnet faucet
 
 The faucet is a NEAR contract (`contracts/faucet`, crate `valtrum-faucet`), not a service: nothing to host and no faucet key to protect. It gives the caller a fixed amount of each backed representation token it holds. It never mints: a representation can only be minted from finalized custody, so the operator funds the contract once (below). Players need only a NEAR testnet account and a little NEAR for gas; the web page at `/faucet` reads the contract over RPC and each claim is a transaction the player's own wallet signs.
