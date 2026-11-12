@@ -176,3 +176,17 @@ Owner-approved action by action, with `scripts/testnet-wiring/open-arena.mjs` (d
 - **Read back after the deploy (finalized views).** The account code hash equals the build hash. `get_lifecycle_battle_count` is still 14 and battle 13 reads as before (one community, not locked). The new views answer: `get_lifecycle_creator_escrow(13)` is `null` (a battle created before the change has no escrow) and `get_lifecycle_storage_balance` is `0` for the owner. The five joinable assets are unchanged.
 - **Behavior change.** `create_lifecycle_battle` no longer creates a battle on this arena; creation is `ft_transfer_call` with a `lifecycle_create` message plus prepaid storage (`lifecycle_storage_deposit`). Battles 1 to 14 were created without a creator deposit and stay as they are.
 - **Not verified.** No creator escrow has been created, converted or refunded on testnet yet. The agent audit pass that writes the approvals which convert an escrow is not running here, so a new battle will hold its escrow until it is. The sandbox suite covers the new path only in `lifecycle_open_arena`; five other sandbox files still use the removed creation method.
+
+## 7. Redeploy for the burn percentage vote and the NEAR claim (2026-11-12, live; D43 and D44)
+
+Code-only redeploy from `main` at `46afc64` (no init, state kept), signed by each account with the owner's deploy key. Builds: `cargo near build non-reproducible-wasm --no-abi`. All token assets are FIXTURES; the NEAR transactions are live testnet evidence from the owner's accounts.
+
+| Account | Wasm sha256 (prefix) | Code hash before | Code hash after | Tx |
+| --- | --- | --- | --- | --- |
+| `arena.valtrum-owner-b694.testnet` | `3459c5ba...` | `FSh893uD...Zpn` | `4XMbY3Rt...SRSf` | `3icQBr19...3vAM` |
+| `backing-cashcat`, `-wallet`, `-good`, `-vlad`, `-degen` (`.valtrum-owner-b694.testnet`) | `94d5fdc1...` | `7zp4qbFS...xSDwt` | `B1zbTsYt...DKx` | `JDiCkvoe...zXUiC`, `7fvZKuqi...EpMDt`, `CgfTvCSv...52dc`, `6ebT9qUt...yEGHt`, `gSJuXefm...x8iFL` |
+
+- **Read back (finalized views, before and after, identical).** Arena `get_lifecycle_dao_window` is `"60"` and 5 joinable assets. Each backing `get_ledger` is `accounting_balanced: true` with unchanged custody, minted and entitlements (`backing-wallet` holds an entitlement of `49000000000000000000`), and `ft_total_supply` equals minted.
+- **What the new code adds.** Arena `vote_lifecycle_disposition(battle_id, burn_percent)` (argument changed from `burn: bool`); backing `claim_entitlement_as_representation(amount)`.
+- **Not redeployed.** `backing1` (fixture, not on the arena allowlist), payout, registry and policy are unchanged.
+- **Not verified.** No vote with a percentage and no entitlement claim has been run on testnet yet. The sandbox stage fails on `main` too (`WebAssembly trap: unreachable`), so these paths are covered by unit tests only. Use battles created after this redeploy; one that was mid-vote at the swap would mix scaled and unscaled tallies.
