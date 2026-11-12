@@ -200,10 +200,16 @@ export interface BurnFacts {
   sink: string | null;
   /** Burn confirmed by a finalized debit to the sink, in base units. */
   confirmed: string;
+  /** The payout contract's state label of the burn request (`get_payout_status`), or null while none was made. */
+  requestStatus: string | null;
 }
 
+/** Whether another `request_dao_burn` is useful: none was made yet, or the earlier one was restored. */
+export const canRequestBurn = (facts: BurnFacts): boolean =>
+  BigInt(facts.confirmed) < BigInt(facts.amount) && (facts.requestStatus === null || facts.requestStatus === "restored");
+
 /** The decided burn release of a battle with its sink and confirmed amount; null when the vote burns nothing. */
-export async function readBurnFacts(rpcUrl: string, arena: string, battleId: number, backing: string): Promise<BurnFacts | null> {
+export async function readBurnFacts(rpcUrl: string, arena: string, battleId: number, backing: string, payout: string | null): Promise<BurnFacts | null> {
   const releases = await rpcView<Array<{ id: string; kind: string; amount: string; recorded: boolean }>>(rpcUrl, arena, "get_lifecycle_disposition_releases", { battle_id: String(battleId) });
   const burn = (releases ?? []).find((r) => r.kind === "burn");
   if (!burn || !HEX32.test(burn.id)) return null;
@@ -214,7 +220,10 @@ export async function readBurnFacts(rpcUrl: string, arena: string, battleId: num
   const status = escrow?.escrow_id && HEX32.test(escrow.escrow_id)
     ? await rpcView<{ burn_confirmed: string }>(rpcUrl, backing, "get_escrow_disposition", { escrow_id: bytes(escrow.escrow_id) })
     : null;
-  return { releaseId: burn.id, amount: burn.amount, recorded: burn.recorded, sink: typeof sink === "string" ? sink : null, confirmed: status?.burn_confirmed ?? "0" };
+  const requestStatus = payout
+    ? await rpcView<string>(rpcUrl, payout, "get_payout_status", { backing, holder: arena, request_id: bytes(burn.id) }).catch(() => null)
+    : null;
+  return { releaseId: burn.id, amount: burn.amount, recorded: burn.recorded, sink: typeof sink === "string" ? sink : null, confirmed: status?.burn_confirmed ?? "0", requestStatus: typeof requestStatus === "string" ? requestStatus : null };
 }
 
 /** The `request_dao_burn` call the wallet will be asked to sign; amount and destination come from the chain, not the caller. */

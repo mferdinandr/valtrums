@@ -4,6 +4,7 @@ import {
   buildExecuteReview,
   buildReserveEscrowReview,
   buildBurnReview,
+  canRequestBurn,
   buildVoteReview,
   burnSharePercent,
   daoStep,
@@ -86,7 +87,7 @@ describe("reviews match the action service's calls", () => {
 });
 
 describe("burn to the sink", () => {
-  const facts = { releaseId: "ab".repeat(32), amount: "33", recorded: true, sink: "0x000000000000000000000000000000000000dEaD", confirmed: "0" };
+  const facts = { releaseId: "ab".repeat(32), amount: "33", recorded: true, sink: "0x000000000000000000000000000000000000dEaD", confirmed: "0", requestStatus: null };
   it("builds the request from the recorded release and the frozen sink", () => {
     const r = buildBurnReview("payout.testnet", "arena.testnet", "backing-cashcat.testnet", facts);
     expect(r).toMatchObject({ ok: true, receiver: "payout.testnet", method: "request_dao_burn", depositYocto: "30000000000000000000000", gasTgas: "150" });
@@ -104,5 +105,12 @@ describe("burn to the sink", () => {
     expect(buildBurnReview("payout.testnet", "arena.testnet", "b.testnet", { ...facts, recorded: false }).ok).toBe(false);
     expect(buildBurnReview("payout.testnet", "arena.testnet", "b.testnet", { ...facts, sink: null }).ok).toBe(false);
     expect(buildBurnReview(null, "arena.testnet", "b.testnet", facts).ok).toBe(false);
+  });
+  it("allows a burn request only before one exists, or after the earlier one was restored", () => {
+    expect(canRequestBurn(facts)).toBe(true);
+    expect(canRequestBurn({ ...facts, requestStatus: "signing_requested" })).toBe(false);
+    expect(canRequestBurn({ ...facts, requestStatus: "broadcast" })).toBe(false);
+    expect(canRequestBurn({ ...facts, requestStatus: "restored" })).toBe(true);
+    expect(canRequestBurn({ ...facts, requestStatus: "confirmed", confirmed: "33" })).toBe(false);
   });
 });
