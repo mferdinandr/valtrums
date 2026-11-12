@@ -91,8 +91,7 @@ export function DaoDecision({
     <Card aria-label="DAO decision">
       <CardTitle>DAO decision on the winning principal</CardTitle>
       <p className="text-xs text-mute">
-        Winners of {token} vote to burn their principal (sent to a sink on Robinhood) or take it back. Each vote counts by its
-        deposit; there is no quorum.
+        {token} winners vote to burn their principal or take it back.{view?.window_secs ? ` Voting lasts ${view.window_secs}s.` : ""}
       </p>
 
       {readError && <p role="alert" className="mt-3 text-xs text-neon-amber">Could not read the decision state: {readError}</p>}
