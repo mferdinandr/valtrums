@@ -119,7 +119,7 @@ export type ActionRequest =
   | { kind: "claim_escrow_refund"; battleId: number }
   | { kind: "settle_battle"; battleId: number }
   | { kind: "reserve_escrow"; battleId: number }
-  | { kind: "vote_disposition"; battleId: number; choice: "burn" | "return" }
+  | { kind: "vote_disposition"; battleId: number; burnPercent: number }
   | { kind: "execute_disposition"; battleId: number }
   | { kind: "request_dao_burn"; battleId: number }
   | {
@@ -283,7 +283,7 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
     claim_escrow_refund: ["kind", "battleId"],
     settle_battle: ["kind", "battleId"],
     reserve_escrow: ["kind", "battleId"],
-    vote_disposition: ["kind", "battleId", "choice"],
+    vote_disposition: ["kind", "battleId", "burnPercent"],
     execute_disposition: ["kind", "battleId"],
     request_dao_burn: ["kind", "battleId"],
     late_refund: ["kind", "backing", "amount", "destination", "requestId"],
@@ -306,8 +306,8 @@ export function validateRequest(raw: unknown, routes: readonly string[] = SUPPOR
     return { kind: "claim_refund", battleId: battleIdOf(), community };
   }
   if (r.kind === "vote_disposition") {
-    if (r.choice !== "burn" && r.choice !== "return") return fail("invalid_request", "choice must be burn or return");
-    return { kind: "vote_disposition", battleId: battleIdOf(), choice: r.choice };
+    if (typeof r.burnPercent !== "number" || !Number.isInteger(r.burnPercent) || r.burnPercent < 0 || r.burnPercent > 100) return fail("invalid_request", "burnPercent must be an integer from 0 to 100");
+    return { kind: "vote_disposition", battleId: battleIdOf(), burnPercent: r.burnPercent };
   }
   if (r.kind === "late_refund") {
     if (typeof r.destination !== "string" || !EVM.test(r.destination) || /^0x0{40}$/i.test(r.destination)) {

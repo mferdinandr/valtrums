@@ -223,17 +223,17 @@ describe("vote, escrow, execute and burn", () => {
       ...extra,
     });
   it("prepares a vote for a winning participant inside the window and refuses others", async () => {
-    const p = await prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()));
-    expect(p.transaction.actions[0]).toMatchObject({ methodName: "vote_lifecycle_disposition", args: { battle_id: "1", burn: true } });
-    expect(p.binding).toMatchObject({ choice: "burn", weight: "60" });
-    const back = await prev({ kind: "vote_disposition", battleId: 1, choice: "return" }, withD(disposition()));
-    expect(back.transaction.actions[0]!.args).toEqual({ battle_id: "1", burn: false });
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()), "bob.testnet"))).toBe("not_a_winner");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "decided" }))))).toBe("vote_closed");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "no_vote" }))))).toBe("vote_not_open");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ closes_at_ns: String(BigInt(NOW) * 1_000_000n) }))))).toBe("vote_closed");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(null)))).toBe("winner_not_resolved");
-    expect(() => validateRequest({ kind: "vote_disposition", battleId: 1, choice: "maybe" })).toThrow(ActionError);
+    const p = await prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition()));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "vote_lifecycle_disposition", args: { battle_id: "1", burn_percent: 100 } });
+    expect(p.binding).toMatchObject({ burnPercent: 100, weight: "60" });
+    const back = await prev({ kind: "vote_disposition", battleId: 1, burnPercent: 0 }, withD(disposition()));
+    expect(back.transaction.actions[0]!.args).toEqual({ battle_id: "1", burn_percent: 0 });
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition()), "bob.testnet"))).toBe("not_a_winner");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ status: "decided" }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ status: "no_vote" }))))).toBe("vote_not_open");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ closes_at_ns: String(BigInt(NOW) * 1_000_000n) }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(null)))).toBe("winner_not_resolved");
+    expect(() => validateRequest({ kind: "vote_disposition", battleId: 1, burnPercent: 101 })).toThrow(ActionError);
   });
   it("reserves the escrow once", async () => {
     const p = await prev({ kind: "reserve_escrow", battleId: 1 }, withD(disposition({ escrow_reserved: false })));

@@ -200,10 +200,10 @@ export async function buildLifecyclePreview(
     if (!/^[0-9]+$/.test(position.amount) || BigInt(position.amount) === 0n) fail("not_a_winner", "only participants of the winning community can vote");
     return user(
       base, "vote_disposition", caller, ctx.arena,
-      { methodName: "vote_lifecycle_disposition", args: { battle_id: String(request.battleId), burn: request.choice === "burn" }, deposit: VOTE_DEPOSIT_YOCTO, gasTgas: 30n },
-      { arena: ctx.arena, battleId: request.battleId, choice: request.choice, community: battle.principal_community, weight: position.amount, closesAtNs: d.closes_at_ns },
+      { methodName: "vote_lifecycle_disposition", args: { battle_id: String(request.battleId), burn_percent: request.burnPercent }, deposit: VOTE_DEPOSIT_YOCTO, gasTgas: 30n },
+      { arena: ctx.arena, battleId: request.battleId, burnPercent: request.burnPercent, community: battle.principal_community, weight: position.amount, closesAtNs: d.closes_at_ns },
       ["vote storage deposit (upper bound); the arena refunds the rest"],
-      [...limitations, "one vote per account and it is final; the arena refuses a second vote (no view shows who voted)", "no quorum: the burn share of the weight cast applies to every holder"],
+      [...limitations, "one vote per account and it is final; the arena refuses a second vote (no view shows who voted)", "no quorum: the weighted average burn share of the votes cast applies to every holder"],
     );
   }
 
