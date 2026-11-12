@@ -117,11 +117,19 @@ export function HostedAgent({ namespace }: { namespace: Namespace }) {
   const { accountId, loading, signIn } = useWallet();
   const getWallet = useActionWallet();
   const client = getHostedClient(config.hostedAgentsUrl);
-  // Starts false on both server and client so the markup matches; a session restored from the tab is applied below.
+  // Starts false so server and client markup match. After a reload the service says whether the cookie is still a
+  // valid session for the connected wallet; if so the owner is not asked to sign again.
   const [signed, setSigned] = useState(false);
   useEffect(() => {
-    if (client.signedIn) setSigned(true);
-  }, [client]);
+    if (loading || !accountId) return;
+    let live = true;
+    void client.checkSession().then((owner) => {
+      if (live && owner === accountId) setSigned(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, accountId, loading]);
   const [agents, setAgents] = useState<HostedAgentView[]>([]);
   const [style, setStyle] = useState<AgentStrategy>("underdog");
   const [sweep, setSweep] = useState(false);
@@ -147,7 +155,7 @@ export function HostedAgent({ namespace }: { namespace: Namespace }) {
   // loading nothing is dropped, and coming back to this page with the same wallet keeps the session.
   useEffect(() => {
     if (loading || client.owner === null || client.owner === accountId) return;
-    client.signOut();
+    void client.signOut();
     setSigned(false);
     setAgents([]);
   }, [accountId, loading, client]);
