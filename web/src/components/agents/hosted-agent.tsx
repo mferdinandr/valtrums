@@ -13,7 +13,6 @@ import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-gra
 import type { Namespace } from "@/lib/arena-read/application";
 import { readAgentStatus, type AgentStatus } from "@/lib/arena-read/autonomous-agent";
 import { config } from "@/lib/config";
-import { TransactionLink } from "@/components/transaction-link";
 import { getHostedClient, type AgentActivity, type HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
 
 const POLL_MS = 15_000;
@@ -21,6 +20,10 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const ACTIVITY_POLL_MS = 5_000;
 const amountText = (base?: string) => (base && /^[0-9]{1,60}$/.test(base) ? formatUnits(BigInt(base), 18, 2) : null);
+
+/** An error without the contract account, method and "Smart contract panicked" noise. */
+const plainError = (message?: string): string =>
+  (message ?? "unknown error").replace(/^Contract call failed: \S+ - /, "").replace(/^Smart contract panicked: /, "").slice(0, 160);
 
 /** One plain-language line for an agent event. No addresses or arguments; the transaction link is separate. */
 function describeActivity(a: AgentActivity): string {
@@ -34,14 +37,25 @@ function describeActivity(a: AgentActivity): string {
     case "model_answer_rejected": return "The AI's pick was not usable, so the agent waited";
     case "sent": return `Sent a step for ${where}${a.step ? ` (${a.step})` : ""}`;
     case "played": return `Played ${where}${amount ? `: deposited ${amount}` : ""}${a.decidedBy === "near-ai" ? " (picked by NEAR AI)" : ""}`;
-    case "error": return `Problem: ${a.message ?? "unknown error"}`;
+    case "error": return `Problem: ${plainError(a.message)}`;
     case "sweep_skipped": return `Did not send surplus back: ${a.reason ?? "not possible yet"}`;
     case "swept": return `Sent surplus tokens back to your wallet${amount ? ` (${amount})` : ""}`;
     default: return a.event;
   }
 }
 
-function ActivityLog({ account, client }: { account: string; client: HostedAgentsClient }) {
+/** Colour of a log line by what happened, on the dark log panel. */
+const LOG_TONE: Record<string, string> = {
+  error: "text-[#f2a07b]",
+  played: "text-[#7fd6a4]",
+  swept: "text-[#7fd6a4]",
+  sent: "text-[#8fb8ff]",
+  start: "text-[#e6eadf]",
+  stop: "text-[#e6eadf]",
+};
+const LOG_MARK: Record<string, string> = { error: "!", played: "✓", swept: "✓", sent: "→", start: "▶", stop: "■" };
+
+function ActivityLog({ account, client, running }: { account: string; client: HostedAgentsClient; running: boolean }) {
   const [items, setItems] = useState<AgentActivity[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -54,23 +68,45 @@ function ActivityLog({ account, client }: { account: string; client: HostedAgent
     };
   }, [account, client]);
   return (
-    <section className="space-y-2" aria-label="Agent activity" aria-live="polite">
-      <h3 className="text-sm font-semibold">Activity</h3>
-      {items === null ? (
-        <p className="h-48 text-xs text-mute">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="h-48 text-xs text-mute">Nothing yet. Press Start and the agent&apos;s moves will show up here.</p>
-      ) : (
-        <ul className="h-48 space-y-1 overflow-y-auto text-xs">
-          {items.map((a, i) => (
-            <li key={`${a.at}:${i}`} className="flex flex-wrap gap-x-2">
-              <span className="text-mute">{new Date(a.at).toLocaleTimeString()}</span>
-              <span className={a.event === "error" ? "text-neon-amber" : undefined}>{describeActivity(a)}</span>
-              {a.txHash && <TransactionLink hash={a.txHash} />}
-            </li>
-          ))}
-        </ul>
-      )}
+    <section aria-label="Agent activity log" aria-live="polite" className="overflow-hidden rounded-xl border border-[#2b3338] bg-[#161b1e] text-[#d8dfd3] shadow-inner">
+      <header className="flex items-center justify-between border-b border-[#2b3338] bg-[#1d2327] px-3 py-2">
+        <span className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.14em] text-[#9fb0a8]">
+          <span aria-hidden="true" className={`h-2 w-2 rounded-full ${running ? "animate-pulse bg-[#7fd6a4]" : "bg-[#5b666c]"}`} />
+          ACTIVITY LOG
+        </span>
+        <span className="text-[10px] text-[#6d7a80]">{running ? "live" : "paused"}{items ? ` · ${items.length} events` : ""}</span>
+      </header>
+      <div className="h-56 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-5">
+        {items === null ? (
+          <p className="text-[#6d7a80]">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-[#6d7a80]">No activity yet. Press Start and the agent&apos;s moves will show up here.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {items.map((a, i) => (
+              <li key={`${a.at}:${i}`} className="grid grid-cols-[4.2rem_0.9rem_1fr] gap-x-2">
+                <span className="text-[#6d7a80]">{new Date(a.at).toLocaleTimeString([], { hour12: false })}</span>
+                <span aria-hidden="true" className={LOG_TONE[a.event] ?? "text-[#6d7a80]"}>{LOG_MARK[a.event] ?? "·"}</span>
+                <span className={LOG_TONE[a.event] ?? "text-[#8a9499]"}>
+                  {describeActivity(a)}
+                  {a.txHash && (
+                    <a
+                      className="ml-2 text-[#8fb8ff] underline underline-offset-2"
+                      href={`${config.explorerUrl}/txns/${encodeURIComponent(a.txHash)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={a.txHash}
+                      aria-label={`View transaction ${a.txHash} in explorer`}
+                    >
+                      tx ↗
+                    </a>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
@@ -138,7 +174,7 @@ function AgentRow({ agent, name, namespace, client, onChange }: { agent: HostedA
         <FundAgent account={agent.account} tokens={status?.tokens ?? []} onSent={() => void refresh()} />
       </section>
 
-      <ActivityLog account={agent.account} client={client} />
+      <ActivityLog account={agent.account} client={client} running={agent.running} />
 
       <section className="space-y-1" aria-live="polite">
         <h3 className="text-sm font-semibold">Status</h3>
