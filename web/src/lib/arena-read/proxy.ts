@@ -11,6 +11,8 @@ export const MAX_SESSION_BODY = 8 * 1024;
 export interface ProxyResult {
   status: number;
   body: unknown;
+  /** Why the upstream call failed, when it did not produce a response (server-side diagnostics only). */
+  failure?: "timeout" | "network";
 }
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -32,8 +34,9 @@ async function forward(url: string, init: RequestInit, doFetch: FetchLike, signa
     const res = await doFetch(url, { ...init, cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     const body = await res.json().catch(() => ({ error: "read API returned an invalid response" }));
     return { status: res.status, body };
-  } catch {
-    return { status: 503, body: { error: "read API unavailable" } };
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    return { status: 503, body: { error: "read API unavailable" }, failure: timedOut ? "timeout" : "network" };
   }
 }
 
@@ -84,8 +87,15 @@ export async function proxyApplicationRead(
   } else if (search.has("community") && !(path.endsWith("/audits") ? /^(0|[1-9][0-9]{0,2})$/.test(search.get("community")!) && Number(search.get("community")) <= 255 : /^[a-z0-9._-]{2,64}$/.test(search.get("community")!))) return fail(400, "invalid_query", "invalid community");
   const base = baseUrl(env);
   if (!base) return fail(503, "upstream_unavailable", "read API is not configured");
+  const started = Date.now();
   const out = await forward(`${base}/api/arena/v1/${path}${search.size ? `?${search}` : ""}`, { method: "GET" }, doFetch, signal);
-  if ((out.body as { schemaVersion?: string })?.schemaVersion !== "arena-application-v1") return fail(503, "upstream_unavailable", "application read API unavailable");
+  if ((out.body as { schemaVersion?: string })?.schemaVersion !== "arena-application-v1") {
+    const reason = out.failure === "timeout" ? "timed out after 10s"
+      : out.failure === "network" ? "could not be reached"
+        : `returned an unexpected response (HTTP ${out.status})`;
+    console.error(`[arena-read] ${path} ${reason} in ${Date.now() - started}ms`);
+    return fail(503, "upstream_unavailable", `application read API ${reason}`);
+  }
   return out;
 }
 

@@ -42,7 +42,7 @@ describe("read client and proxy", () => {
     expect(seen[1]!.init.headers).toEqual({});
 
     const down = await proxyReadTool("list_battles", new URLSearchParams(), null, env, async () => { throw new Error("ECONNREFUSED http://internal"); });
-    expect(down).toEqual({ status: 503, body: { error: "read API unavailable" } });
+    expect(down).toEqual({ status: 503, body: { error: "read API unavailable" }, failure: "network" });
   });
 
   it("session proxy posts the signed body and caps its size", async () => {
