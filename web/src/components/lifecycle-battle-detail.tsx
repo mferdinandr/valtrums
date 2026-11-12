@@ -10,6 +10,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { JoinDeposit } from "@/components/lifecycle-join-deposit";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { BattleResult } from "@/components/battle-result";
+import { DaoDecision } from "@/components/dao-decision";
 import { WinnerCelebration } from "@/components/winner-celebration";
 import { MyPosition } from "@/components/my-position";
 import { OpenArenaPanel } from "@/components/lifecycle-open-arena";
@@ -152,6 +153,13 @@ export function LifecycleBattleDetail({
       {safeBattleId !== null && phase.kind === "decided" && (
         <div>
           <BattleResult
+            arena={namespace.arenaContract}
+            battleId={safeBattleId}
+            winner={phase.winner}
+            communityCount={rows.length}
+            nameOf={name}
+          />
+          <DaoDecision
             arena={namespace.arenaContract}
             battleId={safeBattleId}
             winner={phase.winner}
