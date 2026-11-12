@@ -54,7 +54,7 @@ export class ModelBudget {
     private readonly onCall: (account: string) => void,
   ) {}
   wrap(model: ModelProposer): ModelProposer {
-    const gate = (input: ModelInput): boolean => {
+    const gate = (input: { user: string }): boolean => {
       const since = this.now() - HOUR_MS;
       while (this.calls.length > 0 && this.calls[0]! <= since) this.calls.shift();
       if (this.calls.length >= this.capPerHour) return false;
@@ -64,6 +64,7 @@ export class ModelBudget {
     };
     return {
       propose: async (input) => (gate(input) ? model.propose(input) : null),
+      proposeVote: async (input) => (gate(input) && model.proposeVote ? model.proposeVote(input) : null),
       proposeDetailed: async (input) => {
         if (!gate(input)) return null;
         return model.proposeDetailed ? model.proposeDetailed(input) : (await model.propose(input).then((t) => (t === null ? null : { text: t, chatId: null })));

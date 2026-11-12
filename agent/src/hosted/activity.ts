@@ -8,6 +8,7 @@ export interface ActivityEntry {
   event: string;
   battleId?: number;
   community?: number;
+  burnPercent?: number;
   amount?: string;
   token?: string;
   step?: string;
@@ -18,7 +19,7 @@ export interface ActivityEntry {
 }
 
 /** The events worth showing an owner. Everything else the loop emits stays in the service log only. */
-const SHOWN = new Set(["start", "stop", "skipped", "no_option", "model_answer_rejected", "sent", "played", "error", "sweep_skipped", "swept"]);
+const SHOWN = new Set(["start", "stop", "skipped", "no_option", "model_answer_rejected", "sent", "played", "error", "sweep_skipped", "swept", "claimed", "claim_error", "voted", "vote_error", "vote_skipped"]);
 const MAX_PER_AGENT = 50;
 const text = (v: unknown, max = 200): string | undefined => (typeof v === "string" && v.length > 0 ? v.slice(0, max) : undefined);
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isSafeInteger(v) ? v : undefined);
@@ -37,6 +38,8 @@ export class ActivityLog {
     const community = num(event.community);
     if (battleId !== undefined) entry.battleId = battleId;
     if (community !== undefined) entry.community = community;
+    const burnPercent = num(event.burnPercent);
+    if (burnPercent !== undefined && burnPercent >= 0 && burnPercent <= 100) entry.burnPercent = burnPercent;
     for (const key of ["amount", "token", "step", "decidedBy", "txHash", "reason", "message"] as const) {
       const v = text(event[key]);
       if (v !== undefined) entry[key] = v;
