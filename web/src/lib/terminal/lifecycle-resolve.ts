@@ -36,8 +36,21 @@ const ADDRESS_REF = /^(?:([1-9][0-9]{0,19}):)?(0x[0-9a-fA-F]{6,40})$/;
 const NAME_REF = /^\$?([A-Za-z][A-Za-z0-9 _.-]{0,39})$/;
 
 const norm = (v: string) => v.trim().replace(/^\$/, "").toLowerCase();
-const namesOf = (a: RegistryAsset): string[] =>
-  [a.label, a.referenceLabel].flatMap((l) => (l ? [norm(l.symbol), norm(l.name)] : []));
+/**
+ * The names a registry entry answers to. The testnet mocks are labelled "mCASHCAT" / "Mock CASHCAT" but people say
+ * CASHCAT, so a mock also answers to its plain name. A real token keeps only its own symbol and name.
+ */
+const labelNames = (l: AssetLabel): string[] => {
+  const symbol = norm(l.symbol);
+  const name = norm(l.name);
+  const out = [symbol, name];
+  if (l.kind === "testnet-mock") {
+    if (/^m[a-z0-9]/.test(symbol)) out.push(symbol.slice(1));
+    if (name.startsWith("mock ")) out.push(name.slice(5));
+  }
+  return out;
+};
+const namesOf = (a: RegistryAsset): string[] => [a.label, a.referenceLabel].flatMap((l) => (l ? labelNames(l) : []));
 const shown = (a: RegistryAsset) => a.label?.symbol ?? a.referenceLabel?.symbol ?? a.assetKey;
 
 async function resolveAddress(ref: string, m: RegExpExecArray, search: AssetSearch): Promise<{ ok: true; asset: RegistryAsset } | { ok: false; question: string }> {

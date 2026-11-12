@@ -84,7 +84,15 @@ if (hosted) {
     PORT: String(HOSTED_PORT),
   }, path.join(root, "agent"));
 }
-start("web :3000", "pnpm", ["-C", "web", "dev"], hosted ? { NEXT_PUBLIC_HOSTED_AGENTS_URL: env.NEXT_PUBLIC_HOSTED_AGENTS_URL || `http://localhost:${HOSTED_PORT}` } : {});
+// The Terminal route (/api/terminal/lifecycle) runs on the web server and reads NEAR_AI_API_KEY there (server-side only,
+// never NEXT_PUBLIC_). It is taken from agent/.env.local so one key serves the agents and the Terminal in development.
+const webEnv = {
+  ...(hosted ? { NEXT_PUBLIC_HOSTED_AGENTS_URL: env.NEXT_PUBLIC_HOSTED_AGENTS_URL || `http://localhost:${HOSTED_PORT}` } : {}),
+  ...(env.NEAR_AI_API_KEY ? { NEAR_AI_API_KEY: env.NEAR_AI_API_KEY } : {}),
+  ...(env.NEAR_AI_MODEL ? { NEAR_AI_MODEL: env.NEAR_AI_MODEL } : {}),
+  ...(env.NEAR_AI_BASE_URL ? { NEAR_AI_BASE_URL: env.NEAR_AI_BASE_URL } : {}),
+};
+start("web :3000", "pnpm", ["-C", "web", "dev"], webEnv);
 for (const role of ["RELAYER", "OPERATOR"]) {
   const prefix = `PAYOUT_${role}_`;
   if (!env[`${prefix}ACCOUNT_ID`]) { console.log(`[dev] payout ${role.toLowerCase()} not configured; not started`); continue; }

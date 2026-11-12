@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intentToRequest, validateLifecycleIntent, type LifecycleIntent } from "./lifecycle-intent";
+import { describeIntent, intentToRequest, toWireIntent, tokensToBaseUnits, validateLifecycleIntent, type LifecycleIntent } from "./lifecycle-intent";
 import { lifecycleRuleParser } from "./lifecycle-rule-parser";
 import { interpretLifecycleReply, createLifecycleLlmParser } from "./lifecycle-llm-parser";
 import { resolveAssetRefs, resolveJoinToken, type AllowlistEntry, type RegistryAsset } from "./lifecycle-resolve";
@@ -26,17 +26,19 @@ describe("rule parser: register and deposit", () => {
     expect(await intentOf(prompt)).toEqual({ kind: "register_position", battleId, community });
   });
 
+  const E18 = (n: string) => `${n}${"0".repeat(18)}`;
   it.each([
-    ["deposit 250 ke battle 7 komunitas 2", "250", 7, 1],
-    ["deposit 250 into battle 7 community 2", "250", 7, 1],
-    ["setor sebesar 1000000 ke battle 7 komunitas 16", "1000000", 7, 15],
-    ["deposit amount 5 to battle 1 community 1", "5", 1, 0],
-    [`deposit ${"9".repeat(39)} to battle 1 community 1`, "9".repeat(39), 1, 0],
-  ])("deposits %s", async (prompt, amount, battleId, community) => {
-    expect(await intentOf(prompt)).toEqual({ kind: "deposit", battleId, community, amount });
+    ["deposit 250 ke battle 7 komunitas 2", E18("250"), 7, 1],
+    ["deposit 250 into battle 7 community 2", E18("250"), 7, 1],
+    ["setor sebesar 1000000 ke battle 7 komunitas 16", E18("1000000"), 7, 15],
+    ["deposit amount 5 to battle 1 community 1", E18("5"), 1, 0],
+    ["deposit 1.5 to battle 7 community 2", "1500000000000000000", 7, 1],
+    ["deposit 0.000000000000000001 to battle 7 community 2", "1", 7, 1],
+  ])("deposits %s (a plain amount is tokens, converted once by code)", async (prompt, amount, battleId, community) => {
+    expect(await intentOf(prompt)).toEqual({ kind: "deposit", battleId, community, tokenRef: null, amount });
   });
 
-  it.each(["deposit 1.5 to battle 7 community 2", "deposit 1,000 ke battle 7 komunitas 2", "deposit 1e6 to battle 7 community 2", "deposit -5 to battle 7 community 2", "deposit 0 to battle 7 community 2", "deposit 0250 to battle 7 community 2", `deposit ${"9".repeat(40)} to battle 1 community 1`])(
+  it.each(["deposit 1,000 ke battle 7 komunitas 2", "deposit 1e6 to battle 7 community 2", "deposit -5 to battle 7 community 2", "deposit 0 to battle 7 community 2", "deposit 0250 to battle 7 community 2", `deposit ${"9".repeat(40)} to battle 1 community 1`, "deposit 0.0000000000000000001 to battle 7 community 2"])(
     "refuses the amount in %s",
     async (prompt) => {
       const r = await parse(prompt);
@@ -44,8 +46,34 @@ describe("rule parser: register and deposit", () => {
     },
   );
 
+  it.each([
+    ["deposit 100 CASHCAT to battle 7", { battleId: 7, community: null, tokenRef: "cashcat", amount: `100${"0".repeat(18)}` }],
+    ["deposit 100 CASHCAT ke arena yang open", { battleId: null, community: null, tokenRef: "cashcat", amount: `100${"0".repeat(18)}` }],
+    ["setor 0.5 $wallet ke arena terbuka", { battleId: null, community: null, tokenRef: "$wallet", amount: "500000000000000000" }],
+    ["deposit 25 to community 2", { battleId: null, community: 1, tokenRef: null, amount: `25${"0".repeat(18)}` }],
+  ])("names the community by token or leaves the arena open: %s", async (prompt, fields) => {
+    expect(await intentOf(prompt)).toEqual({ kind: "deposit", ...fields });
+  });
+
+  it("joins an open arena with a token and registers in one", async () => {
+    expect(await intentOf("join the open arena with CASHCAT")).toEqual({ kind: "join_battle", battleId: null, tokenRef: "cashcat" });
+    expect(await intentOf("gabung arena yang lagi open pakai WALLET")).toEqual({ kind: "join_battle", battleId: null, tokenRef: "wallet" });
+    expect(await intentOf("register in the open arena community 2")).toEqual({ kind: "register_position", battleId: null, community: 1 });
+  });
+
+  it.each([
+    ["which arenas are open?", { kind: "list_battles", status: "open" }],
+    ["arena apa yang lagi open", { kind: "list_battles", status: "open" }],
+    ["show open battles", { kind: "list_battles", status: "open" }],
+    ["list battles", { kind: "list_battles", status: "all" }],
+    ["my positions", { kind: "show_positions" }],
+    ["posisi saya", { kind: "show_positions" }],
+  ])("answers the question %s without any action", async (prompt, intent) => {
+    expect(await intentOf(prompt)).toEqual(intent);
+  });
+
   it("asks when something is missing", async () => {
-    for (const p of ["deposit 250 ke komunitas 2", "deposit ke battle 7 komunitas 2", "daftar di battle 7", "halo"]) {
+    for (const p of ["deposit ke battle 7 komunitas 2", "deposit 100 to battle 7", "daftar di battle 7", "halo"]) {
       const r = await parse(p);
       expect(r).toMatchObject({ ok: false, clarify: true });
     }
@@ -57,8 +85,9 @@ describe("rule parser: register and deposit", () => {
     }
   });
 
-  it("is not a USDC or side A/B terminal", async () => {
-    expect((await parse("deposit 50 USDC to side A")).ok).toBe(false);
+  it("is not a USDC or side A/B terminal: a name is only ever a token to look up in the battle", async () => {
+    // "USDC" is just a token reference; resolution against the battle's own communities refuses it when it is not there.
+    expect(await intentOf("deposit 50 USDC to side A")).toMatchObject({ kind: "deposit", battleId: null, tokenRef: "usdc" });
   });
 });
 
@@ -119,7 +148,7 @@ describe("rule parser: payout and limits", () => {
 describe("validateLifecycleIntent: untrusted output", () => {
   const ok = { kind: "deposit", battleId: 7, communityNumber: 2, amount: "250" };
   it("accepts the exact shape", () => {
-    expect(validateLifecycleIntent(ok)).toEqual({ ok: true, intent: { kind: "deposit", battleId: 7, community: 1, amount: "250" } });
+    expect(validateLifecycleIntent(ok)).toEqual({ ok: true, intent: { kind: "deposit", battleId: 7, community: 1, tokenRef: null, amount: "250" } });
   });
   it.each<[string, unknown]>([
     ["null", null],
@@ -164,7 +193,7 @@ describe("validateLifecycleIntent: untrusted output", () => {
 describe("intentToRequest", () => {
   it("maps to the action service request shapes", () => {
     expect(intentToRequest({ kind: "register_position", battleId: 7, community: 1 })).toEqual({ kind: "register_position", battleId: 7, community: 1 });
-    expect(intentToRequest({ kind: "deposit", battleId: 7, community: 1, amount: "250" })).toEqual({ kind: "deposit", battleId: 7, community: 1, amount: "250" });
+    expect(intentToRequest({ kind: "deposit", battleId: 7, community: 1, tokenRef: null, amount: "250" })).toEqual({ kind: "deposit", battleId: 7, community: 1, amount: "250" });
     expect(intentToRequest({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 })).toEqual({ kind: "payout", backing: "t.testnet", amount: "5", destination: A1 });
   });
   it("builds no request for a create: a battle is created with the creator's deposit on the create page (D41)", () => {
@@ -256,7 +285,7 @@ describe("parse route with a fake model", () => {
   it("falls back to the rules when the model reply is hostile", async () => {
     const hostile = JSON.stringify({ kind: "deposit", battleId: 7, communityNumber: 2, amount: "250", receiver: "evil.near" });
     const r = await handleLifecycleParse(post("deposit 5 ke battle 7 komunitas 2"), { env: { NEAR_AI_API_KEY: "k" }, fetchImpl: fakeModel(hostile) });
-    expect(r.body).toMatchObject({ ok: true, parser: "rules", intent: { amount: "5" } });
+    expect(r.body).toMatchObject({ ok: true, parser: "rules", intent: { amount: "5000000000000000000" } });
   });
   it("falls back on an outage and keeps a clarifying question", async () => {
     const down = await handleLifecycleParse(post("register battle 7 community 2"), { env: { NEAR_AI_API_KEY: "k" }, fetchImpl: fakeModel("", 503) });
@@ -291,5 +320,62 @@ describe("route parser (browser)", () => {
   it("falls back to local rules if the route is unreachable", async () => {
     const down = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
     expect(await createLifecycleRouteParser(down).parse("daftar di battle 7 komunitas 2")).toMatchObject({ ok: true });
+  });
+});
+
+describe("friendly intents: validation of untrusted output", () => {
+  it("converts a plain token amount exactly and refuses anything else", () => {
+    expect(tokensToBaseUnits("100")).toBe(`100${"0".repeat(18)}`);
+    expect(tokensToBaseUnits("0.5")).toBe("500000000000000000");
+    expect(tokensToBaseUnits("0.000000000000000001")).toBe("1");
+    for (const bad of ["0", "0.0", "-1", "+1", "1e3", "1,000", " 1", "1.", ".5", "01", "1.0000000000000000001", "", "NaN", "9".repeat(22)]) expect(tokensToBaseUnits(bad)).toBeNull();
+  });
+
+  it("accepts battle open, a token instead of a community number and amountTokens", () => {
+    expect(validateLifecycleIntent({ kind: "deposit", battle: "open", tokenRef: "CASHCAT", amountTokens: "12.5" })).toEqual({
+      ok: true,
+      intent: { kind: "deposit", battleId: null, community: null, tokenRef: "CASHCAT", amount: "12500000000000000000" },
+    });
+    expect(validateLifecycleIntent({ kind: "join_battle", battle: "open", tokenRef: "WALLET" })).toEqual({ ok: true, intent: { kind: "join_battle", battleId: null, tokenRef: "WALLET" } });
+  });
+
+  it.each<[string, unknown]>([
+    ["battle and battleId together", { kind: "deposit", battle: "open", battleId: 7, communityNumber: 1, amountTokens: "1" }],
+    ["battle other than open", { kind: "deposit", battle: "latest", communityNumber: 1, amountTokens: "1" }],
+    ["community and token together", { kind: "deposit", battleId: 7, communityNumber: 1, tokenRef: "CASHCAT", amountTokens: "1" }],
+    ["neither community nor token", { kind: "deposit", battleId: 7, amountTokens: "1" }],
+    ["both amounts", { kind: "deposit", battleId: 7, communityNumber: 1, amount: "5", amountTokens: "1" }],
+    ["amountTokens with a sign", { kind: "deposit", battleId: 7, communityNumber: 1, amountTokens: "-1" }],
+    ["amountTokens zero", { kind: "deposit", battleId: 7, communityNumber: 1, amountTokens: "0" }],
+    ["a receiver", { kind: "deposit", battle: "open", tokenRef: "CASHCAT", amountTokens: "1", receiver: "evil.near" }],
+    ["cancel an open arena", { kind: "cancel_battle", battle: "open" }],
+    ["refund an open arena", { kind: "claim_refund", battle: "open", communityNumber: 1 }],
+    ["register by token", { kind: "register_position", battleId: 7, tokenRef: "CASHCAT" }],
+    ["list with a bad filter", { kind: "list_battles", status: "everything" }],
+    ["show_positions with a field", { kind: "show_positions", account: "alice.testnet" }],
+  ])("rejects %s", (_name, raw) => {
+    expect(validateLifecycleIntent(raw).ok).toBe(false);
+  });
+
+  it("builds no request until an open arena or a token is resolved, and never one for a read question", () => {
+    expect(intentToRequest({ kind: "deposit", battleId: null, community: 1, tokenRef: null, amount: "5" })).toBeNull();
+    expect(intentToRequest({ kind: "deposit", battleId: 7, community: null, tokenRef: "CASHCAT", amount: "5" })).toBeNull();
+    expect(intentToRequest({ kind: "register_position", battleId: null, community: 1 })).toBeNull();
+    expect(intentToRequest({ kind: "join_battle", battleId: null, tokenRef: "CASHCAT" }, { representation: "backing-cashcat.testnet" })).toBeNull();
+    expect(intentToRequest({ kind: "list_battles", status: "open" })).toBeNull();
+    expect(intentToRequest({ kind: "show_positions" })).toBeNull();
+  });
+
+  it("round-trips through the wire form and describes amounts as tokens", () => {
+    const intents: LifecycleIntent[] = [
+      { kind: "deposit", battleId: null, community: null, tokenRef: "CASHCAT", amount: "100000000000000000000" },
+      { kind: "join_battle", battleId: null, tokenRef: "WALLET" },
+      { kind: "register_position", battleId: null, community: 1 },
+      { kind: "list_battles", status: "open" },
+      { kind: "show_positions" },
+    ];
+    for (const i of intents) expect(validateLifecycleIntent(toWireIntent(i))).toEqual({ ok: true, intent: i });
+    expect(describeIntent(intents[0]!)).toBe("Deposit 100 tokens into an open arena, the CASHCAT community");
+    expect(describeIntent({ kind: "deposit", battleId: 7, community: 1, tokenRef: null, amount: "1500000000000000000" })).toBe("Deposit 1.5 tokens into battle #7, community 2");
   });
 });
