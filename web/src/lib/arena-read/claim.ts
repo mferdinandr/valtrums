@@ -83,3 +83,59 @@ export async function readEntitlement(rpcUrl: string, backing: string, account: 
   const value = await rpcView<string>(rpcUrl, backing, "entitlement_of", { account });
   return typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value) ? value : "0";
 }
+
+// ---------------------------------------------------------------- settle the prizes
+
+/** Per entitlement forwarded to a backing (arena ENTITLEMENT_DEPOSIT, 10 mNEAR). Mirrors agent/src/mcp/actions/preview.ts. */
+export const ENTITLEMENT_DEPOSIT_YOCTO = 10_000_000_000_000_000_000_000n;
+export const MAX_SETTLE_BATCH = 15;
+export const SETTLE_GAS_TGAS = "300";
+
+export const settleRequest = (battleId: number) => ({ kind: "settle_battle", battleId });
+
+export interface SettlementProgress {
+  recorded: number;
+  total: number;
+}
+
+/** How many of the battle's prize entitlements the arena has recorded; null before a winner or for an unknown battle. */
+export async function readSettlement(rpcUrl: string, arena: string, battleId: number): Promise<SettlementProgress | null> {
+  const v = await rpcView<{ recorded?: number; total?: number }>(rpcUrl, arena, "get_settlement_progress", { battle_id: String(battleId) });
+  return v && Number.isInteger(v.recorded) && Number.isInteger(v.total) ? { recorded: v.recorded as number, total: v.total as number } : null;
+}
+
+/** The next batch: as many entitlements as fit in one call, repeated until recorded equals total. */
+export function settleBatch(p: SettlementProgress): number {
+  return Math.max(0, Math.min(MAX_SETTLE_BATCH, p.total - p.recorded));
+}
+
+export function buildSettleReview(arena: string, battleId: number, p: SettlementProgress): Review {
+  const batch = settleBatch(p);
+  const problems = [
+    ...(Number.isSafeInteger(battleId) && battleId >= 1 ? [] : ["battle id must be a positive integer"]),
+    ...(validAccount(arena) ? [] : ["the arena contract id is not configured"]),
+    ...(batch > 0 ? [] : ["every prize is already recorded"]),
+  ];
+  if (problems.length > 0) return { ok: false, problems };
+  const deposit = (ENTITLEMENT_DEPOSIT_YOCTO * BigInt(batch)).toString();
+  return {
+    ok: true,
+    receiver: arena,
+    method: "settle_lifecycle_battle",
+    args: { battle_id: String(battleId), max_entitlements: batch },
+    depositYocto: deposit,
+    gasTgas: SETTLE_GAS_TGAS,
+    lines: [
+      { label: "Contract", value: arena },
+      { label: "Method", value: "settle_lifecycle_battle" },
+      { label: "Battle", value: `#${battleId}` },
+      { label: "Prizes in this batch", value: `${batch} of ${p.total - p.recorded} remaining` },
+      { label: "Attached deposit", value: `${deposit} yoctoNEAR` },
+      { label: "Gas", value: `${SETTLE_GAS_TGAS} Tgas` },
+    ],
+    notes: [
+      "Anyone may settle. The arena works the split out from the frozen snapshot, so the caller cannot influence it.",
+      "The arena refunds unused deposit. Repeat until every prize is recorded; a failed batch advances nothing.",
+    ],
+  };
+}
