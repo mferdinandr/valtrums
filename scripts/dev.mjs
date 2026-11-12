@@ -44,9 +44,19 @@ if (workers) {
   const preflight = spawnSync(process.execPath, ["scripts/testnet-wiring/live-run.mjs", "--check"], { cwd: root, stdio: "inherit" });
   if (preflight.status !== 0) process.exit(1);
 }
+// Hosted testnet agents (openspec hosted-player-agents): started only when HOSTED_AGENT_KEK is set in agent/.env.local.
+// Unlike the workers it never blocks a plain `pnpm dev`: no KEK means it is simply off.
+const HOSTED_PORT = 8791;
+const hosted = Boolean(env.HOSTED_AGENT_KEK);
+if (hosted) {
+  const needed = ["NEAR_AI_API_KEY", "HOSTED_AGENT_MAX_PER_OWNER", "HOSTED_AGENT_MODEL_CALLS_PER_AGENT_HOUR", "HOSTED_AGENT_MODEL_CALLS_GLOBAL_HOUR", "HOSTED_AGENT_MAX_TOKEN_WHOLE"]
+    .filter((key) => !env[key]);
+  if (needed.length) { console.error(`[dev] Hosted agents need ${needed.join(", ")} in agent/.env.local, or remove HOSTED_AGENT_KEK to turn them off.`); process.exit(1); }
+  if (env.NEAR_NETWORK && env.NEAR_NETWORK !== "testnet") { console.error("[dev] Hosted agents run on testnet only."); process.exit(1); }
+}
 const portBusy = (port) => spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], { stdio: "ignore" }).status === 0;
 if (!check) {
-  for (const port of [3000, 8790]) {
+  for (const port of hosted ? [3000, 8790, HOSTED_PORT] : [3000, 8790]) {
     if (portBusy(port)) { console.error(`[dev] Port ${port} is already in use. Stop the previous dev process before starting the stack.`); process.exit(1); }
   }
   const build = spawnSync("pnpm", ["-C", "agent", "build"], { cwd: root, stdio: "inherit" });
@@ -65,7 +75,16 @@ if (workers) {
   start("agent / oracle / collector", process.execPath, ["scripts/testnet-wiring/live-run.mjs"], shared);
 }
 start("read API :8790", process.execPath, ["scripts/read-dev.mjs"], workers ? shared : {}, path.join(root, "agent"));
-start("web :3000", "pnpm", ["-C", "web", "dev"]);
+if (hosted) {
+  // Reads agent/.env.local itself (it holds the NEAR AI key and the limits). The web app only gets the public URL.
+  start(`hosted agents :${HOSTED_PORT} (testnet only)`, process.execPath, ["--env-file-if-exists=.env.local", "dist/hosted/main.js"], {
+    NEAR_NETWORK: "testnet",
+    ARENA_CONTRACT_ID: env.ARENA_CONTRACT_ID || "arena.valtrum-owner-b694.testnet",
+    HOSTED_AGENT_ALLOWED_ORIGIN: env.HOSTED_AGENT_ALLOWED_ORIGIN || "http://localhost:3000",
+    PORT: String(HOSTED_PORT),
+  }, path.join(root, "agent"));
+}
+start("web :3000", "pnpm", ["-C", "web", "dev"], hosted ? { NEXT_PUBLIC_HOSTED_AGENTS_URL: env.NEXT_PUBLIC_HOSTED_AGENTS_URL || `http://localhost:${HOSTED_PORT}` } : {});
 for (const role of ["RELAYER", "OPERATOR"]) {
   const prefix = `PAYOUT_${role}_`;
   if (!env[`${prefix}ACCOUNT_ID`]) { console.log(`[dev] payout ${role.toLowerCase()} not configured; not started`); continue; }
