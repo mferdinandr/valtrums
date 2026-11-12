@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Check } from "lucide-react";
+import { TokenIcon } from "@/components/token-icon";
 import { Button } from "@/components/ui/button";
 import { TransactionLink } from "@/components/transaction-link";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -65,20 +67,28 @@ export function JoinDeposit({
         </p>
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Token to deposit">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="Token to deposit">
             {options.map((o) => (
               <button
                 key={o.token}
                 type="button"
-                className="lifecycle-mode"
+                className="lifecycle-mode !flex items-center gap-3"
                 aria-pressed={token === o.token}
                 disabled={st.step === "running"}
                 onClick={() => setToken(o.token)}
               >
-                <strong>{plainSymbol(o.symbol)}</strong>
-                <span>
-                  {o.inBattle ? "In this battle · " : "New · "}Balance {formatUnits(BigInt(o.balance), TOKEN_DECIMALS, 4)}
+                <TokenIcon symbol={plainSymbol(o.symbol)} size={40} />
+                <span className="min-w-0 flex-1">
+                  <strong className="block truncate">{plainSymbol(o.symbol)}</strong>
+                  <span className="block text-xs text-mute">Balance {formatUnits(BigInt(o.balance), TOKEN_DECIMALS, 4)}</span>
                 </span>
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  style={o.inBattle ? { background: "#327f7d22", color: "#327f7d" } : { background: "#e6e2d6", color: "#526777" }}
+                >
+                  {o.inBattle ? "In battle" : "New"}
+                </span>
+                {token === o.token && <Check size={16} aria-hidden="true" style={{ color: "#327f7d" }} />}
               </button>
             ))}
           </div>
