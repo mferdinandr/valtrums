@@ -891,7 +891,7 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
     };
     // A losing-side-only account, the owner and the oracle hold no winning weight.
     for outsider in [&w.owner, &w.oracle, &w.agent] {
-        assert!(!ok(async { Ok(vote(outsider, true).await?) }).await);
+        assert!(!ok(async { Ok(vote(outsider, 100).await?) }).await);
     }
     vote(&player, 100).await?.into_result()?;
     vote(&creator, 0).await?.into_result()?;
