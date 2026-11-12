@@ -85,3 +85,18 @@ The Terminal route SHALL bound how much NEAR AI one visitor and the whole server
 - **WHEN** one visitor exceeds the per-minute request limit
 - **THEN** the route answers HTTP 429 and does no parsing or model work
 
+### Requirement: Conversation layout
+The Terminal SHALL present the exchange as a conversation: the user's prompts on one side and the Terminal's answers on the other, history stacking in order, the input fixed below, a visible indicator while a prompt is being read and the newest message kept in view. Only the latest answer SHALL be interactive: its review, signing and choice controls are live, and every earlier answer SHALL be a static summary with no action control. A choice made inside an answer SHALL become a new turn.
+
+#### Scenario: A second prompt
+- **WHEN** the user sends a second prompt
+- **THEN** the first prompt and its answer stay above, the second appears below, and the first answer's review and sign controls are no longer available
+
+#### Scenario: Choosing an arena from a list
+- **WHEN** the user picks one of several listed arenas
+- **THEN** the choice appears as a new turn with its own answer and the list it came from becomes static
+
+#### Scenario: Reading a prompt
+- **WHEN** a prompt is being parsed
+- **THEN** a reading indicator is shown in the Terminal's side and a second prompt cannot be sent until it is answered
+

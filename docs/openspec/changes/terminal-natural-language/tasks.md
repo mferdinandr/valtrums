@@ -20,4 +20,5 @@
 - [x] 4.1 Pass the NEAR AI variables from `agent/.env.local` to the web server in `pnpm dev`; document them in `.env.example`.
 - [x] 4.2 Try the Terminal against NEAR AI Cloud with a small, bounded number of prompts and record the result.
 - [x] 4.3 Run `scripts/pre-commit.sh` and `cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`.
+- [x] 4.5 Conversation layout: prompts right, answers left, history, reading indicator, only the latest answer interactive (pure `chat.ts` with tests; e2e expectations updated, not run here).
 - [ ] 4.4 Chaining several actions in one prompt (left open; see design).
