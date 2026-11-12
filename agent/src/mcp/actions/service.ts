@@ -16,7 +16,7 @@ import {
 import { type DelegateGrants, proposalToRequest } from "./proposal.js";
 import type { ReceiptVerifier } from "./receipt.js";
 import type { ActionReadSource } from "./source.js";
-import type { ActionRecord, ActionStatus, ActionStore } from "./store.js";
+import type { ActionRecord, ActionStatus, ActionStorePort } from "./store.js";
 
 /**
  * The single authorization and status boundary for actions, shared by the MCP tools and the web
@@ -58,7 +58,7 @@ export class ActionAccessError extends Error {
 export interface ActionServiceDeps {
   source: ActionReadSource;
   ctx: PreviewContext;
-  store: ActionStore;
+  store: ActionStorePort;
   verify: Nep413Verifier;
   /** NEP-413 recipient (the action service identity). */
   recipient: string;

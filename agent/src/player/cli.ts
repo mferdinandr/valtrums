@@ -3,6 +3,8 @@ import { Near } from "near-kit";
 import { NearRpcReceiptVerifier } from "../mcp/actions/receipt.js";
 import { ActionService } from "../mcp/actions/service.js";
 import { NearActionReadSource } from "../mcp/actions/source.js";
+import { appDb, closeAppDb } from "../app-state/app-db.js";
+import { PgActionStore, loadPgPlayerState } from "../app-state/pg-stores.js";
 import { ActionStore } from "../mcp/actions/store.js";
 import { delegateGrantsOf, keyFor, loadPlayerAgents, type PlayerAgentConfig } from "./config.js";
 import { createModelProposer } from "./model.js";
@@ -43,17 +45,20 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
     (contractId, method, args) => reader.view(contractId, method, args),
     { arena, policy },
   );
+  // With APP_DATABASE_URL the action store and the player state live in Postgres instead of local files.
+  const db = appDb(env);
   const actions = new ActionService({
     source,
     ctx: { network: `near-${network}`, arena, payout: env.PAYOUT_CONTRACT_ID?.trim() || null, policy },
-    store: new ActionStore(env.PLAYER_ACTION_STORE_PATH?.trim() || "./.data/player-actions.json"),
+    store: db ? new PgActionStore(db) : new ActionStore(env.PLAYER_ACTION_STORE_PATH?.trim() || "./.data/player-actions.json"),
     // Player agents authorize with their grant, never with a user signature, so no signature is ever accepted here.
     verify: async () => false,
     recipient: env.ACTION_RECIPIENT?.trim() || "valtrum-player",
     receipts: new NearRpcReceiptVerifier(rpcUrl),
     delegateGrants: delegateGrantsOf(agents),
   });
-  const state = new PlayerState(env.PLAYER_STATE_PATH?.trim() || "./.data/player-state.json");
+  const pgState = db ? await loadPgPlayerState(db, "player:grants") : null;
+  const state = pgState?.state ?? new PlayerState(env.PLAYER_STATE_PATH?.trim() || "./.data/player-state.json");
   const apiKey = env.NEAR_AI_API_KEY?.trim();
   const model = apiKey
     ? createModelProposer({ apiKey, model: env.NEAR_AI_MODEL?.trim() || "deepseek-ai/DeepSeek-V4.1-Flash-1017", ...(env.NEAR_AI_BASE_URL?.trim() ? { baseUrl: env.NEAR_AI_BASE_URL.trim() } : {}) })
@@ -91,10 +96,13 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv = process.en
       await tick(agent, { actions, source, battleCount, sign, state, ...(model ? { model } : {}), now: Date.now, log, live }).catch((e) =>
         log({ event: "error", agent: agent.delegate, message: e instanceof Error ? e.message : String(e) }),
       );
+      // Persist what the round did even when it failed part way, so an action is never forgotten.
+      await pgState?.flush();
     }
     if (once) break;
     await wait(Math.min(...agents.map((a) => a.intervalSecs)) * 1_000);
   }
+  await closeAppDb();
   log({ event: "stop" });
 }
 

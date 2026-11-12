@@ -1,4 +1,5 @@
 import { argv, env as processEnv } from "node:process";
+import { createReportArchive } from "../app-state/app-db.js";
 import { fileURLToPath } from "node:url";
 import { evaluateCommunity, type AuditInput } from "./decision.js";
 import type { RawGoPlusResponse } from "./goplus.js";
@@ -192,7 +193,7 @@ export async function runCli(
   args: string[],
   env: Record<string, string | undefined> = processEnv,
   io: CliIo = consoleIo,
-  makeArchive: (dir: string) => ReportArchive = (dir) => new JsonFileReportArchive(archivePath(dir)),
+  makeArchive: (dir: string) => ReportArchive = (dir) => createReportArchive(archivePath(dir), env),
 ): Promise<number> {
   const parsed = parseArgs(args);
   const explicitDir = parsed.flags.get("dir") ?? env.AUDIT_REPORT_DIR?.trim();

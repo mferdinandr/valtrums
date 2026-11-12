@@ -98,6 +98,7 @@ describe("agent runtime wiring", () => {
     expect(main).toContain("loadIndexerRuntimeConfig(process.env");
     expect(main).toContain("createIndexerRuntime(");
     expect(main).toContain("loadReportArchiveConfig(process.env");
-    expect(main).toMatch(/archive: new JsonFileReportArchive\(/);
+    // The archive is created by the factory: Postgres with APP_DATABASE_URL, else the JSON file (see app-state/app-db.test.ts).
+    expect(main).toMatch(/archive: createReportArchive\(/);
   });
 });

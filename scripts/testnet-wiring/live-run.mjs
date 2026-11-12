@@ -69,6 +69,9 @@ const procs = [
       AUDIT_WETH_PRICE_POOL: local.AUDIT_WETH_PRICE_POOL, AUDIT_WETH_PRICE_POOL_MIN_USD: local.AUDIT_WETH_PRICE_POOL_MIN_USD,
       ...(env.GOPLUS_ACCESS_TOKEN ? { GOPLUS_ACCESS_TOKEN: env.GOPLUS_ACCESS_TOKEN } : {}),
       BASELINE_STORE_PATH: path.join(STATE, "baselines.json"),
+      // Baselines (and the audit archive when enabled) go to Postgres when the application database is configured.
+      // Only this process gets it: the oracle and the collector use no application table.
+      ...(local.APP_DATABASE_URL ? { APP_DATABASE_URL: local.APP_DATABASE_URL } : {}),
     },
   },
   {

@@ -2,6 +2,9 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Near, verifyNep413Signature } from "near-kit";
 import { DEFAULT_REPORT_ARCHIVE_PATH, resolveArchivePath } from "../audit/config.js";
+import { appDb } from "../app-state/app-db.js";
+import { PgReportArchive } from "../app-state/pg-report-archive.js";
+import { PgActionStore } from "../app-state/pg-stores.js";
 import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { NearStateSource } from "./account-state.js";
 import { parseDelegateGrants } from "./actions/proposal.js";
@@ -68,7 +71,10 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
   // producer's enable flag selects its default file so both sides agree without extra config.
   const archivePath =
     resolveArchivePath(env) ?? (env.AUDIT_REPORT_ARCHIVE_ENABLED?.trim() === "true" ? DEFAULT_REPORT_ARCHIVE_PATH : undefined);
-  // Actions are enabled only with a durable store; the service never holds a key either.
+  // With APP_DATABASE_URL the action store and the audit archive live in Postgres (the files are not used).
+  const db = appDb(env);
+  // Actions stay opt-in: they are enabled only when ACTION_STORE_PATH is set (the service never holds a key either).
+  // With APP_DATABASE_URL the records are kept in Postgres instead of that file.
   const storePath = env.ACTION_STORE_PATH?.trim();
   const actions = storePath
     ? new ActionService({
@@ -85,7 +91,7 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
           // Testnet only: ActionService refuses to start with this flag on any other network.
           ...(env.INTENTS_FIXTURE?.trim() === "1" ? { intentsFixture: true } : {}),
         },
-        store: new ActionStore(storePath),
+        store: db ? new PgActionStore(db) : new ActionStore(storePath),
         recipient: env.ACTION_RECIPIENT?.trim() || required(env, "READ_SESSION_RECIPIENT"),
         verify: (signed, params) => verifyNep413Signature(signed, params, { near, nonceValidation: "none" }),
         receipts: new NearRpcReceiptVerifier(env.NEAR_RPC_URL?.trim() || `https://rpc.${network}.near.org`),
@@ -104,8 +110,8 @@ export function depsFromEnv(env: NodeJS.ProcessEnv): ActionToolDeps {
     sessions,
     ...(actions ? { actions } : {}),
     now: Date.now,
-    ...(archivePath
-      ? { audits: { archive: new JsonFileReportArchive(archivePath), arena: required(env, "ARENA_CONTRACT_ID"), info: { network: `near-${network}`, kind: "recorded" as const, name: "audit-report-archive" } } }
+    ...(archivePath || db
+      ? { audits: { archive: db ? new PgReportArchive(db) : new JsonFileReportArchive(archivePath!), arena: required(env, "ARENA_CONTRACT_ID"), info: { network: `near-${network}`, kind: "recorded" as const, name: "audit-report-archive" } } }
       : {}),
   };
 }

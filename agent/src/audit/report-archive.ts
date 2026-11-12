@@ -57,7 +57,7 @@ export interface ArchiveObservationInput {
  * `observationId`; `seq`, `archivedAt` and the report's wall-clock `times` are metadata, never part
  * of the identity. `domain.custodyDomain` is the asset's custody domain (not a chain/network label).
  */
-interface ObservationCore {
+export interface ObservationCore {
   reportSchemaVersion: string;
   provenance: ArchiveProvenance;
   domain: { arena: string; custodyDomain: string };
@@ -186,7 +186,7 @@ export function validateObservationInput(input: ArchiveObservationInput): void {
   if (size > MAX_OBSERVATION_BYTES) throw new ArchiveValidationError("report exceeds the size limit");
 }
 
-function coreOf(input: ArchiveObservationInput): ObservationCore {
+export function coreOf(input: ArchiveObservationInput): ObservationCore {
   return {
     reportSchemaVersion: REPORT_SCHEMA_VERSION,
     provenance: input.provenance,
@@ -215,16 +215,16 @@ function identityProjection(core: ObservationCore): unknown {
 }
 
 /** Content-derived identity: hash of the decision projection, independent of the pass wall-clock. */
-function observationIdOf(core: ObservationCore, hashFn: (text: string) => string): string {
+export function observationIdOf(core: ObservationCore, hashFn: (text: string) => string): string {
   return hashFn(canonicalJson(identityProjection(core)));
 }
 
 /** True when two cores carry the same decision content (ignoring wall-clock); the collision guard. */
-function sameDecision(a: ObservationCore, b: ObservationCore): boolean {
+export function sameDecision(a: ObservationCore, b: ObservationCore): boolean {
   return canonicalJson(identityProjection(a)) === canonicalJson(identityProjection(b));
 }
 
-const sha256Hex = (text: string): string => bytesToHex(sha256(utf8ToBytes(text)));
+export const sha256Hex = (text: string): string => bytesToHex(sha256(utf8ToBytes(text)));
 
 /**
  * Whole-file structural integrity, checked on every load so a hand-edited archive cannot pass by
@@ -233,7 +233,7 @@ const sha256Hex = (text: string): string => bytesToHex(sha256(utf8ToBytes(text))
  * well-formed `archivedAt`, and a report that still passes {@link validateObservationInput} — the
  * shape is re-checked on read, not only its hash.
  */
-function assertArchiveIntegrity(observations: ArchivedObservation[], nextSeq: number): void {
+export function assertArchiveIntegrity(observations: ArchivedObservation[], nextSeq: number): void {
   const ids = new Set<string>();
   let prevSeq = 0;
   let maxSeq = 0;
@@ -262,7 +262,7 @@ function assertArchiveIntegrity(observations: ArchivedObservation[], nextSeq: nu
   }
 }
 
-function assertSupportedObservation(o: unknown, hashFn: (s: string) => string): ArchivedObservation {
+export function assertSupportedObservation(o: unknown, hashFn: (s: string) => string): ArchivedObservation {
   if (!o || typeof o !== "object") throw new ArchiveCorruptError("observation is not an object");
   const rec = o as Partial<ArchivedObservation>;
   if (rec.reportSchemaVersion !== REPORT_SCHEMA_VERSION) {
