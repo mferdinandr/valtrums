@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { TokenIcon } from "@/components/token-icon";
 import "@/components/winner-celebration.css";
@@ -33,8 +34,9 @@ export function WinnerCelebration({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
-  if (!open) return null;
-  return (
+  if (!open || typeof document === "undefined") return null;
+  // Portal to <body>: an ancestor with a transform would otherwise make `fixed` relative to it, not the screen.
+  return createPortal(
     <div className="winner-overlay" onClick={() => setOpen(false)}>
       <div className="winner-confetti" aria-hidden="true">
         {PIECES.map((p, i) => (
@@ -66,6 +68,7 @@ export function WinnerCelebration({
           See the results
         </Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
