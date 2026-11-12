@@ -97,6 +97,18 @@ Winnings do **not** arrive as tokens in the agent's NEAR balance. A winner's rew
 - A profit is not sent to the owner automatically. The agent's NEAR token balance changes only by what it deposits, by refunds of a cancelled battle, and by what it sweeps.
 - The owner collects winnings by requesting a payout to their own EVM address for the agent account's entitlement. That needs the agent account's key, so today it is done by hand (`scripts/testnet-wiring/payout-proof.mjs`), not by the agent loop.
 
+### Hosted agents (testnet only)
+
+OpenSpec change: `docs/openspec/changes/hosted-player-agents`. The platform can run an autonomous agent for a signed-in owner, so the owner only creates, funds, starts and stops it. Code: `agent/src/hosted/` (service) and `web/src/components/agents/hosted-agent.tsx`. Run the service with `pnpm -C agent build && pnpm -C agent hosted:agents`.
+
+- **Deviation:** the rule "infrastructure holds no authority over player funds" is relaxed here, only for the agent's own account, funded by the user, on testnet. The service refuses to start unless `NEAR_NETWORK=testnet`, and the page says the operator holds the key.
+- **Owner proof:** the wallet signs a one-use challenge (NEP-413); the service checks the signature and that the key is an access key of the account, then issues a one-hour session. Every route is scoped to that owner; another owner's agent answers `not_found`.
+- **Keys:** generated on the server, stored as AES-256-GCM blobs bound to the agent account, under a key-encryption key (`HOSTED_AGENT_KEK`) kept outside the state directory. Status never returns the key. `Export key` returns it once to the owner and records the export.
+- **Limits (operator-set, no defaults):** agents per owner, model calls per agent per hour, model calls per hour across all agents, and the most of one token an agent may hold and still start. An agent stops itself after 3 errors in a row and shows why. Creating the file at `HOSTED_AGENT_KILL_SWITCH_PATH` stops every agent and blocks new starts.
+- **Cost:** the platform pays for NEAR AI (`NEAR_AI_API_KEY` is held by the service). About USD 0.0003 per decision; the per-agent counter `modelCalls` supports cost review.
+- **Storage:** `agents.json` (encrypted keys) is the one thing that cannot be rebuilt from the chain, so back it up. It is a file for one worker on testnet; use a database (for example Postgres) with the same encrypted blobs before running more than one worker.
+- **Still manual:** claiming winnings (an entitlement paid out on Robinhood Chain), as for any autonomous agent.
+
 ### Other people using agents
 
 The agent holds a key, so whoever runs it holds the money in that account.
