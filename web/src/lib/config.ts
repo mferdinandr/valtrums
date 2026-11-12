@@ -22,6 +22,8 @@ export const config = {
   policyContract: process.env.NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID?.trim() ?? "",
   /** The faucet contract that hands out test tokens. Optional: without it the faucet page explains what to set. */
   faucetContract: process.env.NEXT_PUBLIC_FAUCET_CONTRACT_ID?.trim() ?? "",
+  /** The hosted testnet agent service (agent `hosted:agents`). Optional: without it /agents offers only run-it-yourself agents. */
+  hostedAgentsUrl: (process.env.NEXT_PUBLIC_HOSTED_AGENTS_URL?.trim() ?? "").replace(/\/+$/, ""),
   /** Scoring modes a new battle may use (comma-separated; default PriceGain). Must match the arena's observation policy. */
   createModes: parseCreateModes(process.env.NEXT_PUBLIC_LIFECYCLE_CREATE_MODES),
   /** The only protocol this application speaks. */

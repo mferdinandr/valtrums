@@ -1,0 +1,225 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { FundAgent, symbolOf } from "@/components/agents/fund-agent";
+import { useActionWallet, useWallet } from "@/components/providers";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
+import { Input, Label } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { formatUnits } from "@/lib/amounts";
+import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-grant";
+import type { Namespace } from "@/lib/arena-read/application";
+import { readAgentStatus, type AgentStatus } from "@/lib/arena-read/autonomous-agent";
+import { config } from "@/lib/config";
+import { getHostedClient, type HostedAgentsClient, type HostedAgentView } from "@/lib/hosted-agents";
+
+const POLL_MS = 15_000;
+const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+function AgentRow({ agent, namespace, client, onChange }: { agent: HostedAgentView; namespace: Namespace; client: HostedAgentsClient; onChange: () => void }) {
+  const [status, setStatus] = useState<AgentStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [secret, setSecret] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await readAgentStatus(config.rpcUrl, namespace.arenaContract, agent.account));
+    } catch {
+      // The chain read is a convenience; the service state above is authoritative for running or stopped.
+    }
+  }, [agent.account, namespace.arenaContract]);
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      onChange();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const funded = !!status?.nearYocto;
+  return (
+    <Card className="space-y-3" aria-label={`Agent ${short(agent.account)}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="text-sm" title={agent.account}>{short(agent.account)}</strong>
+        <Badge tone={agent.running ? "green" : "mute"}>{agent.running ? "running" : "stopped"}</Badge>
+        <Badge tone={funded ? "green" : "amber"}>{funded ? "funded" : "not funded yet"}</Badge>
+        <span className="text-xs text-mute">{STRATEGY_OPTIONS.find((o) => o.value === agent.style)?.title ?? agent.style}</span>
+      </div>
+      {agent.lastError && <p role="alert" className="text-xs text-neon-amber">Stopped: {agent.lastError}</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {agent.running ? (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => client.stop(agent.account))}>Stop</Button>
+        ) : (
+          <Button size="sm" disabled={busy} onClick={() => void run(() => client.start(agent.account))}>Start</Button>
+        )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => setSecret((await client.exportKey(agent.account)).secretKey))}>Export key</Button>
+      </div>
+      {error && <p role="alert" className="text-xs text-neon-amber">{error}</p>}
+      {secret && (
+        <p role="alert" className="break-all rounded-lg border border-edge p-3 text-xs">
+          {secret}
+          <span className="mt-2 block text-neon-amber">Anyone with this key controls the agent&apos;s funds. Copy it now; this export is recorded.</span>
+          <Button size="sm" variant="ghost" onClick={() => setSecret(null)}>Hide</Button>
+        </p>
+      )}
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">Fund it from your wallet</h3>
+        <p className="break-all text-xs text-mute">Agent account: {agent.account}</p>
+        <FundAgent account={agent.account} tokens={status?.tokens ?? []} onSent={() => void refresh()} />
+      </section>
+
+      <section className="space-y-1" aria-live="polite">
+        <h3 className="text-sm font-semibold">Status</h3>
+        <p className="text-sm">NEAR: {status?.nearYocto ? formatUnits(BigInt(status.nearYocto), 24, 4) : "0"}</p>
+        <ul className="space-y-1 text-sm">
+          {(status?.tokens ?? []).filter((t) => t.base !== "0").map((t) => (
+            <li key={t.representation}>{symbolOf(t.representation)}: {formatUnits(BigInt(t.base), 18, 2)}</li>
+          ))}
+        </ul>
+        <h4 className="text-xs font-semibold text-mute">Recent plays</h4>
+        {(status?.plays.length ?? 0) === 0 ? (
+          <p className="text-xs text-mute">No deposits in the latest battles yet.</p>
+        ) : (
+          <ul className="space-y-1 text-sm">
+            {status!.plays.map((p) => (
+              <li key={`${p.battleId}:${p.community}`}>Battle #{p.battleId}: {formatUnits(BigInt(p.amount), 18, 2)} {symbolOf(p.representation)}</li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs text-mute">Winnings are not tokens in this balance. They are paid out on Robinhood Chain; see Portfolio.</p>
+      </section>
+    </Card>
+  );
+}
+
+/**
+ * Hosted testnet agents: the platform holds the agent key and runs the agent, so the owner only creates, funds, starts and
+ * stops it (OpenSpec `hosted-player-agents`). The wallet signs a challenge once to prove ownership.
+ */
+export function HostedAgent({ namespace }: { namespace: Namespace }) {
+  const { accountId, loading, signIn } = useWallet();
+  const getWallet = useActionWallet();
+  const client = getHostedClient(config.hostedAgentsUrl);
+  // Starts false on both server and client so the markup matches; a session restored from the tab is applied below.
+  const [signed, setSigned] = useState(false);
+  useEffect(() => {
+    if (client.signedIn) setSigned(true);
+  }, [client]);
+  const [agents, setAgents] = useState<HostedAgentView[]>([]);
+  const [style, setStyle] = useState<AgentStrategy>("underdog");
+  const [sweep, setSweep] = useState(false);
+  const [keepWhole, setKeepWhole] = useState("100");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAgents(await client.list());
+    } catch (e) {
+      setError(message(e));
+      setSigned(client.signedIn);
+    }
+  }, [client]);
+  useEffect(() => {
+    if (!signed) return;
+    void load();
+    const timer = setInterval(() => void load(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [signed, load]);
+  // A different wallet (or a disconnected one) is a different owner: drop the session. While the wallet is still
+  // loading nothing is dropped, and coming back to this page with the same wallet keeps the session.
+  useEffect(() => {
+    if (loading || client.owner === null || client.owner === accountId) return;
+    client.signOut();
+    setSigned(false);
+    setAgents([]);
+  }, [accountId, loading, client]);
+
+  const guarded = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signInWithWallet = () =>
+    guarded(async () => {
+      if (!accountId || !getWallet) return signIn();
+      await client.signIn(await getWallet(), accountId);
+      setSigned(true);
+    });
+  const keep = Number(keepWhole);
+
+  return (
+    <div className="space-y-4">
+      <Card role="note" className="space-y-1 border-neon-amber/60">
+        <CardTitle>Testnet only</CardTitle>
+        <p className="text-sm text-mute">
+          We run your agent for you and keep its key, so use only valueless testnet tokens. You can export the key at any time and
+          stop the agent whenever you like. The most it can lose is what you send it.
+        </p>
+      </Card>
+
+      {!signed ? (
+        <Card className="space-y-3">
+          <CardTitle>Agent that plays for you</CardTitle>
+          <p className="text-sm text-mute">
+            Create an agent, send it some testnet tokens and press Start. NEAR AI picks where to play and how much, with no approval step.
+          </p>
+          <Button disabled={busy} onClick={() => void signInWithWallet()}>{accountId ? "Sign in with your wallet" : "Connect wallet"}</Button>
+          {error && <p role="alert" className="text-xs text-neon-amber">{error}</p>}
+        </Card>
+      ) : (
+        <>
+          <Card className="space-y-3">
+            <CardTitle>Create an agent</CardTitle>
+            <Select<AgentStrategy> label="Play style" value={style} options={STRATEGY_OPTIONS} onChange={setStyle} disabled={busy} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={sweep} onChange={(e) => setSweep(e.target.checked)} />
+              Send surplus tokens back to my wallet ({accountId})
+            </label>
+            {sweep && (
+              <div>
+                <Label htmlFor="hosted-keep">Whole tokens to keep per token</Label>
+                <Input id="hosted-keep" inputMode="numeric" value={keepWhole} onChange={(e) => setKeepWhole(e.target.value)} />
+              </div>
+            )}
+            <Button
+              disabled={busy || (sweep && !(Number.isInteger(keep) && keep >= 0))}
+              onClick={() => void guarded(async () => { await client.create({ style, sweep, keepWhole: sweep ? keep : 0 }); await load(); })}
+            >
+              Create agent
+            </Button>
+            {error && <p role="alert" className="text-xs text-neon-amber">{error}</p>}
+          </Card>
+          {agents.length === 0 ? (
+            <p className="text-sm text-mute">No agents yet.</p>
+          ) : (
+            agents.map((a) => <AgentRow key={a.account} agent={a} namespace={namespace} client={client} onChange={() => void load()} />)
+          )}
+        </>
+      )}
+    </div>
+  );
+}

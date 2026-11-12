@@ -1,36 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useActionWallet, useWallet } from "@/components/providers";
+import { useWallet } from "@/components/providers";
+import { FundAgent, symbolOf } from "@/components/agents/fund-agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { TransactionLink } from "@/components/transaction-link";
 import { formatUnits } from "@/lib/amounts";
 import { STRATEGY_OPTIONS, type AgentStrategy } from "@/lib/arena-read/agent-grant";
 import type { Namespace } from "@/lib/arena-read/application";
 import {
   buildAutonomousConfig,
-  fundNearTransaction,
-  fundTokenTransaction,
   newAgentKey,
-  nearToYocto,
   readAgentStatus,
   runCommand,
-  tokensToBase,
   type AgentKey,
   type AgentStatus,
-  type WalletTransaction,
 } from "@/lib/arena-read/autonomous-agent";
 import { config } from "@/lib/config";
 
-type Tx = { step: "idle" } | { step: "signing" } | { step: "done"; hash: string | null } | { step: "error"; message: string };
-
 const POLL_MS = 15_000;
 const short = (s: string) => (s.length > 18 ? `${s.slice(0, 8)}…${s.slice(-6)}` : s);
-const symbolOf = (representation: string) => representation.replace(/^backing-/, "").split(".")[0]!.toUpperCase();
 
 const download = (name: string, text: string) => {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -48,16 +40,11 @@ const download = (name: string, text: string) => {
  */
 export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
   const { accountId } = useWallet();
-  const getWallet = useActionWallet();
   const [key, setKey] = useState<AgentKey | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [strategy, setStrategy] = useState<AgentStrategy>("underdog");
   const [sweep, setSweep] = useState(false);
   const [keepWhole, setKeepWhole] = useState("100");
-  const [nearAmount, setNearAmount] = useState("0.5");
-  const [token, setToken] = useState("");
-  const [tokenAmount, setTokenAmount] = useState("100");
-  const [tx, setTx] = useState<Tx>({ step: "idle" });
   const [status, setStatus] = useState<AgentStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
@@ -81,34 +68,16 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
   const settings = { strategy, sweepTo: sweep && accountId ? accountId : "", keepWhole: Number.isInteger(keep) && keep >= 0 ? keep : 0 };
   const configText = key ? JSON.stringify(buildAutonomousConfig(key.account, settings), null, 2) : "";
 
-  const send = async (transaction: WalletTransaction) => {
-    setTx({ step: "signing" });
-    try {
-      if (!getWallet) throw new Error("connect a wallet first");
-      const wallet = await getWallet();
-      const out = await wallet.signAndSendTransaction(transaction as never);
-      setTx({ step: "done", hash: (out as { transaction?: { hash?: string } } | null)?.transaction?.hash ?? null });
-      void refresh();
-    } catch (e) {
-      setTx({ step: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const yocto = nearToYocto(nearAmount);
-  const base = tokensToBase(tokenAmount);
-  const chosenToken = token || status?.tokens[0]?.representation || "";
-
   return (
     <Card aria-label="Autonomous agent" className="space-y-4">
-      <CardTitle>Autonomous agent</CardTitle>
+      <CardTitle>Agent with its own wallet</CardTitle>
       <p className="text-sm text-mute">
-        This agent has its own wallet and plays by itself: NEAR AI Cloud (private inference inside a secure enclave) chooses where to play and how
-        much, then the agent joins, registers and deposits, with no approval step. The most it can lose is what you send it. Its key is made in your
-        browser and shown once; we never store it.
+        A new agent that plays on its own: NEAR AI Cloud (private inference in a secure enclave) picks where to play and how much, and the agent joins and deposits with no approval step.
+        The most it can lose is what you send it. Its key is made in your browser and shown once; we never store it.
       </p>
 
       {!key ? (
-        <Button onClick={() => { setKey(newAgentKey()); setRevealed(false); setTx({ step: "idle" }); }}>Create agent</Button>
+        <Button onClick={() => { setKey(newAgentKey()); setRevealed(false); }}>Create agent</Button>
       ) : (
         <>
           <section className="space-y-2">
@@ -131,8 +100,8 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">2. Play style and owner</h3>
-            <p className="text-xs text-mute">NEAR AI decides every play. The style is only a hint it is given.</p>
+            <h3 className="text-sm font-semibold">2. Play style and surplus</h3>
+            <p className="text-xs text-mute">The agent decides each play with AI. The style is only a hint.</p>
             <Select value={strategy} options={STRATEGY_OPTIONS} onChange={setStrategy} label="Play style" />
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={sweep} disabled={!accountId} onChange={(e) => setSweep(e.target.checked)} />
@@ -149,50 +118,13 @@ export function AutonomousAgent({ namespace }: { namespace: Namespace }) {
 
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">3. Fund it from your wallet</h3>
-            {!accountId ? (
-              <p className="text-sm text-mute">Connect a wallet to fund the agent.</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <Label htmlFor="near">NEAR for gas and storage</Label>
-                    <Input id="near" inputMode="decimal" value={nearAmount} onChange={(e) => setNearAmount(e.target.value)} />
-                  </div>
-                  <Button size="sm" disabled={!yocto || tx.step === "signing"} onClick={() => yocto && void send(fundNearTransaction(key.account, yocto))}>
-                    Send NEAR
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <Label htmlFor="token">Token</Label>
-                    <select id="token" className="block min-h-11 rounded-xl border border-edge bg-panel px-3" value={chosenToken} onChange={(e) => setToken(e.target.value)}>
-                      {(status?.tokens ?? []).map((t) => (
-                        <option key={t.representation} value={t.representation}>{symbolOf(t.representation)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="amount">Whole tokens</Label>
-                    <Input id="amount" inputMode="numeric" value={tokenAmount} onChange={(e) => setTokenAmount(e.target.value)} />
-                  </div>
-                  <Button size="sm" disabled={!base || !chosenToken || tx.step === "signing"} onClick={() => base && chosenToken && void send(fundTokenTransaction(chosenToken, key.account, base))}>
-                    Send tokens
-                  </Button>
-                </div>
-                <p className="text-xs text-mute">Sending tokens also registers the agent on that token. Get test tokens from the Faucet first.</p>
-                {tx.step === "signing" && <p role="status" className="text-xs text-mute">Waiting for your wallet…</p>}
-                {tx.step === "done" && (
-                  <p role="status" className="text-xs">Sent. {tx.hash ? <TransactionLink hash={tx.hash} /> : null}</p>
-                )}
-                {tx.step === "error" && <p role="alert" className="text-xs text-neon-amber">{tx.message}</p>}
-              </>
-            )}
+            <FundAgent account={key.account} tokens={status?.tokens ?? []} onSent={() => void refresh()} />
           </section>
 
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">4. Run it</h3>
             <p className="text-sm text-mute">
-              The agent plays while its process runs. Download the config, then run the command with your secret key and your NEAR AI API key (both go in the environment, never in the file).
+              The agent only plays while it is running, on your computer or a server. Download the config, then run the command with two secrets in the environment (never in the file): the agent&apos;s secret key as <code>PLAYER_KEY_MY_AGENT</code> and your NEAR AI Cloud key as <code>NEAR_AI_API_KEY</code>.
             </p>
             <Button size="sm" variant="ghost" onClick={() => download("my-agent.json", configText)}>Download config</Button>
             <pre className="max-h-48 overflow-auto rounded-lg border border-edge p-3 text-xs" aria-label="Run command">{runCommand("my-agent.json")}</pre>
