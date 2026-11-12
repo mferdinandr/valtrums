@@ -154,8 +154,8 @@ export function LifecycleBattleDetail({
       {safeBattleId !== null && phase.kind === "decided" && (
         <div className="space-y-4">
           <BattleResult
-            namespace={namespace}
             arena={namespace.arenaContract}
+            backings={rows.map((r) => r.representation)}
             battleId={safeBattleId}
             winner={phase.winner}
             communityCount={rows.length}
