@@ -105,7 +105,7 @@ export function PortfolioView({ data, onChanged }: { data: PortfolioData; onChan
               ))}
             </ul>
             {waiting && <p className="text-xs text-mute">A DAO decision is still running. Claim after it finishes.</p>}
-            <ClaimAllButton rows={claimable} onDone={onChanged} disabled={waiting} />
+            <ClaimAllButton backings={claimable.map((e) => e.backing)} onDone={onChanged} disabled={waiting} label={claimable.length > 1 ? "Claim all to my NEAR wallet" : undefined} />
           </>
         )}
       </Panel>

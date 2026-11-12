@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ClaimAllButton, type ClaimRow } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
-import { Button } from "@/components/ui/button";
-import { useAction } from "@/hooks/use-action";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
@@ -12,7 +10,6 @@ import {
   buildSettleReview,
   readEntitlement,
   readSettlement,
-  settleBatch,
   settleRequest,
   symbolOf,
   type SettlementProgress,
@@ -28,8 +25,7 @@ const POLL_MS = 5_000;
  * Entitlements are read from the backing contracts directly, so no wallet signature is needed to see them.
  */
 export function BattleClaim({ arena, battleId, backings, winnerBacking }: { arena: string; battleId: number; backings: readonly string[]; winnerBacking: string }) {
-  const { act, accountId, connected } = useActionRunner();
-  const action = useAction();
+  const { act, accountId } = useActionRunner();
   const [rows, setRows] = useState<ClaimRow[] | null>(null);
   const [step, setStep] = useState<ReturnType<typeof daoStep> | null>(null);
   const [progress, setProgress] = useState<SettlementProgress | null>(null);
@@ -55,35 +51,25 @@ export function BattleClaim({ arena, battleId, backings, winnerBacking }: { aren
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const settle = () =>
-    action.run(async () => {
-      if (!progress) return;
-      const review = buildSettleReview(arena, battleId, progress);
+  // Settlement is part of the claim: the arena records the prizes in batches, repeated until all are recorded.
+  const prepare = async (say: (text: string) => void) => {
+    for (let guard = 0; guard < 10; guard++) {
+      const before = await readSettlement(config.rpcUrl, arena, battleId);
+      if (!before || before.recorded >= before.total) return;
+      say(`Settling prizes (${before.recorded} of ${before.total})…`);
+      const review = buildSettleReview(arena, battleId, before);
       await act(settleRequest(battleId), review.ok ? review : null);
-      await refresh();
-    });
+      const after = await readSettlement(config.rpcUrl, arena, battleId);
+      if (after && after.recorded <= before.recorded) throw new Error("Settlement did not advance yet. Try again in a moment.");
+    }
+  };
 
   // The claim opens when the DAO is done, never decided, or the battle has no vote at all.
   const open = step !== null && (step.kind === "done" || step.kind === "undecided" || step.kind === "none");
   if (step === null || rows === null) return null;
   const unsettled = progress !== null && progress.recorded < progress.total;
-  if (unsettled) {
-    const batch = settleBatch(progress);
-    return (
-      <div className="mt-4 space-y-2 rounded-xl p-3" style={{ background: "#a8802f14" }}>
-        <p className="text-sm font-semibold" style={{ color: "#a8802f" }}>Prizes are not settled yet</p>
-        <p className="text-xs text-mute">
-          {progress.recorded} of {progress.total} recorded. The coins of the losing communities reach you only after this step; anyone can run it.
-        </p>
-        <Button type="button" disabled={action.busy || !connected} onClick={() => void settle()}>
-          {action.busy ? "Settling…" : `Settle prizes (${batch} of ${progress.total - progress.recorded})`}
-        </Button>
-        {action.error && <p role="alert" className="text-xs text-neon-red">{action.error}</p>}
-      </div>
-    );
-  }
   if (!open) return <p className="mt-4 text-sm text-mute">Claiming opens after the DAO decision.</p>;
-  if (rows.length === 0) return <p className="mt-4 text-sm text-mute">No prize to claim yet. It appears here after the battle is settled.</p>;
+  if (rows.length === 0 && !unsettled) return <p className="mt-4 text-sm text-mute">No prize to claim.</p>;
 
   const kindOf = (backing: string) => (backing === winnerBacking ? "Your coins that were not burned" : "Prize from the losing community");
   return (
@@ -97,7 +83,8 @@ export function BattleClaim({ arena, battleId, backings, winnerBacking }: { aren
           </div>
         </div>
       ))}
-      <ClaimAllButton rows={rows} onDone={refresh} />
+      {unsettled && <p className="text-xs text-mute">The coins of the losing communities are added automatically when you claim.</p>}
+      <ClaimAllButton backings={backings} prepare={prepare} onDone={refresh} />
     </div>
   );
 }
