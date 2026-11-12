@@ -12,7 +12,6 @@ import type {
 } from "@/lib/arena-read/application";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { ObservationChart } from "@/components/battle-chart/observation-chart";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
@@ -26,7 +25,6 @@ import "@/components/lifecycle/lifecycle.css";
 
 /** Lifecycle reads retain their own DTO; never reinterpret them as legacy A/B economics. */
 export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
-  const [chartFor, setChartFor] = useState<string | null>(null);
   const [q, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [cursor, setCursor] = useState<string | undefined>();
@@ -181,29 +179,6 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                       Enter arena
                     </Link>
                   </Button>
-                {battle.status !== "open" && battle.status !== "cancelled" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      aria-expanded={chartFor === battle.battleId}
-                      onClick={() =>
-                        setChartFor(
-                          chartFor === battle.battleId ? null : battle.battleId,
-                        )
-                      }
-                    >
-                      {chartFor === battle.battleId
-                        ? "Hide observations"
-                        : "Show observations"}
-                    </Button>
-                    {chartFor === battle.battleId && (
-                      <ObservationChart
-                        namespace={namespace}
-                        battleId={battle.battleId}
-                      />
-                    )}
-                  </>
-                )}
                 </div>
               </Card>
             ))}
