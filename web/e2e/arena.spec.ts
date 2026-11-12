@@ -241,21 +241,23 @@ test.describe("lifecycle intent terminal", () => {
   };
   const ask = async (page: Page, prompt: string) => {
     await page.getByLabel("Terminal prompt").fill(prompt);
-    await page.getByRole("button", { name: "Read my request" }).click();
+    await page.getByRole("button", { name: "Send" }).click();
   };
 
   test("a Bahasa Indonesia deposit prompt shows the exact reviewed call and sends no action request", async ({ page }) => {
     const problems = watch(page);
     const calls = watchActions(page);
     await page.goto("/terminal");
-    await expect(page.getByRole("heading", { name: /A little help/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /next move/ })).toBeVisible();
     await ask(page, "deposit 250 ke battle 1 komunitas 2");
-    await expect(page.getByTestId("intent-summary")).toContainText("Deposit 250 base units into battle #1, community 2");
+    // A plain amount is tokens; the review below still shows the exact base units (250 x 10^18).
+    await expect(page.getByTestId("user-message").last()).toHaveText("deposit 250 ke battle 1 komunitas 2");
+    await expect(page.getByTestId("intent-summary").last()).toContainText("Deposit 250 tokens into battle #1, community 2");
     const review = page.getByLabel("Reviewed call");
     // The receiving token is the battle's recorded community representation, not prompt text.
     await expect(review.getByText("c2.rep.testnet").first()).toBeVisible();
     await expect(review.getByText("ft_transfer_call", { exact: true })).toBeVisible();
-    await expect(review.getByText("250 base units")).toBeVisible();
+    await expect(review.getByText("250000000000000000000 base units")).toBeVisible();
     await expect(page.getByRole("button", { name: "Connect wallet to sign" })).toBeVisible();
     expect(calls).toEqual([]);
     expect(problems.filter((p) => !/favicon|hydrat/i.test(p))).toEqual([]);
@@ -266,8 +268,8 @@ test.describe("lifecycle intent terminal", () => {
     await page.goto("/terminal");
     await ask(page, "daftar di battle 1 komunitas 3");
     await expect(page.getByLabel("Reviewed call").getByText("register_lifecycle_position").first()).toBeVisible();
-    await ask(page, "deposit 1.5 to battle 1 community 2");
-    await expect(page.getByLabel("Clarification")).toContainText(/whole number/);
+    await ask(page, "deposit 1,000 to battle 1 community 2");
+    await expect(page.getByLabel("Clarification").last()).toContainText(/plain number of tokens/);
     await ask(page, "register in battle 2 community 1");
     await expect(page.getByText(/Battle #2 is locked/)).toBeVisible();
     await ask(page, "daftar di battle 1 komunitas 9");

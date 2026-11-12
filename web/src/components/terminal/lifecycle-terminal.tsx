@@ -6,8 +6,7 @@ import Link from "next/link";
 import { useWallet } from "@/components/providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
 import { useLifecycleCreate } from "@/hooks/use-lifecycle-create";
 import { usePortfolio } from "@/hooks/use-portfolio";
 import { useJoinableAssets } from "@/hooks/use-joinable-assets";
@@ -33,6 +32,7 @@ import {
   type LifecycleParseResult,
 } from "@/lib/terminal/lifecycle-intent";
 import { chooseArena, communityForToken, openArenasOf, type OpenArena } from "@/lib/terminal/lifecycle-open";
+import { answer, ask, emptyChat, followUp, isInteractive, isThinking, type Chat, type Turn } from "@/lib/terminal/chat";
 import { createLifecycleRouteParser } from "@/lib/terminal/lifecycle-parse-client";
 import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/lib/terminal/lifecycle-resolve";
 import { isHiddenAsset } from "@/lib/arena-read/hidden-assets";
@@ -592,118 +592,201 @@ function PositionsPlan() {
   );
 }
 
+/** One chat bubble: the user on the right, the Terminal on the left. */
+function Bubble({ side, label, children }: { side: "user" | "terminal"; label: string; children: React.ReactNode }) {
+  const mine = side === "user";
+  return (
+    <div className={mine ? "flex justify-end" : "flex justify-start"}>
+      <div className={mine ? "max-w-[88%] sm:max-w-[75%]" : "w-full max-w-[96%] sm:max-w-[85%]"}>
+        <p className={`mb-1 text-[10px] uppercase tracking-wide text-mute ${mine ? "text-right" : "text-left"}`}>{label}</p>
+        <div
+          className={
+            mine
+              ? "rounded-2xl rounded-br-md border border-neon-green/40 bg-neon-green/10 px-4 py-3 text-sm"
+              : "rounded-2xl rounded-bl-md border border-edge bg-void/70 px-4 py-3 text-sm"
+          }
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const isReadOnly = (intent: LifecycleIntent): boolean => intent.kind === "list_battles" || intent.kind === "show_positions";
+
+/** The part of the answer that acts: the plan for the intent. Only ever rendered for the latest turn. */
+function PlanFor({ namespace, intent, onReplace }: { namespace: Namespace; intent: LifecycleIntent; onReplace: Replace }) {
+  if (intent.kind === "payout") return <PayoutPlan intent={intent} />;
+  if (intent.kind === "create_battle") return <CreatePlan intent={intent} />;
+  if (intent.kind === "list_battles") return <ListBattlesPlan namespace={namespace} intent={intent} />;
+  if (intent.kind === "show_positions") return <PositionsPlan />;
+  if (intent.kind === "cancel_battle") return <CancelPlan namespace={namespace} intent={intent} />;
+  if (intent.kind === "claim_refund") return <RefundPlan namespace={namespace} intent={intent} />;
+  if (intent.battleId === null) return <OpenArenaPlan namespace={namespace} intent={intent} onReplace={onReplace} />;
+  if (intent.kind === "join_battle") return <JoinPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} />;
+  return <ParticipationPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} onReplace={onReplace} />;
+}
+
+/** The Terminal's side of one turn: a question back, or what it understood and the plan for it. */
+function Answer({ namespace, turn, live, onReplace }: { namespace: Namespace; turn: Turn; live: boolean; onReplace: Replace }) {
+  const result = turn.result;
+  if (!result) {
+    return (
+      <p role="status" className="flex items-center gap-2 text-xs text-mute" aria-label="Reading your request">
+        <span className="inline-flex gap-1" aria-hidden="true">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mute" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mute [animation-delay:150ms]" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mute [animation-delay:300ms]" />
+        </span>
+        Reading your request…
+      </p>
+    );
+  }
+  if (!result.ok) {
+    return (
+      <div role="status" aria-label="Clarification" className="space-y-1">
+        <p className="text-xs font-semibold text-neon-amber">{result.clarify ? "One more thing" : "Could not read that"}</p>
+        <p>{result.error}</p>
+        {result.note && <p className="text-xs text-mute">{result.note}</p>}
+      </div>
+    );
+  }
+  const intent = result.intent;
+  const parserLine = result.via ? (result.via === "near-ai" ? "Understood by NEAR AI" : "Understood by the built-in rules") : null;
+  return (
+    <div className="space-y-3" aria-label="Understood request">
+      <div>
+        <p data-testid="intent-summary">
+          {describeIntent(intent)}
+          {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
+        </p>
+        {parserLine && (
+          <p className="mt-1 text-xs text-mute" data-testid="parser-line">
+            {parserLine}
+            {result.note ? `. ${result.note}` : ""}
+          </p>
+        )}
+      </div>
+      {live ? (
+        <div className="space-y-2 border-t border-edge pt-3">
+          <p className="eyebrow text-neon-green">{isReadOnly(intent) ? "YOUR ANSWER" : "REVIEW YOUR ACTION"}</p>
+          <p className="text-xs text-mute">{isReadOnly(intent) ? "This only reads; nothing can be signed from here." : "Review the action below before signing."}</p>
+          <PlanFor namespace={namespace} intent={intent} onReplace={onReplace} />
+        </div>
+      ) : (
+        // An earlier answer is a record, not a control: its review and sign buttons are gone, so it cannot be signed by accident.
+        <p className="border-t border-edge pt-2 text-xs text-mute" data-testid="earlier-answer">
+          Earlier request. Ask again to review it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
- * Lifecycle intent terminal. A prompt is parsed (rules, or the optional server-side model) into one validated intent;
- * the intent is shown, turned into the same reviewed call the other lifecycle pages use, and only the user pressing
- * "Check transaction preview" contacts the action service. Free text and model output never reach signing.
+ * Lifecycle intent terminal, as a conversation: your prompts on the right, the Terminal's answers on the left. A
+ * prompt is parsed (NEAR AI, with the built-in rules as the fallback) into one validated intent; the latest answer shows
+ * it and the same reviewed call the other lifecycle pages use, and only the user pressing "Check transaction preview"
+ * contacts the action service. Earlier answers are static. Free text and model output never reach signing.
  */
 export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
   const [prompt, setPrompt] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<LifecycleParseResult | null>(null);
-  const [runId, setRunId] = useState(0);
+  const [chat, setChat] = useState<Chat>(emptyChat);
   const parser = useMemo(() => createLifecycleRouteParser(), []);
+  const logRef = useRef<HTMLDivElement | null>(null);
+  // The latest chat, readable inside the async send without waiting for a render.
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const thinking = isThinking(chat);
 
-  async function submit() {
-    if (!prompt.trim() || busy) return;
-    setBusy(true);
-    const r = await parser.parse(prompt);
-    setResult(r);
-    setRunId((n) => n + 1);
-    setBusy(false);
+  // Keep the newest message in view by scrolling the conversation itself, never the page, and not before the first message.
+  useEffect(() => {
+    const log = logRef.current;
+    if (log && chat.turns.length > 0) log.scrollTo?.({ top: log.scrollHeight, behavior: "smooth" });
+  }, [chat]);
+
+  async function send(text: string) {
+    const typed = text.trim();
+    if (!typed || isThinking(chatRef.current)) return;
+    setPrompt("");
+    const next = ask(chatRef.current, typed);
+    chatRef.current = next.chat;
+    setChat(next.chat);
+    const result = await parser.parse(typed);
+    setChat((c) => answer(c, next.id, result));
   }
-  /** A follow-up the user chose (a different arena, "join first"): validated like any intent, shown in the same place. */
+  /** A choice made inside an answer (a different arena, "join first"): a new turn, which freezes the earlier answer. */
   const replaceIntent: Replace = (next) => {
-    setResult((r) => ({ ok: true, intent: next, ...(r?.via ? { via: r.via } : {}) }));
-    setRunId((n) => n + 1);
+    setChat((c) => followUp(c, describeIntent(next), next, c.turns[c.turns.length - 1]?.result?.via));
   };
-  const intent = result?.ok ? result.intent : null;
-  const parserLine = result?.via ? (result.via === "near-ai" ? "Understood by NEAR AI" : "Understood by the built-in rules") : null;
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardTitle>Tell us what you want to do</CardTitle>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-          className="space-y-3"
-        >
-          <Label>
-            Your request (English or Bahasa Indonesia)
-            <textarea
-              aria-label="Terminal prompt"
-              value={prompt}
-              maxLength={MAX_PROMPT_CHARS}
-              rows={3}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-edge bg-transparent p-2 text-sm"
-              placeholder={EXAMPLES[0]}
-            />
-          </Label>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={busy || !prompt.trim()}>
-              {busy ? "Reading…" : "Read my request"}
-            </Button>
-            {EXAMPLES.slice(0, 4).map((ex) => (
-              <button key={ex} type="button" className="text-xs underline text-mute" onClick={() => setPrompt(ex)}>
-                {ex}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-mute">
-            Reading your request won’t submit a transaction. Write amounts as plain token amounts (100 or 0.5); you can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”.
-          </p>
-        </form>
-      </Card>
-
-      {result && !result.ok && (
-        <Card role="status" aria-label="Clarification">
-          <CardTitle>{result.clarify ? "One more thing" : "Could not read that"}</CardTitle>
-          <p className="text-sm">{result.error}</p>
-          {result.note && <p className="mt-2 text-xs text-mute">{result.note}</p>}
-        </Card>
-      )}
-
-      {intent && (
-        <Card aria-label="Understood request" key={runId}>
-          <CardTitle>Here’s what I understood</CardTitle>
-          <p className="mb-1 text-sm" data-testid="intent-summary">
-            {describeIntent(intent)}
-            {intent.kind === "create_battle" ? ` · ${MODE_COPY[intent.mode].name}` : ""}
-          </p>
-          {parserLine && (
-            <p className="mb-1 text-xs text-mute" data-testid="parser-line">
-              {parserLine}
-              {result?.note ? `. ${result.note}` : ""}
+    <Card className="flex flex-col gap-0 p-0">
+      <div
+        ref={logRef}
+        role="log"
+        aria-label="Conversation"
+        aria-live="polite"
+        className="flex max-h-[65vh] min-h-[18rem] flex-col gap-5 overflow-y-auto p-4 sm:p-6"
+      >
+        {chat.turns.length === 0 && (
+          <Bubble side="terminal" label="Terminal">
+            <p>What do you want to do? Write it the way you would say it, in English or Bahasa Indonesia.</p>
+            <p className="mt-2 text-xs text-mute">
+              Amounts are plain token amounts (100 or 0.5). You can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”. Reading your request never submits a transaction.
             </p>
-          )}
-          <p className="mb-4 text-xs text-mute">
-            {intent.kind === "list_battles" || intent.kind === "show_positions" ? "This only reads; nothing can be signed from here." : "Review the action below before signing."}
-          </p>
-          <p className="eyebrow mb-3 text-neon-green">{intent.kind === "list_battles" || intent.kind === "show_positions" ? "YOUR ANSWER" : "REVIEW YOUR ACTION"}</p>
-          {intent.kind === "payout" ? (
-            <PayoutPlan intent={intent} />
-          ) : intent.kind === "create_battle" ? (
-            <CreatePlan intent={intent} />
-          ) : intent.kind === "list_battles" ? (
-            <ListBattlesPlan namespace={namespace} intent={intent} />
-          ) : intent.kind === "show_positions" ? (
-            <PositionsPlan />
-          ) : intent.kind === "cancel_battle" ? (
-            <CancelPlan namespace={namespace} intent={intent} />
-          ) : intent.kind === "claim_refund" ? (
-            <RefundPlan namespace={namespace} intent={intent} />
-          ) : intent.battleId === null ? (
-            <OpenArenaPlan namespace={namespace} intent={intent} onReplace={replaceIntent} />
-          ) : intent.kind === "join_battle" ? (
-            <JoinPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} />
-          ) : (
-            <ParticipationPlan namespace={namespace} intent={{ ...intent, battleId: intent.battleId }} onReplace={replaceIntent} />
-          )}
-        </Card>
-      )}
-    </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {EXAMPLES.slice(0, 4).map((ex) => (
+                <button key={ex} type="button" className="rounded-full border border-edge px-3 py-1 text-xs hover:border-neon-green/60" onClick={() => void send(ex)}>
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </Bubble>
+        )}
+        {chat.turns.map((turn) => (
+          <div key={turn.id} className="flex flex-col gap-3">
+            <Bubble side="user" label="You">
+              <p className="whitespace-pre-wrap break-words" data-testid="user-message">{turn.prompt}</p>
+            </Bubble>
+            <Bubble side="terminal" label="Terminal">
+              <Answer namespace={namespace} turn={turn} live={isInteractive(chat, turn.id)} onReplace={replaceIntent} />
+            </Bubble>
+          </div>
+        ))}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(prompt);
+        }}
+        className="flex items-end gap-2 border-t border-edge p-3 sm:p-4"
+      >
+        <label className="flex-1">
+          <span className="sr-only">Your request (English or Bahasa Indonesia)</span>
+          <textarea
+            aria-label="Terminal prompt"
+            value={prompt}
+            maxLength={MAX_PROMPT_CHARS}
+            rows={2}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter adds a line; never while an input method is composing.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void send(prompt);
+              }
+            }}
+            className="block w-full resize-none rounded-xl border border-edge bg-transparent p-3 text-sm"
+            placeholder={EXAMPLES[0]}
+          />
+        </label>
+        <Button type="submit" disabled={thinking || !prompt.trim()}>
+          {thinking ? "Reading…" : "Send"}
+        </Button>
+      </form>
+    </Card>
   );
 }
