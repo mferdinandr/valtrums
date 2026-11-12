@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
 import { Bot, Droplets, Swords, Layers3, Terminal, Plus } from "lucide-react";
 import { Brand } from "@/components/brand";
@@ -39,10 +38,6 @@ export function Navbar() {
         >
           <Brand />
         </Link>
-        <span className="hidden items-center gap-2 rounded-full border border-edge px-2.5 py-1.5 font-pixel text-xs uppercase tracking-wider text-mute sm:inline-flex">
-          <span className="status-dot" />
-          {config.network}
-        </span>
         <nav
           aria-label="Main navigation"
           className="order-3 flex w-full gap-1 overflow-x-auto md:order-none md:w-auto md:flex-1 md:justify-center"
