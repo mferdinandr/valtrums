@@ -85,8 +85,25 @@ describe("application boundary", () => {
     const changed = new ApplicationReads([d1], new Map([[d1.deploymentId, { source }]]), () => clock);
     const page = await invoke(changed, "battles", params(d1, { limit: "1" }));
     vi.spyOn(source, "battle").mockResolvedValue(battle());
-    clock += 60_000; // past the list-scan cache TTL, so the changed battle is read again
+    clock += 60_000; // past the list-scan cache TTL: this request is served from the last scan while it refreshes
+    await invoke(changed, "battles", params(d1, { limit: "1" }));
+    await new Promise((r) => setTimeout(r, 0));
     expect((await invoke(changed, "battles", params(d1, { limit: "1", cursor: page.body.data.nextCursor }))).body.error.code).toBe("snapshot_changed");
+  });
+  it("keeps serving the last completed scan when a refresh fails", async () => {
+    const d1 = deployment(); const source = makeSource(); let clock = NOW;
+    const s = new ApplicationReads([d1], new Map([[d1.deploymentId, { source }]]), () => clock);
+    const ok = await invoke(s, "battles", params(d1, { limit: "1" }));
+    expect(ok.status).toBe(200);
+    vi.spyOn(source, "battle").mockRejectedValue(new Error("rpc 429"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    clock += 60_000;
+    const stale = await invoke(s, "battles", params(d1, { limit: "1" }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stale.status).toBe(200);
+    expect(stale.body.data.items[0].battleId).toBe(ok.body.data.items[0].battleId);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("battle scan failed"), "rpc 429");
+    log.mockRestore();
   });
   it("rejects unsafe ID before lookup and reports outages without zero/demo data", async () => {
     const source = makeSource(); const lookup = vi.spyOn(source, "battle");

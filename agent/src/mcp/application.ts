@@ -64,6 +64,10 @@ export class ApplicationReads {
   readonly deployments: Deployment[];
   private readonly bindings: ReadonlyMap<string, ApplicationBinding>;
   private readonly scanCache = new Map<string, { at: number; rows: Promise<any[]> }>();
+  /** Last scan that fully succeeded per deployment; served while a fresh scan runs, so the list stays fast and survives a failed refresh. */
+  private readonly lastScan = new Map<string, any[]>();
+  /** Decided and cancelled battles never change again, so their rows are read once per deployment and kept. */
+  private readonly settled = new Map<string, Map<bigint, any>>();
   constructor(manifest: unknown, bindings: ReadonlyMap<string, ApplicationBinding>, private readonly now = Date.now) {
     this.deployments = manifestSchema.parse(manifest);
     this.bindings = new Map(bindings);
@@ -279,26 +283,42 @@ export class ApplicationReads {
       for (let id = BigInt(count), scanned = 0; id >= 1n && scanned < MAX_SCAN; id--, scanned++) ids.push(id);
       // Reads run a few at a time: one after another, the list grew linearly with the number of battles and
       // outran the web proxy's timeout; unbounded, a public RPC answers 429. The result keeps newest-first order.
-      const readOne = async (id: bigint) => {
+      const settled = this.settled.get(d.deploymentId) ?? new Map<bigint, any>();
+      this.settled.set(d.deploymentId, settled);
+      const readFresh = async (id: bigint) => {
         const b = binding.versioned ? await binding.versioned.battle(String(id)) : await readApplicationBattle(source, String(id));
         if (!b) return null;
         const round = b.locked ? binding.versioned ? await binding.versioned.round(String(id)) : await readApplicationRound(source, String(id)) : null;
         return { id, b, round };
+      };
+      const readOne = async (id: bigint) => {
+        const known = settled.get(id);
+        if (known) return known as Awaited<ReturnType<typeof readFresh>>;
+        const row = await readFresh(id);
+        if (row && (row.b.cancelled === true || row.round?.winner != null)) settled.set(id, row);
+        return row;
       };
       // The RPC scan is the slow part (3 to 16 s on testnet), so concurrent and repeat requests share one scan for a
       // few seconds. A failed scan is never cached.
       const cacheKey = `${d.deploymentId}:${count}`;
       const hit = this.scanCache.get(cacheKey);
       let scan: Promise<Array<Awaited<ReturnType<typeof readOne>>>>;
+      let servedStale = false;
       if (hit && this.now() - hit.at < LIST_CACHE_TTL_MS) scan = hit.rows;
       else {
-        scan = (async () => {
+        const refresh = (async () => {
           const out: Array<Awaited<ReturnType<typeof readOne>>> = [];
           for (let i = 0; i < ids.length; i += LIST_READ_CONCURRENCY) out.push(...(await Promise.all(ids.slice(i, i + LIST_READ_CONCURRENCY).map(readOne))));
           return out;
         })();
-        this.scanCache.set(cacheKey, { at: this.now(), rows: scan });
-        scan.catch(() => { if (this.scanCache.get(cacheKey)?.rows === scan) this.scanCache.delete(cacheKey); });
+        this.scanCache.set(cacheKey, { at: this.now(), rows: refresh });
+        refresh.then((rows) => { this.lastScan.set(d.deploymentId, rows); }, (error) => {
+          console.error(`[application-read] battle scan failed for ${d.deploymentId}:`, error instanceof Error ? error.message : error);
+          if (this.scanCache.get(cacheKey)?.rows === refresh) this.scanCache.delete(cacheKey);
+        });
+        const previous = this.lastScan.get(d.deploymentId);
+        servedStale = previous !== undefined;
+        scan = previous ? Promise.resolve(previous) : refresh;
       }
       const rows = await scan;
       for (const row of rows) {
@@ -318,7 +338,7 @@ export class ApplicationReads {
           b.communities.some((c) => labelMatches(c.label, q.q!))));
       const page = this.paginate(filtered, params, d, path, [count, items]);
       page.data.truncated = BigInt(count) > BigInt(MAX_SCAN);
-      return this.envelope(d, page.data, [...partial, ...(page.data.truncated ? ["only latest 200 battle IDs searched; older discovery requires #144"] : [])], page.snapshot);
+      return this.envelope(d, page.data, [...partial, ...(servedStale ? ["list served from the last completed scan while it refreshes"] : []), ...(page.data.truncated ? ["only latest 200 battle IDs searched; older discovery requires #144"] : [])], page.snapshot);
     }
     if (capability === "assets") {
       const q = parseSearchParams({ q: params.q, limit: params.limit });
@@ -385,7 +405,8 @@ export async function handleApplicationRead(method: string | undefined, path: st
   } catch (error) {
     const e = error instanceof ApplicationError ? error : error instanceof UnsafeReadBoundaryError
       ? new ApplicationError(422, "unsupported_boundary", "unsupported lifecycle read boundary; safe versioned views required (#144)") : error instanceof SearchValidationError
-      ? new ApplicationError(400, "invalid_query", error.message) : new ApplicationError(503, "upstream_unavailable", "application read source unavailable");
+      ? new ApplicationError(400, "invalid_query", error.message) : (console.error(`[application-read] ${path} failed:`, error instanceof Error ? error.message : error),
+        new ApplicationError(503, "upstream_unavailable", "application read source unavailable"));
     return { status: e.status, body: JSON.stringify({ schemaVersion: APPLICATION_SCHEMA, requestId: randomUUID(),
       error: { code: e.code, message: e.message, retryable: e.status === 503 || e.status === 409 } }) };
   }
