@@ -80,6 +80,8 @@ export function DaoDecision({
   const token = nameOf(winner);
   const units = (v: string) => `${formatUnits(BigInt(v), TOKEN_DECIMALS, 4)} ${token}`;
   const step = daoStep(view);
+  // The arena lets anyone reserve and execute, but only the winners need to: one of them is enough.
+  const isWinner = weight > 0n;
   const msLeft = view ? voteMsLeft(view, now) : 0;
   const share = view ? burnSharePercent(view) : null;
   const weightLabel = `${formatUnits(weight, TOKEN_DECIMALS, 4)} ${token}`;
@@ -235,7 +237,11 @@ export function DaoDecision({
 
       {step.kind === "undecided" && <p className="text-sm">The window closed with no vote. The winning principal stays escrowed.</p>}
 
-      {step.kind === "reserve_escrow" && (
+      {step.kind === "reserve_escrow" && !isWinner && (
+        <p className="text-sm text-mute">The vote is decided. The winners of {token} finish the release; nothing is needed from you.</p>
+      )}
+
+      {step.kind === "reserve_escrow" && isWinner && (
         <div className="space-y-2">
           <p className="text-sm">Reserve the escrow first; anyone can do this.</p>
           <Button type="button" disabled={action.busy || !connected} onClick={() => void send(reserveEscrowRequest(battleId), buildReserveEscrowReview(arena, battleId))}>
@@ -244,7 +250,11 @@ export function DaoDecision({
         </div>
       )}
 
-      {step.kind === "execute" && view && (
+      {step.kind === "execute" && view && !isWinner && (
+        <p className="text-sm text-mute">{view.released} of {view.total_releases} releases recorded. The winners of {token} finish the release; nothing is needed from you.</p>
+      )}
+
+      {step.kind === "execute" && view && isWinner && (
         <div className="space-y-2">
           <div className="h-2 overflow-hidden rounded-full" style={{ background: "#e6e2d6" }} role="progressbar" aria-label="Releases recorded" aria-valuemin={0} aria-valuemax={view.total_releases} aria-valuenow={view.released}>
             <div className="h-full rounded-full" style={{ width: `${(view.released / Math.max(1, view.total_releases)) * 100}%`, background: "#5b6fb5" }} />
