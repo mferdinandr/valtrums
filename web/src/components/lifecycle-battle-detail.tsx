@@ -378,7 +378,7 @@ export function LifecycleBattleDetail({
               />
             </section>
           ) : (
-            <ScoreChart title="Race chart" source={stage?.title ?? "Waiting for the battle"} status="Not started" note="Prices will appear when the round begins." duration={30} pending selected={String(rows.find((r) => r.representation === selected)?.index ?? 0)} onSelect={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }} series={rows.map((r, i) => ({ id: String(r.index), name: name(r.index), color: ["#327f7d", "#ad5273", "#a8802f", "#5b6fb5", "#7c8f3a", "#8a5ca8"][i % 6]!, points: [] }))} />
+            <ScoreChart title="Race chart" source={stage?.title ?? "Waiting for the battle"} status="Not started" note="Prices will appear when the round begins." idle="The race has not started. This chart goes live when the first round opens." duration={30} pending selected={String(rows.find((r) => r.representation === selected)?.index ?? 0)} onSelect={(id) => { const row = rows.find((r) => String(r.index) === id); if (row) setHighlighted(row.representation); }} series={rows.map((r, i) => ({ id: String(r.index), name: name(r.index), color: ["#327f7d", "#ad5273", "#a8802f", "#5b6fb5", "#7c8f3a", "#8a5ca8"][i % 6]!, points: [] }))} />
           )}
           </div>
           <div className="match-dock-panel" hidden={panelTab !== "position"}>{actionsContent}</div>
