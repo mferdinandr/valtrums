@@ -27,6 +27,10 @@ import { readMyPositions } from "@/lib/arena-read/positions";
 import { config } from "@/lib/config";
 
 const POLL_MS = 5_000;
+const clampPercent = (raw: string): number => {
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0;
+};
 
 /**
  * What happens to the winning principal: the winners' burn-or-return vote, then the reserve and execute steps.
@@ -50,6 +54,7 @@ export function DaoDecision({
   const [weight, setWeight] = useState<bigint>(0n);
   const [readError, setReadError] = useState<string | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
+  const [burnPercent, setBurnPercent] = useState(0);
 
   const refresh = useCallback(async () => {
     const [d, positions] = await Promise.all([
@@ -86,7 +91,7 @@ export function DaoDecision({
       await refresh();
     });
 
-  const vote = (choice: "burn" | "return") => send(voteRequest(battleId, choice), buildVoteReview(arena, battleId, choice, weightLabel));
+  const vote = (percent: number) => send(voteRequest(battleId, percent), buildVoteReview(arena, battleId, percent, weightLabel));
 
   const totalMs = view?.window_secs ? Number(view.window_secs) * 1000 : 0;
   const pct = totalMs > 0 ? Math.min(100, Math.max(0, (msLeft / totalMs) * 100)) : 0;
@@ -172,14 +177,57 @@ export function DaoDecision({
           ) : (
             <>
               <p className="text-xs text-mute">Your weight: {weightLabel}. One vote, final.</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("burn")}>
-                  <Flame size={16} aria-hidden="true" /> Vote burn
-                </Button>
-                <Button type="button" disabled={action.busy || !connected} onClick={() => void vote("return")}>
-                  <Undo2 size={16} aria-hidden="true" /> Vote return
-                </Button>
+              <div className="space-y-2 rounded-xl p-3" style={{ background: "#f6f1e6" }}>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="burn-percent" className="text-xs font-semibold">Burn share of your vote</label>
+                  <span className="flex items-center gap-1">
+                    <input
+                      id="burn-percent"
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={burnPercent}
+                      onChange={(e) => setBurnPercent(clampPercent(e.target.value))}
+                      className="w-16 rounded-lg border px-2 py-1 text-right text-sm font-semibold tabular-nums"
+                      style={{ borderColor: "#d8dfd3", background: "#fffdf6" }}
+                    />
+                    <span className="text-sm font-semibold">%</span>
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={burnPercent}
+                  aria-label="Burn share"
+                  onChange={(e) => setBurnPercent(clampPercent(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex gap-1">
+                  {[0, 25, 50, 75, 100].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setBurnPercent(p)}
+                      aria-pressed={burnPercent === p}
+                      className="flex-1 rounded-lg py-1 text-xs font-semibold"
+                      style={{ background: burnPercent === p ? "#ad5273" : "#e6e2d6", color: burnPercent === p ? "#fffaf0" : "#354358" }}
+                    >
+                      {p}%
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <p className="flex items-center gap-1" style={{ color: "#ad5273" }}><Flame size={14} aria-hidden="true" /> Burn {burnPercent}%</p>
+                  <p className="flex items-center gap-1" style={{ color: "#327f7d" }}><Undo2 size={14} aria-hidden="true" /> Return {100 - burnPercent}% (automatic)</p>
+                </div>
               </div>
+              <Button type="button" className="w-full" disabled={action.busy || !connected} onClick={() => void vote(burnPercent)}>
+                Vote {burnPercent}% burn
+              </Button>
             </>
           )}
         </div>

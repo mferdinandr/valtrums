@@ -15,7 +15,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 | --- | --- |
 | Membership | Per battle: the registered participants of the final winning community, as frozen in the battle snapshot. Losing and eliminated communities do not vote. The creator votes only if they are a participant of the winning community. |
 | Voting weight | Each voter's escrowed principal in that battle (their snapshotted position amount). |
-| Decision | A pro-rata split. Each voter casts all their weight for `burn` or `return`. The burn share is `B / (B + R)` of the votes cast, where `B` is the burn weight and `R` the return weight. |
+| Decision | A pro-rata split. Each voter sets a burn percentage `p` (0 to 100) and the rest is returned automatically. Their weight `w` adds `w * p` to the burn side `B` and `w * (100 - p)` to the return side `R`. The burn share is `B / (B + R)`, the weighted average of the votes cast (D43). |
 | Non-voters | The split applies to the **whole** escrow, so non-voters follow the voters. |
 | Quorum | None. |
 | Window | Opens when the final winner is recorded. Its length is a protocol-adjustable parameter. |
@@ -29,7 +29,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 
 **Window.** The protocol sets `dao_vote_window` (a duration). Like the fee policy, the value is **snapshotted into each battle at creation**, so a later change affects only future battles and cannot shorten or extend a vote in progress. The window is `[w0, w0 + window)`, where `w0` is the block time at which the final winner is recorded (`hold_principal_from_scoring`). A vote at or after the end is refused.
 
-**Votes.** One vote per (battle, participant account), with choice `burn` or `return` and weight equal to that account's snapshotted position in the winning community. The caller must be the participant itself (`predecessor_account_id`). A vote is final once cast. Votes, weights and running totals are public.
+**Votes.** One vote per (battle, participant account), with a burn percentage (0 to 100) and weight equal to that account's snapshotted position in the winning community. The caller must be the participant itself (`predecessor_account_id`). A vote is final once cast. Votes, weights and running totals are public.
 
 **Tally.** After the window closes, anyone may call finalize:
 
@@ -43,7 +43,7 @@ Battle rounds last 30 seconds and only decide the winner. After the final winner
 
 **Execution.** Each portion is executed at most once through exclusive backing reservations, so the same backing cannot be returned, redeemed and burned:
 
-- Return portions become payout entitlements to each participant's bound destination, paid through the existing payout path. Their states are available, pending and confirmed, as for rewards.
+- Return portions become entitlements for each participant, handled exactly like rewards. The holder can claim them into their own NEAR account as representation tokens, 1:1 with the custody (`claim_entitlement_as_representation`, D44), or redeem them to Robinhood through the existing payout path. Payout states are available, pending and confirmed, as for rewards.
 - The burn portion becomes one payout to the frozen sink address on Robinhood. The matching NEAR representations are retired only after the finalized receipt confirms the transfer. Until then the UI shows "pending", never "burned".
 - Retries reuse the recorded decision and reservations; they never re-tally.
 
@@ -63,7 +63,7 @@ Owner decisions taken for the implementation (D24): the window is 1 minute to 30
 
 - **Arena** (`contracts/arena/src/dao_api.rs`):
   - `set_lifecycle_dao_window(window_secs)` (protocol account, one yocto). A battle created while no window is set has no vote, and its principal stays escrowed.
-  - `vote_lifecycle_disposition(battle_id, burn)`. Votes and the plan use each winner's frozen position. The voter pays the storage.
+  - `vote_lifecycle_disposition(battle_id, burn_percent)`. Votes and the plan use each winner's frozen position. The voter pays the storage.
   - `execute_lifecycle_disposition(battle_id, max_releases)`: permissionless, batched, and needs `reserve_lifecycle_escrow` first.
   - Views: `get_lifecycle_disposition`, `get_lifecycle_disposition_releases`.
 - **Backing** (`contracts/backing/src/dao.rs`):

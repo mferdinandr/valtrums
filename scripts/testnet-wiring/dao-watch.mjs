@@ -2,11 +2,11 @@
 // Votes inside the arena's short DAO window as soon as a battle records its winner, then executes the disposition.
 // The arena's window is 30 s on testnet, too short to vote by hand.
 //
-//   node scripts/testnet-wiring/dao-watch.mjs <battleId> <community=ROLE> [<community=ROLE> ...] [--burn]
+//   node scripts/testnet-wiring/dao-watch.mjs <battleId> <community=ROLE> [<community=ROLE> ...] [--burn=<percent>]
 //   example: node scripts/testnet-wiring/dao-watch.mjs 4 0=USER1 1=USER2
 //
 // <community=ROLE> names the depositor of each community (TESTNET_<ROLE>_* in .env); the winner's depositor votes
-// "return" (or "burn" with --burn). USER1 reserves the escrow and executes after the window. Every call SENDS A
+// "return" (or the given percent with --burn=<percent>). USER1 reserves the escrow and executes after the window. Every call SENDS A
 // TRANSACTION: run it only after the owner approved the vote. Keys are never printed.
 import fs from "node:fs";
 import path from "node:path";
@@ -19,10 +19,12 @@ for (const l of fs.readFileSync(path.join(REPO, ".env"), "utf8").split("\n")) { 
 
 const args = process.argv.slice(2);
 const BATTLE = args[0];
-const burn = args.includes("--burn");
+const burnArg = args.find((a) => a.startsWith("--burn="));
+const burnPercent = burnArg ? Number(burnArg.slice(7)) : 0;
+if (!Number.isInteger(burnPercent) || burnPercent < 0 || burnPercent > 100) { console.error("--burn=<0-100>"); process.exit(2); }
 const VOTER = Object.fromEntries(args.slice(1).filter((a) => a.includes("=")).map((a) => a.split("=")));
 if (!/^[0-9]+$/.test(BATTLE ?? "") || Object.keys(VOTER).length === 0) {
-  console.error("usage: dao-watch.mjs <battleId> <community=ROLE> [...] [--burn]");
+  console.error("usage: dao-watch.mjs <battleId> <community=ROLE> [...] [--burn=<percent>]");
   process.exit(2);
 }
 const A = "arena.valtrum-owner-b694.testnet";
@@ -56,8 +58,8 @@ while (winner === null) {
 }
 const role = VOTER[String(winner)];
 if (!role) { log({ winner, error: "no depositor role given for the winning community; not voting" }); process.exit(1); }
-log({ winner, voter: env[`TESTNET_${role}_ACCOUNT_ID`], vote: burn ? "burn" : "return" });
-const vote = await retry("vote", (rpc) => { const u = as(role, rpc); return u.near.call(A, "vote_lifecycle_disposition", { battle_id: BATTLE, burn }, { gas: "100 Tgas", attachedDeposit: "0.01 NEAR", signerId: u.id }); });
+log({ winner, voter: env[`TESTNET_${role}_ACCOUNT_ID`], burn_percent: burnPercent });
+const vote = await retry("vote", (rpc) => { const u = as(role, rpc); return u.near.call(A, "vote_lifecycle_disposition", { battle_id: BATTLE, burn_percent: burnPercent }, { gas: "100 Tgas", attachedDeposit: "0.01 NEAR", signerId: u.id }); });
 log({ step: "vote", tx: vote?.transaction?.hash });
 const esc = await retry("escrow", (rpc) => { const u = as("USER1", rpc); return u.near.call(A, "reserve_lifecycle_escrow", { battle_id: BATTLE }, { gas: "300 Tgas", attachedDeposit: "0.01 NEAR", signerId: u.id, waitUntil: "FINAL" }); });
 log({ step: "escrow", result: val(esc), tx: esc?.transaction?.hash });

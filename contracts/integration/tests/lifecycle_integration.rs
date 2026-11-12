@@ -881,22 +881,22 @@ async fn two_communities_run_through_audit_backing_lock_late_arrivals_and_scorin
         anyhow::Ok(value)
     };
     assert_eq!(disposition().await?["status"], "voting");
-    let vote = |voter: &Account, burn: bool| {
+    let vote = |voter: &Account, burn_percent: u8| {
         voter
             .call(w.arena.id(), "vote_lifecycle_disposition")
-            .args_json(json!({"battle_id": id.to_string(), "burn": burn}))
+            .args_json(json!({"battle_id": id.to_string(), "burn_percent": burn_percent}))
             .deposit(NearToken::from_millinear(10))
             .max_gas()
             .transact()
     };
     // A losing-side-only account, the owner and the oracle hold no winning weight.
     for outsider in [&w.owner, &w.oracle, &w.agent] {
-        assert!(!ok(async { Ok(vote(outsider, true).await?) }).await);
+        assert!(!ok(async { Ok(vote(outsider, 100).await?) }).await);
     }
-    vote(&player, true).await?.into_result()?;
-    vote(&creator, false).await?.into_result()?;
+    vote(&player, 100).await?.into_result()?;
+    vote(&creator, 0).await?.into_result()?;
     assert!(
-        !ok(async { Ok(vote(&player, false).await?) }).await,
+        !ok(async { Ok(vote(&player, 0).await?) }).await,
         "votes once"
     );
     let execute = |caller: &Account| {

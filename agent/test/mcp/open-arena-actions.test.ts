@@ -223,17 +223,17 @@ describe("vote, escrow, execute and burn", () => {
       ...extra,
     });
   it("prepares a vote for a winning participant inside the window and refuses others", async () => {
-    const p = await prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()));
-    expect(p.transaction.actions[0]).toMatchObject({ methodName: "vote_lifecycle_disposition", args: { battle_id: "1", burn: true } });
-    expect(p.binding).toMatchObject({ choice: "burn", weight: "60" });
-    const back = await prev({ kind: "vote_disposition", battleId: 1, choice: "return" }, withD(disposition()));
-    expect(back.transaction.actions[0]!.args).toEqual({ battle_id: "1", burn: false });
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition()), "bob.testnet"))).toBe("not_a_winner");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "decided" }))))).toBe("vote_closed");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ status: "no_vote" }))))).toBe("vote_not_open");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(disposition({ closes_at_ns: String(BigInt(NOW) * 1_000_000n) }))))).toBe("vote_closed");
-    expect(await code(prev({ kind: "vote_disposition", battleId: 1, choice: "burn" }, withD(null)))).toBe("winner_not_resolved");
-    expect(() => validateRequest({ kind: "vote_disposition", battleId: 1, choice: "maybe" })).toThrow(ActionError);
+    const p = await prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition()));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "vote_lifecycle_disposition", args: { battle_id: "1", burn_percent: 100 } });
+    expect(p.binding).toMatchObject({ burnPercent: 100, weight: "60" });
+    const back = await prev({ kind: "vote_disposition", battleId: 1, burnPercent: 0 }, withD(disposition()));
+    expect(back.transaction.actions[0]!.args).toEqual({ battle_id: "1", burn_percent: 0 });
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition()), "bob.testnet"))).toBe("not_a_winner");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ status: "decided" }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ status: "no_vote" }))))).toBe("vote_not_open");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(disposition({ closes_at_ns: String(BigInt(NOW) * 1_000_000n) }))))).toBe("vote_closed");
+    expect(await code(prev({ kind: "vote_disposition", battleId: 1, burnPercent: 100 }, withD(null)))).toBe("winner_not_resolved");
+    expect(() => validateRequest({ kind: "vote_disposition", battleId: 1, burnPercent: 101 })).toThrow(ActionError);
   });
   it("reserves the escrow once", async () => {
     const p = await prev({ kind: "reserve_escrow", battleId: 1 }, withD(disposition({ escrow_reserved: false })));
@@ -303,5 +303,33 @@ describe("inspect_endgame read tool", () => {
     const deps = await makeDeps();
     await expect(callReadTool("inspect_endgame", {}, { ...deps, state: new FixtureStateSource("near-testnet", {}) })).rejects.toThrow("battleId");
     await expect(callReadTool("inspect_endgame", { battleId: 2 }, deps)).rejects.toThrow("not configured");
+  });
+});
+
+describe("claim_entitlement and register_representation", () => {
+  const BACKING = "backing.testnet";
+  const withE = (registered: boolean, available = 50n) =>
+    mk({
+      entitlements: new Map([[key(BACKING, "alice.testnet"), available]]),
+      registered: registered ? new Set([key(BACKING, "alice.testnet")]) : undefined,
+    });
+  it("prepares one yocto claim of an entitlement as representation tokens", async () => {
+    const p = await prev({ kind: "claim_entitlement", backing: BACKING, amount: "30" }, withE(true));
+    expect(p.transaction.receiverId).toBe(BACKING);
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "claim_entitlement_as_representation", args: { amount: "30" }, deposit: "1" });
+    expect(p.binding).toMatchObject({ backing: BACKING, beneficiary: "alice.testnet", amount: "30" });
+  });
+  it("refuses more than the entitlement and an unregistered account", async () => {
+    expect(await code(prev({ kind: "claim_entitlement", backing: BACKING, amount: "51" }, withE(true)))).toBe("insufficient_entitlement");
+    expect(await code(prev({ kind: "claim_entitlement", backing: BACKING, amount: "10" }, withE(false)))).toBe("not_registered");
+  });
+  it("registers only an account that is not registered yet", async () => {
+    const p = await prev({ kind: "register_representation", backing: BACKING }, withE(false));
+    expect(p.transaction.actions[0]).toMatchObject({ methodName: "storage_deposit", args: { account_id: "alice.testnet", registration_only: true } });
+    expect(await code(prev({ kind: "register_representation", backing: BACKING }, withE(true)))).toBe("already_done");
+  });
+  it("rejects a claim without a valid amount", () => {
+    expect(() => validateRequest({ kind: "claim_entitlement", backing: BACKING, amount: "0" })).toThrow(ActionError);
+    expect(() => validateRequest({ kind: "claim_entitlement", backing: BACKING })).toThrow(ActionError);
   });
 });

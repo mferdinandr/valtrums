@@ -523,7 +523,7 @@ async fn the_dao_holds_no_authority_over_votes_or_escrowed_principal() -> anyhow
     for (method, args) in [
         (
             "vote_lifecycle_disposition",
-            json!({"battle_id": "0", "burn": true}),
+            json!({"battle_id": "0", "burn_percent": 100}),
         ),
         (
             "execute_lifecycle_disposition",
@@ -543,7 +543,7 @@ async fn the_dao_holds_no_authority_over_votes_or_escrowed_principal() -> anyhow
             &proposer,
             &arena,
             "set_lifecycle_disposition",
-            json!({"battle_id": "0", "burn": true}),
+            json!({"battle_id": "0", "burn_percent": 100}),
             "1",
         )
         .await?;

@@ -62,6 +62,8 @@ export interface ActionReadSource {
   tokenBalance(token: string, account: string): Promise<bigint>;
   /** Available (unreserved) settlement entitlement of `account` on a backing. */
   entitlement(backing: string, account: string): Promise<bigint>;
+  /** NEP-145 `storage_balance_of`: whether `account` is registered on a backing token. */
+  storageRegistered(backing: string, account: string): Promise<boolean>;
   grant(user: string, localId: number[]): Promise<GrantView | null>;
   budget(user: string, localId: number[]): Promise<BudgetView | null>;
   reservation(user: string, localId: number[], requestId: number[]): Promise<ReservationView | null>;
@@ -114,6 +116,9 @@ export class NearActionReadSource implements ActionReadSource {
   async entitlement(backing: string, account: string): Promise<bigint> {
     return big(await this.view(backing, "entitlement_of", { account }), "entitlement");
   }
+  async storageRegistered(backing: string, account: string): Promise<boolean> {
+    return (await this.view(backing, "storage_balance_of", { account_id: account })) != null;
+  }
   async grant(user: string, localId: number[]): Promise<GrantView | null> {
     if (!this.contracts.policy) return null;
     return ((await this.view(this.contracts.policy, "get_grant", { user, local_id: localId })) ?? null) as GrantView | null;
@@ -164,6 +169,7 @@ export class FixtureActionReadSource implements ActionReadSource {
       positions?: Map<string, { registered: boolean; amount: string }>;
       balances?: Map<string, bigint>;
       entitlements?: Map<string, bigint>;
+      registered?: Set<string>;
       grants?: Map<string, GrantView>;
       budgets?: Map<string, BudgetView>;
       reservations?: Map<string, ReservationView>;
@@ -197,6 +203,9 @@ export class FixtureActionReadSource implements ActionReadSource {
   }
   async entitlement(backing: string, account: string) {
     return this.data.entitlements?.get(FixtureActionReadSource.key(backing, account)) ?? 0n;
+  }
+  async storageRegistered(backing: string, account: string) {
+    return this.data.registered?.has(FixtureActionReadSource.key(backing, account)) ?? false;
   }
   async grant(user: string, localId: number[]) {
     return this.data.grants?.get(FixtureActionReadSource.key(user, localId.join(","))) ?? null;

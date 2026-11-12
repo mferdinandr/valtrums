@@ -816,6 +816,58 @@ impl Backing {
         .emit();
     }
 
+    /// A holder takes `amount` of their entitlement (a settlement reward or a DAO
+    /// return) as representation tokens in their own NEAR account. The backing
+    /// does not move: the same units pass from the entitlement liability back to
+    /// minted supply, so supply stays 1:1 with custody. The caller must already
+    /// be registered for FT storage. Redeeming to the source chain stays a
+    /// separate payout request.
+    #[payable]
+    pub fn claim_entitlement_as_representation(&mut self, amount: U128) {
+        near_sdk::assert_one_yocto();
+        require!(
+            !self.paused && !self.reconciliation_required,
+            "Asset paused"
+        );
+        require!(amount.0 > 0, "Amount must be positive");
+        let caller = env::predecessor_account_id();
+        let available = self.entitlement_balances.get(&caller).copied().unwrap_or(0);
+        let remaining = available
+            .checked_sub(amount.0)
+            .unwrap_or_else(|| env::panic_str("Insufficient entitlement"));
+        let balance = self
+            .token
+            .accounts
+            .get(&caller)
+            .unwrap_or_else(|| env::panic_str("Caller not registered"));
+        require!(balance.checked_add(amount.0).is_some(), "Balance overflow");
+        require!(
+            self.token.total_supply.checked_add(amount.0).is_some(),
+            "Supply overflow"
+        );
+        require!(
+            self.ledger.minted == self.token.total_supply,
+            "Supply mismatch"
+        );
+        let mut ledger = self.ledger.clone();
+        ledger
+            .move_liability(
+                ledger::Bucket::Entitlements,
+                ledger::Bucket::Minted,
+                amount.0,
+            )
+            .unwrap_or_else(|_| env::panic_str("Invalid ledger transition"));
+        self.token.internal_deposit(&caller, amount.0);
+        self.entitlement_balances.insert(caller.clone(), remaining);
+        self.ledger = ledger;
+        FtMint {
+            owner_id: &caller,
+            amount,
+            memo: Some("entitlement claim"),
+        }
+        .emit();
+    }
+
     /// Owner-only. Sets the account allowed to attest the custody balance.
     /// `None` removes the operator, so no attestation is accepted.
     #[payable]
@@ -2753,6 +2805,102 @@ mod tests {
         assert_eq!(contract.ft_total_supply(), U128(40));
         assert!(contract.allocate_entitlement([6; 32], bob, U128(40)));
         assert_eq!(contract.get_ledger().minted, U128(0));
+    }
+
+    #[test]
+    fn claiming_an_entitlement_mints_representation_and_keeps_the_ledger_balanced() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        contract.token.internal_register_account(&bob);
+        context("bob.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(60));
+        assert_eq!(contract.entitlement_of(bob.clone()), U128(40));
+        assert_eq!(contract.ft_balance_of(bob.clone()), U128(60));
+        let ledger = contract.get_ledger();
+        assert_eq!(
+            (ledger.minted, ledger.entitlements, ledger.custody),
+            (U128(60), U128(40), U128(100))
+        );
+        assert!(ledger.accounting_balanced);
+        assert_eq!(contract.ft_total_supply(), U128(60));
+        // The remainder can still be taken, and the entitlement is then empty.
+        context("bob.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(40));
+        assert_eq!(contract.entitlement_of(bob), U128(0));
+        assert!(contract.get_ledger().accounting_balanced);
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient entitlement")]
+    fn nobody_claims_more_than_their_entitlement() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        contract.token.internal_register_account(&bob);
+        context("bob.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(101));
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient entitlement")]
+    fn an_account_without_an_entitlement_cannot_claim() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        let carol = account("carol.testnet");
+        contract.token.internal_register_account(&carol);
+        context("carol.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller not registered")]
+    fn the_claimant_must_be_registered_for_ft_storage() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        contract.allocate_entitlement([5; 32], account("bob.testnet"), U128(100));
+        context("bob.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(10));
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn claiming_an_entitlement_needs_exactly_one_yocto() {
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        contract.token.internal_register_account(&bob);
+        context("bob.testnet", 0);
+        contract.claim_entitlement_as_representation(U128(10));
+    }
+
+    #[test]
+    fn a_claimed_entitlement_cannot_also_be_paid_out() {
+        use reservation::ReservationError;
+        let mut contract = contract();
+        funded_arena(&mut contract, 100);
+        context("arena.testnet", 10_u128.pow(23));
+        let bob = account("bob.testnet");
+        contract.allocate_entitlement([5; 32], bob.clone(), U128(100));
+        contract.token.internal_register_account(&bob);
+        context("bob.testnet", 1);
+        contract.claim_entitlement_as_representation(U128(70));
+        assert_eq!(
+            contract.reserve_entitlement(bob.clone(), [1; 32], 31, [9; 20]),
+            Err(ReservationError::InsufficientBalance)
+        );
+        assert_eq!(
+            contract.reserve_entitlement(bob, [1; 32], 30, [9; 20]),
+            Ok(true)
+        );
+        assert!(contract.get_ledger().accounting_balanced);
     }
 
     #[test]
