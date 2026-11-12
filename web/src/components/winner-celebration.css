@@ -36,6 +36,14 @@
   color: #a8802f;
 }
 
+/* Out of the grid flow, otherwise it takes a row and pushes the card below the center. */
+.winner-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .winner-confetti span {
   position: absolute;
   top: -5vh;
