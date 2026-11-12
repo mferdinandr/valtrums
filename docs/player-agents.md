@@ -9,7 +9,7 @@ Two kinds of player agent exist. They differ in whose money they use, and that d
 | Authority | Only `reserve` (a budget hold). It cannot move tokens. | Signs `join`, `register` and `deposit` itself, with no approval step. |
 | Executes a deposit? | No. Executing a reservation is an open decision (`openspec/changes/arena-player-agents/design.md`). | Yes. |
 | Worst case | Budget held for up to the reservation TTL. | The balance the agent account holds. |
-| Code | `agent/src/player/runner.ts`, `contracts/player-policy`, the grant part of `/agents` | `agent/src/player/autonomous.ts`, `autonomous-cli.ts`, the "Autonomous agent" part of `/agents` |
+| Code | `agent/src/player/runner.ts`, `contracts/player-policy` (no longer offered on `/agents`) | `agent/src/player/autonomous.ts`, `autonomous-cli.ts`, the "Autonomous agent" part of `/agents` |
 
 The grant agent is safe but cannot actually play. The autonomous agent plays, and its risk is bounded by what you put in its account.
 
@@ -102,7 +102,7 @@ Winnings do **not** arrive as tokens in the agent's NEAR balance. A winner's rew
 OpenSpec change: `docs/openspec/changes/hosted-player-agents`. The platform can run an autonomous agent for a signed-in owner, so the owner only creates, funds, starts and stops it. Code: `agent/src/hosted/` (service) and `web/src/components/agents/hosted-agent.tsx`. Run the service with `pnpm -C agent build && pnpm -C agent hosted:agents`.
 
 - **Deviation:** the rule "infrastructure holds no authority over player funds" is relaxed here, only for the agent's own account, funded by the user, on testnet. The service refuses to start unless `NEAR_NETWORK=testnet`, and the page says the operator holds the key.
-- **Owner proof:** the wallet signs a one-use challenge (NEP-413); the service checks the signature and that the key is an access key of the account, then issues a one-hour session. Every route is scoped to that owner; another owner's agent answers `not_found`.
+- **Owner proof:** the wallet signs a one-use challenge (NEP-413); the service checks the signature and that the key is an access key of the account, then issues a one-hour session. The page keeps that token in `sessionStorage` (this tab only, gone when the tab closes), so a reload does not ask the wallet again; a token only reaches the owner's agents and every fund transfer is still signed by the wallet. Every route is scoped to that owner; another owner's agent answers `not_found`.
 - **Keys:** generated on the server, stored as AES-256-GCM blobs bound to the agent account, under a key-encryption key (`HOSTED_AGENT_KEK`) kept outside the state directory. Status never returns the key. `Export key` returns it once to the owner and records the export.
 - **Limits (operator-set, no defaults):** agents per owner, model calls per agent per hour, model calls per hour across all agents, and the most of one token an agent may hold and still start. An agent stops itself after 3 errors in a row and shows why. Creating the file at `HOSTED_AGENT_KILL_SWITCH_PATH` stops every agent and blocks new starts.
 - **Cost:** the platform pays for NEAR AI (`NEAR_AI_API_KEY` is held by the service). About USD 0.0003 per decision; the per-agent counter `modelCalls` supports cost review.
@@ -127,9 +127,9 @@ Agent account `valtrum-user2-b694.testnet` (a funded testnet account used as the
 
 Lessons from the run: the model id must exist in `GET /v1/models` (a missing id returns nothing and the agent skips the round); the battle view can lag a transaction by a few seconds (the agent now polls for its new community); and the public NEAR RPC answers HTTP 429, so use FastNEAR or another keyed provider.
 
-## Grant agent (kept)
+## Grant agent (not on the page)
 
-The `/agents` page also creates a grant on `policy-v2.valtrum-owner-b694.testnet`: the agent's account, a token, a per-action cap, a total budget and an expiry. The user's funds stay in the user's account, the grant can be revoked at any time (a revoked grant stays revoked), and the contract enforces the limits, not the model or the program. A grant agent proposes deposits and holds budget with `reserve`; it cannot execute them. Run it with `pnpm -C agent player:run --config <file> [--live]`. See `agent/README.md`.
+The `/agents` page no longer offers grants: it is a different concept (the user's own money, the agent only holds budget) from the autonomous agent (the agent's own money), and a grant agent cannot yet execute a deposit, so two cards side by side confused users. The contract and the `player:run` program remain. Until the open decision below is made, the web UI for it was removed (it created a grant on `policy-v2.valtrum-owner-b694.testnet`): the agent's account, a token, a per-action cap, a total budget and an expiry. The user's funds stay in the user's account, the grant can be revoked at any time (a revoked grant stays revoked), and the contract enforces the limits, not the model or the program. A grant agent proposes deposits and holds budget with `reserve`; it cannot execute them. Run it with `pnpm -C agent player:run --config <file> [--live]`. See `agent/README.md`.
 
 ## Open decisions
 
