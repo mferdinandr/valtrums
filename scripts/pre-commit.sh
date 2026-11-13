@@ -123,7 +123,7 @@ else
   CODE="$(printf '%s\n' "$FILES" | grep -Ev '(^docs/|\.md$)' || true)"
   if [ -n "$CODE" ]; then
     printf '%s\n' "$CODE" | grep -Eq '^(contracts/|scripts/fetch-sputnikdao-wasm\.py)' && STAGES+=(contracts)
-    printf '%s\n' "$CODE" | grep -Eq '^(agent/|web/|evm/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)' && STAGES+=(node)
+    printf '%s\n' "$CODE" | grep -Eq '^(agent/|web/|docs-site/|evm/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)' && STAGES+=(node)
   fi
   has '^evm/' && STAGES+=(evm)
   has '^docs/' && STAGES+=(docs)

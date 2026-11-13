@@ -291,6 +291,7 @@ deploy/      Container configuration
 config/      Shared manifests (arena read ABI)
 scripts/     Dev stack, local CI (pre-commit.sh), testnet wiring and RPC relay
 docs/        Specs, evidence and OpenSpec changes
+docs-site/   Next.js user docs, published at docs.valtrums.xyz
 ```
 
 | Layer | Tech |
