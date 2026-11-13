@@ -17,7 +17,7 @@ export default function TerminalPage() {
         <span className="arcade-kicker">ASSISTANT</span>
         <h1>What’s your next move?</h1>
         <p>
-          Ask in plain English. Review your action before signing.
+          Ask, review, then sign.
         </p>
         </div>
         <CarnivalScene mode="terminal" caption="Your command kiosk" />

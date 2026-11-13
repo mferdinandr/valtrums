@@ -1065,7 +1065,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
       >
         {chat.turns.length === 0 && (
           <Bubble side="terminal" label="Assistant">
-            <p>What do you want to do? Write it the way you would say it, in plain English.</p>
+            <p>What do you want to do? Write it the way you would say it.</p>
             <p className="mt-2 text-xs text-mute">
               Amounts are plain token amounts (100 or 0.5). You can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”. Reading your request never submits a transaction.
             </p>
