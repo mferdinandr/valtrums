@@ -34,8 +34,8 @@ export type CustodyVerdict =
 export const REVIEWED_SPENDABLE_HOLDER_CODE_HASHES: ReadonlySet<string> = new Set();
 
 /**
- * Known deposit-only runtime code (no withdrawal, sweep or execute path). `TestnetDepositCustody` in
- * `evm/src` is deposit-attribution only: tokens it holds can never leave. Filled in at deployment with the
+ * Known deposit-only runtime code (no withdrawal, sweep or execute path). The retired
+ * `TestnetDepositCustody` contract is deposit-attribution only: tokens it holds can never leave. Filled in at deployment with the
  * code hash actually read from chain; any hash listed here is refused even if a config claims otherwise.
  */
 export const KNOWN_DEPOSIT_ONLY_CODE_HASHES: ReadonlySet<string> = new Set();

@@ -1,11 +1,11 @@
 ---
 title: "Valtrums testnet status, known limits and contract accounts"
 sidebarTitle: "Testnet status"
-description: "What works on the Valtrums testnet today, what isn't available yet, and the public NEAR testnet accounts that run the arena, faucet and payouts."
+description: "What works on the Valtrums testnet today, what isn't available yet, and the public NEAR testnet accounts that run the arena, the faucet and the tokens."
 keywords: ["status", "testnet", "limitations", "contracts", "addresses", "known issues"]
 ---
 
-Valtrums is live on NEAR testnet and Robinhood Chain testnet. This page lists what works today, what is still missing and the public accounts behind the app. Status as of November 13, 2026.
+Valtrums is live on NEAR testnet. This page lists what works today, what is still missing and the public accounts behind the app. Status as of November 13, 2026.
 
 ## What works today
 
@@ -17,17 +17,14 @@ Valtrums is live on NEAR testnet and Robinhood Chain testnet. This page lists wh
 | Settlement into rewards and the winners' escrow | Live |
 | Cancel and refund for battles that can't start | Live |
 | Claiming rewards to your NEAR wallet | Available |
-| Winners' vote | Available, not yet run in a live battle |
+| Winners' vote | Live |
 | Faucet | Live |
 | Player agents | One agent played a live battle on November 11, 2026 |
 
 ## Known limits
 
-- **Payouts to Robinhood Chain aren't available yet.** No winner has been paid on Robinhood Chain so far. Claim rewards to your NEAR wallet instead.
-- **No live winners' vote yet.** Burn and return have not run in a live battle.
-- **Cross-chain funding with NEAR Intents is a demo only.** NEAR Intents doesn't offer Robinhood Chain testnet routes.
-- **Test tokens have no value.** They are scored with the market data of the real Robinhood Chain tokens they represent.
-- **Network hiccups.** Public NEAR testnet services may limit requests, and some networks block Robinhood Chain hosts.
+- **Test tokens have no value.** They are scored with the live market prices of the real Robinhood Chain tokens they represent.
+- **Network hiccups.** Public NEAR testnet services may limit requests. If a page is slow or a transaction fails, wait a moment and try again.
 
 ## Contract accounts on NEAR testnet
 
@@ -38,11 +35,7 @@ These are public testnet identifiers.
 | Arena | `arena.valtrum-owner-b694.testnet` |
 | Protocol DAO (SputnikDAO) | `valtrum-protocol.sputnikv2.testnet` |
 | Faucet | `valtrum-faucet.testnet` |
-| Payout | `payout.valtrum-owner-b694.testnet` |
-| Receipt registry | `registry.valtrum-owner-b694.testnet` |
 | Player policy | `policy-v2.valtrum-owner-b694.testnet` |
-| Backed tokens | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-vlad`, `backing-degen` (each `.valtrum-owner-b694.testnet`) |
-
-Cross-chain payouts are signed with NEAR Chain Signatures through `v1.signer-prod.testnet`. Custody is on Robinhood Chain testnet (chain ID 46630).
+| Community tokens | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-vlad`, `backing-degen` (each `.valtrum-owner-b694.testnet`) |
 
 For source code and technical documents, see the [Valtrums repository on GitHub](https://github.com/mferdinandr/valtrums).

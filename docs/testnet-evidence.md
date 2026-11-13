@@ -1,5 +1,7 @@
 # Testnet evidence
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Anything below about custody, payouts or Chain Signatures is historical. See [current state](current-state.md).
+
 Dated evidence for the testnet integration tasks (issue [#72](https://github.com/mferdinandr/valtrum/issues/72)). Each item lists the request, the response and what it does not prove. Raw values are in [`evidence/2026-11-09-testnet-identity.json`](evidence/2026-11-09-testnet-identity.json). Public keyless RPC providers are named; their endpoints are not committed. Sections 1 to 4 were read-only and nothing was signed; section 5 records the live NEAR testnet transactions of 2026-11-09 from the owner's accounts.
 
 ## 1. Chain identity and RPC identity (recorded 2026-11-08 21:56 UTC)

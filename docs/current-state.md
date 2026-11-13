@@ -1,46 +1,42 @@
 # Current implementation snapshot
 
-Snapshot date: **2026-11-11**, taken from `main` after PR #184. It replaces the earlier snapshot of 2026-11-06, which described the two-side arena; that history is kept at the end as an appendix. The target rules stay in the [product specification](product-spec.md); this page says what exists, what was proven on testnet, and what is still open. Where a claim is not backed by evidence under `docs/evidence/` or [testnet-evidence.md](testnet-evidence.md), it is code that is tested only with synthetic inputs.
+Snapshot date: **2026-11-14**. It replaces the earlier snapshots of 2026-11-06 (the two-side arena, kept at the end as an appendix) and 2026-11-11. The target rules stay in the [product specification](product-spec.md); this page says what exists, what runs on testnet, and what is still open. Where a claim is not backed by evidence under `docs/evidence/` or [testnet-evidence.md](testnet-evidence.md), it is code that is tested only with synthetic inputs.
+
+**Scope.** Valtrums runs on **NEAR testnet only**. Deposits, the faucet, settlement, claims and the winners' vote all happen on NEAR. Robinhood Chain **mainnet** (4663) is only read: its Uniswap v3 pools give round prices and liquidity, and GoPlus gives token-risk data. Nothing is sent to Robinhood Chain. The earlier Robinhood Chain testnet custody path (EVM contracts, custody deposits, payouts through Chain Signatures) is retired; the `evm/` folder was deleted.
 
 ## What exists in source
 
 | Area | Present behavior |
 | --- | --- |
-| Arena contract | [arena](../contracts/arena/src/lib.rs) implements the multi-community lifecycle: creation, audit approvals, backing refresh, lock with a frozen snapshot, 30-second rounds, [scoring](../contracts/arena/src/scoring.rs) in four modes, tie handling without an overtime cap, settlement, escrow and DAO entry points, and Chain Signatures code. Agent-only methods (`submit_lifecycle_audit`, `refresh_lifecycle_backing`, `lock_lifecycle_battle`) check a whitelist managed by the owner (`add_agent`, `remove_agent`) |
-| Backing and receipts | [backing](../contracts/backing) (NEP-141 representation, 1:1 with received assets, exclusive reservations) and [receipt-registry](../contracts/receipt-registry) (receipts attested by one verifier account, replay protected) |
-| Payout | [payout](../contracts/payout) with separate relayer and operator roles and a signer for Robinhood transactions |
+| Arena contract | [arena](../contracts/arena/src/lib.rs) implements the multi-community lifecycle: creation, audit approvals, backing refresh, lock with a frozen snapshot, 30-second rounds, [scoring](../contracts/arena/src/scoring.rs) in four modes, tie handling without an overtime cap, settlement, escrow, refunds and the winners' vote. Agent-only methods (`submit_lifecycle_audit`, `refresh_lifecycle_backing`, `lock_lifecycle_battle`) check a whitelist managed by the owner (`add_agent`, `remove_agent`) |
+| Community tokens | [backing](../contracts/backing): one NEP-141 contract per community token with a ledger of live supply, entitlements, DAO escrow and burns that must balance. Settlement turns losing deposits into entitlements, which winners claim into their NEAR wallet (`claim_entitlement_as_representation`); the burned share of a winning principal is destroyed on NEAR |
 | Player policy | [player-policy](../contracts/player-policy): per-user grants with budgets, destinations and expiry; reservations are consumed by action proposals |
-| Faucet | [faucet](../contracts/faucet): hands out already backed representation tokens with a cooldown and a daily budget per token. It never mints; only its owner can configure tokens, pause it or withdraw |
-| Other contracts | `ref-adapter`, `router`, `war`, `furnace`, mock contracts and the sandbox integration tests. The WAR and furnace contracts are standalone and not wired to the arena |
-| Agent | [agent](../agent/README.md): GoPlus and liquidity audit, custody verification, indexer, lifecycle oracle (dry run by default), observation journal and reads, payout relayer and operator roles, read API and MCP, player agent program (dry run by default), faucet funding plan generator. The earlier two-side settlement loop and TWAP code are still in the source; the lifecycle application does not use them |
+| Faucet | [faucet](../contracts/faucet): hands out the community tokens it holds with a cooldown and a daily budget per token. It never mints; only its owner can configure tokens, pause it or withdraw |
+| Other contracts | `ref-adapter`, `router`, `war`, `furnace`, `receipt-registry`, `payout`, mock contracts and the sandbox integration tests. They are earlier work and not part of the player flow |
+| Agent | [agent](../agent/README.md): GoPlus and liquidity audit, lifecycle oracle, observation collector and journal, read API and MCP, player agent programs (self-run and hosted), faucet tooling. The earlier two-side settlement loop and TWAP code are still in the source; the lifecycle application does not use them |
 | Web | [web](../web/README.md): one lifecycle application. Routes: `/` landing, `/arena`, `/arena/new`, `/arena/<id>`, `/portfolio`, `/terminal`, `/agents`, `/faucet`. Token names and logos come from fixed tables. Battles that are not locked show a display-only live price preview (not scoring evidence) |
-| OpenSpec | Thirteen changes and one spec in [OpenSpec](openspec/README.md), validated strictly by the local pre-commit script |
+| User docs | [docs-site](../docs-site/README.md): Next.js docs at docs.valtrums.xyz |
+| OpenSpec | Changes and specs in [OpenSpec](openspec/README.md), validated strictly by the local pre-commit script |
 
-## What is on testnet (2026-11-11)
+## What runs on testnet (2026-11-14)
 
 Accounts and contracts are listed in [deployment.md](deployment.md); recorded observations are in [testnet-evidence.md](testnet-evidence.md).
 
 | Item | State |
 | --- | --- |
-| Arena, registry, payout, six backings, current player policy (`policy-v2`) | Deployed and wired on 2026-11-09 |
-| Infrastructure agent in the arena whitelist | Registered with `add_agent` (transaction in [testnet-evidence.md](testnet-evidence.md), section 8) |
-| Battle 1 | Created with six communities (CASHCAT, WALLET, GOOD, AI, VLAD, DEGEN). Not locked |
-| Robinhood testnet custody deposits | A first set of six deposits could not be verified (finalized head moved too far). A second set of six was verified and attested, receipts claimed and 1,000,000 of each representation minted ([testnet-evidence.md](testnet-evidence.md), section 9) |
-| Audit | A read-only dry run of the production audit pass gave `pass` for five communities and `pending` for AI (no v3 WETH pool, so no liquidity evidence). Nothing was submitted, so no community has an audit approval on chain |
-| Faucet contract | Stocked: 1,000,000 of each of the six tokens, 100 per claim, 100,000 per day, 24 hour cooldown. No user claim has been made yet |
-| Rounds, observations, settlement, payout | Never run on testnet |
+| Arena, six community tokens, current player policy (`policy-v2`), faucet | Deployed and wired |
+| Open arena | Create, join, deposit, audit and backing approval, lock, 30-second rounds scored from on-chain prices, recorded winner, settlement into entitlements, escrow, and a cancel-and-refund drill all ran live (see [handoff](handoff-live-run.md)) |
+| Winners' vote | Votes and burns ran live; burned shares left the token supply on NEAR |
+| Faucet | Stocked with 1,000,000 of each token, 100 per claim, 100,000 per day, 24 hour cooldown |
+| Player agents | An autonomous NEAR AI agent played a live battle on 2026-11-11 (battle 30: NEAR AI chose, the agent joined and deposited 7.5 WALLET) |
 
 ## Known gaps
 
-- **No playable battle yet.** Deposits are refused until every community has an audit approval and a backing approval. Locking also needs fresh approvals for all communities, so battle 1 cannot lock while AI is Pending.
-- **Round observations.** The contract stores outcomes, not per-second samples. The chart of locked battles shows only persisted observations, and no live provider source is enabled. The oracle account of the deployed arena is not confirmed set. The deployed arena also lacks the `_v1` read views, which affects display only.
-- **Payout is unproven.** The terminal blocks payout until spendable custody (#148) is proven and the contract exposes an entitlement. Winners are paid original tokens on Robinhood by design; that path has not run.
-- **DAO disposition of winning principal** is an open decision (see the findings log).
-- **Player agents** run in dry run; no live proposal has been sent on testnet. Grant agents (the `/agents` page) can only reserve budget and cannot execute a deposit. Autonomous agents (their own account and balance, every play decided by NEAR AI Cloud, `pnpm -C agent player:auto`, the "Autonomous agent" card on `/agents`) are implemented and tested with fakes. One played a live testnet battle on 2026-11-11 (battle 30: NEAR AI chose, the agent joined and deposited 7.5 WALLET). Winnings are entitlements paid out on Robinhood through the payout flow, not tokens in the agent's NEAR balance. See [player-agents.md](player-agents.md).
-- **Intents funding** uses a labeled fixture, not NEAR Intents.
-- **End-to-end demo with failure recovery** (issue #80) is not done. Issues #149 (connected deposit UX) and #151 (portfolio and payout) are open.
-- **Reachability.** The Robinhood RPC hosts may be blocked or have an expired certificate on some networks. Local runs used a DNS-over-HTTPS relay; set `PRICE_PREVIEW_RPC_URL` and `REFERENCE_RPC_URL` to a reachable RPC.
-- [Historical security findings](security-review.md) are a development self-review, not an audit of the target design, WAR, furnace, Robinhood assets or a deployment.
+- **Round observations.** The contract stores outcomes, not per-second samples. The chart of locked battles shows only persisted observations. Only the Price % Gain mode has a qualified live observation source today.
+- **Player agents.** Grant agents can only reserve budget and cannot execute a deposit. A recorded run with several independently funded agents is still to be added. Self-run agents don't claim their winnings; hosted agents do. See [player-agents.md](player-agents.md).
+- **End-to-end demo with failure recovery** (issue #80) is not done.
+- **Reachability.** The Robinhood mainnet RPC hosts may be blocked on some networks. Set `PRICE_PREVIEW_RPC_URL` and `REFERENCE_RPC_URL` to a reachable RPC.
+- [Historical security findings](security-review.md) are a development self-review, not an audit of the target design, WAR, furnace or a deployment.
 
 See [deployment.md](deployment.md) for accounts and the rollout plan and [implementation-tracker.md](implementation-tracker.md) for progress against the checklist.
 

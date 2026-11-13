@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml/badge.svg)](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml)
 
-**A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain.**
+**A permissionless token-community arena on NEAR, scored from live Robinhood Chain market prices.**
 
-Token communities compete in short 30-second rounds. Anyone can open an arena, any community with an allowlisted token can join before the start time, and the final winners receive each losing community's original token on Robinhood Chain. Everything runs on **NEAR testnet** and **Robinhood Chain testnet**; no mainnet funds are involved.
+Token communities compete in short 30-second rounds. Anyone can open an arena, any community with an allowlisted token can join before the start time, and the final winners receive each losing community's tokens. Everything runs on **NEAR testnet** with test tokens; Robinhood Chain mainnet is only read for prices and token audits. No real funds are involved.
+
+User docs: [docs.valtrums.xyz](https://docs.valtrums.xyz).
 
 > **Hackathon:** Valtrum is our entry to the [NEAR Hackathon](https://nearhackathon.com) and applies to **all four tracks**: Memecoins With Mechanics, Games With Real Economies, Social Money and AI Swarms. See [Four hackathon tracks](#four-hackathon-tracks). Development ends 2026-11-14 23:59 UTC.
 
@@ -14,17 +16,17 @@ Each track maps to a concrete part of the product. Status is stated plainly; "li
 
 | Track | What Valtrum does for it | Where to look | Status |
 | --- | --- | --- | --- |
-| **Memecoins With Mechanics** | Memecoin communities (CASHCAT, WALLET, GOOD, VLAD, DEGEN) battle each other with explicit prize rules: winners take the losing tokens, and winners vote to burn their own principal | [How a battle works](#how-a-battle-works), [Economics](#economics-and-fees), [DAO governance](#dao-governance) | Battle lifecycle live on testnet; burn vote implemented, no live vote yet |
-| **Games With Real Economies** | Four scoring modes, locked vaults, 30-second rounds, unlimited overtime on ties, and rewards paid in the real original token, with 1:1 backed representations and an exact liability ledger | [Scoring modes](#scoring-modes), [Economics](#economics-and-fees), [Audit policy](#audit-and-token-policy) | Rounds scored from real on-chain prices live; Robinhood payout not yet proven |
-| **Social Money** | Rewards split proportionally among the winning community, and its participants collectively decide the fate of the winning principal (burn or return) by stake-weighted vote, tallied by the contract itself | [DAO governance](#dao-governance), [DAO spec](docs/dao-governance.md) | Settlement into entitlements and DAO escrow live; vote execution untested live |
+| **Memecoins With Mechanics** | Memecoin communities (CASHCAT, WALLET, GOOD, VLAD, DEGEN) battle each other with explicit prize rules: winners take the losing tokens, and winners vote to burn their own principal | [How a battle works](#how-a-battle-works), [Economics](#economics-and-fees), [DAO governance](#dao-governance) | Battle lifecycle and burn vote live on testnet |
+| **Games With Real Economies** | Four scoring modes, locked vaults, 30-second rounds, unlimited overtime on ties, and rewards paid in the losing communities' tokens, with an exact per-token ledger | [Scoring modes](#scoring-modes), [Economics](#economics-and-fees), [Audit policy](#audit-and-token-policy) | Rounds scored from real on-chain prices live |
+| **Social Money** | Rewards split proportionally among the winning community, and its participants collectively decide the fate of the winning principal (burn or return) by stake-weighted vote, tallied by the contract itself | [DAO governance](#dao-governance), [DAO spec](docs/dao-governance.md) | Settlement, escrow and the vote live on testnet |
 | **AI Swarms** | Several user-funded NEAR AI agents, each with its own account and budget, play the shared arena; every decision comes from NEAR AI Cloud (TEE) and is auditable by `chat_id`; shared read tools are exposed over MCP | [Player agents](#player-agents-ai), [player agents spec](docs/player-agents.md) | One autonomous agent played a live battle (2026-11-11); multi-agent play is supported by the code; a recorded run with several funded agents is still to be added |
 
 How each track is satisfied:
 
-- **Memecoins With Mechanics.** Tokens are admitted only through the audit gate and the allowlist, so a battle cannot be opened with a honeypot. Battle outcome has real consequences for the token: losing vaults move to winners, and the winning side can burn its own supply (sent to a verified sink).
-- **Games With Real Economies.** Nothing is a points game: deposits are real custody receipts, winners receive the original tokens, and fees (0.1% by default) are computed with exact integer math. A battle that cannot start (fewer than two funded communities) refunds every depositor.
+- **Memecoins With Mechanics.** Tokens are admitted only through the audit gate and the allowlist, so a battle cannot be opened with a honeypot. Battle outcome has real consequences for the token: losing vaults move to winners, and the winning side can burn its own principal, which is destroyed on NEAR.
+- **Games With Real Economies.** Nothing is a points game: deposits are real token transfers, winners receive the losing tokens, and fees (0.1% by default) are computed with exact integer math. A battle that cannot start (fewer than two funded communities) refunds every depositor.
 - **Social Money.** The community, not an operator, decides what happens to the winning principal. There is no owner override, no quorum gate and no delegation; if nobody votes, funds stay escrowed rather than being auto-moved.
-- **AI Swarms.** Infrastructure agents (audit, oracle, relayer) never hold authority over player funds. Player agents act only with their own balance or a bounded grant, and model output is treated as untrusted input that must pass strict validation.
+- **AI Swarms.** Infrastructure agents (audit, oracle) never hold authority over player funds. Player agents act only with their own balance or a bounded grant, and model output is treated as untrusted input that must pass strict validation.
 
 These are our selected [NEAR Hackathon tracks](https://nearhackathon.com/#tracks). AI Swarms needs more than one independently funded agent: the code supports it, and we only claim it as complete once a multi-agent run is recorded.
 
@@ -54,25 +56,23 @@ Snapshot: 2026-11-13. Full detail in [current state](docs/current-state.md), [te
 | Area | State |
 | --- | --- |
 | Arena contract (open lifecycle, 4 scoring modes, overtime, settlement, DAO escrow) | Implemented and deployed on NEAR testnet |
-| Backing (1:1 NEP-141), receipt registry, payout, player policy, faucet | Implemented and deployed |
-| Robinhood testnet custody (forwarder) and six mock tokens | Deployed; six custody deposits verified end to end and minted |
+| Community tokens (NEP-141 with a per-token ledger), player policy, faucet | Implemented and deployed |
 | Open arena on testnet | Create, join, deposit, audit/backing approval, lock, 30-second rounds scored from on-chain prices, recorded winner, settlement into entitlements, escrow, and a cancel-and-refund drill all ran live (see [handoff](docs/handoff-live-run.md)) |
-| Robinhood payout of winnings | Code exists; **not yet proven** on testnet (needs spendable custody, #148) |
-| DAO disposition of winning principal | Rules decided ([D22](docs/dao-governance.md)) and implemented; no live vote yet |
+| Claiming rewards | Entitlements are claimed into the winner's NEAR wallet |
+| DAO disposition of winning principal | Rules decided ([D22](docs/dao-governance.md)) and implemented; votes and burns ran live |
 | Player agents | Autonomous NEAR AI agent played a live testnet battle on 2026-11-11 (battle 30) |
-| NEAR Intents funding | Labeled **fixture** only; Robinhood testnet routes are not offered by 1Click |
 
 Test assets are fixtures (mock tokens with no value). Only recorded observations under [`docs/evidence/`](docs/evidence) are live-network evidence.
 
 ## How a battle works
 
 1. **Open.** A creator picks one [scoring mode](#scoring-modes) and a start time (now + 60 s to now + 7 days). Communities are not invited and there is **no bond**. The creator must hold a real positive deposit before the lock.
-2. **Join and deposit.** Until the start, anyone joins with a protocol-allowlisted token (**CASHCAT, WALLET, GOOD, VLAD, DEGEN**) and players deposit that token. A deposit counts only after verified custody receipt and only when the community has fresh audit and backing approvals.
+2. **Join and deposit.** Until the start, anyone joins with a protocol-allowlisted token (**CASHCAT, WALLET, GOOD, VLAD, DEGEN**) and players deposit that token. A deposit counts only when the community has fresh audit and backing approvals.
 3. **Lock.** At the start time, with **two or more funded communities**, the community set, vault totals, mode and observation policy are frozen. Empty communities are excluded. With fewer than two funded, anyone can cancel and each depositor pulls an exact refund.
 4. **Rounds.** Each round lasts exactly **30 seconds** using point observations (**no TWAP**). A unique best score wins.
 5. **Overtime.** Tied leaders play again with fully reset inputs, with **no overtime cap**. Deposits stay closed and every original vault stays locked until a final winner exists.
 6. **Settlement.** Each losing vault pays **99.9%** to final-winner participants (proportional to their stake), **0.05%** to the creator and **0.05%** to the protocol. Rewards are the **original losing tokens**, not swapped into the winner's token or USDC.
-7. **Escrow.** Winning principal goes to DAO escrow, where winners vote burn or return. Rewards never wait for that vote.
+7. **Escrow.** Winning principal goes to DAO escrow, where winners vote burn (destroyed on NEAR) or return. Rewards are recorded without waiting for that vote.
 
 ```mermaid
 flowchart LR
@@ -84,7 +84,7 @@ flowchart LR
     E --> F{"Unique<br/>best score?"}
     F -- "tie" --> E
     F -- "yes" --> G["Settlement"]
-    G --> H["Losing tokens to winners<br/>on Robinhood"]
+    G --> H["Losing tokens<br/>to winners"]
     G --> I["Winning principal<br/>to DAO escrow"]
 ```
 
@@ -105,9 +105,8 @@ A negative score can win (−5% beats −10%). Missing data holds a round pendin
 
 - **Per-token allocation.** For every losing token `j`: `fee_j = floor(vault_j × fee_bps / 10000)` is taken once, then split between creator and protocol; the remainder goes to winners by stake, with deterministic dust handling (largest remainder, ties by account ID).
 - **Defaults.** `fee_bps` = 10 (0.1%, ceiling 10%) and creator share 50%. Both are snapshotted at battle creation; later changes only affect future battles. A protocol-created battle pays the full fee to the protocol.
-- **1:1 backing.** NEP-141 representations on NEAR are minted only for the amount **actually received** in Robinhood custody (never from a declaration or signature), with exclusive reservations so the same backing cannot be redeemed, paid out and burned twice.
-- **Ledger invariant.** For each asset `B = M + E + P + D + U` (custody balance = live representations + entitlements + pending payouts + pending DAO disposals + unallocated).
-- **Entitlement ≠ payment.** An allocated entitlement and a confirmed Robinhood transfer are distinct states; a signature, RPC acceptance or unfinalized event never counts as paid.
+- **Per-token ledger.** Each community token contract keeps one ledger of live supply, entitlements, DAO escrow and burns, and checks that it balances, so the same units cannot be rewarded, refunded and burned twice.
+- **Entitlement, then claim.** Settlement records each winner's share as an entitlement; the winner claims it into their NEAR wallet.
 
 Example (user-created battle, A wins; Alice 600 / Bob 400 of 1,000 A; B vault 100,000):
 
@@ -119,7 +118,7 @@ Full tables, rounding rules and the liability ledger: [token economics](docs/tok
 
 ## Architecture
 
-NEAR coordinates battles and liabilities. Robinhood testnet holds original community assets and receives original-token payouts. Infrastructure workers hold **no authority over player funds**.
+NEAR runs battles, balances, rewards and the vote. Robinhood Chain mainnet is only read: its Uniswap v3 pools give round prices and liquidity, and GoPlus gives token-risk data. Infrastructure workers hold **no authority over player funds**.
 
 ```mermaid
 flowchart TB
@@ -129,47 +128,38 @@ flowchart TB
     PA --> A
     subgraph NEAR["NEAR testnet"]
         A["Arena: lock, rounds, allocation"]
-        R["Backing: NEP-141 representations + liability ledger"]
+        R["Community tokens: NEP-141 + ledger"]
         D["DAO escrow: winner vote"]
-        S["Payout + signing policy"]
+        F["Faucet"]
         A --> R
         A --> D
-        R --> S
+        F --> U
     end
     subgraph WORKERS["Infrastructure (separate credentials)"]
         AU["GoPlus + LP auditor"]
         O["Observation collector + oracle"]
-        I["Indexer + reconciler"]
-        REL["Payout relayer"]
     end
+    subgraph RH["Robinhood Chain mainnet (4663), read only"]
+        POOLS["Uniswap v3 pools"]
+    end
+    GP["GoPlus API"] --> AU
+    POOLS -->|"Liquidity"| AU
+    POOLS -->|"Prices"| O
     AU -->|"Versioned evidence"| A
     O -->|"Round observations"| A
-    I -->|"Verified receipts"| R
-    S --> MPC["NEAR Chain Signatures (MPC)"]
-    MPC --> REL
-    subgraph RH["Robinhood Chain testnet (46630)"]
-        C["Custody of original tokens"]
-        P["Players and revenue recipients"]
-        C --> P
-    end
-    U -->|"Deposit"| C
-    REL -->|"Constrained transaction"| C
-    C -->|"Receipt + balance evidence"| I
 ```
 
 | Component | Responsibility | Boundary |
 | --- | --- | --- |
-| Arena | Lifecycle, frozen snapshots, rounds, exact scoring, per-token allocation | Validates scores; does not trust a worker's winner label |
-| Backing + receipt registry | Receipt uniqueness, 1:1 mint, reservations, redemption | NEP-141 alone is not a custody proof |
-| Robinhood custody | Holds deposited tokens; executes only exact authorized transfers | Forwarder holds nothing itself |
+| Arena | Lifecycle, frozen snapshots, rounds, exact scoring, per-token allocation, vote tally | Validates scores; does not trust a worker's winner label |
+| Community tokens (backing) | NEP-141 balances, entitlements, escrow, burns and the ledger | Only the arena can allocate or escrow |
+| Faucet | Hands out test tokens it holds | Never mints |
 | Audit agent | GoPlus critical-risk rejection plus independent LP check | Missing data stays Pending |
 | Oracle + collector | Point prices, supply, volume, drawdown samples | No TWAP, no fabricated zeros |
-| Indexer / reconciler | Replays events, tracks finality and reorgs | Indexer assertions alone cannot mint or confirm payment |
-| Payout relayer / operator | Funds gas and broadcasts authorized transactions | Cannot choose a new recipient, token or amount |
 | Player agents | Execute a user's bounded strategy | Separate identity and budget from infrastructure |
 | MCP / terminal | Reads, previews and authorized requests | Model output is untrusted input |
 
-Deposit and payout sequence diagrams, authority separation and trust boundaries: [architecture](docs/architecture.md), [interfaces](docs/interfaces.md) and [security review](docs/security-review.md).
+Authority separation and trust boundaries: [architecture](docs/architecture.md), [interfaces](docs/interfaces.md) and [security review](docs/security-review.md).
 
 ## Deployed addresses (testnet)
 
@@ -183,11 +173,8 @@ All values are public testnet identifiers. Source of truth: [deployment](docs/de
 | Owner / deploy key | `valtrum-owner-b694.testnet` |
 | DAO (SputnikDAO 3.31, protocol account, backing owner) | `valtrum-protocol.sputnikv2.testnet` |
 | DAO council | `valtrum-council1-b694.testnet`, `valtrum-council2-b694.testnet`, `valtrum-council3-b694.testnet` |
-| Receipt registry | `registry.valtrum-owner-b694.testnet` |
-| Registry verifier | `valtrum-verifier-b694.testnet` |
-| Payout (signer `v1.signer-prod.testnet`) | `payout.valtrum-owner-b694.testnet` |
 | Player policy (current) | `policy-v2.valtrum-owner-b694.testnet` |
-| Backings (DAO-owned), one per token | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
+| Community tokens (DAO-owned), one per token | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
 | Infrastructure agent (arena whitelist) | `valtrum-agent-b694.testnet` |
 | Lifecycle oracle | `valtrum-oracle-b694.testnet` |
 | Faucet contract / operator | `valtrum-faucet.testnet` / `valtrum-operator.testnet` |
@@ -195,23 +182,17 @@ All values are public testnet identifiers. Source of truth: [deployment](docs/de
 
 Superseded accounts kept for history: `policy.valtrum-owner-b694.testnet` (old layout) and `backing1.valtrum-owner-b694.testnet` (fixture asset).
 
-### Chain Signatures
-
-Signer `v1.signer-prod.testnet` (domain 0, secp256k1). Payout binding: custody path `valtrum-custody-1`, first nonce 0, gas limit 200,000, max fee 1 gwei.
-
 ## Ecosystem and integrations
 
 Priority: P0 blocks target acceptance, P1 is an enhancement, P2 is a candidate. "Verified" means evidence is recorded; documentation availability is not an integration test. Details and links: [ecosystem](docs/ecosystem.md).
 
 | Partner / component | Role in Valtrum | Priority | State |
 | --- | --- | --- | --- |
-| NEAR Protocol / NEP-141 | Battle state and token representations | P0 | Live on testnet |
-| NEAR Chain Signatures | Constrained Robinhood transaction signatures | P0 | Signer verified live; payout signature for a real transfer not yet proven |
-| Robinhood Chain | Original-token custody, deposits and payouts | P0 | Custody and deposits live; payout unproven |
+| NEAR Protocol / NEP-141 | Battle state and community tokens | P0 | Live on testnet |
+| Robinhood Chain (mainnet) | Price, supply, volume and liquidity data for scoring and audits (read only) | P0 | Live |
 | GoPlus | Critical token-risk evidence | P0 | Wired; dry-run audit gave five `pass`, AI `pending` |
 | LP / market data (Uniswap v3 pools, DexScreener) | LP above USD 10,000, price, supply, volume, drawdown | P0 | On-chain `slot0` observation source ran live |
 | NEAR AI Cloud (TEE) | Player strategy and intent interpretation | P0 | Autonomous agent plays live |
-| NEAR Intents / 1Click | Cross-chain funding | P0 | Robinhood testnet not offered; labeled fixture ([evidence](docs/intents-evidence.md), [mapping](docs/intents-asset-mapping.md)) |
 | Bitte | Agent orchestration | P0 | Planned; not shown |
 | FastNEAR | NEAR RPC and indexed data | P1 | In use |
 | Wallet connection (HOT connector) | User signing | P0 | In the web app |
@@ -235,7 +216,7 @@ After the final winner is recorded, the winning community's participants decide 
 - Each voter chooses a burn percentage (0 to 100); the weighted average (weight = staked principal) applies to the **whole escrow**, so non-voters follow voters.
 - No quorum, no delegation. The arena contract tallies the votes itself and anyone can execute after the window closes.
 - If nobody votes, the principal **stays escrowed**; nothing is auto-burned or auto-returned.
-- Returns become entitlements (claimable as NEAR representation tokens or redeemable on Robinhood). A burn is a verified transfer to a frozen sink address, reported as "sent to sink", not as a supply reduction.
+- Returns become entitlements, claimed into each winner's NEAR wallet. The burned share is destroyed on NEAR and never minted again.
 - Protocol-level changes (fee, DAO window, reference registry, allowlist) go through SputnikDAO council proposals; the council cannot change or veto a battle's tally.
 
 ## Player agents (AI)
@@ -277,15 +258,12 @@ The agent read tools are also exposed over MCP (`pnpm -C agent read:mcp`) and an
 ```
 contracts/   Rust workspace (near-sdk 5.x)
   arena/            lifecycle, scoring, settlement, DAO entry points
-  backing/          1:1 NEP-141 representations and liability ledger
-  receipt-registry/ attested deposit receipts, replay protected
-  payout/           relayer/operator roles and Chain Signatures
+  backing/          community tokens (NEP-141) and their ledger
   player-policy/    per-user agent grants and budgets
-  faucet/           testnet faucet for backed tokens
-  router, ref-adapter, war, furnace, mock-*   earlier work and test mocks
+  faucet/           testnet faucet for community tokens
+  router, ref-adapter, war, furnace, receipt-registry, payout, mock-*   earlier work and test mocks
   integration/      near-workspaces sandbox tests
-evm/         Solidity (Foundry): custody forwarder and mock tokens
-agent/       TypeScript: audit, oracle, observation collector, indexer, payout, player agents, read API and MCP
+agent/       TypeScript: audit, oracle, observation collector, player agents, read API and MCP
 web/         Next.js 16 app: arena, portfolio, terminal, agents, faucet
 deploy/      Container configuration
 config/      Shared manifests (arena read ABI)
@@ -297,7 +275,7 @@ docs-site/   Next.js user docs, published at docs.valtrums.xyz
 | Layer | Tech |
 | --- | --- |
 | Contracts | Rust, near-sdk 5.x, cargo-near, near-workspaces |
-| Cross-chain | NEAR Chain Signatures (MPC), Solidity custody on Robinhood Chain |
+| Market data | Robinhood Chain mainnet (Uniswap v3), GoPlus |
 | Agent | TypeScript (strict), NEAR AI Cloud (TEE) |
 | Frontend | Next.js 16 (App Router), Tailwind, shadcn/ui, pnpm |
 
@@ -305,7 +283,7 @@ Web routes: `/` landing, `/arena`, `/arena/new`, `/arena/<id>`, `/portfolio`, `/
 
 ## Getting started
 
-Requirements: Rust stable with `wasm32-unknown-unknown`, Node >= 22 and pnpm as pinned in `package.json`. Foundry is needed only for `evm/`.
+Requirements: Rust stable with `wasm32-unknown-unknown`, Node >= 22 and pnpm as pinned in `package.json`.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -320,9 +298,8 @@ pnpm dev
 
 - `pnpm dev:check` validates worker configuration without starting anything or sending transactions.
 - `DEV_WORKERS=0 pnpm dev` runs only the UI, read API and relay.
-- `DEV_RELAY=0` skips the mainnet reference relay; `DEV_RELAY_TESTNET=1` adds the testnet relay on 18545.
+- `DEV_RELAY=0` skips the Robinhood mainnet price relay.
 - Stop anything already on ports 3000 or 8790 first.
-- Payout relayer/operator start separately when their `PAYOUT_RELAYER_*` / `PAYOUT_OPERATOR_*` credentials are configured; otherwise startup reports them as not configured.
 - Some networks block the Robinhood RPC hosts; set `PRICE_PREVIEW_RPC_URL` and `REFERENCE_RPC_URL` to a reachable RPC. See [local stack configuration](docs/dev-stack.md).
 
 Contracts (from `contracts/`):
@@ -334,8 +311,6 @@ cargo test --workspace --exclude valtrum-integration
 cargo test -p valtrum-integration
 cargo near build non-reproducible-wasm
 ```
-
-EVM contracts (from `evm/`): `forge test && forge build`.
 
 Local CI (the GitHub Actions workflow is disabled; run this before every push):
 
@@ -355,7 +330,7 @@ Per-package guides: [agent](agent/README.md), [web](web/README.md), [deploy](dep
 | --- | --- |
 | [Product specification](docs/product-spec.md) | Requirements, lifecycle, acceptance scenarios and open questions |
 | [Battle rules](docs/battle-rules.md) | Formulas, observations, comparison and overtime |
-| [Token economics](docs/token-economics.md) | Fees, rounding, backing, redemption and DAO escrow |
+| [Token economics](docs/token-economics.md) | Fees, rounding and DAO escrow |
 | [Architecture](docs/architecture.md) | Components, asset flows and trust boundaries |
 | [Interfaces](docs/interfaces.md) | Contract, event, oracle, agent and MCP APIs |
 | [Ecosystem](docs/ecosystem.md) | Partners, priorities, testnet evidence and unknowns |
@@ -374,11 +349,9 @@ Per-package guides: [agent](agent/README.md), [web](web/README.md), [deploy](dep
 
 ## Known gaps
 
-- **Payout is unproven.** No winner has been paid on Robinhood yet; the terminal blocks payout until spendable custody (#148) is proven.
-- **No live DAO vote** and no live burn or return execution have run on testnet.
-- **Intents funding is a fixture**, and Bitte orchestration is not demonstrated.
-- **Open decisions** remain for the default DAO window, per-token sink address, behavior after a live token-policy change, and outage recovery. See the [open question register](docs/product-spec.md#open-question-register).
-- **End-to-end demo with failure recovery** (#80), connected deposit UX (#149) and portfolio and payout UI (#151) are open.
+- **Bitte orchestration** is not demonstrated.
+- **Open decisions** remain for the default DAO window, behavior after a live token-policy change, and outage recovery. See the [open question register](docs/product-spec.md#open-question-register).
+- **End-to-end demo with failure recovery** (#80) is open.
 - The Robinhood RPC hosts can be blocked or have certificate problems on some networks, and public NEAR testnet RPCs may rate limit (HTTP 429); use a dedicated RPC for live runs.
 - The security notes are a development self-review, not an audit of the target design or any deployment.
 

@@ -8,14 +8,14 @@ Amounts and nanosecond timestamps are decimal strings, never JavaScript numbers.
 
 | Planned record | Required fields |
 | --- | --- |
-| AssetId | Robinhood chain ID, token contract, representation account, decimals, custody domain, mapping version |
+| AssetId | NEAR token account, decimals, Robinhood mainnet reference token (for prices and audits), mapping version |
 | BattleConfig | Creator/type, authenticated fee recipients, communities, mode, audit/observation policy hashes, gathering policy |
 | LockedSnapshot | Battle, original communities, positive vault totals, beneficiary deposits, creator position, destinations, config hash |
 | Round | Index, candidates, start/end, mode, policy hash, evidence references, status |
-| Position | Beneficiary, community, actual credited units, consumed deposit receipts, snapshot |
+| Position | Beneficiary, community, actual credited units, snapshot |
 | Allocation | Battle/final round, winner, per-token total fee (floor(vault * snapshotted_fee_bps / 10000)), snapshotted creator share and protocol recipient, winner-pool remainder order, immutable allocation ID |
-| Payout | Payout/entitlement IDs, asset, amount, recipient, path, nonce, payload hash, attempts, receipt, status |
-| BackingView | B, M, E, P, D, U amounts, source block/hash, finality, reconciliation status |
+| Entitlement | Entitlement/allocation IDs, asset, amount, beneficiary, claimed amount |
+| LedgerView | Live supply, entitlements, escrow and burns per token; whether it balances |
 | Escrow | Winning asset/amount, participant attribution, backing, decision/execution references; no assumed vote parameters |
 
 Planned mode enum: `PricePercentGain`, `MarketCapPercentGrowth`, `VolumeToInitialMarketCap`, `LowestMaximumDrawdown`.
@@ -25,28 +25,24 @@ Planned mode enum: `PricePercentGain`, `MarketCapPercentGrowth`, `VolumeToInitia
 | Planned method / message | Caller and checks | Effect |
 | --- | --- | --- |
 | create_battle(config) | Creator; zero to sixteen distinct communities, one mode, start time now + 60 s to now + 7 days | Open battle; no bond |
-| join_battle(battle_id, representation) | Anyone before the start; allowlisted representation only | Adds or reuses the community and registers the caller's position |
+| join_battle(battle_id, token) | Anyone before the start; allowlisted token only | Adds or reuses the community and registers the caller's position |
 | cancel_battle(battle_id) | Anyone after the start; unlocked, fewer than two funded communities | Cancelled; no rounds |
-| claim_refund(battle_id, community) | Depositor of a cancelled battle; one yocto | Returns the credited representation units; restores the position if the transfer fails |
-| set_joinable_asset(asset) / remove_joinable_asset(representation) | Protocol account; one yocto | Changes the allowlist (at most 64) |
+| claim_refund(battle_id, community) | Depositor of a cancelled battle; one yocto | Returns the credited token units; restores the position if the transfer fails |
+| set_joinable_asset(asset) / remove_joinable_asset(token) | Protocol account; one yocto | Changes the allowlist (at most 64) |
 | submit_audit(battle_id, evidence) | Authorized auditor; versioned chain/token evidence | Pass, Reject or Pending per asset; no unresolved-policy bypass |
-| credit_deposit(receipt, beneficiary, community) | Controlled mint/verifier path; finalized unique receipt and user attribution | Credit only actual received backing before lock |
+| ft_transfer_call(arena, amount, lifecycle_deposit message) | Depositor, on the community token; before the start | Credit only the units the arena actually receives |
 | lock_battle(battle_id, expected_version) | Authorized trigger at or after the start; at least two funded communities with fresh audits and backing, creator stake and policy gates | Freeze funded communities and deposits atomically; empty communities excluded |
 | open_round(battle_id, round_id, observations) | Scheduler/oracle; correct candidates/policy/start evidence | Record next 30-second interval |
 | resolve_round(battle_id, round_id, observations) | Authorized role; complete mode-specific interval evidence | Compute winner or next tied candidates; no funds released on tie |
 | allocate_settlement(battle_id, final_round_id) | Valid final state and unique allocation ID | Split losing tokens once; escrow winning principal |
-| reserve_payout(entitlement_id, destination_binding) | Beneficiary or bounded user delegate | Move entitlement to exclusive pending reserve |
-| request_payout_signature(payout_id, tx_parameters) | Constrained executor | Reconstruct allowed payload/path/nonce/gas policy from reservation |
-| confirm_payout(payout_id, execution_evidence) | Verifier; finalized matching debit and recipient receipt | Consume backing and confirm once |
-| reconcile_payout(payout_id, evidence) | Authorized reconciler | Track existing transactions; restore only after definitive no-spend evidence |
-| redeem(amount, destination_binding) | Owner of unlocked representations | Consume representation into exclusive native payout reserve |
-| record_dao_disposition(escrow_id, decision_evidence) | Decision verifier **OPEN** | Validate future approved governance decision |
-| execute_dao_disposition(escrow_id, decision_id) | Executor; valid decision/unspent escrow | Reserve return or disposal once; confirm underlying result |
+| claim_entitlement_as_representation(amount) | Beneficiary, on the token contract | Mint the claimed amount into the beneficiary's NEAR wallet; consume the entitlement once |
+| vote_lifecycle_disposition(battle_id, burn_percent) | Winning participant, once per battle | Record a burn share weighted by principal |
+| execute_lifecycle_disposition(battle_id, max_releases) | Anyone after the window | Release escrow once: returns become entitlements, the burned share leaves the supply |
 | grant_player_policy(policy), revoke_player_policy(policy_id) | User authorization | Enforce/revoke bounded delegation; preserve existing in-flight obligations |
 
 DAO API boundaries do not decide membership, vote weights, quorum, timing, fallback or certificate format.
 
-Planned paginated views: `get_battle`, `list_battles`, `get_round`, `get_position`, `get_audit`, `get_entitlements`, `get_payout`, `get_backing`, `get_principal_escrow`, `get_player_policy`.
+Planned paginated views: `get_battle`, `list_battles`, `get_round`, `get_position`, `get_audit`, `get_entitlements`, `get_ledger`, `get_principal_escrow`, `get_player_policy`.
 
 ## Planned observations and audit envelope
 
@@ -73,13 +69,11 @@ Use stable IDs, versioned structured events and block/receipt provenance, follow
 | deposit_credited / battle_locked | Unique actual receipt, amount, beneficiary; snapshot hash |
 | round_opened / round_resolved / overtime_opened | Candidates, boundaries, policy, exact scores, next candidates or final winner |
 | settlement_allocated | Allocation ID, each losing token's fees/rewards and principal escrow |
-| entitlement_reserved / signature_requested / payout_broadcast | Payout ID, payload hash, path, nonce, tx hash when available |
-| payout_confirmed / payout_reconciliation_required | Final execution proof or unresolved reason; no secrets |
-| representation_minted / redemption_reserved / backing_reconciled | Asset, receipt/reservation and ledger movement |
-| principal_escrowed / dao_disposition_recorded / principal_disposition_confirmed | Escrow, decision and verified underlying result |
+| entitlement_claimed | Beneficiary, asset, amount |
+| principal_escrowed / dao_disposition_recorded / principal_disposition_executed | Escrow, tally, returned and burned amounts |
 | player_policy_granted / player_policy_revoked | User, scope hash, budget, expiry/revocation version; no keys |
 
-Replay must reproduce the same projection without minting, allocating or paying twice. A broadcast event cannot render as confirmed funds received.
+Replay must reproduce the same projection without minting, allocating or claiming twice.
 
 ## Planned player-agent and MCP boundary
 
@@ -88,12 +82,10 @@ A player policy binds user, contracts/methods, chain/asset/community filters, pe
 | Planned MCP tool | Permission | Result |
 | --- | --- | --- |
 | list_battles / inspect_battle / inspect_audit | Read | Current state with network, freshness and limitations |
-| inspect_balance / inspect_payout / inspect_escrow | Account-scoped read | Funds, encumbrances and separate payout/DAO statuses |
-| preview_create / preview_deposit / preview_payout | No execution | Canonical action, costs, assets, recipient, policy/version, expiry |
+| inspect_balance / inspect_entitlements / inspect_escrow | Account-scoped read | Funds, rewards to claim and DAO statuses |
+| preview_create / preview_deposit / preview_claim | No execution | Canonical action, costs, assets, recipient, policy/version, expiry |
 | submit_action(preview_id, authorization) | User approval or valid bounded grant | Revalidate preview and reserve budget; return action ID |
 | get_action_status(action_id) | Authorized read | Pending/confirmed/reconciliation status and transaction evidence |
 | revoke_delegation(policy_id) | User | Revocation receipt and in-flight obligations |
 
 The read tools are implemented in `agent/src/mcp/` (MCP over stdio: `pnpm -C agent read:mcp`; HTTP read API for the web terminal: `pnpm -C agent read:serve`, proxied by `web/src/app/api/arena/*`). Account-scoped reads require a read session opened with a NEP-413 signature from a full-access key; the session selects whose data is read and grants no signing or spending authority. Preview, submit, action status and revocation tools remain planned. Bind previews to a canonical hash and recheck balances, audit, round openness and limits before signing. Changed/expired previews require fresh authorization unless an existing grant explicitly covers the new action. Treat provider/metadata prompt text as untrusted. Reject infrastructure credentials at player-spending APIs.
-
-Existing terminal funding code does not prove Intents supports Robinhood testnet; unsupported routes must fail explicitly. See [ecosystem.md](ecosystem.md).

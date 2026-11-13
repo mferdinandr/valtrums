@@ -1,5 +1,7 @@
 # Intents fixture: asset mapping and migration note
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired, and cross-chain funding through NEAR Intents is not part of the application. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. This page is historical. See [current state](current-state.md).
+
 Owner decision D29 (2026-11-09, issue [#114](https://github.com/mferdinandr/valtrum/issues/114)). NEAR Intents (1Click) lists **no testnet asset** ([intents-evidence.md](intents-evidence.md)), and the hackathon handbook says no testnet Intents exists or is planned. The testnet demo therefore uses a **fixture** of the 1Click API: `agent/src/intents-fixture/`, a fake solver that moves testnet mock tokens, and the funding route `intents-fixture`.
 
 **This is a fixture, not NEAR Intents.** It proves nothing about a real solver, route, price or refund. The real `intents` route stays an integration gap, and the arena refuses it (`unsupported_route`).

@@ -63,7 +63,7 @@ Example with three communities:
 | Round | Candidates and Price % Gain | Result |
 | --- | --- | --- |
 | 1 | A +10%, B +10%, C +2% | Only A/B advance; C's assets stay locked |
-| 2 | A -3%, B -3% from fresh starts | Another round; no fees or payout yet |
+| 2 | A -3%, B -3% from fresh starts | Another round; no fees or rewards yet |
 | 3 | A -4%, B -5% from fresh starts | A is final winner; both B and C are losing vaults |
 
 No community can re-enter after elimination. New deposits and changes to mode or token set are refused through every overtime round. Gaps waiting for valid next-round observations are visible as pending; they do not reopen deposits. No cumulative score from an earlier round affects the next winner.

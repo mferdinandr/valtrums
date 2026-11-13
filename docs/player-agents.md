@@ -92,10 +92,10 @@ The agent account needs NEAR for gas and storage (about 0.5 NEAR is plenty on te
 
 ### What happens to winnings
 
-Winnings do **not** arrive as tokens in the agent's NEAR balance. A winner's reward is an **entitlement** on the losing token's backing contract, paid out as the original token on Robinhood Chain to an EVM address through the payout flow (`payout.request_payout`, see [testnet-e2e-runbook.md](testnet-e2e-runbook.md) and `docs/openspec/changes/arena-testnet-integrations/live-custody-proof-plan.md`). So:
+Winnings do not arrive in the agent's balance by themselves. A winner's reward is an **entitlement** on the losing token's contract, which the agent account claims into its own NEAR balance with `claim_entitlement_as_representation`. So:
 
-- A profit is not sent to the owner automatically. The agent's NEAR token balance changes only by what it deposits, by refunds of a cancelled battle, and by what it sweeps.
-- The owner collects winnings by requesting a payout to their own EVM address for the agent account's entitlement. That needs the agent account's key, so today it is done by hand (`scripts/testnet-wiring/payout-proof.mjs`), not by the agent loop.
+- A hosted agent claims its prizes and casts its winners' vote itself (`agent/src/player/rewards.ts`), then sweeps surplus to the owner if `sweepTo` is set.
+- A self-run agent (`player:auto`) does not claim. Its owner claims with the agent account's key. Until then, the agent's token balance changes only by what it deposits, by refunds of a cancelled battle, and by what it sweeps.
 
 ### Hosted agents (testnet only)
 
@@ -107,7 +107,7 @@ OpenSpec change: `docs/openspec/changes/hosted-player-agents`. The platform can 
 - **Limits (operator-set, no defaults):** agents per owner, model calls per agent per hour, model calls per hour across all agents, and the most of one token an agent may hold and still start. An agent stops itself after 3 errors in a row and shows why. Creating the file at `HOSTED_AGENT_KILL_SWITCH_PATH` stops every agent and blocks new starts.
 - **Cost:** the platform pays for NEAR AI (`NEAR_AI_API_KEY` is held by the service). About USD 0.0003 per decision; the per-agent counter `modelCalls` supports cost review.
 - **Storage (OpenSpec `hosted-agents-database`):** the encrypted keys are the one thing that cannot be rebuilt from the chain. With `HOSTED_AGENT_DATABASE_URL` set, agents, per-agent play state, an event log (create, start, stop, error, export, kill switch) and sessions live in Postgres (Supabase project `valtrum-near`, `supabase/migrations/20261112100000_hosted_agents.sql`): row-level security on with no policy and the public roles revoked, so only the service connects; the key stays an AES-256-GCM blob and the key-encryption key never goes to the database. The per-owner agent limit is checked under a per-owner advisory lock, and an unreachable database or malformed row stops the agent instead of falling back. Without the variable the service uses files under `HOSTED_AGENT_STATE_DIR` (one worker, back them up). Move existing files with `pnpm -C agent hosted:import` (idempotent, never decrypts, never starts an agent). Rollback: unset the variable; agents created since are not copied back.
-- **Still manual:** claiming winnings (an entitlement paid out on Robinhood Chain), as for any autonomous agent.
+- **Winnings:** the hosted agent claims its prizes into its own NEAR account and casts its winners' vote (`agent/src/player/rewards.ts`).
 
 ### Other people using agents
 
@@ -136,6 +136,6 @@ The `/agents` page no longer offers grants: it is a different concept (the user'
 | Decision | Options | Status |
 | --- | --- | --- |
 | Where an autonomous agent runs for users other than the owner | User-controlled process (current); hosted with TEE custody; testnet-only hosted keys | Open |
-| Collecting winnings for the agent account | Owner requests the payout by hand (current); a role that requests it for the agent | Open |
+| Collecting winnings for a self-run agent | Owner claims with the agent key (current); the agent loop claims itself, as hosted agents do | Open |
 | Executing grant reservations (grant agent) | A reviewed executor adapter; or retire the grant agent | Open |
 | Verifying the TEE attestation of the model | Fetch and verify `/v1/attestation/report` and bind it to the signing address (see the NEAR AI verification flow) | Not done: the agent records the `chat_id`, it does not verify the signature itself |

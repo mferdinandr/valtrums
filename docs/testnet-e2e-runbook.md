@@ -1,6 +1,6 @@
-# Testnet end-to-end runbook: battle, agent, refund, payout
+# Testnet end-to-end runbook: battle, agent, refund, claim
 
-How to run one whole flow on NEAR testnet and Robinhood testnet (46630), and what to check at each step. Written from the 2026-11-11 run. Every chain action here sends real testnet transactions: use the helper scripts' dry run first (they print the signer, receiver, method, arguments, gas and deposit and send nothing until `--send`).
+How to run one whole flow on NEAR testnet, and what to check at each step. Written from the 2026-11-11 run. Every chain action here sends real testnet transactions: use the helper scripts' dry run first (they print the signer, receiver, method, arguments, gas and deposit and send nothing until `--send`).
 
 Rules that still apply (`CLAUDE.md`): keys live only in the git-ignored `.env` and are never printed or put on a command line; small English commits; run `scripts/pre-commit.sh` before a push.
 
@@ -10,9 +10,8 @@ Rules that still apply (`CLAUDE.md`): keys live only in the git-ignored `.env` a
 | --- | --- |
 | Build | `pnpm install && pnpm -C agent build` |
 | NEAR RPC | The public endpoint answers HTTP 429 under this load. Use `https://test.rpc.fastnear.com` (no key). The `FASTNEAR_API_KEY` in older notes answered 403. Set `NEAR_RPC_URL`, or `AGENT_RPC_URL`, `ORACLE_RPC_URL`, `COLLECTOR_RPC_URL` for the workers. |
-| Robinhood testnet RPC | `https://rpc.testnet.chain.robinhood.com`. Some ISPs block the host (Indonesian "Internet Positif" redirects it). Use a VPN such as Cloudflare WARP; never `curl -k`. |
-| Reference price relay | `python3 scripts/rpc-relay.py 18546 rpc.mainnet.chain.robinhood.com` (the collector reads Uniswap v3 `slot0` through it). |
-| Accounts | `.env` has `TESTNET_<ROLE>_ACCOUNT_ID` and `_PRIVATE_KEY` for `OWNER`, `COUNCIL1..3`, `AGENT`, `ORACLE`, `USER1`, `USER2`, `RELAYER`, `OPERATOR`, `VERIFIER`. |
+| Reference price relay | `python3 scripts/rpc-relay.py 18546 rpc.mainnet.chain.robinhood.com` (the collector reads Uniswap v3 `slot0` on Robinhood Chain mainnet through it). Some ISPs block the host (Indonesian "Internet Positif" redirects it); use a VPN such as Cloudflare WARP, never `curl -k`. |
+| Accounts | `.env` has `TESTNET_<ROLE>_ACCOUNT_ID` and `_PRIVATE_KEY` for `OWNER`, `COUNCIL1..3`, `AGENT`, `ORACLE`, `USER1`, `USER2`. |
 | Balances | `USER1` and `USER2` hold test tokens (faucet: 100 per token per claim). Watch NEAR: each account needs about 0.5 NEAR. |
 
 ## 1. Run the workers
@@ -55,30 +54,23 @@ Thin tokens often tie: their pools only change on a swap, and every token is pri
 
 A battle whose start passed with fewer than two funded communities can be cancelled by anyone; depositors then claim a refund. Use `battle-e2e.mjs call` with the arena methods `cancel_lifecycle_battle {battle_id}` and `claim_lifecycle_refund {battle_id, community}` (or the Cancel and Refund buttons of the battle page). The 2026-11-11 run did this on battle 3 (see `docs/evidence/2026-11-11-open-arena-live-run.json`).
 
-## 6. Settlement and payout
+## 6. Settlement, the winners' vote and claims
 
-After a recorded winner the arena settles: the winners' share of each losing token becomes an **entitlement** on that token's backing contract, and winning principal goes to DAO escrow. An entitlement is paid as the original token on Robinhood Chain:
+After a recorded winner the arena settles: the winners' share of each losing token becomes an **entitlement** on that token's contract, and the winning principal goes to DAO escrow.
+
+1. **Vote.** Winning participants vote on the battle page (DAO decision panel) or with the arena method `vote_lifecycle_disposition {battle_id, burn_percent}`. After the window closes, anyone executes the decision from the same panel. Returns become entitlements; the burned share is destroyed on NEAR.
+2. **Claim.** Once the vote is finished, each winner claims on `/portfolio` (**Claim all to my NEAR wallet**) or directly on the token contract:
 
 ```bash
-# user1 asks for 1 WALLET of their entitlement to be sent to an EVM address (dry run first; deposit 0.03 NEAR, refunded in part)
-node scripts/testnet-wiring/payout-proof.mjs request-payout WALLET 1 --send
-node scripts/testnet-wiring/payout-proof.mjs status           # authorized -> signing -> broadcast -> pending finality -> confirmed
-# Two long-running roles (separate accounts and keys):
-node scripts/testnet-wiring/payout-proof.mjs role relayer             # asks the MPC signer, broadcasts, records
-node scripts/testnet-wiring/payout-proof.mjs role operator --submit   # confirms after the receipt is final (about 1 hour)
+# dry run first; one yoctoNEAR deposit
+node scripts/testnet-wiring/battle-e2e.mjs call USER1 backing-wallet.valtrum-owner-b694.testnet \
+  claim_entitlement_as_representation '{"amount":"<units>"}' 30 1 --send
 ```
 
-Things that went wrong, so you do not repeat them:
-
-- `Fee cap outside the registered limit`: the relayer's max fee per gas must be at most the backing's registered cap (1 gwei). The script defaults to 0.1 gwei (the observed price is about 0.01 gwei).
-- The payout role processes default to the public NEAR RPC and hit HTTP 429; the script passes FastNEAR.
-- The holder `0x0b74…0c41` must hold the token and some ETH for gas (it had 0.002 ETH and 2,000,000 of each mock token). The transfer in the run (`0xd3c00284…6898`, block 152022915) moved 1 mWALLET to `0xce80…75c6`.
-- Finality on Robinhood testnet takes about an hour; the operator logs "succeeded … not final yet" until then. When it confirms, the payout state is `confirmed` and the backing reservation is consumed exactly once.
-
-Evidence goes to `docs/evidence/`. The `custody` capability in `config/arena.testnet.reads.json` stays `enabled: false` until a payout is `confirmed` and the evidence is recorded.
+Check the result with `get_ledger` on the token contract: entitlements go down by the claimed amount and the claimer's balance goes up by the same amount.
 
 ## 7. Verify
 
 - `node scripts/testnet-wiring/battle-e2e.mjs battle <id>` for the battle.
-- `node scripts/testnet-wiring/payout-proof.mjs status` for the payout.
-- The web app: `/arena/<id>` (loader at the start, chart, result card with the winner and your position), `/portfolio` (entitlements and payout requests), `/agents` (your agent's balance and plays).
+- `node scripts/testnet-wiring/battle-e2e.mjs view backing-<token>.valtrum-owner-b694.testnet get_ledger '{}'` for each token's ledger.
+- The web app: `/arena/<id>` (loader at the start, chart, result card with the winner and your position), `/portfolio` (rewards to claim and DAO decisions), `/agents` (your agent's balance and plays).

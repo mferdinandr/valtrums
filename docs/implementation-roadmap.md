@@ -1,5 +1,7 @@
 # Implementation roadmap
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Steps below about custody, payouts or Chain Signatures are historical. See [current state](current-state.md).
+
 Status: **proposal; implementation tasks are unfinished**. The documentation PR changes no application code or deployment.
 
 Canonical requirements: [product](product-spec.md), [battle rules](battle-rules.md), [economics](token-economics.md), [architecture](architecture.md), [interfaces](interfaces.md), [security](security-review.md), [ecosystem](ecosystem.md). [OpenSpec change map](openspec/README.md) and [shared design](openspec/arena-design.md) specify the target.
