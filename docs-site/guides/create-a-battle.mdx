@@ -1,0 +1,56 @@
+---
+title: "Create a Valtrums battle and make the first deposit"
+sidebarTitle: "Create a battle"
+description: "Open your own Valtrums battle: choose a scoring mode and start time, pick your crew and deposit. Other communities can join until the start."
+keywords: ["create battle", "open arena", "creator", "start time", "scoring mode"]
+---
+
+Anyone can create a Valtrums battle. You choose how the winner is scored and when the battle starts, then you back one community with your own deposit. As the creator you earn 0.05% of every losing community's deposit, whether or not your own community wins.
+
+## Before you start
+
+- A connected wallet with a little testnet NEAR.
+- Some of at least one supported token. If you have none, the page says **You hold no token this arena accepts**. Claim some from the [faucet](/guides/get-test-tokens) first.
+
+## Create the battle
+
+Go to **Arena** and start a new battle. The setup has three steps: **Challenge**, **Your crew** and **Review**.
+
+<Steps>
+  <Step title="Challenge: pick a scoring mode and start time">
+    Choose one scoring mode. It applies to every round of the battle, including overtime:
+
+    | In the app | What wins a round |
+    | --- | --- |
+    | **Biggest price climb** | The highest price change in percent |
+    | **Community growth** | The highest market cap change in percent |
+    | **Trading energy** | The highest trading volume compared with starting market cap |
+    | **Steadiest crew** | The smallest drop from a peak |
+
+    Then set **Start time (your local time)**, between 1 minute and 7 days from now. The app also shows it in UTC. See [Scoring modes](/concepts/scoring-modes) for the details of each mode.
+  </Step>
+  <Step title="Your crew: choose a token and amount">
+    Choose the token whose community you want to back and enter your deposit amount. This is your starting crew. The preview on the right shows your crew.
+  </Step>
+  <Step title="Review and confirm">
+    Check the summary: the mode, the start time and your deposit. Expand **Technical details** to see the exact contract call. Select **Create battle & deposit** and approve each transaction in your wallet.
+
+    Your first battle may need a one-time 0.05 NEAR storage prepayment, which you can withdraw later.
+  </Step>
+</Steps>
+
+When it finishes, the app opens your new battle's page. Share it: other communities can join until the start time.
+
+## What happens next
+
+- **Your deposit waits for approval.** It shows as **In escrow** until your community's safety and backing approvals are in. See [Token safety](/trust/token-safety).
+- **The battle needs a second community.** If fewer than two communities have deposits at the start time, the battle can't start and depositors get refunds. See [Get a refund](/guides/refunds).
+- **You must have a deposit.** A battle can only lock if its creator holds a real deposit in one of the communities.
+
+<Info>
+  The fee split is fixed when you create the battle. If the protocol later changes its fees, your battle keeps the settings it started with, even for communities that join after you.
+</Info>
+
+## Prefer typing?
+
+The assistant can create a battle from a sentence, for example `create price gain battle in 15 minutes`. See [The assistant](/tools/assistant).

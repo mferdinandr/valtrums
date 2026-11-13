@@ -1,0 +1,103 @@
+---
+title: "Valtrums rewards and fees: who gets what after a battle"
+sidebarTitle: "Rewards and fees"
+description: "How Valtrums splits each losing community's deposit: 99.9% to the winners by stake, 0.05% to the creator and 0.05% to the protocol, with examples."
+keywords: ["rewards", "fees", "prize", "creator fee", "protocol fee", "split"]
+---
+
+When a Valtrums battle ends, every losing community's deposit is shared among the backers of the winning community. You receive the **original tokens** the losers deposited. Nothing is swapped into another token or into dollars, so if you win against two communities you receive two different tokens.
+
+## The split
+
+For **each** losing community's deposit, at the default settings:
+
+| Who | User-created battle | Protocol-created battle |
+| --- | --- | --- |
+| Backers of the winning community, together | 99.9% | 99.9% |
+| Battle creator | 0.05% | Nothing extra |
+| Protocol | 0.05% | 0.1% |
+
+The winners' 99.9% is shared **by deposit size**: if you put in 60% of the winning community's tokens, you get 60% of the winners' share of every losing deposit.
+
+Try it with your own numbers:
+
+<RewardCalculator />
+
+## Worked example
+
+Alice deposits 600 A and Bob deposits 400 A. Community A wins against B, which holds 100,000 B.
+
+| Alice | Bob | Creator | Protocol | Total |
+| --- | --- | --- | --- | --- |
+| 59,940 B | 39,960 B | 50 B | 50 B | 100,000 B |
+
+The 1,000 A that Alice and Bob deposited go to the [winners' vote](/concepts/winners-vote), not to the prize pool.
+
+With three communities, each losing deposit is split on its own. If A wins with Alice holding 25% and Bob 75%, and B held 100,000 B and C held 200,000 C:
+
+| Who | B | C |
+| --- | --- | --- |
+| Alice | 24,975 | 49,950 |
+| Bob | 74,925 | 149,850 |
+| Creator | 50 | 100 |
+| Protocol | 50 | 100 |
+
+## Things to know
+
+- **Only losing deposits pay fees.** Nothing is charged on the winning community's own deposit.
+- **The creator fee doesn't depend on winning.** A creator whose community loses still earns the creator fee, but loses their deposit.
+- **Settings are fixed at creation.** The fee (0.1% by default, at most 10%) and the creator's share of it (50% by default) are stored when the battle is created. Later changes only affect new battles.
+- **Every unit is accounted for.** The total fee is rounded down. Leftover units from rounding go to the winners with the largest remainders, so the parts always add up to the full deposit. Very small deposits (under 1,000 of the token's smallest unit) pay no fee.
+- **A prize is not a payment yet.** After settlement, your prize is recorded as something you are entitled to. You still claim it. See [Claim your rewards](/guides/claim-rewards).
+
+export const RewardCalculator = () => {
+  const [mine, setMine] = useState(600);
+  const [team, setTeam] = useState(1000);
+  const [losing, setLosing] = useState(100000);
+  const [protocolCreated, setProtocolCreated] = useState(false);
+  const feeBps = 10;
+  const creatorShareBps = 5000;
+  const safeTeam = Math.max(team, 1);
+  const safeMine = Math.min(Math.max(mine, 0), safeTeam);
+  const fee = Math.floor((losing * feeBps) / 10000);
+  const creatorFee = protocolCreated ? 0 : Math.floor((fee * creatorShareBps) / 10000);
+  const protocolFee = fee - creatorFee;
+  const pool = losing - fee;
+  const yours = Math.floor((pool * safeMine) / safeTeam);
+  const field = { padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(127,127,127,.35)", background: "transparent", color: "inherit", font: "inherit", width: "100%" };
+  const row = (label, value) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
+      <span>{label}</span>
+      <strong>{value.toLocaleString()}</strong>
+    </div>
+  );
+  return (
+    <div className="not-prose" style={{ border: "1px solid rgba(127,127,127,.25)", borderRadius: 12, padding: 16, display: "grid", gap: 14, margin: "16px 0" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        <label style={{ display: "grid", gap: 4, fontSize: 14, minWidth: 0 }}>
+          Your deposit
+          <input type="number" min={0} value={mine} onChange={(e) => setMine(Number(e.target.value) || 0)} style={field} />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 14, minWidth: 0 }}>
+          Winning community total
+          <input type="number" min={1} value={team} onChange={(e) => setTeam(Number(e.target.value) || 1)} style={field} />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 14, minWidth: 0 }}>
+          Losing community deposit
+          <input type="number" min={0} value={losing} onChange={(e) => setLosing(Math.max(Number(e.target.value) || 0, 0))} style={field} />
+        </label>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+        <input type="checkbox" checked={protocolCreated} onChange={(e) => setProtocolCreated(e.target.checked)} />
+        Battle created by the protocol
+      </label>
+      <div style={{ display: "grid", gap: 6, borderTop: "1px solid rgba(127,127,127,.25)", paddingTop: 12 }}>
+        {row(`Your share (${((safeMine / safeTeam) * 100).toFixed(2)}% of the winners' pool)`, yours)}
+        {row("Winners' pool (99.9%)", pool)}
+        {row("Creator fee", creatorFee)}
+        {row("Protocol fee", protocolFee)}
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.7 }}>Amounts are in whole units of the losing token, at the default fee of 0.1% and creator share of 50%.</div>
+    </div>
+  );
+};

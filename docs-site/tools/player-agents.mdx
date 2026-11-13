@@ -1,0 +1,78 @@
+---
+title: "Let a NEAR AI player agent play Valtrums for you"
+sidebarTitle: "Player agents"
+description: "Create a Valtrums player agent with its own wallet, fund it with a limited amount and let NEAR AI pick battles and deposits for you on testnet."
+keywords: ["player agent", "AI agent", "NEAR AI", "autonomous", "TEE", "agents"]
+---
+
+A player agent plays Valtrums for you. It has its own NEAR account and its own token balance, which you fund. Every round it looks at the open battles, asks a NEAR AI model which community to back and how much, and makes the deposit itself. The most it can ever risk is what you put in its account.
+
+## How an agent decides
+
+- **NEAR AI makes every decision.** The model runs on NEAR AI Cloud in a trusted execution environment (TEE). There is no rule-based fallback: if the model gives no usable answer, the agent sits that round out.
+- **Your play style is a hint.** **Follow the crowd** backs the community with the largest deposit. **Back the underdog** backs the smallest.
+- **The model only sees numbers.** It gets battle and community numbers, deposit totals and its spending limit. Token names and descriptions are never sent, so they can't influence it.
+- **Every answer is checked.** The answer must name one of the offered options and an amount within the limit, or it is rejected.
+- **Plays can be audited.** Each decision is logged with the NEAR AI chat ID. Its signature, made by a key that never leaves the TEE, can be checked later.
+- **It follows the same rules as you.** The arena still checks every community's approvals. An agent can't make an unsafe token pass.
+
+By default an agent uses at most 25% of its balance of a token per play, plays each battle at most once and never joins a battle after its start time.
+
+## Set up an agent
+
+Open the **Agents** page. Depending on how the app is set up, you'll see one of two options.
+
+<Tabs>
+  <Tab title="Hosted agent">
+    Valtrums runs the agent for you. You create it, fund it, then start and stop it from the page.
+
+    <Steps>
+      <Step title="Sign in with your wallet">
+        Select **Sign in with your wallet** and sign the one-time message. This proves you own the account. It doesn't move any funds.
+      </Step>
+      <Step title="Create an agent">
+        Select **Create an agent** and pick a **Play style**. Under **Advanced** you can set **Whole tokens to keep per token**. Anything above that amount is sent back to your wallet after each round.
+      </Step>
+      <Step title="Fund it from your wallet">
+        Send it some **NEAR for fees** and the tokens it should play with, in **Whole tokens**. Your wallet signs each transfer.
+      </Step>
+      <Step title="Start">
+        Select **Start**. The activity log shows each move: deposits it made, battles it skipped because they start too soon, and times it waited for approvals or for a usable AI answer. Select **Stop** at any time.
+      </Step>
+    </Steps>
+
+    A hosted agent can also vote in the winners' vote and claim prizes for you. Those actions show up in its activity log.
+
+    <Warning>
+      **Testnet only.** With a hosted agent, the Valtrums service holds the agent's key. Use it only with test tokens. **Export key** shows the key once so you can take control yourself. Anyone with this key controls the agent's funds.
+    </Warning>
+  </Tab>
+  <Tab title="Agent with its own wallet">
+    You run the agent yourself. Valtrums never sees its key.
+
+    <Steps>
+      <Step title="Create the agent account">
+        Select **Create agent**. Your browser generates a key pair, and the agent's account is derived from it. Select **Show secret key** and copy it now: it is shown once and is never stored or sent anywhere.
+      </Step>
+      <Step title="Choose a play style">
+        Pick a play style. Optionally have surplus tokens sent back to your wallet, keeping a set number of whole tokens per token.
+      </Step>
+      <Step title="Fund it from your wallet">
+        Send it NEAR for fees and storage (about 0.5 NEAR is plenty on testnet) and the tokens it should play with. The account exists once it receives NEAR.
+      </Step>
+      <Step title="Run it">
+        Select **Download config** and copy the run command. Running it needs a NEAR AI Cloud key in `NEAR_AI_API_KEY` and the agent's secret key in `PLAYER_KEY_MY_AGENT`. Without `--live`, it only prints what it would do.
+      </Step>
+    </Steps>
+
+    The page reads the agent's balances and recent deposits from the chain every 15 seconds.
+  </Tab>
+</Tabs>
+
+## What happens to winnings
+
+An agent's prizes don't show up as tokens in its balance. Like any winner's, they are recorded as rewards to claim. See [Claim your rewards](/guides/claim-rewards). The agent's token balance only changes through its deposits, refunds from cancelled battles and surplus it sends back to you.
+
+## Running several agents
+
+You can run several agents, each with its own account, balance, key, limits and play style. Each one asks NEAR AI independently, so they can end up backing different communities in the same battle.

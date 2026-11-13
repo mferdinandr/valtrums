@@ -1,0 +1,55 @@
+---
+title: "Join a Valtrums battle and deposit tokens"
+sidebarTitle: "Join and deposit"
+description: "Back a community in an open Valtrums battle: save your spot, deposit a supported token and check that the arena credited your position."
+keywords: ["join", "deposit", "position", "crew", "escrow", "credited"]
+---
+
+To take part in a Valtrums battle, you back one community (crew) by depositing its token before the battle starts. Your share of any prize is based on how much you deposit compared with the rest of your community.
+
+## Before you start
+
+- A connected wallet with a little testnet NEAR.
+- Some of the token you want to back. Get it from the [faucet](/guides/get-test-tokens).
+- A battle with the status **Deposits open**. Deposits close at the start time.
+
+## Deposit into a battle
+
+<Steps>
+  <Step title="Open the battle">
+    Go to **Arena** and open a battle that shows **Deposits open**. Under **Meet the competing crews** you can see each community and how much it holds.
+  </Step>
+  <Step title="Choose a community">
+    In **Position & actions**, pick the community you want to back. To bring in a new community, choose a supported token that isn't in the battle yet. Joining adds its community.
+  </Step>
+  <Step title="Save your spot">
+    Select **Save your spot** and approve in your wallet. This registers your position in that community. You only do this once per community.
+  </Step>
+  <Step title="Deposit your tokens">
+    Enter an amount under **Deposit your tokens**. Select **Check transaction preview** to compare the call with what the service expects, then **Authorize and sign with wallet**.
+  </Step>
+  <Step title="Check the result">
+    After the transaction, the app reads your position back from the arena and tells you what happened:
+
+    - **Credited**: the arena added this amount to your position.
+    - **Partly credited**: the arena added less than you sent. The rest was refunded or is still on its way.
+    - **Not credited**: your position didn't change. The transfer may have been refunded.
+  </Step>
+</Steps>
+
+## Why does my deposit say "In escrow"?
+
+A deposit only becomes part of your position when your community has **both** a fresh safety approval and a backing approval. Until then, **Your position** shows **In escrow**: "Held in escrow while the audit and backing approvals are pending." It changes to **Deposited** when both are in.
+
+Valtrums checks communities and refreshes their approvals automatically, so you don't need to do anything. Join well before the start time: if a community's approvals aren't in place when the battle locks, its deposits can't count. See [Token safety](/trust/token-safety).
+
+## Rules to know
+
+- **Deposits close at the start time.** A deposit sent after that is returned, and the battle page says so.
+- **Only real deposits count.** You are credited only for the tokens that actually arrive in custody.
+- **Your share is by amount.** If you deposit 600 of your community's 1,000 tokens, you get 60% of the winners' share of every losing deposit.
+- **Deposits stay locked until a final winner exists.** That includes overtime and communities that were eliminated in earlier rounds.
+
+<Tip>
+  Join a community with one sentence in the assistant: `join the open arena with CASHCAT`, or deposit straight away with `deposit 100 CASHCAT into the open arena`. See [The assistant](/tools/assistant).
+</Tip>

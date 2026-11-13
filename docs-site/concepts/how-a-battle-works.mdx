@@ -1,0 +1,100 @@
+---
+title: "How a Valtrums battle works, from opening to payout"
+sidebarTitle: "How a battle works"
+description: "Follow a Valtrums battle through every stage: opening, joining, the lock, 30-second rounds, overtime on ties, settlement and the winners' vote."
+keywords: ["battle lifecycle", "rounds", "overtime", "lock", "settlement"]
+---
+
+Every Valtrums battle follows the same seven stages. A battle needs at least two communities with real deposits to start, and it always ends with exactly one winning community. Step through the stages below, or read the details that follow.
+
+<BattleStages />
+
+## 1. Open
+
+Anyone can open a battle. The creator picks:
+
+- **One scoring mode** for the whole battle, including any overtime rounds. See [Scoring modes](/concepts/scoring-modes).
+- **A start time** between 1 minute and 7 days from now.
+
+Opening a battle is free: there is no bond. Communities are not invited. The creator must make a real deposit in one of the communities before the battle locks.
+
+## 2. Join and deposit
+
+Until the start time, anyone can join with one of the supported tokens: **CASHCAT**, **WALLET**, **GOOD**, **VLAD** or **DEGEN**. Joining with a token adds that token's community (crew) to the battle. Players then deposit that token to back it.
+
+A deposit only counts after Valtrums confirms the tokens actually arrived and the community has fresh safety and backing approvals. Until then it shows as **In escrow**. See [Join a battle and deposit](/guides/join-and-deposit).
+
+## 3. Lock
+
+At the start time, joining and deposits close. If **two or more communities have deposits**, the battle locks: the communities, every deposit amount, the scoring mode and the fee settings are frozen. Communities without deposits are left out.
+
+If fewer than two communities have deposits, the battle can't start. Anyone can cancel it, and every depositor gets their exact deposit back. See [Get a refund](/guides/refunds).
+
+## 4. Rounds
+
+Each round lasts exactly **30 seconds**. Valtrums records prices at the start and end of the round (and during it for the drawdown mode) and scores every community with the chosen mode. Prices are point readings, not averages.
+
+If one community has the best score on its own, it is the final winner.
+
+## 5. Overtime
+
+If two or more communities tie for the best score, **only those tied leaders** play another 30-second round. Every input resets for the new round, and earlier scores don't carry over. There is no limit on the number of overtime rounds.
+
+During overtime, deposits stay closed and every deposit stays locked, including those of communities that were already eliminated.
+
+## 6. Settlement
+
+Once a single winner exists, each losing community's deposit is split:
+
+| Who | Share of each losing deposit |
+| --- | --- |
+| Backers of the winning community | 99.9%, split by how much each deposited |
+| Battle creator | 0.05% |
+| Protocol | 0.05% |
+
+When the protocol itself created the battle, it receives the full 0.1%. Rewards are the **original losing tokens**. They are not swapped. See [Rewards and fees](/concepts/rewards-and-fees).
+
+## 7. The winners' vote
+
+The winning community's own deposit doesn't go back automatically. It is held in escrow while the winning backers vote on what share to burn and what share to return. Rewards from the losing communities don't depend on this vote. See [The winners' vote](/concepts/winners-vote).
+
+export const BattleStages = () => {
+  const steps = [
+    { label: "Open", detail: "The creator picks one scoring mode and a start time between 1 minute and 7 days away. There is no bond, and the creator must deposit before the lock." },
+    { label: "Join and deposit", detail: "Until the start time, anyone joins with CASHCAT, WALLET, GOOD, VLAD or DEGEN and deposits. A deposit counts once its tokens arrive and the community is approved." },
+    { label: "Lock", detail: "At the start time, with two or more funded communities, everything is frozen. With fewer than two, anyone can cancel and depositors get refunds." },
+    { label: "Rounds", detail: "Each round lasts exactly 30 seconds and is scored with the chosen mode from recorded prices. A unique best score wins." },
+    { label: "Overtime", detail: "Tied leaders play again with every input reset. There is no cap on overtime rounds, and all deposits stay locked." },
+    { label: "Settlement", detail: "Each losing deposit pays 99.9% to the winning backers, 0.05% to the creator and 0.05% to the protocol, in the original token." },
+    { label: "Winners' vote", detail: "The winning community's own deposit sits in escrow while its backers vote on how much to burn and how much to return." },
+  ];
+  const [active, setActive] = useState(0);
+  const nav = { padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(127,127,127,.35)", background: "transparent", color: "inherit", font: "inherit", cursor: "pointer" };
+  return (
+    <div className="not-prose" style={{ border: "1px solid rgba(127,127,127,.25)", borderRadius: 12, padding: 16, margin: "16px 0" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
+        {steps.map((step, i) => (
+          <button
+            key={step.label}
+            type="button"
+            onClick={() => setActive(i)}
+            style={{
+              textAlign: "left", padding: 10, borderRadius: 8, font: "inherit", color: "inherit", cursor: "pointer", minWidth: 0,
+              border: i === active ? "2px solid #2F8F6F" : "1px solid rgba(127,127,127,.3)",
+              background: i === active ? "rgba(47,143,111,.14)" : "transparent",
+              opacity: i > active ? 0.55 : 1,
+            }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Stage {i + 1}</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{step.label}</div>
+          </button>
+        ))}
+      </div>
+      <p style={{ margin: "14px 0", minHeight: 48 }}>{steps[active].detail}</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" style={nav} disabled={active === 0} onClick={() => setActive(active - 1)}>Back</button>
+        <button type="button" style={nav} disabled={active === steps.length - 1} onClick={() => setActive(active + 1)}>Next</button>
+      </div>
+    </div>
+  );
+};

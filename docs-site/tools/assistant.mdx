@@ -1,0 +1,48 @@
+---
+title: "Use the Valtrums assistant to play in plain words"
+sidebarTitle: "Assistant"
+description: "Type what you want, like deposit 100 CASHCAT into the open arena, and the Valtrums assistant turns it into one reviewed action that you sign yourself."
+keywords: ["assistant", "terminal", "natural language", "AI", "prompt", "intent"]
+---
+
+The **Assistant** page lets you play Valtrums by typing what you want instead of clicking through forms. It reads your sentence, turns it into one exact action and shows it to you for review. Nothing happens until you check the preview and sign in your wallet. The assistant can never sign or send anything on its own.
+
+## What you can ask
+
+| Type something like | What it does |
+| --- | --- |
+| `which arenas are open?` | Lists battles you can still join |
+| `my positions` | Shows your deposits |
+| `create price gain battle in 15 minutes` | Creates a battle with that scoring mode and start time |
+| `join the open arena with CASHCAT` | Adds the CASHCAT community to the open battle |
+| `deposit 100 CASHCAT into the open arena` | Deposits into a battle |
+| `cancel battle 7` | Cancels a battle that couldn't start, so depositors can get refunds |
+| `claim my winnings` | Claims your rewards to your NEAR wallet |
+| `vote burn 50% battle 7` | Votes in the winners' vote |
+
+You can chain steps too: `deposit 2 CASHCAT and 2 VLAD in the open arena, then vote burn 50% on that battle if I win`.
+
+## How a request runs
+
+<Steps>
+  <Step title="Type your request">
+    Type in the prompt box under **What's your next move?** or select one of the example prompts.
+  </Step>
+  <Step title="Answer any follow-up">
+    If something is missing, the assistant asks, for example **Which battle? For example: battle 7.**
+  </Step>
+  <Step title="Review the action">
+    Under **REVIEW YOUR ACTION**, check the battle, community, token and amount. Select **Check transaction preview** to confirm the service expects the same call.
+  </Step>
+  <Step title="Sign">
+    Select **Authorize and sign with wallet** and approve in your wallet. After a deposit, the assistant reads your position back and tells you whether it was **Credited**, **Partly credited** or **Not credited**.
+  </Step>
+</Steps>
+
+## Good to know
+
+- **Communities are numbered from 1.** "Community 1" is the first crew in a battle.
+- **Tokens are matched exactly.** The assistant only uses supported tokens from the arena's registry. It never guesses a token.
+- **The assistant checks the rules first.** If a battle isn't open, has no winner yet or doesn't have that community, it tells you why instead of preparing a transaction.
+- **AI output is never trusted on its own.** When an AI model reads your request, its answer is strictly checked. If the check fails, simple built-in rules read your request instead.
+- **Payouts to Robinhood Chain are not available yet.** The assistant can review a payout request but says "Payout requests are currently unavailable. Nothing was sent."
