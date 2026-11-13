@@ -56,7 +56,7 @@ import { resolveJoinToken, type JoinTokenResult, type RegistryAsset } from "@/li
 import { isHiddenAsset } from "@/lib/arena-read/hidden-assets";
 
 const EXAMPLES = [
-  "deposit 100 CASHCAT ke arena yang open",
+  "deposit 100 CASHCAT into the open arena",
   "which arenas are open?",
   "join the open arena with CASHCAT",
   "my positions",
@@ -64,7 +64,7 @@ const EXAMPLES = [
   "cancel battle 7",
   "claim my winnings",
   "vote burn 50% battle 7",
-  "deposit 2 CASHCAT dan 2 VLAD di arena open, lalu vote burn 50% di battle tersebut kalau menang",
+  "deposit 2 CASHCAT and 2 VLAD in the open arena, then vote burn 50% on that battle if I win",
 ];
 
 export const PAYOUT_BLOCKED_REASON =
@@ -1065,7 +1065,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
       >
         {chat.turns.length === 0 && (
           <Bubble side="terminal" label="Assistant">
-            <p>What do you want to do? Write it the way you would say it, in English or Bahasa Indonesia.</p>
+            <p>What do you want to do? Write it the way you would say it, in plain English.</p>
             <p className="mt-2 text-xs text-mute">
               Amounts are plain token amounts (100 or 0.5). You can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”. Reading your request never submits a transaction.
             </p>
@@ -1098,7 +1098,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
         className="flex items-end gap-2 border-t border-edge p-3 sm:p-4"
       >
         <label className="flex-1">
-          <span className="sr-only">Your request (English or Bahasa Indonesia)</span>
+          <span className="sr-only">Your request (English)</span>
           <textarea
             aria-label="Assistant prompt"
             value={prompt}
