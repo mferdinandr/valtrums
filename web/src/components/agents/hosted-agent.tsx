@@ -33,7 +33,13 @@ function describeActivity(a: AgentActivity): string {
     case "start": return "Started playing";
     case "stop": return "Stopped";
     case "skipped": return `Waiting: ${a.reason ?? "nothing to do right now"}`;
-    case "no_option": return "No open battle fits right now";
+    case "no_option": {
+      // The service says why in "kind:battle", e.g. "already_in:36".
+      const [why, id] = (a.reason ?? "").split(":");
+      if (why === "already_in") return `Already deposited in battle #${id}; waiting for the next battle`;
+      if (why === "starting_soon") return `Battle #${id} starts too soon to join; waiting for the next battle`;
+      return "No open battle to join right now";
+    }
     case "model_answer_rejected": return "The AI's pick was not usable, so the agent waited";
     case "sent": return `Sent a step for ${where}${a.step ? ` (${a.step})` : ""}`;
     case "played": return `Played ${where}${amount ? `: deposited ${amount}` : ""}${a.decidedBy === "near-ai" ? " (picked by NEAR AI)" : ""}`;

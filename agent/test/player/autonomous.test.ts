@@ -228,7 +228,7 @@ describe("autonomous agent (NEAR AI decides)", () => {
     const model = ai(() => answer(1, 0, "10"));
     expect(await playOnce(agent(), setup({ battles: board(), balances: {}, model }).deps)).toMatchObject({ kind: "skipped", reason: "no_funds" });
     const soon = setup({ battles: { 1: battle([community(WALLET, "1")], { start_at_ms: String(NOW + 30_000) }) }, balances: { [WALLET]: 100n }, model });
-    expect(await playOnce(agent(), soon.deps)).toMatchObject({ kind: "no_option" });
+    expect(await playOnce(agent(), soon.deps)).toMatchObject({ kind: "no_option", reason: "starting_soon:1" });
     expect(model.seen).toHaveLength(0); // the model is not asked when there is nothing to choose
   });
 
@@ -249,7 +249,7 @@ describe("autonomous agent (NEAR AI decides)", () => {
     const model = ai(() => answer(1, 0, "250"));
     const { deps, calls } = setup({ battles: { 1: battle([community(WALLET, "100")]) }, balances: { [WALLET]: 1_000n }, live: true, registered: true, model });
     expect((await playOnce(agent(), deps)).kind).toBe("played");
-    expect((await playOnce(agent(), deps)).kind).toBe("no_option");
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "no_option", reason: "already_in:1" });
     expect(calls.filter((c) => c.methodName === "ft_transfer_call")).toHaveLength(1);
   });
 

@@ -180,27 +180,46 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
   if (balances.size === 0) return skip("no_funds");
 
   const candidates: Candidate[] = [];
+  // Why battles were passed over, so "nothing to play" can say which of the three it is (shown in the owner's log).
+  const alreadyIn: number[] = [];
+  const startingSoon: number[] = [];
   const count = await deps.battleCount();
   for (let id = count, scanned = 0; id >= 1 && scanned < agent.scanBattles; id--, scanned++) {
     const battle = await deps.source.battle(id);
     if (!battle || battle.locked || battle.cancelled) continue;
     const startAt = battle.start_at_ms ? Number(battle.start_at_ms) : null;
-    if (startAt === null || !Number.isFinite(startAt) || startAt - now() < agent.minStartLeadMs) continue;
+    if (startAt === null || !Number.isFinite(startAt)) continue;
+    if (startAt - now() < agent.minStartLeadMs) {
+      startingSoon.push(id);
+      continue;
+    }
     const present = new Set(battle.communities.map((c) => c.representation));
     const done = (rep: string) => state.has(actedKey(agent.account, id, rep)) || state.isBlocked(actedKey(agent.account, id, rep), now());
+    let held = false;
     for (const [community, c] of battle.communities.entries()) {
       const balance = balances.get(c.representation);
-      if (balance === undefined || done(c.representation)) continue;
+      if (balance === undefined) continue;
+      if (done(c.representation)) {
+        held = true;
+        continue;
+      }
       candidates.push({ battleId: id, community, representation: c.representation, needsJoin: false, balance, vault: BigInt(c.vault) });
     }
     for (const [rep, balance] of balances) {
-      if (present.has(rep) || done(rep)) continue;
+      if (present.has(rep)) continue;
+      if (done(rep)) {
+        held = true;
+        continue;
+      }
       candidates.push({ battleId: id, community: battle.communities.length, representation: rep, needsJoin: true, balance, vault: 0n });
     }
+    if (held) alreadyIn.push(id);
   }
   if (candidates.length === 0) {
-    log({ event: "no_option", agent: agent.account });
-    return { kind: "no_option", reason: "no open battle with a token this agent holds" };
+    // The newest battle that explains the silence wins: "already in #36" beats "#37 starts too soon".
+    const reason = alreadyIn.length > 0 ? `already_in:${Math.max(...alreadyIn)}` : startingSoon.length > 0 ? `starting_soon:${Math.max(...startingSoon)}` : "none_open";
+    log({ event: "no_option", agent: agent.account, reason });
+    return { kind: "no_option", reason };
   }
 
   // The model is offered the communities that already exist and whose token the agent holds; only when there is none
