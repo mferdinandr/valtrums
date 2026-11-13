@@ -53,8 +53,12 @@ export class ObservationCapacityError extends Error {
   }
 }
 export class ObservationLockedError extends Error {
-  constructor() {
-    super("observation journal is locked by another writer; stop it and inspect before removing journal.lock");
+  constructor(store: "file" | "database" = "file") {
+    super(
+      store === "database"
+        ? "observation journal writer lock is held by another database session (a Postgres advisory lock, there is no lock file to remove); stop that process, or end an orphaned session found in pg_locks where locktype is advisory"
+        : "observation journal is locked by another writer; stop it and inspect before removing journal.lock",
+    );
     this.name = "ObservationLockedError";
   }
 }

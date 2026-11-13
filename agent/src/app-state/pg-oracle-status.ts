@@ -22,7 +22,7 @@ export class PgOracleStatusStore {
   static async open(deps: { db: Db; session: LockSession; namespace: ObservationNamespace }): Promise<PgOracleStatusStore> {
     const ns = namespaceKey(deps.namespace);
     try {
-      if (!(await tryAdvisoryLock(deps.session, lockName(ns)))) throw new OracleLockedError();
+      if (!(await tryAdvisoryLock(deps.session, lockName(ns)))) throw new OracleLockedError("database");
     } catch (err) {
       await deps.session.close().catch(() => undefined);
       throw err;
