@@ -1,0 +1,54 @@
+---
+title: "The winners' vote: burn or return the winning deposit"
+sidebarTitle: "The winners' vote"
+description: "After a Valtrums battle, the winning community's backers vote on how much of their own deposit to burn and how much to return. Learn how voting works."
+keywords: ["DAO", "vote", "burn", "return", "escrow", "winning principal"]
+---
+
+When a Valtrums battle ends, the winning community's own deposit (the winning principal) is held in escrow. Only the backers of that community can vote, and the vote decides how much of it is burned and how much is returned to them. Rewards from the losing communities are recorded separately and don't depend on how the vote turns out.
+
+## How the vote works
+
+- **Who votes.** Only accounts that deposited in the winning community. Losing and eliminated communities don't vote. The creator votes only if they backed the winner.
+- **What you choose.** A burn share from 0% to 100%. The rest of your vote counts as return. For example, 30% burn means 70% return.
+- **Voting weight.** Your deposit in the winning community. Bigger deposits carry more weight.
+- **Result.** The weighted average of all votes cast applies to the **whole** escrow, including the deposits of people who didn't vote.
+- **Window.** Voting opens when the winner is recorded and lasts for a set period, fixed when the battle was created. The battle page shows **Closes in** with the time left.
+- **No quorum, no delegation.** One voter can decide alone. Only you can vote with your own account, and a vote is final once cast.
+
+<Warning>
+  If nobody votes before the window closes, the winning deposit **stays in escrow**. Nothing is burned or returned automatically. If you backed the winner, vote.
+</Warning>
+
+## Example
+
+Alice deposited 600 and Bob 400 in the winning community. Alice votes 100% burn and Bob votes 0% burn. The weighted burn share is (600 × 100 + 400 × 0) ÷ 1,000 = **60%**. Each of them has 60% of their deposit burned and 40% returned: Alice gets 240 back, Bob 160.
+
+## Vote
+
+<Steps>
+  <Step title="Open the battle or your Portfolio">
+    A battle with an open vote shows **DAO decision** with the status **Voting open**. The **DAO decisions** section of your Portfolio lists them too.
+  </Step>
+  <Step title="Set your burn share">
+    Use **Burn share of your vote** to choose a percentage. The chart **Burn versus return weight** shows the current totals.
+  </Step>
+  <Step title="Sign">
+    Confirm in your wallet. Afterwards the page says, for example, **You voted 50% burn.**
+  </Step>
+</Steps>
+
+You can also vote from the assistant: `vote burn 50% battle 7`.
+
+## After the window closes
+
+Anyone can finish the decision. The arena contract counts the votes itself. No operator, worker or council can change or veto the result.
+
+- **Returned** tokens become claimable rewards for each backer. See [Claim your rewards](/guides/claim-rewards).
+- **Burned** tokens are sent to a fixed, unrecoverable address on Robinhood Chain. Valtrums reports this as "sent to sink" rather than a reduction in total supply. Until the transfer is confirmed, the page shows it as pending, not burned.
+
+## Trade-offs
+
+- Large holders have the most influence in their own battle.
+- Votes are public, so later voters can see the running totals.
+- With no quorum and no automatic fallback, a deposit can stay locked if nobody votes.
