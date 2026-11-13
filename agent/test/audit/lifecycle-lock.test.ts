@@ -12,11 +12,13 @@ const rec = (result: "pass" | "pending", expiresAt: string | null): AuditRecord 
   ({ result, expiresAt }) as unknown as AuditRecord;
 const inMs = (ms: number) => new Date(NOW.getTime() + ms).toISOString();
 
-function locker(opts: { records: Map<string, AuditRecord>; failCalls?: number; neverLocks?: boolean }) {
+function locker(opts: { records: Map<string, AuditRecord>; failCalls?: number; neverLocks?: boolean; visibleAfterReads?: number }) {
   let clock = NOW;
   let onChain = false;
   let failures = opts.failCalls ?? 0;
+  let reads = 0;
   const calls: unknown[][] = [];
+  const sleeps: number[] = [];
   const l = new LifecycleLocker({
     contractId: "arena.testnet",
     transport: {
@@ -32,10 +34,17 @@ function locker(opts: { records: Map<string, AuditRecord>; failCalls?: number; n
     },
     records: opts.records,
     now: () => clock,
-    isLocked: async () => onChain,
+    // Before the lock call every read is the plain on-chain flag; after it the view can trail by `visibleAfterReads` reads.
+    isLocked: async () => {
+      if (calls.length === 0) return onChain;
+      reads++;
+      return onChain && reads > (opts.visibleAfterReads ?? 0);
+    },
     retryAfterMs: 30_000,
+    confirm: { tries: 4, delayMs: 500 },
+    sleep: async (ms) => void sleeps.push(ms),
   });
-  return { l, calls, setNow: (t: Date) => (clock = t), setOnChain: (v: boolean) => (onChain = v) };
+  return { l, calls, sleeps, setNow: (t: Date) => (clock = t), setOnChain: (v: boolean) => (onChain = v) };
 }
 
 const fresh = () =>
@@ -96,9 +105,19 @@ describe("lifecycle lock step (fixture-only)", () => {
     expect(t.calls).toHaveLength(2);
   });
 
+  it("waits for a view that trails the lock transaction instead of calling it unconfirmed", async () => {
+    const t = locker({ records: fresh(), visibleAfterReads: 2 });
+    expect(await t.l.tryLock(1, 2, true)).toEqual({ status: "locked" });
+    expect(t.sleeps).toEqual([500, 500]);
+    expect(await t.l.tryLock(1, 2, true)).toEqual({ status: "already_locked" });
+    expect(t.calls).toHaveLength(1);
+  });
+
   it("reports an unconfirmed lock and re-reads the chain before retrying", async () => {
     const t = locker({ records: fresh(), neverLocks: true });
     expect(await t.l.tryLock(1, 2, true)).toEqual({ status: "unconfirmed" });
+    // Every confirmation read was used before giving up.
+    expect(t.sleeps).toEqual([500, 500, 500]);
     t.setOnChain(true);
     t.setNow(new Date(NOW.getTime() + 31_000));
     expect(await t.l.tryLock(1, 2, true)).toEqual({ status: "already_locked" });
