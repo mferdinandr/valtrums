@@ -37,8 +37,12 @@ export interface OracleStatus {
 }
 
 export class OracleLockedError extends Error {
-  constructor() {
-    super("lifecycle oracle state directory is locked by another process; stop it before removing oracle.lock");
+  constructor(store: "file" | "database" = "file") {
+    super(
+      store === "database"
+        ? "lifecycle oracle lock is held by another database session (a Postgres advisory lock, there is no lock file to remove); stop that process, or end an orphaned session found in pg_locks where locktype is advisory"
+        : "lifecycle oracle state directory is locked by another process; stop it before removing oracle.lock",
+    );
     this.name = "OracleLockedError";
   }
 }

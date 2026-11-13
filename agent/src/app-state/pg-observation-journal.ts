@@ -164,7 +164,7 @@ export class PgObservationJournal {
   static async open(deps: PgJournalDeps, opts: JournalOptions = {}): Promise<PgObservationJournal> {
     const ns = namespaceKey(deps.namespace);
     try {
-      if (!(await tryAdvisoryLock(deps.session, lockName(ns)))) throw new ObservationLockedError();
+      if (!(await tryAdvisoryLock(deps.session, lockName(ns)))) throw new ObservationLockedError("database");
       const state = new ObservationState();
       const { bytes } = await catchUp(deps.db, ns, state);
       return new PgObservationJournal(deps, ns, state, bytes, opts.maxRecords ?? DEFAULT_MAX_RECORDS, opts.maxBytes ?? DEFAULT_MAX_BYTES);
