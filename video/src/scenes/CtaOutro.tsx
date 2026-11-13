@@ -14,7 +14,7 @@ const EASE = Easing.bezier(0.16, 1, 0.3, 1);
 /** CTA outro links. */
 const LINKS = {
   demo: "valtrums.xyz",
-  repo: "github.com/mferdinandr/valtrum",
+  repo: "github.com/mferdinandr/valtrums",
   event: "NEAR Hackathon",
 };
 
