@@ -37,7 +37,7 @@ class JourneyBoundary extends Component<
     return { failed: true };
   }
   componentDidCatch(error: Error) {
-    console.error("Valtrum 3D journey failed", error);
+    console.error("Valtrums 3D journey failed", error);
     this.props.onFailure();
   }
   render() {
@@ -287,13 +287,13 @@ export function LandingJourney() {
       ref={rail}
       className="landing-journey"
       data-reduced={staticMode}
-      aria-label="Explore the living world of Valtrum"
+      aria-label="Explore the living world of Valtrums"
     >
       <div className="journey-stage">
         <div
           className="journey-world"
           role="group"
-          aria-label="A decorative 3D journey through Valtrum: community plaza, Create Battle machine, arena, vaults and a final town vista. All destinations are linked in the page text."
+          aria-label="A decorative 3D journey through Valtrums: community plaza, Create Battle machine, arena, vaults and a final town vista. All destinations are linked in the page text."
         >
           {supported && seen && !failed && (
             <JourneyBoundary onFailure={onFailure}>
@@ -327,7 +327,7 @@ export function LandingJourney() {
             aria-labelledby="journey-title"
           >
             <span className="journey-tag">
-              <Sparkles size={13} /> Welcome to the world of Valtrum
+              <Sparkles size={13} /> Welcome to the world of Valtrums
             </span>
             <h1 id="journey-title">
               A little world.
@@ -367,7 +367,7 @@ export function LandingJourney() {
             </h2>
             <p>
               Every community brings a different personality. Meet the mascots,
-              inspect the rules, and choose your own way into Valtrum.
+              inspect the rules, and choose your own way into Valtrums.
             </p>
           </section>
           <section
@@ -526,7 +526,7 @@ export function LandingJourney() {
                 className="journey-text-link"
                 onClick={() => setTopic("planned")}
               >
-                What’s next for Valtrum?
+                What’s next for Valtrums?
               </button>
             </nav>
             <p className="journey-endnote">
@@ -575,7 +575,7 @@ export function LandingJourney() {
         onClose={() => setTopic(null)}
       >
         <div className="journey-dialog-top">
-          <span className="journey-tag">Valtrum / Field notes</span>
+          <span className="journey-tag">Valtrums / Field notes</span>
           <button
             autoFocus
             aria-label="Close field notes"

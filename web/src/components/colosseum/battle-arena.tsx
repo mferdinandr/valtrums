@@ -28,7 +28,7 @@ class Boundary extends Component<
     return { failed: true };
   }
   componentDidCatch(error: Error) {
-    console.error("Valtrum 3D battle arena failed", error);
+    console.error("Valtrums 3D battle arena failed", error);
     this.props.onFailure();
   }
   render() {

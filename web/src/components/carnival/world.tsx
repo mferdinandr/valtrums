@@ -226,7 +226,7 @@ function Installation(props: WorldProps) {
             );
           })}
           <Nameplate
-            text="VALTRUM"
+            text="VALTRUMS"
             color="#58617a"
             position={[0, 3, -1.3]}
             scale={1.8}

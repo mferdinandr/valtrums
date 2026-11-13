@@ -34,7 +34,7 @@ export function useWallet(): WalletState {
 export function ConfigError({ missing }: { missing: string[] }) {
   return (
     <main role="alert" className="mx-auto max-w-xl space-y-3 p-8">
-      <h1 className="text-xl">Valtrum is not configured</h1>
+      <h1 className="text-xl">Valtrums is not configured</h1>
       <p>Set these environment variables in <code>web/.env.local</code> and restart the dev server:</p>
       <ul className="list-disc pl-5">{missing.map((m) => <li key={m}><code>{m}</code></li>)}</ul>
     </main>

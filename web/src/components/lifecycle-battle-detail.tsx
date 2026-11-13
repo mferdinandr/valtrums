@@ -327,7 +327,7 @@ export function LifecycleBattleDetail({
     <div ref={page} className="lifecycle-page immersive-match">
       <nav className="match-navigation" aria-label="Battle navigation">
         <Link href="/arena">← Lobby</Link>
-        <span className="match-navigation-brand">VALTRUM <span>/ ARENA</span></span>
+        <span className="match-navigation-brand">VALTRUMS <span>/ ARENA</span></span>
         <WalletButton />
       </nav>
       {phase.kind === "decided" && (

@@ -8,7 +8,7 @@ export function BattleDetailSkeleton({ battleId }: { battleId: string }) {
     <SkeletonGroup label={`Preparing battle #${battleId}…`} className="lifecycle-page immersive-match match-loading">
       <nav className="match-navigation" aria-label="Battle navigation">
         <Link href="/arena">← Lobby</Link>
-        <span className="match-navigation-brand">VALTRUM <span>/ ARENA</span></span>
+        <span className="match-navigation-brand">VALTRUMS <span>/ ARENA</span></span>
         <div className="ml-auto flex gap-2"><Skeleton style={{ width: 150, height: 44, borderRadius: 12 }} /><Skeleton style={{ width: 90, height: 44, borderRadius: 12 }} /></div>
       </nav>
       <section className="battle-arena battle-arena--match" aria-hidden="true">
