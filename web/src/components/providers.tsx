@@ -5,7 +5,7 @@ import { NearProvider, useNearWallet } from "near-connect-hooks";
 import { config, configProblems } from "@/lib/config";
 import { SmoothDetails } from "@/components/ui/smooth-details";
 import type { Namespace } from "@/lib/arena-read/application";
-import type { WalletLike } from "@/lib/arena-read/action-session";
+import { forgetStoredSessions, type WalletLike } from "@/lib/arena-read/action-session";
 
 export interface WalletState {
   /** Connected account id, or null when signed out. */
@@ -47,9 +47,14 @@ export function ConfigError({ missing }: { missing: string[] }) {
  */
 function WalletBridge({ namespace, children }: { namespace: Namespace; children: ReactNode }) {
   const { signedAccountId, loading, signIn, signOut, connector } = useNearWallet();
+  // Signing out also forgets the stored session tokens of this tab.
+  const signOutAndForget = useCallback(async () => {
+    forgetStoredSessions();
+    await signOut();
+  }, [signOut]);
   const wallet = useMemo<WalletState>(
-    () => ({ accountId: signedAccountId || null, loading, signIn, signOut }),
-    [signedAccountId, loading, signIn, signOut],
+    () => ({ accountId: signedAccountId || null, loading, signIn, signOut: signOutAndForget }),
+    [signedAccountId, loading, signIn, signOutAndForget],
   );
   const getWallet = useCallback(async () => (await connector.getConnectedWallet()).wallet as unknown as WalletLike, [connector]);
   return (

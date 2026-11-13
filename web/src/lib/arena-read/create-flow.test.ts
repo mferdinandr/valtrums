@@ -25,7 +25,7 @@ function world(over: { previewArgs?: unknown; confirm?: boolean } = {}) {
     return Response.json({ data: record(over.confirm === false ? "broadcast" : "confirmed") });
   });
   const wallet: WalletLike = {
-    signMessage: async () => ({ accountId: ACCOUNT, publicKey: "ed25519:k", signature: "c2ln" }),
+    signMessage: vi.fn(async () => ({ accountId: ACCOUNT, publicKey: "ed25519:k", signature: "c2ln" })),
     signAndSendTransaction: vi.fn(async () => ({ transaction: { hash: "TXH" } })),
   };
   const sessionFetch = async (url: string) => (url.endsWith("/config") ? Response.json({ readMessage: "m", sessionRecipient: "r", actionRecipient: "a" }) : Response.json({ token: "tok", accountId: ACCOUNT, expiresAt: new Date(2e12).toISOString() }));
@@ -65,14 +65,16 @@ describe("create flow sequencing", () => {
     expect(result).toMatchObject({ ok: false, status: "broadcast", txHash: "TXH" });
   });
 
-  it("a wallet rejection ends the run with an error and sends nothing", async () => {
+  it("a wallet rejection ends the run with an error and reports no broadcast", async () => {
     const w = world();
     const outcome = await previewCreate(request, review, ACCOUNT, w.deps);
     if (outcome.step !== "previewed") throw new Error("fixture");
-    w.wallet.signMessage = async () => { throw new Error("user rejected"); };
-    const rejecting = createActionWallet(new ActionSession({ accountId: ACCOUNT, wallet: w.wallet, fetchImpl: (async (u: string) => (u.endsWith("/config") ? Response.json({ readMessage: "m", sessionRecipient: "r", actionRecipient: "a" }) : Response.json({}))) as never }), { accountId: ACCOUNT, wallet: w.wallet });
+    w.wallet.signAndSendTransaction = vi.fn(async () => { throw new Error("user rejected"); });
+    const rejecting = createActionWallet(new ActionSession({ accountId: ACCOUNT, wallet: w.wallet, store: null, fetchImpl: (async (u: string) => (u.endsWith("/config") ? Response.json({ readMessage: "m", sessionRecipient: "r", actionRecipient: "a" }) : Response.json({}))) as never }), { accountId: ACCOUNT, wallet: w.wallet });
     const result = await executeTerminalAction(outcome.previewed, { ...w.deps, wallet: rejecting });
     expect(result).toMatchObject({ ok: false, status: "error", reason: "user rejected" });
-    expect(w.wallet.signAndSendTransaction).not.toHaveBeenCalled();
+    // No message signature is asked for; the only wallet prompt is the transaction, which was rejected.
+    expect(w.wallet.signMessage).not.toHaveBeenCalled();
+    expect(w.calls).not.toContain("POST /a1/broadcast");
   });
 });

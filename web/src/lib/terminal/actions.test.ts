@@ -48,7 +48,7 @@ function wallet() {
 }
 
 describe("terminal action path", () => {
-  it("signs the preview hash, sends exactly the prepared transaction and waits for a verified receipt", async () => {
+  it("authorizes with the session (no message prompt), sends exactly the prepared transaction and waits for a verified receipt", async () => {
     const api = scripted([
       ok(record("previewed")),
       ok(record("authorized")),
@@ -65,7 +65,9 @@ describe("terminal action path", () => {
       sleep: async () => {},
     });
     expect(result).toEqual({ ok: true, status: "confirmed", actionId: "act_" + "a".repeat(32), txHash: "8".repeat(44) });
-    expect(messages).toEqual([actionAuthorizationMessage("f".repeat(64))]);
+    // The only wallet prompt is the transaction itself.
+    expect(messages).toEqual([]);
+    expect(JSON.parse(String(api.calls[1]!.init.body))).toEqual({ proof: { kind: "session" } });
     expect(sent).toEqual([TX]);
     expect(api.calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
       "POST /api/arena/actions",
