@@ -1,5 +1,7 @@
 # Handoff: testnet wiring (issues #72 and #113)
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Anything below about custody, payouts or Chain Signatures is historical. See [current state](current-state.md).
+
 Branch `chore/testnet-wiring` (from origin/main 0da9ce5). Nothing was pushed. Testnet only. Written 2026-11-09 when the run was interrupted. No irreversible action was executed.
 
 ## Done and verified live

@@ -1,5 +1,7 @@
 # Handoff: open arena live on testnet (2026-11-11, about 15:40 UTC)
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Anything below about custody, payouts or Chain Signatures is historical. See [current state](current-state.md).
+
 Read this first. It replaces the "What is NOT done" list of [handoff-open-arena.md](handoff-open-arena.md), which is now history. Deadline: **2026-11-14 23:59 UTC**.
 
 Rules that still apply: every chain action needs the owner's explicit approval for that action alone (show the dry run or exact call first); never push to `main` (branch, PR, merge after the owner approves); small English commits without AI attribution; run `scripts/pre-commit.sh` before a push; keys live only in the git-ignored `.env` and are never printed or passed on a command line. See [CLAUDE.md](../CLAUDE.md).

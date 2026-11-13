@@ -1,5 +1,7 @@
 # Intents and Bitte evidence
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired, and cross-chain funding through NEAR Intents is not part of the application. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. This page is historical research. See [current state](current-state.md).
+
 Recorded evidence for issue [#78](https://github.com/mferdinandr/valtrum/issues/78). Raw responses: [`evidence/2026-11-09-intents-routes.json`](evidence/2026-11-09-intents-routes.json). Only the public 1Click API was called: `GET /v0/tokens`, and `POST /v0/quote` with `dry: true`. Without `dry: false` no deposit address exists, so no funds could move. No API key was used, and the probe recipient and refund addresses are not ours.
 
 ## 1. Intents asset discovery and quotes (recorded 2026-11-08 22:00 UTC)

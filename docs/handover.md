@@ -1,5 +1,7 @@
 # Handover (2026-11-11)
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Anything below about custody, payouts or Chain Signatures is historical. See [current state](current-state.md).
+
 For the next person working on Valtrum. It lists what is finished, what exists only in code, what is connected end to end, what has never been tried, and one pipeline you must **not touch** while it runs. Read [CLAUDE.md](../CLAUDE.md) (conventions), [current-state.md](current-state.md) (what exists) and [testnet-evidence.md](testnet-evidence.md) (what is proven) first. No secret is written in this file; keys are named only.
 
 Hackathon deadline: development ends **2026-11-14 23:59 UTC**, the repository must be public before then, one submission per project. The organizers' rules say an AI agent never submits, posts, makes the repo public, pushes, signs transactions or spends tokens without the human's explicit confirmation.

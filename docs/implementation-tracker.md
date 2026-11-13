@@ -1,5 +1,7 @@
 # Implement the permissionless Robinhood arena for the NEAR hackathon
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Items below about custody, payouts or Chain Signatures are historical. See [current state](current-state.md).
+
 Publication status: **prepared locally; GitHub issue URL pending**. This is the exact parent issue content to publish after checking existing issues/PRs for duplicates.
 
 ## Product

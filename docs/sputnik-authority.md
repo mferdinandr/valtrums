@@ -1,5 +1,7 @@
 # Protocol authority under a SputnikDAO
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Methods and roles below that belong to the payout contract, the receipt registry or sinks (`set_dao_sink`) are historical. See [current state](current-state.md).
+
 Design, evidence and runbook for issue [#113](https://github.com/mferdinandr/valtrum/issues/113) (owner decisions of 2026-11-09, D28). The winners' burn-or-return vote stays in the arena contract (D22, [dao-governance.md](dao-governance.md)). What moves under a SputnikDAO is **protocol-level authority and the protocol fee recipient**, so these changes need a council vote instead of one key.
 
 **Status (2026-11-09): created and exercised live on NEAR testnet, plus sandbox-verified.** The DAO `valtrum-protocol.sputnikv2.testnet` exists, the target contracts are deployed on the owner's testnet accounts and one real change went through a passed proposal (see "Live result" below; raw data in [`evidence/2026-11-09-near-testnet-deploy.json`](evidence/2026-11-09-near-testnet-deploy.json)). All of it is live testnet evidence from the owner's accounts; the backing asset and the arena `usdc` are fixtures. The sandbox tests below remain the proof for what was not run live.

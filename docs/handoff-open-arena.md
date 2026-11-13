@@ -1,5 +1,7 @@
 # Handoff: open arena (2026-11-11)
 
+> **Note (2026-11-14):** The Robinhood Chain testnet custody, the EVM contracts and payouts to Robinhood are retired. Valtrums now runs on NEAR only; Robinhood Chain mainnet is only read for prices and token audits. Anything below about custody, payouts or Chain Signatures is historical. See [current state](current-state.md).
+
 Read this first, then `docs/openspec/changes/arena-lifecycle/open-arena-contract-notes.md` and `open-arena-agent-notes.md`. The approved plan the work follows is summarised below.
 
 ## The product change
