@@ -7,7 +7,6 @@ import { ClaimAllButton } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
 import type { PortfolioData } from "@/hooks/use-portfolio";
 import { formatUnits } from "@/lib/amounts";
 import { daoBlocksClaim } from "@/lib/arena-read/account-state";
@@ -72,6 +71,37 @@ function Row({ symbol, title, sub, chip }: { symbol: string; title: ReactNode; s
 
 const POSITIONS_PAGE = 5;
 
+/** A row of toggle buttons that picks one filter; every option shows how many items it holds. */
+function FilterChips({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (key: string) => void;
+  options: Array<{ key: string; title: string; count: number }>;
+}) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const active = o.key === value;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(o.key)}
+            className="rounded-full px-3 py-1 text-xs font-semibold"
+            style={active ? TONES.green : TONES.grey}
+          >
+            {o.title} ({o.count})
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const daoGroup = (voteStatus: string): "voting" | "decided" | "pending" => (voteStatus === "voting" ? "voting" : voteStatus === "decided" ? "decided" : "pending");
+const DAO_GROUP_TITLE = { voting: "Voting open", decided: "Decided", pending: "No votes" } as const;
+
 function chipFor(stage: BattleStage, winner: number | null, community: number): ReactNode {
   if (stage === "finished") return <Chip tone={winner === community ? "green" : "grey"}>{winner === community ? "Won" : "Lost"}</Chip>;
   if (stage === "open") return <Chip tone="green">Deposits open</Chip>;
@@ -107,12 +137,30 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
   }, [arena, idKey]);
   const byStage = (stage: BattleStage) => rows.filter((r) => briefs?.get(r.battleId)?.stage === stage);
   const unknown = briefs === null ? rows : rows.filter((r) => !briefs.has(r.battleId));
-  const sections: Array<{ key: string; title: string; stage: BattleStage | null; list: typeof rows }> = [
-    ...STAGE_ORDER.map((stage) => ({ key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) })),
-    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown }] : []),
+  const won = (r: (typeof rows)[number]) => briefs?.get(r.battleId)?.winner === r.community;
+  const finished = byStage("finished");
+  type Section = { key: string; title: string; stage: BattleStage | null; list: typeof rows; extra?: boolean };
+  // "extra" sections (Won, Lost) are only selectable as a filter; "All" does not list their rows twice.
+  const sections: Section[] = [
+    ...STAGE_ORDER.flatMap((stage): Section[] => [
+      { key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) },
+      ...(stage === "finished"
+        ? [
+            { key: "won", title: "Won", stage, list: finished.filter(won), extra: true },
+            { key: "lost", title: "Lost", stage, list: finished.filter((r) => !won(r)), extra: true },
+          ]
+        : []),
+    ]),
+    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown } as Section] : []),
   ].filter((x) => x.list.length > 0);
   const [filter, setFilter] = useState("all");
   const [visible, setVisible] = useState<Record<string, number>>({});
+  const [daoFilter, setDaoFilter] = useState("all");
+  const daoGroups = (["voting", "decided", "pending"] as const)
+    .map((k) => ({ key: k, title: DAO_GROUP_TITLE[k], count: dao.filter((d) => daoGroup(d.voteStatus) === k).length }))
+    .filter((g) => g.count > 0);
+  const activeDaoFilter = daoFilter === "all" || daoGroups.some((g) => g.key === daoFilter) ? daoFilter : "all";
+  const daoShown = dao.filter((d) => activeDaoFilter === "all" || daoGroup(d.voteStatus) === activeDaoFilter);
   // A filter whose section disappeared (for example after a refresh) falls back to all.
   const activeFilter = filter === "all" || sections.some((x) => x.key === filter) ? filter : "all";
 
@@ -149,17 +197,14 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
           <Empty>No deposits in recent battles.</Empty>
         ) : (
           <div className="space-y-4">
-            <Select
+            <FilterChips
               label="Filter positions by battle status"
               value={activeFilter}
               onChange={setFilter}
-              options={[
-                { value: "all", title: `All battles (${rows.length})` },
-                ...sections.map((x) => ({ value: x.key, title: `${x.title} (${x.list.length})` })),
-              ]}
+              options={[{ key: "all", title: "All", count: rows.length }, ...sections.map((x) => ({ key: x.key, title: x.title, count: x.list.length }))]}
             />
             {sections
-              .filter((x) => activeFilter === "all" || activeFilter === x.key)
+              .filter((x) => (activeFilter === "all" ? !x.extra : activeFilter === x.key))
               .map((x) => {
                 const shown = Math.min(x.list.length, visible[x.key] ?? POSITIONS_PAGE);
                 return (
@@ -206,26 +251,34 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
         ) : dao.length === 0 ? (
           <Empty>No winning principal in a DAO decision.</Empty>
         ) : (
-          <ul className="space-y-2">
-            {dao.map((d) => {
-              const tone = d.voteStatus === "voting" ? "green" : d.voteStatus === "decided" ? "blue" : "amber";
-              const label = d.voteStatus === "voting" ? "Voting open" : d.voteStatus === "decided" ? "Decided" : d.voteStatus === "no_vote" ? "No vote" : d.voteStatus === "undecided_escrowed" ? "No votes" : "Pending";
-              return (
-                <Row
-                  key={`${d.battleId}:${d.community}`}
-                  symbol="DAO"
-                  title={`Your principal ${units(d.position)}`}
-                  sub={
-                    <>
-                      <Link href={`/arena/${d.battleId}`} className="underline">Battle #{d.battleId}</Link>
-                      {d.myReturn ? ` · return ${units(d.myReturn.amount)}${d.myReturn.recorded ? "" : " (not recorded yet)"}` : ""}
-                    </>
-                  }
-                  chip={<Chip tone={tone}>{label}</Chip>}
-                />
-              );
-            })}
-          </ul>
+          <div className="space-y-3">
+            <FilterChips
+              label="Filter DAO decisions by status"
+              value={activeDaoFilter}
+              onChange={setDaoFilter}
+              options={[{ key: "all", title: "All", count: dao.length }, ...daoGroups]}
+            />
+            <ul className="space-y-2">
+              {daoShown.map((d) => {
+                const tone = d.voteStatus === "voting" ? "green" : d.voteStatus === "decided" ? "blue" : "amber";
+                const label = d.voteStatus === "voting" ? "Voting open" : d.voteStatus === "decided" ? "Decided" : d.voteStatus === "no_vote" ? "No vote" : d.voteStatus === "undecided_escrowed" ? "No votes" : "Pending";
+                return (
+                  <Row
+                    key={`${d.battleId}:${d.community}`}
+                    symbol="DAO"
+                    title={`Your principal ${units(d.position)}`}
+                    sub={
+                      <>
+                        <Link href={`/arena/${d.battleId}`} className="underline">Battle #{d.battleId}</Link>
+                        {d.myReturn ? ` · return ${units(d.myReturn.amount)}${d.myReturn.recorded ? "" : " (not recorded yet)"}` : ""}
+                      </>
+                    }
+                    chip={<Chip tone={tone}>{label}</Chip>}
+                  />
+                );
+              })}
+            </ul>
+          </div>
         )}
       </Panel>
     </div>
