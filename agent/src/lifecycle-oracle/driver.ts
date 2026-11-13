@@ -29,9 +29,23 @@ export interface LifecycleViews {
   readiness(id: string): Promise<{ activated: boolean; paused: boolean; oracle: string | null }>;
 }
 
+/** One function-call action of a batch transaction. */
+export interface BatchAction {
+  method: string;
+  args: object;
+  gas: string;
+  deposit?: string;
+}
+
+/**
+ * Transaction sender. `batch`, when present, sends several function calls to one contract as ONE transaction; NEAR
+ * applies its actions in order and atomically (a failing action reverts the others).
+ */
+export type OracleTx = Pick<NearTransport, "call"> & { batch?: (contractId: string, actions: BatchAction[]) => Promise<unknown> };
+
 export interface OracleDeps {
   views: LifecycleViews;
-  tx: Pick<NearTransport, "call">;
+  tx: OracleTx;
   loadEvidence: () => Promise<ObservationState>;
   state?: Pick<OracleStateDir, "write">;
   now?: () => number;
@@ -60,6 +74,8 @@ export const MAX_SCAN = 200;
 const MAX_BACKOFF_PASSES = 8;
 /** About how long an open-round transaction takes to land plus the page's next refresh. */
 export const OPEN_LEAD_MS = 3_500;
+/** `start_lifecycle_rounds` always creates round 1 (arena `Rounds::from_frozen_policy`). */
+const FIRST_ROUND_ID = "1";
 /** An unlocked battle whose start passed this long ago is re-read only every COLD_RECHECK_PASSES passes. */
 const COLD_AFTER_MS = 5 * 60_000;
 const COLD_RECHECK_PASSES = 10;
@@ -72,6 +88,8 @@ export class LifecycleOracle {
   private readonly failures = new Map<string, { count: number; skipUntilPass: number }>();
   /** Battles that never locked long after their start: skipped until this pass number. */
   private readonly coldUntilPass = new Map<string, number>();
+  /** Battles whose combined start-and-open transaction failed: they use the two separate transactions instead. */
+  private readonly batchFailed = new Set<string>();
   private passes = 0;
   private passError: string | null = null;
 
@@ -161,6 +179,23 @@ export class LifecycleOracle {
     }
   }
 
+  /** Sends several actions as one transaction; every action gets the transaction's outcome. */
+  private async writeBatch(
+    battleId: string,
+    items: Array<{ action: BattleStatus["actions"][number]["action"]; method: string; args: object; deposit: string }>,
+  ): Promise<BattleStatus["actions"]> {
+    if (!this.cfg.writesEnabled) return items.map((i) => ({ action: i.action, executed: false, outcome: "dry run: ORACLE_WRITES_ENABLED is not true" }));
+    try {
+      await this.deps.tx.batch!(this.cfg.arenaContractId, items.map((i) => ({ method: i.method, args: i.args, gas: WRITE_GAS, deposit: i.deposit })));
+      this.log.info("lifecycle oracle: sent", { battleId, method: items.map((i) => i.method).join("+") });
+      return items.map((i) => ({ action: i.action, executed: true, outcome: "sent" }));
+    } catch (err) {
+      // Atomic on chain: either both actions applied or neither. The next pass re-reads the contract.
+      this.log.error("lifecycle oracle: batch failed or unconfirmed", { battleId, error: errorMessage(err) });
+      return items.map((i) => ({ action: i.action, executed: true, outcome: `failed or unconfirmed: ${errorMessage(err)}` }));
+    }
+  }
+
   /** Waits for the chain to show a round (or its window) after the oracle's own write; false if it never does. */
   private async waitForRound(battleId: string, needWindow: boolean): Promise<boolean> {
     const { tries, delayMs } = this.deps.followUp ?? { tries: 12, delayMs: 400 };
@@ -205,7 +240,24 @@ export class LifecycleOracle {
         return this.row(battleId, "needs_rounds_started", null, ["rounds are not started; a funded caller must call start_lifecycle_rounds (the oracle spends no storage deposit unless ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO is set)"], []);
       }
       // The config holds a bare yocto integer; near-kit refuses a unitless amount, so the unit is explicit here.
-      const a = await this.write(battleId, "start_lifecycle_rounds", "start_lifecycle_rounds", { battle_id: battleId, terms }, `${this.cfg.roundsStorageDepositYocto} yocto`);
+      const storage = `${this.cfg.roundsStorageDepositYocto} yocto`;
+      if (this.deps.tx.batch && !this.batchFailed.has(battleId)) {
+        // Reveal the terms and open round 1 in ONE transaction: one confirmation wait instead of two plus a poll. The
+        // window starts when the transaction is expected to land, as for a separate open.
+        const startNs = (BigInt(this.now() + OPEN_LEAD_MS) * 1_000_000n).toString();
+        const actions = await this.writeBatch(battleId, [
+          { action: "start_lifecycle_rounds", method: "start_lifecycle_rounds", args: { battle_id: battleId, terms }, deposit: storage },
+          { action: "open_lifecycle_round", method: "open_lifecycle_round", args: { battle_id: battleId, round_id: FIRST_ROUND_ID, start_ns: startNs }, deposit: ONE_YOCTO },
+        ]);
+        if (actions[0]?.outcome === "sent") {
+          if (depth < 2) await this.waitForRound(battleId, true);
+          return this.row(battleId, "needs_open", FIRST_ROUND_ID, [`terms revealed and round ${FIRST_ROUND_ID} opened in one transaction`], actions);
+        }
+        // A failed or unknown combined send: this battle falls back to the two separate transactions from the next pass.
+        if (actions[0]?.executed) this.batchFailed.add(battleId);
+        return this.row(battleId, "needs_rounds_started", null, ["combined start and open not confirmed; the next pass re-reads the contract"], actions);
+      }
+      const a = await this.write(battleId, "start_lifecycle_rounds", "start_lifecycle_rounds", { battle_id: battleId, terms }, storage);
       if (a.outcome === "sent" && depth < 2 && (await this.waitForRound(battleId, false))) return this.one(battleId, loadEvidence, depth + 1);
       return this.row(battleId, "needs_rounds_started", null, ["terms reveal sent; waiting for the contract to show the rounds"], [a]);
     }
