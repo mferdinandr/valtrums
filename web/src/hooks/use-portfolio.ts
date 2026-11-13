@@ -79,8 +79,12 @@ export function usePortfolio() {
         part<PayoutsData>("inspect_payouts", token, read.signal),
       ]);
       if (!read.isCurrent()) return;
+      // Every read failing usually means the stored token was rejected: drop it so "Refresh" signs again.
+      if ([accountState, positions, entitlements, payouts].every((p) => p.state === "error")) session.current.value.invalidate();
       setState({ step: "ready", account: accountId, data: { accountState, positions, entitlements, payouts } });
     } catch (e) {
+      // A rejected or stale token must not be reused from storage on the next try.
+      session.current?.value.invalidate();
       if (read.isCurrent()) setState({ step: "error", message: e instanceof Error ? e.message : "could not read your account" });
     }
   }, [accountId, getWallet]);
