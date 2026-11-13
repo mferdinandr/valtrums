@@ -164,6 +164,24 @@ describe("authorization and revalidation", () => {
     await expect(service.authorize(other.actionId, "alice.testnet", { kind: "grant" })).rejects.toThrow(/user's signature/);
   });
 
+  it("lets the funds' own session authorize its user-signed action, with no second signature", async () => {
+    const r = await service.preview("alice.testnet", deposit());
+    const authorized = await service.authorize(r.actionId, "alice.testnet", { kind: "session" });
+    expect(authorized.status).toBe("authorized");
+    expect(authorized.authorization).toMatchObject({ kind: "session", accountId: "alice.testnet" });
+    // The transaction handed out is still the account's own, for its own wallet to sign.
+    const { transaction } = await service.prepare(r.actionId, "alice.testnet");
+    expect(transaction.signerId).toBe("alice.testnet");
+    expect(transaction).toEqual(r.preview.transaction);
+  });
+
+  it("refuses session authorization from another account or for a grant action", async () => {
+    const r = await service.preview("alice.testnet", deposit());
+    await expect(service.authorize(r.actionId, "bob.testnet", { kind: "session" })).rejects.toThrow(/another account/);
+    const g = await service.preview("agent.testnet", deposit({ grant: { user: "alice.testnet", localId: LOCAL, mappingVersion: "2" } }));
+    await expect(service.authorize(g.actionId, "agent.testnet", { kind: "session" })).rejects.toThrow(/grant/);
+  });
+
   it("only the previewing session can drive an action", async () => {
     const r = await service.preview("alice.testnet", deposit());
     await expect(service.authorize(r.actionId, "bob.testnet", signFor(r.previewHash))).rejects.toThrow(/another account/);

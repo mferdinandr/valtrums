@@ -46,7 +46,16 @@ export interface UserSignatureProof {
 export interface GrantProof {
   kind: "grant";
 }
-export type AuthorizationProof = UserSignatureProof | GrantProof;
+/**
+ * Authorization by the read session itself, for an action whose transaction the funds' own account
+ * must sign. The session was opened with a NEP-413 signature by a full-access key of that account, and
+ * the authorization moves nothing: no funds move until the account's wallet signs the prepared
+ * transaction, and the receipt must match it. This removes a second wallet prompt per action.
+ */
+export interface SessionProof {
+  kind: "session";
+}
+export type AuthorizationProof = UserSignatureProof | GrantProof | SessionProof;
 
 export class ActionAccessError extends Error {
   constructor(message: string) {
@@ -133,7 +142,7 @@ export class ActionService {
     });
   }
 
-  /** Binds a user signature (NEP-413 over the preview hash) or the grant delegate to the action. */
+  /** Binds a user signature (NEP-413 over the preview hash), the user's own session, or the grant delegate to the action. */
   async authorize(actionId: string, caller: string, proof: AuthorizationProof): Promise<ActionRecord> {
     const record = await this.owned(actionId, caller);
     const nowMs = this.now();
@@ -146,6 +155,19 @@ export class ActionService {
         kind: "grant",
         delegate: caller,
         user: record.preview.accountId,
+        atMs: nowMs,
+      }));
+    }
+    if (proof?.kind === "session") {
+      if (record.preview.authorization !== "user_signature") throw new ActionAccessError("this action is authorized through a grant");
+      // Only when the session's account owns the funds and is the only possible signer of the transaction.
+      const { accountId, signerId, transaction } = record.preview;
+      if (caller !== accountId || signerId !== accountId || transaction.signerId !== accountId) {
+        throw new ActionAccessError("only the account whose funds move can authorize with its session");
+      }
+      return this.deps.store.update(actionId, (r) => this.advance(r, "authorized", nowMs, undefined, {
+        kind: "session",
+        accountId,
         atMs: nowMs,
       }));
     }

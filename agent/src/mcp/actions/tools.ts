@@ -45,7 +45,9 @@ export const ACTION_TOOLS: readonly ActionTool[] = [
     name: "authorize_action",
     description:
       "Bind an authorization to one exact preview: a NEP-413 signature over the message " +
-      `"${actionAuthorizationMessage("<previewHash>")}" from the funds' account, or {kind:"grant"} from the grant delegate. Model output is never accepted.`,
+      `"${actionAuthorizationMessage("<previewHash>")}" from the funds' account, {kind:"session"} when the session's account owns the funds ` +
+      "and signs the transaction itself, or {kind:\"grant\"} from the grant delegate. Authorizing moves nothing: only the account's wallet " +
+      "signature on the prepared transaction does.",
     inputSchema: { type: "object", properties: { ...session, ...actionId, proof: { type: "object" } }, required: ["session", "actionId", "proof"], additionalProperties: false },
     run: (args, actions, caller) => actions.authorize(String(args.actionId), caller, args.proof as AuthorizationProof),
   },
