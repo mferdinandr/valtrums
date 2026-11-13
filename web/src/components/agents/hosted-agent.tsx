@@ -37,6 +37,7 @@ function describeActivity(a: AgentActivity): string {
       // The service says why in "kind:battle", e.g. "already_in:36".
       const [why, id] = (a.reason ?? "").split(":");
       if (why === "already_in") return `Already deposited in battle #${id}; waiting for the next battle`;
+      if (why === "retry_later") return `Waiting for approvals on battle #${id}; will try again shortly`;
       if (why === "starting_soon") return `Battle #${id} starts too soon to join; waiting for the next battle`;
       return "No open battle to join right now";
     }
