@@ -30,7 +30,7 @@ class WorldBoundary extends Component<
     return { failed: true };
   }
   componentDidCatch(error: Error) {
-    console.error("Valtrum 3D scene failed", error);
+    console.error("Valtrums 3D scene failed", error);
     this.props.onFailure();
   }
   render() {
