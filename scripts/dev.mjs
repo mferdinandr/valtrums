@@ -24,14 +24,19 @@ function stop(code = 0) {
   console.log("[dev] Waiting for workers to finish in-flight work and release their locks…");
 }
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => stop());
-function start(name, command, args, childEnv = {}, cwd = root) {
+// optional: when this process exits unexpectedly the others keep running (the web UI stays up) and the failure is reported loudly.
+function start(name, command, args, childEnv = {}, cwd = root, optional = false) {
   console.log(`[dev] ${name}${check ? " (configuration checked; not started)" : " starting"}`);
   if (check) return;
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/PRIVATE_KEY|^PAYOUT_(RELAYER|OPERATOR)_/.test(key)));
   const child = spawn(command, args, { cwd, env: { ...inherited, ...childEnv }, detached: true, stdio: "inherit" });
   children.push(child);
   child.on("error", () => { console.error(`[dev] ${name} failed to start`); stop(1); });
-  child.on("exit", (code) => { if (!stopping) { console.error(`[dev] ${name} exited (${code})`); stop(code || 1); } });
+  child.on("exit", (code) => {
+    if (stopping) return;
+    if (optional) { console.error(`[dev] WARNING: ${name} exited (${code}); web and read API keep running WITHOUT these workers. Check their logs in ${state}, then restart pnpm dev.`); return; }
+    console.error(`[dev] ${name} exited (${code})`); stop(code || 1);
+  });
 }
 const workers = env.DEV_WORKERS !== "0";
 if (workers) {
@@ -77,7 +82,7 @@ const journalFiles = env.OBSERVATION_JOURNAL_STORE === "database"
 const shared = { LIVE_STATE_DIR: state, ...journalFiles, ARENA_APPLICATION_OBSERVATION_SCOPE: scope, OBSERVATION_QUALIFIED_MODES: "PriceGain", OBSERVATION_BOUNDARY_TOLERANCE_MS: "5000", OBSERVATION_MAX_GAP_MS: "15000" };
 if (workers) {
   console.log("[dev] Testnet workers enabled: audit, backing refresh, lock and oracle submit transactions.");
-  start("agent / oracle / collector", process.execPath, ["scripts/testnet-wiring/live-run.mjs"], shared);
+  start("agent / oracle / collector", process.execPath, ["scripts/testnet-wiring/live-run.mjs"], shared, root, true);
 }
 start("read API :8790", process.execPath, ["scripts/read-dev.mjs"], workers ? shared : {}, path.join(root, "agent"));
 if (hosted) {
