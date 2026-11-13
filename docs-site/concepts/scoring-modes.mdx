@@ -1,0 +1,108 @@
+---
+title: "Valtrums scoring modes: four ways to win a round"
+sidebarTitle: "Scoring modes"
+description: "How Valtrums scores each 30-second round: price climb, community growth, trading energy and steadiest crew, with formulas and worked examples."
+keywords: ["scoring", "price gain", "market cap growth", "volume", "drawdown", "formula"]
+---
+
+The battle creator picks one of four scoring modes, and it applies to every round of the battle, including overtime. Each mode looks at what happened to every community's token during the same 30-second round. All scores are compared with exact math, never rounded display numbers.
+
+| In the app | Formal name | The winner is the community with |
+| --- | --- | --- |
+| **Biggest price climb** | Price % Gain | The highest price change in percent |
+| **Community growth** | Market Cap % Growth | The highest market cap change in percent |
+| **Trading energy** | Volume-to-Market Cap Ratio | The highest trading volume divided by starting market cap |
+| **Steadiest crew** | Lowest % Drawdown | The smallest drop from a peak during the round |
+
+<Tip>
+  A negative score can win. If every token falls, the one that falls least wins: −5% beats −10%.
+</Tip>
+
+## Biggest price climb
+
+The percent change in price from the start to the end of the round:
+
+`score = 100 × (end price − start price) ÷ start price`
+
+**Example.** A goes from 100 to 95 (−5%). B goes from 100 to 90 (−10%). A wins, even though both fell.
+
+## Community growth
+
+The percent change in market cap, where market cap is price times circulating supply. Supply is measured at both the start and the end, so a token can gain in price and still lose market cap.
+
+`score = 100 × (end market cap − start market cap) ÷ start market cap`
+
+**Example.** A's price goes from 2 to 2.2, but its circulating supply drops from 1,000 to 900. Its market cap goes from 2,000 to 1,980: **−1%**. B's price stays at 1 while supply grows from 2,000 to 2,100: **+5%**. B wins.
+
+## Trading energy
+
+How much the token traded during the round, compared with its market cap at the start of the round.
+
+`score = round trading volume (USD) ÷ starting market cap`
+
+**Example.** A trades 300 against a starting market cap of 1,000: **0.30**. B trades 400 against 2,000: **0.20**. A wins, even though B traded more in total.
+
+A round with no trades at all scores zero. A round with no volume data is not scored.
+
+## Steadiest crew
+
+The largest drop from any peak to a later low during the round. This is not the same as the loss from start to end. The lowest score wins.
+
+**Example.** A's price path is 100 → 120 → 90 → 110. Its biggest drop is from 120 to 90: **25%**. B's path is 100 → 95 → 105 → 100. Its biggest drop is 5%. B wins, even though A ended higher.
+
+A token whose price never falls has a drawdown of **0%**. Two tokens at 0% tie and go to overtime.
+
+Try a path yourself:
+
+<DrawdownCalculator />
+
+## Ties and missing data
+
+- **Ties.** If two or more communities share the best score exactly, only they play another round with every input reset. See [How a battle works](/concepts/how-a-battle-works#5-overtime).
+- **Missing data.** If the data needed to score a round is missing or invalid, the round stays pending. Missing data is never treated as zero and never produces a winner.
+- **Prices.** Every reading is a single point in time, not an average.
+
+<Note>
+  On testnet, the test tokens are scored with the market data of the real Robinhood Chain token each one represents.
+</Note>
+
+export const DrawdownCalculator = () => {
+  const [text, setText] = useState("100, 120, 90, 110");
+  const prices = text.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  let peak = 0;
+  let worst = 0;
+  let from = null;
+  let to = null;
+  let peakAt = 0;
+  prices.forEach((p, i) => {
+    if (p > peak) { peak = p; peakAt = i; }
+    const dd = (peak - p) / peak;
+    if (dd > worst) { worst = dd; from = peakAt; to = i; }
+  });
+  const valid = prices.length >= 2;
+  const max = valid ? Math.max(...prices) : 1;
+  const min = valid ? Math.min(...prices) : 0;
+  const span = max - min || 1;
+  const pts = prices.map((p, i) => `${10 + (i * 280) / Math.max(prices.length - 1, 1)},${90 - ((p - min) / span) * 70}`).join(" ");
+  return (
+    <div className="not-prose" style={{ border: "1px solid rgba(127,127,127,.25)", borderRadius: 12, padding: 16, display: "grid", gap: 12, margin: "16px 0" }}>
+      <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
+        Prices during the round, separated by commas
+        <input value={text} onChange={(e) => setText(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(127,127,127,.35)", background: "transparent", color: "inherit", font: "inherit" }} />
+      </label>
+      {valid ? (
+        <>
+          <svg viewBox="0 0 300 100" style={{ width: "100%", display: "block" }}>
+            <polyline points={pts} fill="none" stroke="#2F8F6F" strokeWidth="2.5" />
+          </svg>
+          <div style={{ fontSize: 15 }}>
+            Maximum drawdown: <strong>{(worst * 100).toFixed(2)}%</strong>
+            {from !== null ? ` (from ${prices[from]} down to ${prices[to]})` : " (the price never fell)"}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 14, opacity: 0.75 }}>Enter at least two positive prices.</div>
+      )}
+    </div>
+  );
+};

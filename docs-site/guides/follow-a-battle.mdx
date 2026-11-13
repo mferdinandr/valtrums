@@ -1,0 +1,53 @@
+---
+title: "Follow a live Valtrums battle and read its status"
+sidebarTitle: "Follow a battle"
+description: "Read a Valtrums battle page: what each status means, how live rounds and overtime appear, and where the recorded winner and round history are shown."
+keywords: ["battle status", "live round", "overtime", "round history", "winner", "chart"]
+---
+
+Each Valtrums battle has its own page with a countdown, a race chart, the competing communities, your position and the round history. This page explains what you see at each stage and what each status means.
+
+## Battle statuses
+
+| Status | What it means |
+| --- | --- |
+| **Deposits open** | The battle is gathering. You can join and deposit until the start time. |
+| **Starting soon** / **GET READY** | The start time is close. |
+| **LOCKING CREWS** | The start time has passed and the battle is being locked. Deposits are closed. |
+| **Crews locked** | The communities and deposits are frozen. Rounds are about to begin. |
+| **LIVE ROUND** | A 30-second round is running. The page shows the round number and time left. |
+| **Tied · Overtime** | The leaders tied. Only they play another round. |
+| **RESULT PENDING** | The round ended and Valtrums is waiting for the price data needed to score it. |
+| **recorded winner** | A single winner exists and is stored by the arena. |
+| **NOT ENOUGH CREWS** | Fewer than two communities had deposits at the start time. |
+| **Cancelled** | The battle was cancelled. Depositors can claim a refund. |
+
+## Before the battle starts
+
+While a battle is gathering, the chart shows a **live price preview**: the reference prices of the competing tokens, as percent change since you opened the page.
+
+<Note>
+  The preview is for display only. It is not used for scoring. Rounds are scored only from the price observations Valtrums records after the battle locks. A token without a matching price pool isn't drawn, and a line stays flat while nobody trades.
+</Note>
+
+## During rounds
+
+Once the crews are locked, the chart switches to the recorded round observations. Each round lasts exactly 30 seconds. **Round history** lists each round's candidates, their scores and who was eliminated.
+
+If a round's data is incomplete, the round stays pending. Missing data never counts as zero and never decides a winner.
+
+## Overtime
+
+When two or more communities tie for the best score, the page shows **Tied · Overtime** and only the tied leaders play again. Every input resets. For example:
+
+| Round | Price climb scores | Result |
+| --- | --- | --- |
+| 1 | A +10%, B +10%, C +2% | A and B advance. C is eliminated, but its deposit stays locked. |
+| 2 | A −3%, B −3% | Tie again. Another round. |
+| 3 | A −4%, B −5% | A wins. B and C are both losing communities. |
+
+There is no limit on overtime rounds. No new deposits are accepted while they run.
+
+## When the battle ends
+
+The winner is shown as the **recorded winner**. Settlement then splits each losing community's deposit. Check the **Portfolio** page for your prize, and see [Claim your rewards](/guides/claim-rewards). If your community won, you can also take part in [the winners' vote](/concepts/winners-vote).
