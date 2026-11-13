@@ -197,6 +197,15 @@ export function openPhase(detail: LifecycleDetail, nowMs: number): OpenPhase {
   return fundedCount(detail) >= MIN_FUNDED ? { kind: "awaiting_lock", startAtMs } : { kind: "cancellable", startAtMs };
 }
 
+/**
+ * A listed battle that cannot start: still open on-chain, its start time has passed and fewer than two communities are
+ * funded. The arena marks it cancelled once someone (normally the agent) cancels it; until then it reads as failed.
+ */
+export function failedToStart(b: { status: string; startAtMs: string | null; enteredCount: number }, nowMs: number): boolean {
+  if (b.status !== "open" || !b.startAtMs || !MS.test(b.startAtMs)) return false;
+  return nowMs >= Number(b.startAtMs) && b.enteredCount < MIN_FUNDED;
+}
+
 /** One allowlisted token as the arena returns it from `get_lifecycle_joinable_assets`. */
 export interface JoinableAsset {
   chain_id: string;

@@ -4,6 +4,7 @@ import {
   buildCancelReview,
   buildJoinReview,
   buildRefundReview,
+  failedToStart,
   JOIN_DEPOSIT_YOCTO,
   localInputToMs,
   msToLocalInput,
@@ -124,5 +125,22 @@ describe("escrow refund review (D41)", () => {
   it("refuses a bad battle id and an unconfigured arena", () => {
     expect(buildEscrowRefundReview("arena.testnet", 0).ok).toBe(false);
     expect(buildEscrowRefundReview("", 17).ok).toBe(false);
+  });
+});
+
+describe("failedToStart", () => {
+  const base = { status: "open", startAtMs: "1000", enteredCount: 1 };
+  it("is true once the start passed with fewer than two funded communities and the battle is still open", () => {
+    expect(failedToStart(base, 1000)).toBe(true);
+    expect(failedToStart({ ...base, enteredCount: 0 }, 5000)).toBe(true);
+  });
+  it("is false before the start, with two funded communities, or once the arena settled the state", () => {
+    expect(failedToStart(base, 999)).toBe(false);
+    expect(failedToStart({ ...base, enteredCount: 2 }, 5000)).toBe(false);
+    for (const status of ["locked", "decided", "cancelled"]) expect(failedToStart({ ...base, status }, 5000)).toBe(false);
+  });
+  it("is false without a usable start time", () => {
+    expect(failedToStart({ ...base, startAtMs: null }, 5000)).toBe(false);
+    expect(failedToStart({ ...base, startAtMs: "soon" }, 5000)).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
-import { utc } from "@/lib/arena-read/open-arena";
+import { failedToStart, MIN_FUNDED, utc } from "@/lib/arena-read/open-arena";
 import {
   communityName,
   modeName,
@@ -127,7 +127,9 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {result.data.items.map((battle) => (
+            {result.data.items.map((battle) => {
+              const failed = failedToStart(battle, Date.now());
+              return (
               <Card
                 className="lifecycle-crew battle-preview-card"
                 key={`${namespace.deploymentId}:${battle.battleId}`}
@@ -135,13 +137,15 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                 <div className="battle-preview-meta"><p className="eyebrow text-neon-green">
                   BATTLE #{battle.battleId} · {battle.enteredCount ?? battle.communities.length} ENTERED
                   {battle.pendingCount ? ` · ${battle.pendingCount} PENDING` : ""}
-                </p><span className="battle-preview-status">{battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
+                </p><span className="battle-preview-status">{failed ? "Failed to start" : battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
                 <h2 className="mt-3 text-xl">
                   <span className="sr-only">Battle #{battle.battleId}: </span>
                   {modeName(battle.mode)}
                 </h2>
                 <p className="mt-2 text-sm text-mute">
-                  {battle.status === "open"
+                  {failed
+                    ? `Not enough crews funded (${battle.enteredCount} of ${MIN_FUNDED}) · open it to cancel and refund`
+                    : battle.status === "open"
                     ? battle.startAtMs && /^[0-9]+$/.test(battle.startAtMs)
                       ? `Starts ${utc(Number(battle.startAtMs))}`
                       : "Ready to meet your crew"
@@ -181,7 +185,8 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                   </Button>
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
           {result.data.nextCursor && (
             <Button
