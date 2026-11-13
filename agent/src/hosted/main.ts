@@ -6,7 +6,8 @@ import { playOnce, sweepOnce, type AutonomousAgentConfig, type FunctionCallReque
 import { createModelProposer } from "../player/model.js";
 import { Challenges, rpcKeyCheck } from "./auth.js";
 import { parseKek } from "./crypto.js";
-import { createPgDb } from "./db.js";
+import { connectDedicated, createPgDb } from "./db.js";
+import { createLease, type Lease, type LeaseConnection } from "./lease.js";
 import { HostedAgents, ModelBudget, type Funds, type HostedLimits } from "./manager.js";
 import { PgHostedRepository } from "./pg-store.js";
 import { FileHostedRepository, type HostedRepository } from "./repository.js";
@@ -90,7 +91,10 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
   let repo: HostedRepository;
   let sessions: SessionStore;
   let closeDb: () => Promise<void> = async () => {};
+  // Only the service holding this lease signs for agents; without a database there is nothing shared to guard.
+  let lease: Lease | null = null;
   if (databaseUrl) {
+    lease = createLease(() => connectDedicated(databaseUrl) as unknown as Promise<LeaseConnection>);
     const db = createPgDb(databaseUrl);
     await db.query("select 1"); // fail at startup, not on the first request, when the database cannot be reached
     repo = new PgHostedRepository(db);
@@ -201,10 +205,21 @@ export async function runHostedService(env: NodeJS.ProcessEnv = process.env): Pr
       server.close();
     });
   }
+  let leading: boolean | null = null;
   while (running) {
+    const mayPlay = lease ? await lease.ensure() : true;
+    if (mayPlay !== leading) {
+      leading = mayPlay;
+      log({ event: mayPlay ? "lease_held" : "lease_busy", note: mayPlay ? "this service runs the agents" : "another service on this database runs the agents; this one only serves requests" });
+    }
+    if (!mayPlay) {
+      await new Promise<void>((r) => setTimeout(r, 15_000));
+      continue;
+    }
     await manager.tick().catch((e) => log({ event: "tick_error", message: e instanceof Error ? e.message : String(e) }));
     await new Promise<void>((r) => setTimeout(r, 15_000));
   }
+  await lease?.close();
   await closeDb();
   log({ event: "stop" });
 }
