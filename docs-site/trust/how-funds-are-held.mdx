@@ -1,0 +1,45 @@
+---
+title: "How Valtrums holds your tokens across NEAR and Robinhood"
+sidebarTitle: "How funds are held"
+description: "Valtrums keeps original tokens in custody on Robinhood Chain and gives you one-for-one backed tokens on NEAR. Learn what protects your deposit."
+keywords: ["custody", "backing", "NEP-141", "Robinhood Chain", "NEAR", "security", "1:1"]
+---
+
+Valtrums runs on two chains. **Robinhood Chain** holds the original community tokens in custody. **NEAR** runs the battles and keeps track of who owns what. The tokens you see in your NEAR wallet stand for tokens in that custody, one for one.
+
+## One for one backing
+
+When tokens arrive in custody on Robinhood Chain, Valtrums creates the same amount of matching tokens on NEAR. These are the tokens you claim from the faucet, deposit into battles and receive as prizes.
+
+- **Only what actually arrives counts.** If someone sends 100 but custody receives 98, only 98 are created. A claim, a signature or an unconfirmed transfer never creates tokens.
+- **Each deposit is counted once.** Every custody receipt is recorded, so the same transfer can't be credited twice.
+- **No double spending.** The same backing can't be used for a prize, a redemption and a burn at the same time.
+
+## Rewards versus payments
+
+A prize goes through clear stages, and the app shows them separately:
+
+1. **Entitlement**: after settlement, your share is recorded as yours.
+2. **Claimed**: you claim it into your NEAR wallet as backed tokens.
+3. **Paid on Robinhood**: you redeem it as the original token on Robinhood Chain. This counts as paid only after the transfer is confirmed. A signature or a submitted transaction is not enough.
+
+<Warning>
+  Redeeming rewards on Robinhood Chain isn't available yet. See [Testnet status](/reference/testnet-status).
+</Warning>
+
+## Who can do what
+
+| Part | Its job | What it can't do |
+| --- | --- | --- |
+| Arena contract (NEAR) | Runs battles, scores rounds, splits rewards | Doesn't trust any worker's claim about who won. It checks the scores itself. |
+| Custody (Robinhood Chain) | Holds the original tokens | Only makes exactly authorized transfers |
+| Safety checker | Approves or rejects tokens | Missing data stays Pending |
+| Price collector | Records round prices | Never fills in missing data |
+| Payout relayer | Pays gas and submits authorized transfers | Can't change the recipient, token or amount |
+| Player agents | Play within a budget you fund | Have no access to your own wallet |
+
+Cross-chain transfers are signed with **NEAR Chain Signatures**, so no single server holds a key that controls the custody.
+
+<Note>
+  Valtrums's security notes are a self-review by the development team, not an external audit. Valtrums runs on testnets only.
+</Note>
