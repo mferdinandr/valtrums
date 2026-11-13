@@ -27,10 +27,20 @@ interface BattleView {
   mode: Mode;
   observation_policy_hash: string | null;
   cancelled?: boolean;
+  /** Start time in ms (decimal string); null or absent for a battle created without one. */
+  start_at_ms?: string | null;
   communities: Array<{ chain_id: string; token_address: string; reference_chain_id: string | null; reference_address: string | null }>;
 }
-/** How often a battle that is not locked yet is read again (a lock is announced well before its rounds open). */
+/** How often a battle that is not locked yet is read again while its start is not near. */
 const UNLOCKED_RECHECK_MS = 15_000;
+/**
+ * From this long before a battle's start until START_WATCH_MS after it, an unlocked battle is read on every pass: the
+ * agent locks right at the start and the oracle opens round 1 a few seconds later, so a 15 s recheck could miss the
+ * round's start sample (the boundary tolerance is 5 s) and force a reopen. In the 2026-11-12 runs the first sample came
+ * 3 to 8 s after the round opened.
+ */
+export const START_LEAD_MS = 2_000;
+export const START_WATCH_MS = 5 * 60_000;
 interface RoundView { round_id: string; candidates: number[]; start_ns: string | null; end_ns: string | null; winner: number | null }
 
 export interface CollectorViews {
@@ -53,6 +63,8 @@ export class CollectorRunner {
   /** A locked battle never changes its communities, mode or policy, so it is read once. */
   private readonly lockedBattles = new Map<string, BattleView>();
   private readonly unlockedCheckedAt = new Map<string, number>();
+  /** Start time of each unlocked battle as last read (absent: no start time). */
+  private readonly unlockedStartAt = new Map<string, number>();
   private count: { value: number; atMs: number } | null = null;
   constructor(
     private readonly cfg: RunnerConfig,
@@ -87,11 +99,17 @@ export class CollectorRunner {
       try {
         let battle = this.lockedBattles.get(id) ?? null;
         if (!battle) {
-          // An unlocked battle is re-read at most every UNLOCKED_RECHECK_MS, to spare the NEAR RPC.
+          // An unlocked battle is re-read at most every UNLOCKED_RECHECK_MS, to spare the NEAR RPC, except around its
+          // start, when it is read on every pass so sampling begins as soon as it locks.
           const checked = this.unlockedCheckedAt.get(id);
-          if (checked !== undefined && nowMs - checked < UNLOCKED_RECHECK_MS) continue;
+          const startAt = this.unlockedStartAt.get(id);
+          const aroundStart = startAt !== undefined && nowMs >= startAt - START_LEAD_MS && nowMs <= startAt + START_WATCH_MS;
+          if (checked !== undefined && nowMs - checked < UNLOCKED_RECHECK_MS && !aroundStart) continue;
           battle = await this.deps.views.battle(id);
           this.unlockedCheckedAt.set(id, nowMs);
+          const readStart = battle?.start_at_ms ? Number(battle.start_at_ms) : NaN;
+          if (Number.isFinite(readStart)) this.unlockedStartAt.set(id, readStart);
+          else this.unlockedStartAt.delete(id);
           if (battle?.cancelled === true) {
             this.finished.add(id); // a cancelled battle never plays a round
             continue;
@@ -99,6 +117,7 @@ export class CollectorRunner {
           if (!battle?.locked || !battle.observation_policy_hash) continue;
           this.lockedBattles.set(id, battle);
           this.unlockedCheckedAt.delete(id);
+          this.unlockedStartAt.delete(id);
         }
         if (!battle.observation_policy_hash) continue;
         const round = await this.deps.views.round(id);

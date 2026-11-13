@@ -68,6 +68,45 @@ describe("round lifecycle", () => {
     expect(o.status().battles["1"]).toMatchObject({ phase: "done" });
   });
 
+  it("with a batch transport, reveals the terms and opens round 1 in one transaction", async () => {
+    arena.lockedBattle("1");
+    const o = new LifecycleOracle(cfg(), { views: arena.views, tx: { call: arena.call, batch: arena.batch }, now: () => nowMs, loadEvidence: async () => (await loadObservationState(join(dir, "journal"))).state });
+    await o.pass();
+    expect(arena.batches).toEqual([["start_lifecycle_rounds", "open_lifecycle_round"]]);
+    expect(methods()).toEqual(["start_lifecycle_rounds", "open_lifecycle_round"]);
+    expect(arena.calls[0]).toMatchObject({ args: { battle_id: "1", terms: TERMS }, deposit: "10000000000000000000000 yocto" });
+    expect(arena.calls[1]).toMatchObject({ args: { battle_id: "1", round_id: "1", start_ns: (BigInt(nowMs + OPEN_LEAD_MS) * 1_000_000n).toString() }, deposit: "1 yocto" });
+    expect(arena.battles.get("1")?.round?.start).toBe(BigInt(nowMs + OPEN_LEAD_MS) * 1_000_000n);
+    expect(o.status().battles["1"]).toMatchObject({ phase: "needs_open", roundId: "1" });
+    // The window is open: nothing more is sent.
+    nowMs += 10_000;
+    await o.pass();
+    expect(arena.calls).toHaveLength(2);
+    expect(o.status().battles["1"]?.phase).toBe("window_open");
+  });
+
+  it("a failed combined send changes nothing on chain and falls back to the separate transactions", async () => {
+    arena.lockedBattle("1");
+    arena.failBatchOnce = true;
+    const o = new LifecycleOracle(cfg(), { views: arena.views, tx: { call: arena.call, batch: arena.batch }, now: () => nowMs, loadEvidence: async () => (await loadObservationState(join(dir, "journal"))).state });
+    await o.pass();
+    expect(arena.battles.get("1")?.round ?? null).toBeNull();
+    expect(o.status().battles["1"]).toMatchObject({ phase: "needs_rounds_started" });
+    await o.pass();
+    // One batch only; the retry used two separate calls, which opened the window.
+    expect(arena.batches).toHaveLength(1);
+    expect(methods().slice(2)).toEqual(["start_lifecycle_rounds", "open_lifecycle_round"]);
+    expect(arena.battles.get("1")?.round?.start).not.toBeNull();
+  });
+
+  it("sends no combined transaction in dry run", async () => {
+    arena.lockedBattle("1");
+    const o = new LifecycleOracle(cfg({ writesEnabled: false }), { views: arena.views, tx: { call: arena.call, batch: arena.batch }, now: () => nowMs, loadEvidence: async () => (await loadObservationState(join(dir, "journal"))).state });
+    await o.pass();
+    expect(arena.batches).toEqual([]);
+    expect(o.status().battles["1"]?.actions.map((a) => a.executed)).toEqual([false, false]);
+  });
+
   it("never resolves from the clock: missing or gapped evidence holds pending and submits nothing", async () => {
     arena.lockedBattle("1", { round: { id: 1, candidates: [0, 1, 2], start: BigInt(START_MS) * 1_000_000n, end: (BigInt(START_MS) + 30_000n) * 1_000_000n, winner: null } });
     const o = oracle();

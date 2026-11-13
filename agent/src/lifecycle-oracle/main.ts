@@ -7,7 +7,7 @@ import { loadObservationState } from "../observations/journal.js";
 import { abortableSleep } from "../loop.js";
 import { withViewRetries } from "../rpc-resilience.js";
 import { loadOracleConfig, type OracleConfig } from "./config.js";
-import { LifecycleOracle, type LifecycleViews } from "./driver.js";
+import { LifecycleOracle, type BatchAction, type LifecycleViews, type OracleTx } from "./driver.js";
 import { OracleStateDir } from "./status.js";
 import { createPgDb } from "../hosted/db.js";
 import { PgObservationReader } from "../app-state/pg-observation-journal.js";
@@ -19,13 +19,23 @@ import { createPgLockSession } from "../app-state/pg-session.js";
  * dedicated oracle account key only. Writes are off until ORACLE_WRITES_ENABLED=true. Provider sampling is
  * a separate concern: this process reads PERSISTED observation evidence (issue #146) and nothing else.
  */
-export function createTransport(cfg: OracleConfig): NearTransport {
+export function createTransport(cfg: OracleConfig): NearTransport & Required<Pick<OracleTx, "batch">> {
   const near = new Near({ network: cfg.network, rpcUrl: cfg.rpcUrl, privateKey: cfg.privateKey as `ed25519:${string}`, defaultSignerId: cfg.accountId });
-  return withViewRetries({
+  const transport = withViewRetries({
     view: (contractId, method, args) => near.view(contractId, method, args),
     call: (contractId, method, args, gas, attachedDeposit) =>
       near.call(contractId, method, args, { gas: gas as never, signerId: cfg.accountId, ...(attachedDeposit ? { attachedDeposit: attachedDeposit as never } : {}) }),
   });
+  // Several function calls to one contract as one transaction (applied in order and atomically). Not retried: the
+  // driver re-reads the contract on the next pass instead, like every other write.
+  const batch = async (contractId: string, actions: BatchAction[]): Promise<unknown> => {
+    let tx = near.transaction(cfg.accountId);
+    for (const a of actions) {
+      tx = tx.functionCall(contractId, a.method, a.args, { gas: a.gas as never, ...(a.deposit ? { attachedDeposit: a.deposit as never } : {}) });
+    }
+    return tx.send();
+  };
+  return { ...transport, batch };
 }
 
 export async function runOracle(env: NodeJS.ProcessEnv, stop: AbortSignal): Promise<void> {

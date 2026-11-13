@@ -47,6 +47,27 @@ export class FakeArena {
     return undefined;
   };
 
+  /** Method lists of every batch transaction, in order. */
+  readonly batches: string[][] = [];
+  /** The next batch fails inside the chain: every action of it is reverted, like a failed NEAR receipt. */
+  failBatchOnce = false;
+
+  /** One transaction with several function-call actions: applied in order and atomically (all or nothing). */
+  batch = async (_contract: string, actions: Array<{ method: string; args: object; gas: string; deposit?: string }>): Promise<unknown> => {
+    this.batches.push(actions.map((x) => x.method));
+    for (const x of actions) this.calls.push({ method: x.method, args: x.args as Record<string, unknown>, ...(x.deposit ? { deposit: x.deposit } : {}) });
+    const b = this.battles.get(String((actions[0]?.args as Record<string, unknown> | undefined)?.battle_id));
+    const saved = b?.round ? { ...b.round } : null;
+    try {
+      if (this.failBatchOnce) { this.failBatchOnce = false; throw new Error("Smart contract panicked: Round rejected: StartOutsideSkew"); }
+      for (const x of actions) this.apply(x.method, x.args as Record<string, unknown>, x.deposit);
+    } catch (err) {
+      if (b) b.round = saved;
+      throw err;
+    }
+    return undefined;
+  };
+
   private apply(method: string, a: Record<string, unknown>, deposit?: string) {
     const b = this.battles.get(String(a.battle_id));
     if (!b || !b.locked) throw new Error("Battle is not locked");
