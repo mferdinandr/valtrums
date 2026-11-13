@@ -9,7 +9,7 @@ import { Brand } from "@/components/brand";
 import { RouteProgress } from "@/components/route-progress";
 
 export const metadata: Metadata = {
-  title: "Valtrum | A little rivalry. Big community energy.",
+  title: "Valtrums | A little rivalry. Big community energy.",
   description:
     "A playful fairground for token communities. Explore battles, meet original 3D mascots and review every action before signing.",
 };
@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </Providers>
         <footer className="site-footer">
           <div>
-            <Link href="/" aria-label="Valtrum home"><Brand /></Link>
+            <Link href="/" aria-label="Valtrums home"><Brand /></Link>
             <p>A little rivalry. A lot of community.</p>
           </div>
           <nav aria-label="Footer navigation">
