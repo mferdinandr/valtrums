@@ -98,16 +98,35 @@ export class ObservationState {
   }
 }
 
-interface Line {
+/** One journal record as the file stores it per line and the database stores it per row. */
+export interface JournalLine {
   seq: number;
   kind: "observation" | "retraction";
   body: unknown;
   prev: string;
   hash: string;
 }
+type Line = JournalLine;
 
-const lineHash = (prev: string, seq: number, kind: string, body: unknown): string =>
+export const JOURNAL_GENESIS = GENESIS;
+
+export const journalLineHash = (prev: string, seq: number, kind: string, body: unknown): string =>
   sha256Hex(prev + canonicalJson({ seq, kind, body }));
+const lineHash = journalLineHash;
+
+/**
+ * Checks that `line` is the next link of the chain `state` holds (sequence, previous hash and its own hash) and applies
+ * it. Shared by the file and the database journal, so both verify exactly the same way. Throws ObservationCorruptError.
+ */
+export function verifyAndApply(state: ObservationState, line: JournalLine): void {
+  if (
+    !line || typeof line !== "object" || line.seq !== state.head.seq + 1 || line.prev !== state.head.headHash ||
+    typeof line.hash !== "string" || line.hash !== lineHash(line.prev, line.seq, line.kind, line.body)
+  ) {
+    throw new ObservationCorruptError(`hash chain broken at record ${state.head.seq + 1}`);
+  }
+  apply(state, line);
+}
 
 function apply(state: ObservationState, line: Line): void {
   if (line.kind === "observation") {
@@ -168,13 +187,8 @@ export function replayJournal(text: string): Replay {
       // A complete (newline-terminated) line that is not JSON was not a torn append: it is damage.
       throw new ObservationCorruptError(`line after record ${state.head.seq} is not valid JSON`);
     }
-    if (
-      !line || typeof line !== "object" || line.seq !== state.head.seq + 1 || line.prev !== prev ||
-      typeof line.hash !== "string" || line.hash !== lineHash(prev, line.seq, line.kind, line.body)
-    ) {
-      throw new ObservationCorruptError(`hash chain broken at record ${state.head.seq + 1}`);
-    }
-    apply(state, line);
+    // `prev` always equals the state's head hash here; the shared check compares against the head.
+    verifyAndApply(state, line);
     prev = line.hash;
     hashAt.set(line.seq, line.hash);
     offset = nl + 1;
@@ -249,6 +263,11 @@ export type AppendResult = { status: "created" | "duplicate"; seq: number; id: s
 export interface JournalHealth {
   status: "healthy" | "degraded";
   reasons: string[];
+}
+
+/** What the collector needs from a journal; the file and the database journal both provide it. */
+export interface JournalWriter {
+  append(input: unknown): Promise<AppendResult>;
 }
 
 export class ObservationJournal {

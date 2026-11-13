@@ -1,5 +1,6 @@
 import { DISPLAYABLE_MODES } from "./query.js";
 import { MODES, type Mode } from "./schema.js";
+import { journalStoreFromEnv } from "./journal-store.js";
 
 /**
  * Settings of the read-only observation service (issue #146). Off unless OBSERVATION_JOURNAL_DIR is
@@ -8,7 +9,10 @@ import { MODES, type Mode } from "./schema.js";
  * The source label (fixture, recorded or live) is NOT configurable: it is part of each sample.
  */
 export interface ObservationConfig {
-  dir: string;
+  /** Journal directory; null with OBSERVATION_JOURNAL_STORE=database. */
+  dir: string | null;
+  /** Set with OBSERVATION_JOURNAL_STORE=database: the journal (and the oracle status) are read from this database. */
+  databaseUrl?: string;
   /** Modes whose scores may be shown. Only price gain and drawdown can ever be displayed. */
   qualifiedModes: ReadonlySet<Mode>;
   /** Both values set together, or coverage and scores stay withheld. */
@@ -25,8 +29,8 @@ function boundedMs(env: Record<string, string | undefined>, name: string): numbe
 }
 
 export function loadObservationConfig(env: Record<string, string | undefined>): ObservationConfig | null {
-  const dir = env.OBSERVATION_JOURNAL_DIR?.trim();
-  if (!dir) {
+  const store = journalStoreFromEnv(env);
+  if (!store) {
     for (const name of ["OBSERVATION_QUALIFIED_MODES", "OBSERVATION_BOUNDARY_TOLERANCE_MS", "OBSERVATION_MAX_GAP_MS"]) {
       if (env[name]?.trim()) throw new Error(`${name} requires OBSERVATION_JOURNAL_DIR`);
     }
@@ -44,7 +48,7 @@ export function loadObservationConfig(env: Record<string, string | undefined>): 
   const gap = boundedMs(env, "OBSERVATION_MAX_GAP_MS");
   if ((tolerance === undefined) !== (gap === undefined)) throw new Error("OBSERVATION_BOUNDARY_TOLERANCE_MS and OBSERVATION_MAX_GAP_MS must be set together");
   return {
-    dir,
+    ...(store.kind === "file" ? { dir: store.dir } : { dir: null, databaseUrl: store.url }),
     qualifiedModes: qualified,
     coveragePolicy: tolerance !== undefined && gap !== undefined ? { boundaryToleranceMs: tolerance, maxGapMs: gap } : null,
   };

@@ -9,6 +9,10 @@ import { withViewRetries } from "../rpc-resilience.js";
 import { loadOracleConfig, type OracleConfig } from "./config.js";
 import { LifecycleOracle, type LifecycleViews } from "./driver.js";
 import { OracleStateDir } from "./status.js";
+import { createPgDb } from "../hosted/db.js";
+import { PgObservationReader } from "../app-state/pg-observation-journal.js";
+import { PgOracleStatusStore } from "../app-state/pg-oracle-status.js";
+import { createPgLockSession } from "../app-state/pg-session.js";
 
 /**
  * Entry point: `node dist/lifecycle-oracle/main.js` (pnpm lifecycle:oracle). A dedicated process with the
@@ -35,13 +39,20 @@ export async function runOracle(env: NodeJS.ProcessEnv, stop: AbortSignal): Prom
     round: (id) => source.round(id),
     readiness: (id) => source.readiness(id),
   };
-  const state = await OracleStateDir.open(cfg.stateDir);
-  const oracle = new LifecycleOracle(cfg, { views, tx, state, log, loadEvidence: async () => (await loadObservationState(cfg.journalDir)).state });
+  // OBSERVATION_JOURNAL_STORE=database: status and evidence in Postgres (the reader only loads new records each pass, and
+  // a database it cannot read makes the pass hold with pending_evidence, never resolve). Otherwise the files, as before.
+  const db = cfg.databaseUrl ? createPgDb(cfg.databaseUrl) : null;
+  const state = db
+    ? await PgOracleStatusStore.open({ db, session: await createPgLockSession(cfg.databaseUrl!), namespace: cfg.scope })
+    : await OracleStateDir.open(cfg.stateDir!);
+  const reader = db ? new PgObservationReader(db, cfg.scope) : null;
+  const loadEvidence = reader ? () => reader.load() : async () => (await loadObservationState(cfg.journalDir!)).state;
+  const oracle = new LifecycleOracle(cfg, { views, tx, state, log, loadEvidence });
   // Only non-secret settings are logged.
   log.info("lifecycle oracle starting", {
     contract: cfg.arenaContractId, account: cfg.accountId, network: cfg.network, writesEnabled: cfg.writesEnabled,
     evidenceKinds: [...cfg.evidenceKinds], qualifiedModes: [...cfg.qualifiedModes], termsConfigured: cfg.terms.size,
-    roundsStorageDeposit: cfg.roundsStorageDepositYocto !== null,
+    roundsStorageDeposit: cfg.roundsStorageDepositYocto !== null, store: db ? "database" : "file",
   });
   if (!cfg.writesEnabled) log.warn("lifecycle oracle is in dry-run mode: it reads and reports, and sends nothing (set ORACLE_WRITES_ENABLED=true)");
   try {
@@ -51,6 +62,7 @@ export async function runOracle(env: NodeJS.ProcessEnv, stop: AbortSignal): Prom
     }
   } finally {
     await state.close();
+    await db?.close();
   }
 }
 

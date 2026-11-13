@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { namespaceSchema, MODES, type Mode, type ObservationNamespace } from "../observations/schema.js";
 import { DISPLAYABLE_MODES } from "../observations/query.js";
+import { journalStoreFromEnv } from "../observations/journal-store.js";
 
 /**
  * Process configuration of the lifecycle oracle (OpenSpec arena-testnet-integrations, issue #147).
@@ -39,8 +40,12 @@ export interface OracleConfig {
   privateKey: string;
   writesEnabled: boolean;
   intervalSecs: number;
-  stateDir: string;
-  journalDir: string;
+  /** Status file directory; null when the status lives in the database (OBSERVATION_JOURNAL_STORE=database). */
+  stateDir: string | null;
+  /** Journal directory; null when the journal lives in the database. */
+  journalDir: string | null;
+  /** Set with OBSERVATION_JOURNAL_STORE=database: the journal and the status are in this database. */
+  databaseUrl?: string;
   scope: ObservationNamespace;
   /** Reveal terms by frozen policy hash. A battle whose hash is absent here is held, never guessed. */
   terms: ReadonlyMap<string, ObservationTerms>;
@@ -113,13 +118,21 @@ export function loadOracleConfig(env: Record<string, string | undefined>, readFi
     if (!DISPLAYABLE_MODES.includes(raw as Mode)) throw new Error(`OBSERVATION_QUALIFIED_MODES cannot enable ${raw}: it needs exact supply or interval-trade evidence`);
     qualified.add(raw as Mode);
   }
+  // The journal (and with it the status) is a file or the database, never both: the collector, this oracle and the read
+  // API must all read the same evidence.
+  const store = journalStoreFromEnv(env);
+  if (!store) throw new Error("missing required environment variable OBSERVATION_JOURNAL_DIR (or set OBSERVATION_JOURNAL_STORE=database)");
+  if (store.kind === "database" && env.ORACLE_STATE_DIR?.trim()) {
+    throw new Error("set only one of OBSERVATION_JOURNAL_STORE=database and ORACLE_STATE_DIR: the status lives in the database");
+  }
+  const files = store.kind === "file" ? { stateDir: need("ORACLE_STATE_DIR"), journalDir: store.dir } : { stateDir: null, journalDir: null, databaseUrl: store.url };
   const deposit = env.ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO?.trim();
   if (deposit && !/^[1-9][0-9]{0,38}$/.test(deposit)) throw new Error("ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO must be a positive integer of yoctoNEAR");
 
   return {
     network, rpcUrl: env.NEAR_RPC_URL?.trim() || `https://rpc.${network}.near.org`, arenaContractId: arena,
     accountId: need("ORACLE_ACCOUNT_ID"), privateKey, writesEnabled: writes === "true", intervalSecs: interval,
-    stateDir: need("ORACLE_STATE_DIR"), journalDir: need("OBSERVATION_JOURNAL_DIR"), scope, terms, evidenceKinds: kinds, qualifiedModes: qualified,
+    ...files, scope, terms, evidenceKinds: kinds, qualifiedModes: qualified,
     roundsStorageDepositYocto: deposit || null,
   };
 }
