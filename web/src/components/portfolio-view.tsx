@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ClaimAllButton } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import type { PortfolioData } from "@/hooks/use-portfolio";
 import { formatUnits } from "@/lib/amounts";
 import { daoBlocksClaim } from "@/lib/arena-read/account-state";
@@ -68,6 +70,15 @@ function Row({ symbol, title, sub, chip }: { symbol: string; title: ReactNode; s
   );
 }
 
+const POSITIONS_PAGE = 5;
+
+function chipFor(stage: BattleStage, winner: number | null, community: number): ReactNode {
+  if (stage === "finished") return <Chip tone={winner === community ? "green" : "grey"}>{winner === community ? "Won" : "Lost"}</Chip>;
+  if (stage === "open") return <Chip tone="green">Deposits open</Chip>;
+  if (stage === "live") return <Chip tone="blue">In play</Chip>;
+  return <Chip tone="amber">Refundable</Chip>;
+}
+
 const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm text-mute">{children}</p>;
 
 /**
@@ -98,6 +109,14 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
   }, [arena, idKey]);
   const byStage = (stage: BattleStage) => rows.filter((r) => briefs?.get(r.battleId)?.stage === stage);
   const unknown = briefs === null ? rows : rows.filter((r) => !briefs.has(r.battleId));
+  const sections: Array<{ key: string; title: string; stage: BattleStage | null; list: typeof rows }> = [
+    ...STAGE_ORDER.map((stage) => ({ key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) })),
+    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown }] : []),
+  ].filter((x) => x.list.length > 0);
+  const [filter, setFilter] = useState("all");
+  const [visible, setVisible] = useState<Record<string, number>>({});
+  // A filter whose section disappeared (for example after a refresh) falls back to all.
+  const activeFilter = filter === "all" || sections.some((x) => x.key === filter) ? filter : "all";
 
   return (
     <div className="space-y-4">
@@ -133,52 +152,53 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
           <Empty>No deposits in recent battles.</Empty>
         ) : (
           <div className="space-y-4">
-            {STAGE_ORDER.map((stage) => {
-              const list = byStage(stage);
-              if (list.length === 0) return null;
-              return (
-                <section key={stage} aria-label={`${STAGE_TITLE[stage]} positions`} className="space-y-2">
-                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mute">
-                    {STAGE_TITLE[stage]}
-                    <span className="rounded-full px-2 py-0.5 text-[11px]" style={TONES.grey}>{list.length}</span>
-                  </h3>
-                  <ul className="space-y-2">
-                    {list.map((r) => {
-                      const winner = briefs?.get(r.battleId)?.winner ?? null;
-                      const chip =
-                        stage === "finished" ? <Chip tone={winner === r.community ? "green" : "grey"}>{winner === r.community ? "Won" : "Lost"}</Chip>
-                        : stage === "open" ? <Chip tone="green">Deposits open</Chip>
-                        : stage === "live" ? <Chip tone="blue">In play</Chip>
-                        : <Chip tone="amber">Refundable</Chip>;
-                      return (
+            <Select
+              label="Filter positions by battle status"
+              value={activeFilter}
+              onChange={setFilter}
+              options={[
+                { value: "all", title: `All battles (${rows.length})` },
+                ...sections.map((x) => ({ value: x.key, title: `${x.title} (${x.list.length})` })),
+              ]}
+            />
+            {sections
+              .filter((x) => activeFilter === "all" || activeFilter === x.key)
+              .map((x) => {
+                const shown = Math.min(x.list.length, visible[x.key] ?? POSITIONS_PAGE);
+                return (
+                  <section key={x.key} aria-label={`${x.title} positions`} className="space-y-2">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mute">
+                      {x.title}
+                      <span className="rounded-full px-2 py-0.5 text-[11px]" style={TONES.grey}>{x.list.length}</span>
+                    </h3>
+                    <ul className="space-y-2">
+                      {x.list.slice(0, shown).map((r) => (
                         <Row
                           key={r.key}
                           symbol={symbolOf(r.asset)}
                           title={`${units(r.amount)} ${symbolOf(r.asset)}`}
                           sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
-                          chip={chip}
+                          chip={x.stage ? chipFor(x.stage, briefs?.get(r.battleId)?.winner ?? null, r.community) : undefined}
                         />
-                      );
-                    })}
-                  </ul>
-                </section>
-              );
-            })}
-            {briefs !== null && unknown.length > 0 && (
-              <section aria-label="Other positions" className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-mute">Status unavailable</h3>
-                <ul className="space-y-2">
-                  {unknown.map((r) => (
-                    <Row
-                      key={r.key}
-                      symbol={symbolOf(r.asset)}
-                      title={`${units(r.amount)} ${symbolOf(r.asset)}`}
-                      sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
+                      ))}
+                    </ul>
+                    {x.list.length > POSITIONS_PAGE && (
+                      <div className="flex gap-2">
+                        {shown < x.list.length && (
+                          <Button type="button" variant="ghost" onClick={() => setVisible((v) => ({ ...v, [x.key]: shown + POSITIONS_PAGE }))}>
+                            Show more ({x.list.length - shown})
+                          </Button>
+                        )}
+                        {shown > POSITIONS_PAGE && (
+                          <Button type="button" variant="ghost" onClick={() => setVisible((v) => ({ ...v, [x.key]: POSITIONS_PAGE }))}>
+                            Show less
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
           </div>
         )}
       </Panel>
