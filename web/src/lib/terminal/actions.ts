@@ -1,10 +1,12 @@
 /**
  * Terminal path of the shared action boundary (#76). The terminal builds nothing it signs: the
  * agent action API (through `/api/arena/actions`) creates the canonical preview, binds the user's
- * NEP-413 signature over the preview hash, revalidates, and returns the exact unsigned transaction
- * for the wallet. The MCP action tools use the same service, so both paths share one authorization
- * and status record. A broadcast hash stays pending until the service verifies the receipt.
+ * own read session to it as the authorization, revalidates, and returns the exact unsigned transaction
+ * for the wallet, whose signature is the only one per action. The MCP action tools use the same
+ * service, so both paths share one authorization and status record. A broadcast hash stays pending
+ * until the service verifies the receipt.
  */
+import { forgetStoredSessions } from "@/lib/arena-read/action-session";
 
 export interface UnsignedTransaction {
   signerId: string;
@@ -68,7 +70,11 @@ async function call(deps: ActionClientDeps, path: string, method: "GET" | "POST"
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = (await res.json().catch(() => ({}))) as { error?: string; data?: unknown };
-  if (!res.ok) throw new Error(json.error ?? `action API error ${res.status}`);
+  if (!res.ok) {
+    // A rejected session token must not be reused after a reload: the next action opens a fresh session.
+    if ((res.status === 401 || res.status === 403) && /read session/i.test(json.error ?? "")) forgetStoredSessions();
+    throw new Error(json.error ?? `action API error ${res.status}`);
+  }
   const data = json.data as ActionRecordView | { record: ActionRecordView; transaction: UnsignedTransaction };
   return "record" in data ? { ...data.record, transaction: data.transaction } : data;
 }
@@ -91,8 +97,10 @@ export async function executeTerminalAction(previewed: PreviewedAction, deps: Ac
   let txHash: string | null = null;
   const label: { fixture?: string } = previewed.fixture ? { fixture: previewed.fixture } : {};
   try {
-    const proof = await deps.wallet.signMessage(actionAuthorizationMessage(previewed.record.previewHash));
-    const authorized = await call(deps, `/${actionId}/authorize`, "POST", { proof: { kind: "user_signature", ...proof } });
+    // The read session (opened with the account's own wallet signature) authorizes the preview, so the
+    // user is not asked to sign a second message per action. Nothing moves until the wallet signs the
+    // prepared transaction below, and the service only accepts this when that account signs it itself.
+    const authorized = await call(deps, `/${actionId}/authorize`, "POST", { proof: { kind: "session" } });
     if (authorized.status !== "authorized") return { ok: false, status: authorized.status, actionId, reason: authorized.reason ?? "not authorized", txHash, ...label };
     const prepared = await call(deps, `/${actionId}/prepare`, "POST", {});
     if (prepared.status !== "ready_to_sign" || !prepared.transaction) {

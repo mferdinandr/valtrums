@@ -20,7 +20,10 @@ function price(item: ObservationItem): { value: bigint; scale: number } | null {
 }
 
 /** A display percentage to 18 decimals; BigInt arithmetic until the final division. (Basis points hid moves below 0.01%.) */
-const percent = (numerator: bigint, denominator: bigint): number => Number((numerator * 10n ** 20n) / denominator) / 1e18;
+const percent = (numerator: bigint, denominator: bigint): { value: number; exact: bigint } => {
+  const exact = (numerator * 10n ** 20n) / denominator;
+  return { value: Number(exact) / 1e18, exact };
+};
 
 export interface ObservationChartModel {
   series: ChartSeries[];
@@ -73,18 +76,18 @@ export function observationSeries(data: ObservationData, names?: readonly string
       const rawX = Number(BigInt(item.observedAtMs as string) - startMs) / 1000;
       const inWindow = rawX >= 0 && rawX <= duration;
       const x = Math.min(duration, Math.max(0, rawX));
-      let value: number | null = null;
+      let score: { value: number; exact: bigint } | null = null;
       if (mode === "PriceGain") {
-        if (base && base.scale === p.scale && base.value > 0n) value = percent(p.value - base.value, base.value);
+        if (base && base.scale === p.scale && base.value > 0n) score = percent(p.value - base.value, base.value);
       } else {
         if (p.value > peak) peak = p.value;
-        value = peak > 0n ? percent(peak - p.value, peak) : null;
+        score = peak > 0n ? percent(peak - p.value, peak) : null;
       }
       const prev = timed[n - 1];
       if (prev && cov?.gaps.some((g) => BigInt(g.fromMs) >= BigInt(prev.observedAtMs as string) && BigInt(g.toMs) <= BigInt(item.observedAtMs as string))) {
         points.push({ x: (points.at(-1)?.x ?? x) + (x - (points.at(-1)?.x ?? x)) / 2, value: null });
       }
-      if (inWindow) points.push({ x, value });
+      if (inWindow) points.push(score ? { x, value: score.value, exact: score.exact } : { x, value: null });
     }
     if (timed.length > 0 && cov && !cov.hasEnd) {
       points.push({ x: duration, value: null });

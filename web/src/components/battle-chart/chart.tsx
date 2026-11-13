@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Expand, X, TrendingUp } from "lucide-react";
-import { chartSegments, displayStandings, relativeToField, type ChartPoint, type ChartSeries } from "./model";
+import { chartSegments, clipToPlayhead, displayStandings, relativeToLeader, scoresDiffer, type ChartSeries } from "./model";
 import "./chart.css";
 import { TokenIcon } from "@/components/token-icon";
 
@@ -12,31 +12,60 @@ const STRIPE = 7;
 interface Geometry {
   min: number;
   max: number;
-  heads: Map<string, { x: number; v: number }>;
+  /** Magnifying scale of the race view (asinh), eased like the axis so a new sample never rescales the lines at once. */
+  scale: number;
+  /** Round time (s) up to which the lines are drawn. */
+  playhead: number;
+}
+
+/** Bounds of the playback delay (s) behind the newest sample. */
+const MIN_PLAYBACK_LAG_S = 1.2;
+const MAX_PLAYBACK_LAG_S = 4.5;
+/** Further behind than this (e.g. after a hidden tab), the playhead jumps instead of racing to catch up. */
+const CATCH_UP_LIMIT_S = 6;
+/** Near the newest sample the playhead slows with this time constant (s) instead of stopping dead. */
+const ARRIVAL_EASE_S = 0.6;
+
+/**
+ * Playback delay for the observed sample spacing: the widest of the recent gaps between samples plus
+ * a margin for polling, so the next real sample is normally known before the line reaches the last one.
+ */
+export function playbackLag(times: readonly number[]): number {
+  const recent = times.slice(-10);
+  let widest = 0;
+  for (let i = 1; i < recent.length; i++) widest = Math.max(widest, recent[i]! - recent[i - 1]!);
+  return Math.min(MAX_PLAYBACK_LAG_S, Math.max(MIN_PLAYBACK_LAG_S, widest + 0.6));
 }
 
 /**
- * Eases the axis range and each series' newest point toward their targets every animation frame
- * using elapsed time so updates feel consistent at different frame rates. Reduced-motion users get
- * the targets at once; the animation stops when there is no new sample.
+ * Drives a playhead that moves through round time at a steady real-time speed, `lagS` behind the
+ * newest sample, so the drawn line advances continuously like buffered video instead of jumping once
+ * per sample. Drawing happens only between recorded samples; nothing is extrapolated. If samples stop,
+ * the playhead glides into the newest one and rests there. Drift is absorbed by gently changing speed.
+ * A recorded result or reduced motion shows everything at once. The axis range and the race-view scale
+ * glide toward their targets with an eased motion.
  */
-function useSmoothedGeometry(
-  targetMin: number,
-  targetMax: number,
-  targetHeads: Map<string, { x: number; v: number; segmentStart: number }>,
-): Geometry {
+function useChartPlayback(targetMin: number, targetMax: number, targetScale: number, newestX: number, live: boolean, lagS: number): Geometry {
   const [, frame] = useState(0);
   const current = useRef<Geometry | null>(null);
-  const target = useRef({ min: targetMin, max: targetMax, heads: targetHeads });
-  target.current = { min: targetMin, max: targetMax, heads: targetHeads };
+  const arrival = useRef<{ at: number; newestX: number }>({ at: 0, newestX });
+  const target = useRef({ min: targetMin, max: targetMax, scale: targetScale, newestX, live, lagS });
+  target.current = { min: targetMin, max: targetMax, scale: targetScale, newestX, live, lagS };
   if (!current.current) {
     current.current = {
       min: targetMin,
       max: targetMax,
-      heads: new Map([...targetHeads].map(([id, h]) => [id, { x: h.x, v: h.v }])),
+      scale: targetScale,
+      playhead: live ? newestX - lagS : newestX,
     };
   }
-  const key = `${targetMin}|${targetMax}|${[...targetHeads].map(([id, h]) => `${id}:${h.x}:${h.v}`).join(",")}`;
+  // Remember when a newer sample arrived; that wall-clock moment anchors where the playhead should be.
+  useEffect(() => {
+    const a = arrival.current;
+    if (newestX !== a.newestX || a.at === 0) a.at = performance.now();
+    a.newestX = newestX;
+  }, [newestX]);
+
   useEffect(() => {
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     let raf = 0;
@@ -46,9 +75,7 @@ function useSmoothedGeometry(
       const c = current.current!;
       const elapsed = previousFrame === undefined ? 16 : Math.min(now - previousFrame, 100);
       previousFrame = now;
-      // A longer follow-through carries the motion between typical one-second updates without
-      // extrapolating beyond the newest observed point. Missing updates still settle and stop.
-      const k = reduce ? 1 : 1 - Math.exp(-elapsed / 230);
+      const k = reduce ? 1 : 1 - Math.exp(-elapsed / 450);
       let moving = false;
       const ease = (from: number, to: number, scale: number) => {
         const d = to - from;
@@ -59,22 +86,28 @@ function useSmoothedGeometry(
       const scale = Math.max(t.max - t.min, Number.MIN_VALUE);
       c.min = ease(c.min, t.min, scale);
       c.max = ease(c.max, t.max, scale);
-      for (const id of [...c.heads.keys()]) if (!t.heads.has(id)) c.heads.delete(id);
-      for (const [id, h] of t.heads) {
-        const shown = c.heads.get(id);
-        if (!shown || shown.x < h.segmentStart) {
-          c.heads.set(id, { x: h.x, v: h.v });
-          continue;
+      c.scale = ease(c.scale, t.scale, Math.max(Math.abs(t.scale), Number.MIN_VALUE));
+      if (Number.isFinite(t.newestX)) {
+        const since = (now - arrival.current.at) / 1000;
+        // Where the playhead belongs: a delay behind live, never past the newest real sample.
+        const goal = t.live && !reduce ? Math.min(t.newestX, t.newestX - t.lagS + Math.max(0, since)) : t.newestX;
+        if (reduce || !Number.isFinite(c.playhead) || c.playhead > t.newestX || goal - c.playhead > CATCH_UP_LIMIT_S) {
+          c.playhead = goal;
+        } else {
+          // Real-time speed, nudged a little faster or slower to stay on the delay without visible jumps,
+          // and easing into the newest sample when nothing newer has arrived yet.
+          const headroom = t.newestX - c.playhead;
+          const rate = Math.min(2.5, Math.max(0.4, 1 + (goal - c.playhead) * 0.5), headroom / ARRIVAL_EASE_S);
+          c.playhead = headroom < 0.002 ? t.newestX : Math.min(t.newestX, c.playhead + (rate * elapsed) / 1000);
         }
-        shown.x = ease(shown.x, h.x, 30);
-        shown.v = ease(shown.v, h.v, scale);
+        if (c.playhead < t.newestX) moving = true;
       }
       frame((n) => n + 1);
       if (moving) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [key]);
+  }, [targetMin, targetMax, targetScale, newestX, live, lagS]);
   return current.current;
 }
 
@@ -109,6 +142,8 @@ const score = (value: number, signed = true, digits = 2) =>
  * 12 decimals stay equal: a real tie is shown as a tie, never stretched into a fake difference.
  */
 export const MAX_SCORE_DIGITS = 16;
+/** Most decimals a legend chip shows; the exact value stays in its tooltip. */
+export const LEGEND_MAX_DIGITS = 14;
 /** Scores closer than this (in percentage points) are rounding noise, not a real difference. */
 export const NOISE_SPREAD = 1e-6;
 export function scoreDigits(values: readonly number[]): number {
@@ -156,6 +191,8 @@ function Plot({
   ranks?: { community: number; rank: number }[];
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const stickyDigits = useRef(2);
+  const stickyScoreChars = useRef(0);
   const [width, setWidth] = useState(600),
     [sample, setSample] = useState<number | null>(null);
   useEffect(() => { if (result) setSample(null); }, [result]);
@@ -163,9 +200,11 @@ function Plot({
   // A symmetric logarithmic scale keeps tiny gaps legible across the whole round while compressing spikes.
   const magnitudes = allSeries.flatMap((s) => s.points.flatMap((p) => p.value !== null && Number.isFinite(p.value) && p.value !== 0 ? [Math.abs(p.value)] : [])).sort((a, b) => a - b);
   const linearScale = magnitudes[Math.floor(magnitudes.length / 2)] ?? 1;
-  const transform = (v: number) => deviation ? Math.asinh(v / linearScale) : v;
-  const inverse = (v: number) => deviation ? Math.sinh(v) * linearScale : v;
-  const series = deviation ? allSeries.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, value: p.value === null ? null : transform(p.value) })) })) : allSeries;
+  const transformWith = (scale: number) => (s: ChartSeries): ChartSeries =>
+    deviation ? { ...s, points: s.points.map((p) => ({ ...p, value: p.value === null ? null : Math.asinh(p.value / scale) })) } : s;
+  // Target geometry (axis fit, overlap detection, sample times) uses the scale of the current data;
+  // the lines are drawn with the eased scale below so a new sample never rescales them at once.
+  const series = allSeries.map(transformWith(linearScale));
   const description = useId();
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -190,21 +229,13 @@ function Plot({
     pad = fitSpan * 0.15;
   const targetMin = range?.[0] ?? mid - fitSpan / 2 - pad,
     targetMax = range?.[1] ?? mid + fitSpan / 2 + pad;
-  // Presentation only: the axis and the newest point glide to their true values. No value is invented;
-  // when the motion ends every drawn point sits exactly on its recorded sample.
-  const heads = new Map<string, { point: ChartPoint; x: number; v: number; segmentStart: number }>();
-  for (const s of series) {
-    const segments = chartSegments(s.points);
-    const lastSegment = segments.at(-1);
-    for (let i = s.points.length - 1; i >= 0; i--) {
-      const p = s.points[i]!;
-      if (p.value !== null && Number.isFinite(p.value)) {
-        heads.set(s.id, { point: p, x: p.x, v: p.value, segmentStart: lastSegment?.[0]?.x ?? p.x });
-        break;
-      }
-    }
-  }
-  const smooth = useSmoothedGeometry(targetMin, targetMax, heads);
+  // Presentation only: lines are played back slightly behind the newest sample so they draw continuously.
+  // No value is invented; when playback ends every drawn point sits exactly on its recorded sample.
+  const newestX = points.length ? Math.max(...points.map((p) => p.x)) : Number.NaN;
+  const sampleTimes = [...new Set(points.map((p) => p.x))].sort((a, b) => a - b);
+  const smooth = useChartPlayback(targetMin, targetMax, linearScale, newestX, connected && !result, playbackLag(sampleTimes));
+  const inverse = (v: number) => (deviation ? Math.sinh(v) * smooth.scale : v);
+  const drawSeries = allSeries.map(transformWith(smooth.scale));
   // Series with exactly the same points lie on top of each other. They are drawn as interleaved
   // stripes so every colour stays visible, and named in a note below the chart.
   const fingerprint = (s: ChartSeries) =>
@@ -248,10 +279,17 @@ function Plot({
     const p = inspected === null ? s.points.findLast((q) => q.value !== null && Number.isFinite(q.value)) : s.points.find((q) => q.x === inspected);
     return p?.value !== null && p?.value !== undefined && Number.isFinite(p.value) ? [p.value] : [];
   });
-  // Scores that differ only below NOISE_SPREAD are rounding noise: show them rounded (exact value in the tooltip)
-  // instead of a 14-digit number that wraps and reads as a huge percentage.
+  // Scores that differ only below NOISE_SPREAD moved together; a note under the legend says so.
   const level = legendValues.length > 1 && Math.max(...legendValues) !== Math.min(...legendValues) && Math.max(...legendValues) - Math.min(...legendValues) < NOISE_SPREAD;
-  const legendDigits = level ? 4 : scoreDigits(legendValues);
+  // Legend chips keep a fixed width. The scores show as many decimals as it takes to tell them apart, up
+  // to LEGEND_MAX_DIGITS, and that count only grows within a round. The number column is reserved for the
+  // longest possible text from the start, so a jump in decimals never resizes or shifts a chip.
+  const legendDigits = (stickyDigits.current = Math.max(stickyDigits.current, Math.min(LEGEND_MAX_DIGITS, scoreDigits(legendValues))));
+  const scoreChars = (stickyScoreChars.current = Math.max(
+    stickyScoreChars.current,
+    ...legendValues.map((v) => score(v, signed, LEGEND_MAX_DIGITS).length),
+  ));
+  const nameChars = Math.max(0, ...legendRows.map((s) => s.name.length + (s.inactive ? 6 : 0)));
   return (
     <div ref={root} className="score-chart-plot">
       <svg
@@ -331,13 +369,8 @@ function Plot({
                   : ""}
           </text>
         ))}
-        {[...series]
-          .map((s) => {
-            const head = heads.get(s.id);
-            const shown = smooth.heads.get(s.id);
-            if (!head || !shown) return s;
-            return { ...s, points: s.points.map((p) => (p === head.point ? { ...p, x: shown.x, value: shown.v } : p)) };
-          })
+        {[...drawSeries]
+          .map((s) => (connected && Number.isFinite(smooth.playhead) ? { ...s, points: clipToPlayhead(s.points, smooth.playhead) } : s))
           .sort((a, b) => Number(a.id === selected) - Number(b.id === selected))
           .map((s) => (
             <g
@@ -392,7 +425,7 @@ function Plot({
                     style={{ cursor: "pointer" }}
                   >
                     <title>
-                      {s.name}: {deviation ? `${inverse(p.value!).toExponential(3)}% from field average` : score(p.value!, signed)}
+                      {s.name}: {deviation ? (inverse(p.value!) === 0 ? "leading" : `${Math.abs(inverse(p.value!)).toExponential(3)} points behind the leader`) : score(p.value!, signed)}
                       {connected
                         ? ` at ${p.x.toFixed(1)}s`
                         : " · available snapshot"}
@@ -461,6 +494,7 @@ function Plot({
         className="score-chart-legend"
         role="group"
         aria-label="Highlight a community; selection does not place a deposit"
+        style={{ "--score-ch": `${scoreChars}ch`, "--token-ch": `${nameChars}ch` } as React.CSSProperties}
       >
         {[...legendRows].sort((a, b) => inspected === null ? (ranks?.find((r) => String(r.community) === a.id)?.rank ?? Infinity) - (ranks?.find((r) => String(r.community) === b.id)?.rank ?? Infinity) : 0).map((s) => {
           const point =
@@ -474,7 +508,12 @@ function Plot({
               onClick={() => onSelect(s.id)}
               style={{ "--line": s.color } as React.CSSProperties}
             >
-              {inspected === null && ranks?.some((r) => String(r.community) === s.id) && <span className="score-chart-rank">{ranks.find((r) => String(r.community) === s.id)!.rank}</span>}
+              {ranks && (
+                // Always present so the chip does not resize when a rank appears or disappears.
+                <span className="score-chart-rank" aria-hidden={inspected !== null || !ranks.some((r) => String(r.community) === s.id)}>
+                  {inspected === null ? ranks.find((r) => String(r.community) === s.id)?.rank : null}
+                </span>
+              )}
               <TokenIcon symbol={s.name} size={28} />
               <span className="score-chart-dot" />
               <span className="score-chart-token">
@@ -492,7 +531,9 @@ function Plot({
       </div>
       {level && (
         <p className="mt-2 text-xs text-mute">
-          Prices moved together: scores are level to 6 decimals. Differences below that are rounding noise.
+          {deviation
+            ? "Prices moved together: scores match to 6 decimals. The smaller differences between tokens are magnified in the race view above."
+            : "Prices moved together: scores are level to 6 decimals. Differences below that are rounding noise."}
         </p>
       )}
     </div>
@@ -503,9 +544,10 @@ export function ScoreChart(props: Props) {
   const modal = useRef<HTMLDialogElement>(null),
     [expanded, setExpanded] = useState(false);
   // The companion strip exists only for a connected round chart of two or more tokens whose scores differ at all.
-  const diffs = props.connected !== false && !props.range && props.series.length >= 2 ? relativeToField(props.series) : null;
-  const diffValues = diffs?.flatMap((s) => s.points.flatMap((p) => (p.value !== null && Number.isFinite(p.value) ? [p.value] : []))) ?? [];
-  const microDiff = diffs && diffValues.length > 0 && Math.max(...diffValues) - Math.min(...diffValues) >= NOISE_SPREAD ? diffs : null;
+  const diffs = props.connected !== false && !props.range && props.series.length >= 2 ? relativeToLeader(props.series, !!props.lowerIsBetter) : null;
+  // Exact scores switch to the race view at the first real difference, even in the 13th or 14th decimal,
+  // so the lines separate from the first seconds. Float-only series keep the rounding-noise floor.
+  const microDiff = diffs && scoresDiffer(diffs, NOISE_SPREAD) ? diffs : null;
   const standings = displayStandings(props.series, !!props.lowerIsBetter);
   const unique = standings.leaders.length === 1 ? standings.leaders[0] : null;
   const headline =
@@ -558,7 +600,7 @@ export function ScoreChart(props: Props) {
       </span>
       {microDiff && (
         <p className="score-chart-note">
-          <strong>Race view.</strong> Lines show the gap from the field average; {props.lowerIsBetter ? "lower" : "higher"} is ahead.
+          <strong>Race view.</strong> The leader sits on the top line; every other token is drawn below by how far it trails.
           The scale magnifies small gaps, which may reflect price precision.
         </p>
       )}

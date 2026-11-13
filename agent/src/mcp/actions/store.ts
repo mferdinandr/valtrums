@@ -24,6 +24,8 @@ export type ActionStatus =
 
 export type ActionAuthorization =
   | { kind: "user_signature"; accountId: string; publicKey: string; atMs: number }
+  /** The funds' own account, through its read session; its wallet still signs the transaction. */
+  | { kind: "session"; accountId: string; atMs: number }
   | { kind: "grant"; delegate: string; user: string; atMs: number };
 
 export interface ActionRecord {

@@ -95,6 +95,18 @@
 }
 .score-chart-legend strong {
   font-variant-numeric: tabular-nums;
+  /* Reserved for the widest score seen this round, so chips do not change width as decimals change. */
+  min-width: var(--score-ch, auto);
+  text-align: right;
+  white-space: nowrap;
+}
+.score-chart-legend .score-chart-token {
+  min-width: var(--token-ch, auto);
+  white-space: nowrap;
+}
+.score-chart-legend .score-chart-rank {
+  min-width: 16px;
+  text-align: center;
 }
 .score-chart-dot {
   width: 10px;

@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: synthetic evidence payloads. Not provider data.
 import { describe, expect, it } from "vitest";
-import { chartSegments, displayStandings } from "./model";
+import { chartSegments, displayStandings, relativeToLeader, scoresDiffer } from "./model";
 import { exactScoreText, observationSeries } from "./observation-series";
 import type { ObservationData, ObservationItem } from "@/lib/arena-read/observations";
 
@@ -52,10 +52,38 @@ describe("observation chart adapter", () => {
     expect(m.drawable).toBe(true);
     expect(m.duration).toBe(30);
     expect(m.series[0]!.points).toHaveLength(2);
-    expect(m.series[0]!.points[0]).toEqual({ x: 0, value: 0 });
+    expect(m.series[0]!.points[0]).toEqual({ x: 0, value: 0, exact: 0n });
     expect(m.series[0]!.points[1]!.x).toBe(15);
     expect(m.series[0]!.points[1]!.value).toBeCloseTo(3.333333333333, 10);
-    expect(m.series[1]!.points).toEqual([{ x: 0, value: 0 }]);
+    expect(m.series[0]!.points[1]!.exact).toBe(3_333333333333333333n);
+    expect(m.series[1]!.points).toEqual([{ x: 0, value: 0, exact: 0n }]);
+  });
+  it("keeps a difference in the 14th decimal between tokens exactly, so the race view shows it", () => {
+    // 1 part in 1e16 of the price is a 1e-14 percentage-point gap, below what float subtraction keeps reliably.
+    const m = observationSeries(
+      data([
+        item(0, START_MS, "10000000000000000"),
+        item(0, START_MS + 1_000n, "10000000000000001"),
+        item(1, START_MS, "10000000000000000"),
+        item(1, START_MS + 1_000n, "10000000000000000"),
+      ]),
+    );
+    const field = relativeToLeader(m.series);
+    // The leader sits at 0 and the other token trails by the exact 1e-14 gap: not a mirror image.
+    expect(field[0]!.points[1]!.exact).toBe(0n);
+    expect(field[1]!.points[1]!.exact).toBe(-10_000n);
+    expect(field[1]!.points[1]!.value).toBeCloseTo(-1e-14, 25);
+    expect(scoresDiffer(field, 1e-6)).toBe(true);
+    expect(scoresDiffer(relativeToLeader([m.series[1]!, { ...m.series[1]!, id: "copy" }]), 1e-6)).toBe(false);
+  });
+  it("puts the lowest score on top when lower is better", () => {
+    const series = [
+      { id: "a", name: "A", color: "#000", points: [{ x: 1, value: 2 }] },
+      { id: "b", name: "B", color: "#111", points: [{ x: 1, value: 5 }] },
+    ];
+    const field = relativeToLeader(series, true);
+    expect(field[0]!.points[0]!.value).toBe(0);
+    expect(field[1]!.points[0]!.value).toBe(-3);
   });
 
   it("leaves a null endpoint when the close is missing, so the line breaks instead of extending", () => {

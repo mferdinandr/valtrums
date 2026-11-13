@@ -1,11 +1,24 @@
 // FIXTURE-ONLY: fake wallet and fake gateway. No real signature, session or transaction.
 import { describe, expect, it, vi } from "vitest";
-import { ActionSession, createActionWallet, fetchSessionConfig, makeNonce, toBase64, txHashOf, type WalletLike } from "./action-session";
+import { ActionSession, createActionWallet, fetchSessionConfig, forgetStoredSessions, makeNonce, toBase64, txHashOf, type SessionStore, type WalletLike } from "./action-session";
 
 const config = { schemaVersion: "arena-session-config-v1", readMessage: "Open a read-only session.", sessionRecipient: "valtrum-read", actionRecipient: "valtrum-actions" };
 const ACCOUNT = "alice.testnet";
 
-function harness(over: { wallet?: Partial<WalletLike>; session?: Record<string, unknown>; configBody?: unknown; now?: () => number } = {}) {
+/** An in-memory stand-in for the tab's sessionStorage. */
+function memoryStore(): SessionStore & { length: number; key(i: number): string | null; data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return {
+    data,
+    get length() { return data.size; },
+    key: (i) => [...data.keys()][i] ?? null,
+    getItem: (k) => data.get(k) ?? null,
+    setItem: (k, v) => { data.set(k, v); },
+    removeItem: (k) => { data.delete(k); },
+  };
+}
+
+function harness(over: { wallet?: Partial<WalletLike>; session?: Record<string, unknown>; configBody?: unknown; now?: () => number; store?: SessionStore | null } = {}) {
   const calls: string[] = [];
   const signed: Array<{ message: string; recipient: string; nonce: Uint8Array }> = [];
   const wallet: WalletLike = {
@@ -20,9 +33,52 @@ function harness(over: { wallet?: Partial<WalletLike>; session?: Record<string, 
     return new Response("nope", { status: 404 });
   });
   const now = over.now ?? (() => 1_000_000);
-  const session = new ActionSession({ accountId: ACCOUNT, wallet, fetchImpl, now });
+  const session = new ActionSession({ accountId: ACCOUNT, wallet, fetchImpl, now, store: over.store ?? null });
   return { session, wallet, signed, calls, fetchImpl, now };
 }
+
+describe("session across reloads", () => {
+  it("reuses the token a previous page of this tab stored, without asking the wallet again", async () => {
+    const store = memoryStore();
+    const first = harness({ store });
+    expect(await first.session.ensure()).toBe("tok1");
+    expect(first.signed).toHaveLength(1);
+    // A reload builds a new session object from the same tab storage.
+    const reloaded = harness({ store });
+    expect(await reloaded.session.ensure()).toBe("tok1");
+    expect(reloaded.signed).toHaveLength(0);
+  });
+
+  it("ignores an expired token or one stored for another account", async () => {
+    const store = memoryStore();
+    store.setItem(`valtrum.session.${ACCOUNT}`, JSON.stringify({ accountId: ACCOUNT, token: "old", expiresAtMs: 999_999 }));
+    const expired = harness({ store });
+    expect(await expired.session.ensure()).toBe("tok1");
+    expect(expired.signed).toHaveLength(1);
+    store.setItem(`valtrum.session.${ACCOUNT}`, JSON.stringify({ accountId: "bob.testnet", token: "bob", expiresAtMs: 9_999_999 }));
+    const foreign = harness({ store });
+    expect(await foreign.session.ensure()).toBe("tok1");
+    expect(foreign.signed).toHaveLength(1);
+  });
+
+  it("opens a fresh session after the stored tokens are forgotten (a rejected token or sign-out)", async () => {
+    const store = memoryStore();
+    const h = harness({ store });
+    await h.session.ensure();
+    forgetStoredSessions(store);
+    expect(store.data.size).toBe(0);
+    expect(await h.session.ensure()).toBe("tok1");
+    expect(h.signed).toHaveLength(2);
+  });
+
+  it("invalidate removes the stored token too", async () => {
+    const store = memoryStore();
+    const h = harness({ store });
+    await h.session.ensure();
+    h.session.invalidate();
+    expect(store.data.size).toBe(0);
+  });
+});
 
 describe("nonce", () => {
   it("is 32 bytes with the big-endian millisecond time first and random bytes after", () => {
