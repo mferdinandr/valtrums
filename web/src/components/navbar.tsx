@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { WalletButton } from "@/components/wallet-button";
-import { Bot, Droplets, Swords, Layers3, Sparkles, Plus } from "lucide-react";
+import { Bot, BookOpen, Droplets, Swords, Layers3, Sparkles, Plus } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { arenaNavigationActive } from "@/lib/arena-read/routes";
 
@@ -20,6 +20,11 @@ const LINKS = [
   { href: "/faucet", label: "Faucet", icon: Droplets },
   { href: "/portfolio", label: "Portfolio", icon: Layers3 },
 ];
+
+const DOCS_URL = "https://docs.valtrums.xyz";
+
+const LINK_CLASS =
+  "site-nav-link flex min-h-11 shrink-0 items-center gap-1.5 px-3 py-2 font-pixel text-xs transition-colors md:gap-2 md:px-4 md:text-xs";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -53,7 +58,7 @@ export function Navbar() {
                 href={l.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "site-nav-link flex min-h-11 shrink-0 items-center gap-1.5 px-3 py-2 font-pixel text-xs transition-colors md:gap-2 md:px-4 md:text-xs",
+                  LINK_CLASS,
                   active
                     ? "site-nav-active"
                     : "text-mute hover:bg-white/60 hover:text-ink",
@@ -63,6 +68,14 @@ export function Navbar() {
               </Link>
             );
           })}
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(LINK_CLASS, "text-mute hover:bg-white/60 hover:text-ink")}
+          >
+            <BookOpen size={14} /> Docs
+          </a>
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <WalletButton />
