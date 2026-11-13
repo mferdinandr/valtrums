@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <nav aria-label="Footer navigation">
             <Link href="/arena">Battles</Link>
             <Link href="/arena/new">Create Battle</Link>
-            <Link href="/terminal">Terminal</Link>
+            <Link href="/terminal">Assistant</Link>
             <Link href="/agents">Agents</Link>
             <Link href="/faucet">Faucet</Link>
             <Link href="/portfolio">Portfolio</Link>

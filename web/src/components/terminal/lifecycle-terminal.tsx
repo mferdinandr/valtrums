@@ -151,7 +151,7 @@ function ReviewedCall({
       </div>
       {!run.connected && (
         <p className="text-xs text-mute">
-          Signing needs a connected wallet on a deployment that enables it (NEXT_PUBLIC_APPLICATION_WALLET). Without one the terminal stays review-only and nothing is sent.
+          Signing needs a connected wallet on a deployment that enables it (NEXT_PUBLIC_APPLICATION_WALLET). Without one the assistant stays review-only and nothing is sent.
         </p>
       )}
       {flow.step === "blocked" && (
@@ -833,7 +833,7 @@ function SaveVoteStep({ battleId, burnPercent, onDone }: { battleId: number; bur
   }
   return (
     <p role="status" className="text-xs text-neon-green">
-      Saved in this browser. Once battle #{battleId} is settled and your token won, a vote button appears at the top of the Terminal.
+      Saved in this browser. Once battle #{battleId} is settled and your token won, a vote button appears at the top of the Assistant.
     </p>
   );
 }
@@ -1061,10 +1061,10 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
         role="log"
         aria-label="Conversation"
         aria-live="polite"
-        className="flex max-h-[65vh] min-h-[18rem] flex-col gap-5 overflow-y-auto p-4 sm:p-6"
+        className="flex h-[55vh] min-h-[24rem] flex-col gap-5 overflow-y-auto p-4 sm:p-6"
       >
         {chat.turns.length === 0 && (
-          <Bubble side="terminal" label="Terminal">
+          <Bubble side="terminal" label="Assistant">
             <p>What do you want to do? Write it the way you would say it, in English or Bahasa Indonesia.</p>
             <p className="mt-2 text-xs text-mute">
               Amounts are plain token amounts (100 or 0.5). You can say “the open arena” instead of a battle number, and ask “which arenas are open?” or “my positions”. Reading your request never submits a transaction.
@@ -1083,7 +1083,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
             <Bubble side="user" label="You">
               <p className="whitespace-pre-wrap break-words" data-testid="user-message">{turn.prompt}</p>
             </Bubble>
-            <Bubble side="terminal" label="Terminal">
+            <Bubble side="terminal" label="Assistant">
               <Answer namespace={namespace} turn={turn} live={isInteractive(chat, turn.id)} onReplace={replaceIntent} />
             </Bubble>
           </div>
@@ -1100,7 +1100,7 @@ export function LifecycleTerminal({ namespace }: { namespace: Namespace }) {
         <label className="flex-1">
           <span className="sr-only">Your request (English or Bahasa Indonesia)</span>
           <textarea
-            aria-label="Terminal prompt"
+            aria-label="Assistant prompt"
             value={prompt}
             maxLength={MAX_PROMPT_CHARS}
             rows={2}

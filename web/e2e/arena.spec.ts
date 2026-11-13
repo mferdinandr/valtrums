@@ -240,7 +240,7 @@ test.describe("lifecycle intent terminal", () => {
     return calls;
   };
   const ask = async (page: Page, prompt: string) => {
-    await page.getByLabel("Terminal prompt").fill(prompt);
+    await page.getByLabel("Assistant prompt").fill(prompt);
     await page.getByRole("button", { name: "Send" }).click();
   };
 
@@ -340,7 +340,7 @@ test("the portfolio does not overflow horizontally on a narrow screen", async ({
 test("one application: every menu entry is present and the former A/B urls redirect into the arena", async ({ page }) => {
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
-  for (const name of ["Arena", "Create", "Terminal", "Portfolio"]) {
+  for (const name of ["Arena", "Create", "Assistant", "Portfolio"]) {
     await expect(nav.getByRole("link", { name })).toBeVisible();
   }
   await page.goto("/battles/3");
