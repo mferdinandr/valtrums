@@ -1,13 +1,13 @@
 # Valtrum — Project Guide
 
-A permissionless token-community arena coordinated on NEAR, with original-token custody and rewards on Robinhood Chain (testnets). Arenas are open: allowlisted token communities join before the creator's start time, and two or more funded communities compete in 30-second rounds; the final winners receive each losing token.
+A permissionless token-community arena on NEAR testnet, scored from live Robinhood Chain mainnet prices (read only; nothing is sent to Robinhood). Arenas are open: allowlisted token communities join before the creator's start time, and two or more funded communities compete in 30-second rounds; the final winners receive each losing token.
 
 ## Stack
 
 | Layer | Tech |
 | --- | --- |
 | Smart contracts | Rust, near-sdk 5.x, cargo-near, near-workspaces (tests) |
-| Cross-chain | NEAR Chain Signatures (MPC) for Robinhood Chain transactions |
+| Market data | Robinhood Chain mainnet Uniswap v3 pools (prices, liquidity), GoPlus (token risk) |
 | Agent | TypeScript, NEAR AI Cloud (TEE) |
 | Frontend | Next.js 16 (App Router), Tailwind, shadcn/ui, pnpm |
 
@@ -25,8 +25,8 @@ web/         Frontend + AI prompt terminal
 - A creator (user or protocol) picks one scoring mode (Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown) and a start time (now + 60 s to now + 7 days); communities are not invited. No bond. The creator must hold a real positive deposit before the snapshot locks.
 - Before the start, anyone joins with a protocol-allowlisted token (CASHCAT, WALLET, GOOD, VLAD, DEGEN; AI excluded) and deposits. The lock needs 2+ funded communities with fresh approvals; empty ones are excluded. Below 2 funded after the start, anyone cancels and depositors pull refunds (D34 to D38).
 - Rounds last 30 seconds, point observations, no TWAP. Tied leaders repeat with reset inputs, no overtime cap. Deposits stay closed and all original vaults stay locked until a final winner exists.
-- Each losing vault: 99.9% to winning participants proportionally, 0.05% creator, 0.05% protocol (protocol-created battles pay the full 0.1% to protocol). Rewards are the original losing tokens on Robinhood.
-- Winning principal goes to DAO escrow (burn or return); DAO mechanics are OPEN. NEP-141 representations are 1:1 backed by actual received assets with exclusive reservations.
+- Each losing vault: 99.9% to winning participants proportionally, 0.05% creator, 0.05% protocol (protocol-created battles pay the full 0.1% to protocol). Rewards are the losing tokens themselves, claimed into the winner's NEAR wallet.
+- Winning principal goes to DAO escrow; winners vote burn (destroyed on NEAR) or return (D22). Each community token contract keeps a ledger that must balance.
 - Approval needs a GoPlus check (critical risk rejects, unknown data stays Pending) plus an independent LP check above USD 10,000.
 - Infrastructure workers never hold authority over player funds. Player agents act only within user-delegated budgets.
 - Current code (docs/current-state.md) is still the earlier two-side arena (bond, TWAP, swap settlement, credit); treat it as the base to change, not as the rules.

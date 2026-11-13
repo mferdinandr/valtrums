@@ -7,8 +7,9 @@ A Next.js app (`@valtrum/docs`) that renders the MDX pages in `content/`. See RE
 - "Battle" for one contest; "arena" only for the product area or the open arena.
 - "Community" in prose; "crew" only when quoting the app (Crew 01, Your crew).
 - Use the app's scoring mode names (Biggest price climb, Community growth, Trading energy, Steadiest crew) and give the formal name once.
-- "Winners' vote" for the DAO decision on winning principal; "sent to sink", never "burned supply".
-- "Reward" or "prize" is an entitlement until claimed; "paid" only after a confirmed Robinhood Chain transfer.
+- "Winners' vote" for the DAO decision on winning principal; burned tokens are "destroyed on NEAR".
+- "Reward" or "prize" is an entitlement until it is claimed into the winner's NEAR wallet.
+- Everything players do happens on NEAR. Robinhood Chain is only the source of prices and token audits; don't describe custody or payouts on Robinhood.
 - The product is "Valtrums". On-chain account IDs keep their deployed `valtrum-*` names.
 
 ## Style
@@ -23,5 +24,5 @@ A Next.js app (`@valtrum/docs`) that renders the MDX pages in `content/`. See RE
 
 - Audience: players, creators and agent owners using the web app. Not contributors.
 - Don't document infrastructure, env vars, CI, deploy scripts or internal workers. Link to the GitHub repo instead.
-- Every fact must come from `web/`, the contracts or `../docs`. Mark unbuilt features (Robinhood payout, live DAO vote) as not available yet.
+- Every fact must come from `web/`, the contracts or `../docs`. Mark unbuilt features as not available yet.
 - Everything is testnet only; say so where money is involved.

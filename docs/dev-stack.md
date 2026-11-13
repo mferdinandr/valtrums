@@ -6,9 +6,7 @@ agent, observation collector and oracle. These workers submit testnet transactio
 `DEV_WORKERS=0 pnpm dev` for frontend/read development without live workers.
 
 The launcher reads worker account credentials from root `.env` and audit settings
-from `agent/.env.local`. It does not forward signing keys to the frontend. Payout
-roles remain separate processes and start only when their role configuration is
-provided. Missing payout roles are reported during startup.
+from `agent/.env.local`. It does not forward signing keys to the frontend.
 
 ## Approval reads after an arena redeploy
 

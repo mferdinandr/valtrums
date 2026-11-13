@@ -1,6 +1,6 @@
-# Token economics, backing and settlement
+# Token economics and settlement
 
-Status: **planned**. All balances are integers in the asset's declared smallest unit. No conversion of losing-token rewards to USDC or the winner token is part of this design. [Current-state economics](current-state.md) remain historical implementation behavior.
+Status: **implemented on NEAR testnet**. Everything below happens on NEAR; no value moves to or from another chain. All balances are integers in the asset's declared smallest unit. No conversion of losing-token rewards to USDC or the winner token is part of this design. [Current-state economics](current-state.md) remain historical implementation behavior.
 
 ## Per-token distribution
 
@@ -28,7 +28,7 @@ Protocol configures total `fee_bps` between 0 and 1,000 inclusive (a 10% ceiling
 4. Within `Q_j` only, allocate among winning beneficiaries using `floor(Q_j * d_u / C_W)`, then distribute remaining units by descending fractional remainder. Break equal remainders by canonical NEAR beneficiary account ID bytes in ascending order.
 5. Aggregate a beneficiary's winning deposits before calculating their share. Snapshot the ordered beneficiary list so pagination or claim order cannot affect dust.
 
-Percentages describe ideal amounts; indivisible units approximate them. At the default fee, a vault below 1,000 atomic units pays zero fee. Do not round each claim independently or allocate all dust to the last caller. Recipient mapping to Robinhood must be authorized and frozen before a payout is signed.
+Percentages describe ideal amounts; indivisible units approximate them. At the default fee, a vault below 1,000 atomic units pays zero fee. Do not round each claim independently or allocate all dust to the last caller.
 
 For every losing token independently:
 
@@ -36,7 +36,7 @@ For every losing token independently:
 
 `Q_j = sum_u reward_(u,j)`.
 
-The final winning principal `C_W` is separately conserved in DAO escrow. There is no meaningful sum of different tokens without a valuation; never use a USD total as the custody conservation check.
+The final winning principal `C_W` is separately conserved in DAO escrow. There is no meaningful sum of different tokens without a valuation; never use a USD total as the conservation check.
 
 The examples below use the initial default fee settings.
 
@@ -66,7 +66,7 @@ A wins with Alice/Bob weights 25%/75%. B holds 100,000 B units and C holds 200,0
 | Protocol | 50 | 100 |
 | Total | 100,000 | 200,000 |
 
-B and C remain different assets through allocation and Robinhood payment. No swap price is needed.
+B and C remain different tokens through allocation and claim. No swap price is needed.
 
 ### Protocol creator and rounding examples
 
@@ -85,61 +85,44 @@ For 1,000 units, independently flooring two nominal 0.05% fees would incorrectly
 
 For a 9,993-unit reward pool and Alice/Bob/Carol weights 1:2:3, ideals are 1,665.5 / 3,331 / 4,996.5. One remaining unit goes to Alice by the account-ID tie order: **1,666 / 3,331 / 4,996**, totaling 9,993. Implementations must use canonical account IDs rather than these display names.
 
-## 1:1 representation and custody
+## Community tokens
 
-Each token identity binds Robinhood chain ID, token contract address, NEAR representation account, decimals and custody domain. No symbol-based mapping. A valid deposit needs finalized evidence of the actual custody increase, recipient/battle attribution and a unique source receipt identity such as `(chain_id, tx_hash, log_index)`, reconciled against balance changes. Prevent donation contamination, replay and crediting unrelated transfers.
+Each community is one NEP-141 token contract on NEAR (`backing-<token>.valtrum-owner-b694.testnet`), identified by its account, never by ticker. Deposits are `ft_transfer_call` to the arena; the arena credits only the units it actually receives. Standard transfers cannot bypass vault, entitlement or DAO locks.
 
-Mint only the verified received amount after exact normalization. If a sender attempts 100 and custody receives 98, no more than 98 can be represented. That arithmetic does not approve a taxed token: admissibility and outbound tax handling remain OPEN. Never mint from a user declaration, an MPC signature or an unconfirmed transaction.
+## Per-token ledger
 
-Prefer identical atomic-unit precision on both chains. If decimals differ, specify an exact reversible unit mapping and keep unrepresentable residual units as explicitly attributed unallocated custody; never round minted value up. Tests must prove normalization at minimum/maximum amounts.
+Each token contract keeps one ledger, read with `get_ledger`:
 
-NEP-141 defines transfer behavior, not a bridge, a universal burn method or proof of Robinhood backing. The planned representation contract needs controlled receipt-based minting and an explicit redemption/burn lifecycle. Standard transfers cannot bypass vault, entitlement or DAO locks.
+- **Live supply:** tokens in wallets and in the arena, including locked vaults.
+- **Entitlements:** rewards and returned principal waiting to be claimed.
+- **Escrow:** winning principal waiting for the winners' vote.
+- **Burned:** the share the winners' vote destroyed; it never returns to the supply.
 
-## Liability ledger
-
-For each asset, express all entries in the same canonical custody units:
-
-- `B`: verified actual custody balance.
-- `M`: backing assigned to live representation supply, including representations locked in battle or DAO escrow.
-- `E`: allocated but not yet submitted native-token entitlements, including rewards and revenue.
-- `P`: exclusively reserved pending native payouts/redemptions whose corresponding representations or entitlements are no longer spendable.
-- `D`: exclusively reserved pending DAO-directed underlying disposal after representations are disabled/burned.
-- `U`: verified unallocated custody, with attribution and recovery policy; it cannot silently become revenue.
-
-The accounting invariant is `B = M + E + P + D + U` for reconciled supported assets. During cross-chain evidence delay, retain the previous liability and show reconciliation pending; do not present a fresh unverified balance as satisfying the invariant. Unexpected deficits stop new minting and affected payouts pending investigation.
+The contract checks that these balance (`accounting_balanced`).
 
 | Transition | Ledger change |
 | --- | --- |
-| Verify q custody units, then mint q | B and M increase by q; the receipt is consumed once |
-| Transfer a representation or lock a vault | Ownership changes inside M; backing does not change |
-| Allocate losing vault q | Burn/disable its representations: M decreases by q, E increases by q across all beneficiaries |
-| Reserve a payout | E decreases by q, P increases by q; same entitlement cannot be spent again |
-| Redeem unlocked representations | Burn/disable q representations: M decreases by q, P increases by q |
-| Confirm exact authorized native debit/payment | B and P decrease by q; mark payout identity confirmed |
-| Definitively fail without any chain movement | Restore P to E, or restore the disabled representation and M, exactly once; only after reconciliation proves no executable transaction remains |
-| DAO chooses verified underlying burn/sink | Consume escrowed representations from M into D; confirm underlying disposal, then reduce B and D by q |
-| DAO chooses return | Move escrowed M into a native redemption reservation P or unlock representations according to the approved decision; never do both |
+| Deposit or lock a vault | Ownership changes inside the live supply |
+| Allocate losing vault q | q leaves the live supply (burned from the arena) and becomes entitlements for the beneficiaries |
+| Claim q | Entitlements decrease by q; q is minted to the claimer's wallet |
+| Escrow the winning principal q | q leaves the live supply and is held in escrow |
+| Winners' vote returns r | Escrow decreases by r; entitlements increase by r |
+| Winners' vote burns b | Escrow decreases by b; b is recorded as burned and never minted again |
 
-Cross-chain changes are asynchronous; these are logical transitions with durable intermediate records and idempotent reconciliation, not an assertion of atomic execution across chains. Migration of old credit/WAR/VALT liabilities is out of scope.
+Each transition runs once per allocation, escrow or release id. Migration of old credit/WAR/VALT liabilities is out of scope.
 
-## Entitlement versus confirmed payout
+## Entitlement and claim
 
-At settlement, a winner's losing-token rights are **available entitlements**, not evidence of a foreign transfer. The UI/API distinguishes available, reserved, signature pending, broadcast, confirmation pending, confirmed, and retry/reconciliation required. A confirmed payout needs verified chain/token, sender, beneficiary, amount, successful execution and finality evidence tied to that payout ID.
-
-For each asset, `allocated = available + in_flight + confirmed_paid`, with confirmed payment records retained for replay protection. Reserve before requesting a signature. Persist payout ID, exact payload hash, custody path, nonce and attempts. A restarted worker must reconcile existing transactions, including replacements, before creating another spend. Re-broadcasting the same signed transaction is safe only under the same identity; a new nonce cannot be used to pay an unresolved claim again.
-
-A signature callback, an RPC acceptance, a transaction hash and an indexer's unfinalized event are not payment confirmation. Failed/slow payouts do not recalculate entitlements or fees. One token's payout failure does not make another token's reward depend on the DAO.
-
-Transfer-tax/rebase behavior can break equality between custody debit and recipient receipt. That policy is OPEN and must be resolved or such assets excluded before live approval; never mark a short receipt fully paid or restore representations after an actual debit. Native gas must have separate funding/accounting; do not silently deduct it from token rewards.
+At settlement, a winner's losing-token rights are **entitlements**. The battle page opens the claim once the winners' vote has finished (D45); the holder then claims them into their NEAR wallet with `claim_entitlement_as_representation`. One token's claim never depends on another's.
 
 ## DAO principal escrow
 
-The winner's principal and its backing remain reserved for DAO disposition. Losing-token rewards and revenue are independent liabilities and can be paid immediately after allocation.
+The winner's principal remains in escrow for the winners' vote. Losing-token rewards and revenue are recorded independently at allocation.
 
-Governance is decided (D22, see [DAO governance](dao-governance.md)): the winning community's participants vote burn or return, weighted by their principal; the burn share of votes cast applies to the whole escrow (per holder `burn_i = floor(p_i * B / (B + R))`, `return_i = p_i - burn_i`, so conservation is exact and rounding favours return). There is no quorum and no delegation. If nobody votes in the window, the principal stays escrowed, and no timeout may silently return or burn it. A demo fixture must disclose that it is a fixture, not governance.
+Governance is decided (D22, see [DAO governance](dao-governance.md)): the winning community's participants vote burn or return, weighted by their principal; the burn share of votes cast applies to the whole escrow (per holder `burn_i = floor(p_i * B / (B + R))`, `return_i = p_i - burn_i`, so conservation is exact and rounding favours return). There is no quorum and no delegation. If nobody votes in the window, the principal stays escrowed, and no timeout may silently return or burn it.
 
-Destroying only NEAR representations does not prove Robinhood tokens were burned. A disposal must bind the decision, escrow amount, destination/action and verified underlying result. A burn is a verified transfer to a frozen irrecoverable sink address on Robinhood, not a supply burn; report it as "sent to sink". The same units cannot subsequently be redeemed or returned.
+The burned share is destroyed on NEAR: it is recorded once in the ledger and never minted again. The same units cannot subsequently be returned or claimed.
 
 ## Required accounting checks
 
-Implementation tests must cover per-token conservation, all fee recipients, creator participation on either outcome, two/three communities, protocol creation, tiny and uneven vaults, deterministic dust, decimal mismatch, taxed input versus policy, duplicate deposit receipts, concurrent redemption/settlement/burn attempts, partial payout completion, lost callbacks and broadcast retries without duplicate payment. See [OpenSpec assets](openspec/changes/arena-asset-representation/specs/arena-asset-representation/spec.md) and [settlement](openspec/changes/arena-settlement/specs/arena-settlement/spec.md).
+Implementation tests must cover per-token conservation, all fee recipients, creator participation on either outcome, two/three communities, protocol creation, tiny and uneven vaults, deterministic dust, short deposits credited for what arrived, concurrent claim/settlement/burn attempts and repeated executions without a duplicate effect. See [OpenSpec assets](openspec/changes/arena-asset-representation/specs/arena-asset-representation/spec.md) and [settlement](openspec/changes/arena-settlement/specs/arena-settlement/spec.md).

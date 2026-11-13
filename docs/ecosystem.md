@@ -1,37 +1,24 @@
-# Ecosystem and testnet integration map
+# Ecosystem and integration map
 
-Status checked against public documentation on **2026-11-06**. Documentation availability is not an end-to-end integration test. Priority P0 blocks the corresponding target acceptance; P1 is a planned enhancement; P2 is a candidate for evaluation. Priority, implementation status and verified testnet support are separate columns; a planned dependency is not made optional because its testnet compatibility is unverified.
+Status as of **2026-11-14**. Valtrums runs on NEAR testnet only; Robinhood Chain mainnet is read for prices, liquidity and token audits, and nothing is sent to Robinhood Chain. Priority P0 blocks the target acceptance, P1 is an enhancement and P2 is a candidate. "Live" means it runs in the deployed testnet application; documentation availability is not an integration test.
 
-| Partner / component | Function | Priority | Testnet evidence and limits | Repository status |
-| --- | --- | --- | --- | --- |
-| NEAR Protocol / NEP-141 | Battle state and transferable asset representations | P0 | NEAR testnet exists; backing verification is application work, not a token-standard guarantee | Legacy NEAR contracts exist; target planned |
-| NEAR Chain Signatures | Constrained Robinhood transaction signatures | P0 | [Official implementation guide](https://docs.near.org/chain-abstraction/chain-signatures/implementation) lists v1.signer-prod.testnet; verify current key, domain, derivation and Robinhood transaction compatibility | Legacy EVM signer/relay source exists; target transfer policy unimplemented |
-| Robinhood Chain | Original-token custody, deposits and payouts | P0 | [Official connection guide](https://docs.robinhood.com/chain/connecting/) lists testnet chain ID 46630, ETH gas and public RPC https://rpc.testnet.chain.robinhood.com; endpoints are rate limited | No target deployment or verified payout |
-| GoPlus | Critical token-risk evidence | P0 | [Token Security API](https://docs.gopluslabs.io/reference/tokensecurityusingget_1) and [supported-chain discovery](https://docs.gopluslabs.io/reference/getchainslistusingget) must be checked specifically for Robinhood testnet; coverage is unverified | Planned; existing heuristic is not GoPlus |
-| Independent LP/market-data adapter | LP > USD 10,000, price, supply, interval volume and drawdown samples | P0 | Provider, eligible pools, circulating-supply source, coverage and cadence OPEN | Legacy Ref/mock/DexScreener adapters do not satisfy target requirements |
-| NEAR AI Cloud | Player strategy and intent interpretation | P0 | [Quickstart](https://docs.near.ai/cloud/quickstart) documents authenticated inference; service access is distinct from blockchain testnet support | Existing terminal has configurable inference parsing; autonomous bounded player agent planned |
-| NEAR Intents / 1Click | Planned cross-chain funding/routing | P0 | [Official docs](https://docs.near-intents.org/index) describe token discovery, quotes and execution status; Robinhood testnet routes are unverified and must not be assumed. On 2026-11-08 1Click listed Robinhood **mainnet** assets (`hood`) and dry-quoted NEAR USDC to them, but no testnet asset at all ([evidence](intents-evidence.md)) | Legacy terminal adapter exists; testnet route is an integration gap. A labelled 1Click fixture pinned to the recorded mainnet responses (`intents-fixture`, D29, [#114](https://github.com/mferdinandr/valtrum/issues/114)) stands in for the testnet demo ([mapping and migration](intents-asset-mapping.md)); it does not close the gap |
-| Bitte | Planned agent orchestration and intent UX | P0 | [Open Agents docs](https://docs.bitte.ai/) describe API/OpenAPI agents; chain/testnet execution compatibility unverified | Planned integration; orchestration does not itself supply a solver, bridge or receipt verifier |
-| FastNEAR | NEAR RPC and indexed data | P1 | [Provider reference](https://docs.fastnear.com/) separates canonical RPC from indexed APIs; verify selected testnet endpoint and rate limits | Legacy demo uses a FastNEAR testnet RPC |
-| Wallet connection | User signing and revocation | P0 | Existing HOT connector code must be tested against actual target grants; cannot infer token caps from gas allowance | Legacy web integration present |
-| SputnikDAO | Candidate community decision infrastructure | P2 evaluation; DAO design is P0 | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists DAO infrastructure; verify testnet contracts and compatibility with principal escrow | Selected (D28, [#113](https://github.com/mferdinandr/valtrum/issues/113)) to own protocol authority and receive the protocol fee; the winners' vote stays in the arena contract. `sputnikv2.testnet` exists (checked 2026-11-09). Not yet deployed. Sandbox test with the real contracts and the official v3.31 wasm passes; factory details and the privileged-method map are in [sputnik-authority.md](sputnik-authority.md) |
-| Trezu | Candidate treasury/multisig interface | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists treasury tooling; verify testnet availability and authority model | A treasury multisig is not automatically the community's DAO voting policy. Optional interface to the same DAO only if it supports testnet; the Trezu docs mention only `.sputnikdao.near` (mainnet), and `testnet.trezu.app` does not resolve, so no testnet support is documented (checked 2026-11-09); the testnet council uses near-cli-rs (D28) |
-| OutLayer | Candidate execution policy layer for AI transactions | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists agent transaction tooling; validate testnet policy/receipt flow | Candidate, not integrated; cannot replace arena grant enforcement without evidence |
-| Agent Market | Candidate player-agent discovery/distribution | P2 evaluation | [Hackathon ecosystem](https://nearhackathon.com/#partners) lists agent marketplace; verify listing/API access and testnet workflow | Candidate, not integrated; listing does not prove funded-agent execution |
+| Partner / component | Function in Valtrums | Priority | State |
+| --- | --- | --- | --- |
+| NEAR Protocol / NEP-141 | Battle state, community tokens, rewards, escrow and burns | P0 | Live on testnet |
+| Robinhood Chain (mainnet, 4663) | Uniswap v3 `slot0` prices for round scoring and the live price preview; pool balances for the LP check (read only) | P0 | Live |
+| GoPlus | Critical token-risk evidence for each mainnet reference token ([policy](goplus-audit.md)) | P0 | Live; tokens without coverage stay Pending |
+| NEAR AI Cloud (TEE) | Player agent decisions and terminal intent parsing | P0 | Live; an autonomous agent played a battle on 2026-11-11 |
+| Wallet connection (HOT connector) | User signing | P0 | In the web app |
+| FastNEAR | NEAR RPC and indexed data | P1 | In use |
+| SputnikDAO | Protocol authority and protocol-fee recipient ([authority map](sputnik-authority.md)); the winners' vote stays in the arena contract | P2 / DAO design P0 | Deployed as `valtrum-protocol.sputnikv2.testnet` |
+| Bitte | Agent orchestration | P0 | Planned; not demonstrated |
+| Trezu, OutLayer, Agent Market | Treasury UI, AI transaction policy, agent discovery | P2 | Evaluated only; not integrated |
 
-## Evidence required before claiming integration
+## Evidence required before claiming an integration
 
-Record chain ID, endpoint, token/custody addresses, code hashes, source commit, timestamp, request/response evidence, finality policy and transaction/receipt links. Keep credentials out of records. Explicitly label fixture versus public-service evidence.
-
-First prove deposit receipt attribution, 1:1 mint, redemption and a constrained original-token payout. Then test all market-data fields for a 30-second interval and GoPlus's mandatory fields. An unsupported chain or missing field holds approval Pending; a canned response may test adapters but cannot be presented as a live audit.
-
-Intents and Bitte are planned target integrations: Intents routes supported funding operations, Bitte orchestrates agent requests, and Chain Signatures authorizes constrained Robinhood transactions. Settlement distributes the original losing tokens without swaps. A direct Robinhood testnet deposit can exercise the custody subsystem, but it does not complete Intents/Bitte acceptance. Unsupported routes remain explicit integration gaps, with labeled fixtures only; do not silently reduce scope or claim unsupported execution. The `intents-fixture` route (D29) is such a fixture: it simulates the 1Click API on testnet with a fake solver, is accepted only in a testnet configuration, and never completes Intents acceptance.
-
-The owner reports Robinhood support. Attach network-specific evidence for the exact testnet route, assets and API used before claiming it verified in this repository. Record chain support, token coverage and service access separately. NEAR AI inference does not grant wallet authority; signatures do not provide a bridge or execution proof.
+Record the endpoint, account or contract, source commit, timestamp, request/response evidence and transaction links. Keep credentials out of records. Label fixtures as fixtures. An unsupported chain or a missing field holds an audit Pending; a canned response may test an adapter but cannot be presented as a live audit.
 
 ## Planned integration acceptance
 
-- **Intents:** record asset discovery, quote, funding authorization, terminal execution/refund status and linkage to the actual custody receipt on the configured testnets. Use provider-returned asset IDs and identify the solver/route.
-- **Bitte:** demonstrate an API/OpenAPI agent request orchestrating a canonical arena preview and a user-authorized action; reconcile it with the same action/payout status used by MCP. Do not identify Bitte as the solver without route evidence.
-- **Chain Signatures:** bind chain ID, custody path, reservation, nonce and payload, then verify the foreign receipt; signing alone is not integration completion.
+- **Bitte:** demonstrate an API/OpenAPI agent request orchestrating a canonical arena preview and a user-authorized action, reconciled with the same action status used by MCP.
 - **Candidate partners:** record benefit, testnet availability, permissions and integration cost before selection. Selecting DAO infrastructure does not settle membership, quorum, voting weight or fallback.

@@ -27,7 +27,7 @@ cargo test --workspace --exclude valtrum-integration
 cargo test -p valtrum-integration
 ```
 
-Sandbox tests may download a binary. Existing deployment scripts create accounts, deploy and initialize the legacy arena/router/mock contracts; use a fresh suffix. Reinitialization of an already initialized account fails. They do not deploy the target Robinhood system.
+Sandbox tests may download a binary. Existing deployment scripts create accounts, deploy and initialize the legacy arena/router/mock contracts; use a fresh suffix. Reinitialization of an already initialized account fails. They do not deploy the lifecycle contracts listed below.
 
 ```bash
 scripts/deploy-testnet.sh <fresh-suffix>
@@ -81,66 +81,16 @@ Live testnet deployment from the owner's accounts; details, code hashes and tran
 | Owner / deploy key | `valtrum-owner-b694.testnet` |
 | DAO (protocol account, backing owner) | `valtrum-protocol.sputnikv2.testnet` |
 | Arena (lifecycle activated, protocol = DAO) | `arena.valtrum-owner-b694.testnet` |
-| Receipt registry | `registry.valtrum-owner-b694.testnet` |
-| Payout (signer `v1.signer-prod.testnet`) | `payout.valtrum-owner-b694.testnet` |
 | Player policy (current, redeployed 2026-11-09 after #129) | `policy-v2.valtrum-owner-b694.testnet` |
 | Player policy (old layout, superseded, unused) | `policy.valtrum-owner-b694.testnet` |
 | Backing (fixture asset, DAO-owned) | `backing1.valtrum-owner-b694.testnet` |
-| Backings for the six mock tokens (DAO-owned, wired 2026-11-09) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
-| Registry verifier | `valtrum-verifier-b694.testnet` |
+| Community tokens (DAO-owned, wired 2026-11-09) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` `.valtrum-owner-b694.testnet` |
 | Infrastructure agent (in the arena whitelist, see [testnet-evidence.md](testnet-evidence.md) section 8) | `valtrum-agent-b694.testnet` |
 | Faucet contract (owner-managed) | `valtrum-faucet.testnet` |
-| Faucet operator (claims receipts, stocks the faucet; separate from the payout operator `valtrum-operator-b694`) | `valtrum-operator.testnet` |
+| Faucet operator (stocks the faucet) | `valtrum-operator.testnet` |
 
 Configuration pointers (local, git-ignored files): the agent reads `agent/.env.local` and the web app `web/.env.local`. Both must point `PLAYER_POLICY_CONTRACT_ID` and `NEXT_PUBLIC_PLAYER_POLICY_CONTRACT_ID` at `policy-v2` (the old `policy` account has the layout from before PR #129), `NEXT_PUBLIC_FAUCET_CONTRACT_ID` at the faucet, and `PRICE_PREVIEW_RPC_URL` at a reachable Robinhood mainnet RPC. The faucet, its funding steps and the audit variables are described in the [agent README](../agent/README.md#testnet-faucet).
 
-Measured storage: wasm size times 1e19 yoctoNEAR plus a small overhead (arena 664 KB is 7.0 NEAR, backing 389 KB, payout 304 KB, policy 209 KB, registry 160 KB); the DAO create cost the owner 6.1 NEAR. Deployed through a script that signs in process (keys read from the git-ignored `.env`, never passed as arguments); each account was created, keyed with the owner key, deployed and initialised in one transaction. Build: `cd contracts/<crate> && cargo near build non-reproducible-wasm --no-abi --out-dir <dir>`. Still not deployed: Robinhood custody and mock tokens (separate work), real-token backings, payout backing registration, reference-registry entries.
+Measured storage: wasm size times 1e19 yoctoNEAR plus a small overhead (arena 664 KB is 7.0 NEAR, backing 389 KB, policy 209 KB); the DAO create cost the owner 6.1 NEAR. Deployed through a script that signs in process (keys read from the git-ignored `.env`, never passed as arguments); each account was created, keyed with the owner key, deployed and initialised in one transaction. Build: `cd contracts/<crate> && cargo near build non-reproducible-wasm --no-abi --out-dir <dir>`. Still not deployed: real-token community tokens and reference-registry entries.
 
-## Planned target rollout: no ready-to-run deploy command
-
-Target only NEAR testnet and Robinhood Chain testnet. No target custody, representation, four-mode arena, DAO or MCP deployment script exists yet.
-
-1. Verify [integration gates](ecosystem.md): chain 46630, signer identity/key, gas, tokens, GoPlus coverage and observation providers.
-2. Resolve custody/receipt/finality policy and audit approval policy. Deploy isolated test custody and backed representations with separate infrastructure/player credentials.
-3. Prove actual-received minting, duplicate-receipt rejection, redemption and reservation conservation.
-4. Deploy new arena lifecycle, 30-second observation scheduling, exact scoring and unlimited overtime.
-5. Implement per-token allocation and constrained Robinhood payout; demonstrate lost-response retry without double payment.
-6. Add principal escrow. Keep governance OPEN until explicitly decided; fixture decisions must be labeled.
-7. Add bounded player delegation, NEAR AI and MCP/terminal previews; verify revocation and infrastructure-role rejection.
-8. Record addresses, code hashes, policy versions, signer paths, finality, receipts and failures for a two/three-community demo.
-
-This rollout must not overwrite the historical deployment or claim an unsupported Intents/testnet route. [Security review](security-review.md) and [roadmap](implementation-roadmap.md) list unfinished checks.
-
-## Robinhood testnet (46630): custody and mock tokens deployed 2026-11-09
-
-Recorded in [testnet-evidence.md](testnet-evidence.md) section 3b and [`evidence/2026-11-09-evm-testnet-deploy.json`](evidence/2026-11-09-evm-testnet-deploy.json). These are **fixtures** on a public testnet (no value), deployed with the owner's testnet deployer address `0xcE806A7Ef30c7e96bC22bbA2665BAFcC78A575c6`. Keys stay in the git-ignored `.env` and a local Foundry keystore; nothing secret is committed.
-
-| Contract | Address |
-| --- | --- |
-| `TestnetDepositCustody` (old, **RETIRED**: deposit-only, keeps tokens, no withdrawal; never verify or attest its events) | `0xb994DCAb6aD9a042e7bBec3Ba104Ec5e6b797798` |
-| `TestnetDepositCustody` (forwarder, holds nothing; holder `0x0b740E3E90491f57699fCCD8276400E65BC70c41`, deployed 2026-11-10, [evidence](evidence/2026-11-10-forwarder-deploy.json)) | `0xEb49d8E71A5B2f5B4fA9Da33C3b1838e249F5C6C` |
-| `mCASHCAT` (mock) | `0x5b2BA17e5be1B611c1299809Db89c5Fe21D9D0a6` |
-| `mWALLET` (mock) | `0x78e7621559bC0E3CC10F8bB61dc2a371afe66e27` |
-| `mGOOD` (mock) | `0xAED11A367b102f2da3ac2dFcF1De9cC97A47a850` |
-| `mAI` (mock) | `0x973C4E0601c03a4899b8c9643b299aaaecE4ba0A` |
-| `mVLAD` (mock) | `0xD879e8483d63265abe2549A347017E59a04a15BC` |
-| `mDEGEN` (mock) | `0x209AA417c2aa45a13304Acc51c4c393d0Ac5Ba84` |
-
-Reproduce the build and compare code hashes (Solidity 0.8.28, optimizer on with 200 runs, EVM `cancun`, default metadata hash `ipfs`):
-
-```bash
-cd evm && forge test && forge build
-cast code <address> --rpc-url https://rpc.testnet.chain.robinhood.com | xargs cast keccak   # compare with deployedBytecode in out/<File>.sol/<Contract>.json
-```
-
-`MockToken` stores its owner as an immutable, so its runtime code embeds the deployer address; patch the immutable reference with the owner before comparing (the evidence file records the matching hash). Deploy with a Foundry keystore (`forge create <file>:<Contract> --broadcast --account <name> --password-file <file> --rpc-url ...`), never with the key on the command line. Explorer source verification is blocked (see the evidence file).
-
-Read-only verification of a deposit (signs and sends nothing):
-
-```bash
-pnpm -C agent build
-node agent/dist/custody-verify-cli.js --rpc https://rpc.testnet.chain.robinhood.com --tx <hash> --log-index <n> \
-  --token <addr> --custody <addr> --mapping-version 3 --battle <id> --wait-seconds 2700 --poll-seconds 20
-```
-
-Mapping version `3` is a **fixture value** taken from the verifier tests. D17 changed the event layout, so a real deployment must commit a new version that invalidates receipts of the old layout; the owner has not fixed a value.
+The application runs on NEAR testnet only. Robinhood Chain mainnet is only read (prices, liquidity, token audits); no contract is deployed there. The earlier Robinhood testnet custody contracts are retired and the `evm/` sources were deleted. [Security review](security-review.md) and [roadmap](implementation-roadmap.md) list unfinished checks.
