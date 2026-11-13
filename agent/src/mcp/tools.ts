@@ -6,7 +6,7 @@ import { type StateSource, backingsOf, buildAccountState } from "./account-state
 import { evaluateAlerts } from "./alerts.js";
 import { PAYOUT_DISPLAY_LABELS, payoutDisplayState } from "./payout-display.js";
 import { SearchValidationError, parseSearchParams, searchBattles } from "./search.js";
-import { type ReadSessions, SessionError } from "./session.js";
+import { ACCOUNT, type ReadSessions, SessionError } from "./session.js";
 
 /**
  * The read-only MCP / terminal tool set. No tool here signs, sends, reserves budget or creates a
@@ -67,7 +67,7 @@ const battleIdArg = (args: Args): number => {
 
 const sessionProps = {
   session: { type: "string", description: "Read session token from open_read_session (NEP-413)." },
-  accountId: { type: "string", description: "Optional; must equal the session account." },
+  accountId: { type: "string", description: "The account to read. With a session it must equal the session account; without a session it selects a public by-account read." },
 };
 
 function live(deps: ReadToolDeps, tool: string, info: SourceInfo, data: unknown, limitations: string[] = []): ReadEnvelope<unknown> {
@@ -201,7 +201,6 @@ export const READ_TOOLS: readonly ReadTool[] = [
     inputSchema: {
       type: "object",
       properties: { ...sessionProps, battleIds: { type: "array", items: { type: "number" } } },
-      required: ["session"],
       additionalProperties: false,
     },
     async run(args, deps, caller) {
@@ -224,7 +223,7 @@ export const READ_TOOLS: readonly ReadTool[] = [
     name: "inspect_entitlements",
     description: "Read the session account's settlement entitlements.",
     accountScoped: true,
-    inputSchema: { type: "object", properties: sessionProps, required: ["session"], additionalProperties: false },
+    inputSchema: { type: "object", properties: sessionProps, additionalProperties: false },
     async run(_args, deps, caller) {
       return live(deps, "inspect_entitlements", deps.arena.info, { accountId: caller, available: false, entitlements: [] }, [
         "no deployed contract exposes per-account entitlements yet; an empty list is not a zero entitlement",
@@ -235,7 +234,7 @@ export const READ_TOOLS: readonly ReadTool[] = [
     name: "inspect_payouts",
     description: "Read the session account's unresolved payouts and their exact state.",
     accountScoped: true,
-    inputSchema: { type: "object", properties: sessionProps, required: ["session"], additionalProperties: false },
+    inputSchema: { type: "object", properties: sessionProps, additionalProperties: false },
     async run(_args, deps, caller) {
       const { payouts, complete } = await collectPayouts(deps);
       const mine = payouts.filter((p) => p.holder === caller);
@@ -268,7 +267,6 @@ export const READ_TOOLS: readonly ReadTool[] = [
     inputSchema: {
       type: "object",
       properties: { ...sessionProps, battleIds: { type: "array", items: { type: "number" } } },
-      required: ["session"],
       additionalProperties: false,
     },
     async run(args, deps, caller) {
@@ -296,7 +294,6 @@ export const READ_TOOLS: readonly ReadTool[] = [
     inputSchema: {
       type: "object",
       properties: { ...sessionProps, battleIds: { type: "array", items: { type: "number" } } },
-      required: ["session"],
       additionalProperties: false,
     },
     async run(args, deps, caller) {
@@ -400,13 +397,19 @@ export async function callReadTool(name: string, args: Args, deps: ReadToolDeps)
 
   let caller: string | null = null;
   if (tool.accountScoped) {
-    try {
-      caller = deps.sessions.accountOf(args.session);
-    } catch (err) {
-      throw new AccessDeniedError(err instanceof SessionError ? err.message : "invalid read session");
-    }
-    if (args.accountId !== undefined && args.accountId !== caller) {
-      throw new AccessDeniedError("a read session can only read its own account");
+    if (args.session === undefined && typeof args.accountId === "string") {
+      // Public by-account read: every account-scoped tool only wraps public NEAR view calls, so no session is needed.
+      if (!ACCOUNT.test(args.accountId)) throw new ToolInputError("accountId is not a valid NEAR account id");
+      caller = args.accountId;
+    } else {
+      try {
+        caller = deps.sessions.accountOf(args.session);
+      } catch (err) {
+        throw new AccessDeniedError(err instanceof SessionError ? err.message : "invalid read session");
+      }
+      if (args.accountId !== undefined && args.accountId !== caller) {
+        throw new AccessDeniedError("a read session can only read its own account");
+      }
     }
   }
   try {

@@ -60,6 +60,15 @@ describe("read-only MCP and terminal tools", () => {
     expect(touched.every((k) => READ_METHODS.has(k) || k === "then")).toBe(true);
   });
 
+  it("an account id without a session reads that account publicly; an invalid id is refused", async () => {
+    const deps = await makeDeps();
+    for (const t of READ_TOOLS.filter((x) => x.accountScoped)) {
+      await expect(callReadTool(t.name, { accountId: "Not A Valid Id!" }, deps)).rejects.toThrow("not a valid NEAR account id");
+    }
+    const out = await callReadTool("inspect_positions", { accountId: "bob.testnet" }, deps);
+    expect((out.data as { accountId: string }).accountId).toBe("bob.testnet");
+  });
+
   it("account-scoped reads need a session and never return another account's data", async () => {
     const deps = await makeDeps();
     for (const t of READ_TOOLS.filter((x) => x.accountScoped)) {

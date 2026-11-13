@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import type { PortfolioData } from "@/hooks/use-portfolio";
+import type { PortfolioData, Part, PayoutsData } from "@/hooks/use-portfolio";
 import {
   describePayouts,
   emptyPayoutsText,
@@ -84,7 +84,7 @@ export function EntitlementAvailabilitySection({ part, nowMs }: { part: Portfoli
 }
 
 /** Payout transfers by stage. Only a confirmed receipt is paid; the list can be incomplete and says so. */
-export function TransfersSection({ part, nowMs }: { part: PortfolioData["payouts"]; nowMs: number }) {
+export function TransfersSection({ part, nowMs }: { part: Part<PayoutsData>; nowMs: number }) {
   if (part.state === "error") return <Failed title="Transfers" message={part.message} />;
   const rows = describePayouts(part.env.data.payouts);
   const note = historyNote(part.env.limitations);

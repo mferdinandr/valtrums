@@ -151,7 +151,7 @@ describe("application boundary", () => {
     expect((await request("/api/arena/v1/actions", "POST")).status).toBe(404);
     expect((await request("/api/arena/v1/accounts/alice.testnet/positions")).status).toBe(404);
     expect((await request("/api/arena/v1/battles", "POST")).status).toBe(405);
-    expect((await request("/tools/inspect_positions?accountId=bob.testnet")).status).toBe(403);
+    expect((await request("/tools/inspect_positions?accountId=bob.testnet")).status).toBe(200);
     const caps = JSON.parse((await request("/api/arena/v1/capabilities")).body);
     expect(caps.deployments[0].canonicalDiscovery.enabled).toBe(false);
     expect((await invoke(service(deployment({ protocol: "legacy-v1" })), "battles", params(deployment({ protocol: "legacy-v1" })))).status).toBe(422);

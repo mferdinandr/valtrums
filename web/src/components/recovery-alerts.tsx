@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { orderAlerts, provenance, type RecoveryAlert, type Sourced } from "@/lib/arena-read/account-state";
+import { orderAlerts, type RecoveryAlert } from "@/lib/arena-read/account-state";
 import { fetchReadTool } from "@/lib/arena-read/client";
 
 const SHOWN = 3;
@@ -18,7 +18,6 @@ function readableSubject(subject: string): string {
 /** Recovery alerts, recomputed by the read API on every poll; a resolved condition disappears. */
 export function RecoveryAlerts() {
   const [alerts, setAlerts] = useState<RecoveryAlert[] | null>(null);
-  const [meta, setMeta] = useState<Sourced | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,7 +31,6 @@ export function RecoveryAlerts() {
         const env = await fetchReadTool<{ alerts: RecoveryAlert[] }>("list_recovery_alerts", new URLSearchParams(), { signal: mine.signal });
         if (!alive || mine.signal.aborted) return;
         setAlerts(orderAlerts(env.data.alerts));
-        setMeta({ source: env.source, observedAt: env.observedAt ?? "" });
         setError(null);
       } catch (e) {
         if (alive && !mine.signal.aborted) setError(e instanceof Error ? e.message : "alerts unavailable");
@@ -79,12 +77,6 @@ export function RecoveryAlerts() {
               </li>
             ))}
           </ul>
-        </details>
-      )}
-      {meta && (
-        <details className="lifecycle-tech">
-          <summary>Where this comes from</summary>
-          <p className="text-sm text-mute">{provenance(meta, Date.now())}</p>
         </details>
       )}
     </Card>

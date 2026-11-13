@@ -1,17 +1,19 @@
 "use client";
 
-import { Coins, Flame, Layers, Send } from "lucide-react";
+import { Coins, Flame, Layers } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ClaimAllButton } from "@/components/claim-all-button";
 import { TokenIcon } from "@/components/token-icon";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import type { PortfolioData } from "@/hooks/use-portfolio";
 import { formatUnits } from "@/lib/amounts";
 import { daoBlocksClaim } from "@/lib/arena-read/account-state";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { symbolOf } from "@/lib/arena-read/claim";
-import { describePayouts, normalizePositions } from "@/lib/arena-read/portfolio";
+import { normalizePositions } from "@/lib/arena-read/portfolio";
 import { readBattleBriefs, STAGE_ORDER, STAGE_TITLE, type BattleBrief, type BattleStage } from "@/lib/arena-read/position-status";
 import { config } from "@/lib/config";
 
@@ -68,6 +70,15 @@ function Row({ symbol, title, sub, chip }: { symbol: string; title: ReactNode; s
   );
 }
 
+const POSITIONS_PAGE = 5;
+
+function chipFor(stage: BattleStage, winner: number | null, community: number): ReactNode {
+  if (stage === "finished") return <Chip tone={winner === community ? "green" : "grey"}>{winner === community ? "Won" : "Lost"}</Chip>;
+  if (stage === "open") return <Chip tone="green">Deposits open</Chip>;
+  if (stage === "live") return <Chip tone="blue">In play</Chip>;
+  return <Chip tone="amber">Refundable</Chip>;
+}
+
 const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm text-mute">{children}</p>;
 
 /**
@@ -77,11 +88,9 @@ const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm t
 export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData; arena: string; onChanged: () => void }) {
   const positions = data.positions.state === "ok" ? data.positions.env.data.positions : null;
   const state = data.accountState.state === "ok" ? data.accountState.env.data : null;
-  const transfers = data.payouts.state === "ok" ? describePayouts(data.payouts.env.data.payouts) : null;
   const claimable = (state?.entitlements ?? []).filter((e) => /^[0-9]+$/.test(e.available) && BigInt(e.available) > 0n);
   const dao = state?.daoPrincipal ?? [];
   const waiting = daoBlocksClaim(state);
-  const pending = (transfers ?? []).filter((t) => !t.paid).length;
   const groups = data.positions.state === "ok" ? normalizePositions(data.positions.env.data) : [];
   // Only deposits count as positions; a joined community without a deposit is not shown.
   const rows = groups.flatMap((g) => g.rows.filter((r) => r.valid && r.amount !== "0").map((r) => ({ ...r, asset: g.asset })));
@@ -98,14 +107,21 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
   }, [arena, idKey]);
   const byStage = (stage: BattleStage) => rows.filter((r) => briefs?.get(r.battleId)?.stage === stage);
   const unknown = briefs === null ? rows : rows.filter((r) => !briefs.has(r.battleId));
+  const sections: Array<{ key: string; title: string; stage: BattleStage | null; list: typeof rows }> = [
+    ...STAGE_ORDER.map((stage) => ({ key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) })),
+    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown }] : []),
+  ].filter((x) => x.list.length > 0);
+  const [filter, setFilter] = useState("all");
+  const [visible, setVisible] = useState<Record<string, number>>({});
+  // A filter whose section disappeared (for example after a refresh) falls back to all.
+  const activeFilter = filter === "all" || sections.some((x) => x.key === filter) ? filter : "all";
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-3">
         <Tile icon={<Layers size={18} aria-hidden="true" />} label="Battles joined" value={positions === null ? "–" : ids.length} tone="blue" />
         <Tile icon={<Coins size={18} aria-hidden="true" />} label="Ready to claim" value={state === null ? "–" : claimable.length} tone="green" />
         <Tile icon={<Flame size={18} aria-hidden="true" />} label="In DAO decision" value={state === null ? "–" : dao.length} tone="rose" />
-        <Tile icon={<Send size={18} aria-hidden="true" />} label="Transfers pending" value={transfers === null ? "–" : pending} tone="amber" />
       </div>
 
       <Panel title="Ready to claim" hint="Goes to your NEAR wallet, 1:1 with the source custody.">
@@ -133,52 +149,53 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
           <Empty>No deposits in recent battles.</Empty>
         ) : (
           <div className="space-y-4">
-            {STAGE_ORDER.map((stage) => {
-              const list = byStage(stage);
-              if (list.length === 0) return null;
-              return (
-                <section key={stage} aria-label={`${STAGE_TITLE[stage]} positions`} className="space-y-2">
-                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mute">
-                    {STAGE_TITLE[stage]}
-                    <span className="rounded-full px-2 py-0.5 text-[11px]" style={TONES.grey}>{list.length}</span>
-                  </h3>
-                  <ul className="space-y-2">
-                    {list.map((r) => {
-                      const winner = briefs?.get(r.battleId)?.winner ?? null;
-                      const chip =
-                        stage === "finished" ? <Chip tone={winner === r.community ? "green" : "grey"}>{winner === r.community ? "Won" : "Lost"}</Chip>
-                        : stage === "open" ? <Chip tone="green">Deposits open</Chip>
-                        : stage === "live" ? <Chip tone="blue">In play</Chip>
-                        : <Chip tone="amber">Refundable</Chip>;
-                      return (
+            <Select
+              label="Filter positions by battle status"
+              value={activeFilter}
+              onChange={setFilter}
+              options={[
+                { value: "all", title: `All battles (${rows.length})` },
+                ...sections.map((x) => ({ value: x.key, title: `${x.title} (${x.list.length})` })),
+              ]}
+            />
+            {sections
+              .filter((x) => activeFilter === "all" || activeFilter === x.key)
+              .map((x) => {
+                const shown = Math.min(x.list.length, visible[x.key] ?? POSITIONS_PAGE);
+                return (
+                  <section key={x.key} aria-label={`${x.title} positions`} className="space-y-2">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-mute">
+                      {x.title}
+                      <span className="rounded-full px-2 py-0.5 text-[11px]" style={TONES.grey}>{x.list.length}</span>
+                    </h3>
+                    <ul className="space-y-2">
+                      {x.list.slice(0, shown).map((r) => (
                         <Row
                           key={r.key}
                           symbol={symbolOf(r.asset)}
                           title={`${units(r.amount)} ${symbolOf(r.asset)}`}
                           sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
-                          chip={chip}
+                          chip={x.stage ? chipFor(x.stage, briefs?.get(r.battleId)?.winner ?? null, r.community) : undefined}
                         />
-                      );
-                    })}
-                  </ul>
-                </section>
-              );
-            })}
-            {briefs !== null && unknown.length > 0 && (
-              <section aria-label="Other positions" className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-mute">Status unavailable</h3>
-                <ul className="space-y-2">
-                  {unknown.map((r) => (
-                    <Row
-                      key={r.key}
-                      symbol={symbolOf(r.asset)}
-                      title={`${units(r.amount)} ${symbolOf(r.asset)}`}
-                      sub={<Link href={`/arena/${r.battleId}`} className="underline">Battle #{r.battleId}</Link>}
-                    />
-                  ))}
-                </ul>
-              </section>
-            )}
+                      ))}
+                    </ul>
+                    {x.list.length > POSITIONS_PAGE && (
+                      <div className="flex gap-2">
+                        {shown < x.list.length && (
+                          <Button type="button" variant="ghost" onClick={() => setVisible((v) => ({ ...v, [x.key]: shown + POSITIONS_PAGE }))}>
+                            Show more ({x.list.length - shown})
+                          </Button>
+                        )}
+                        {shown > POSITIONS_PAGE && (
+                          <Button type="button" variant="ghost" onClick={() => setVisible((v) => ({ ...v, [x.key]: POSITIONS_PAGE }))}>
+                            Show less
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
           </div>
         )}
       </Panel>
@@ -208,26 +225,6 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
                 />
               );
             })}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel title="Transfers to Robinhood Chain" hint="A transfer counts as paid only when it is confirmed.">
-        {transfers === null ? (
-          <Empty>Transfers could not be read right now.</Empty>
-        ) : transfers.length === 0 ? (
-          <Empty>No transfers.</Empty>
-        ) : (
-          <ul className="space-y-2">
-            {transfers.map((t) => (
-              <Row
-                key={t.key}
-                symbol={symbolOf(t.backing)}
-                title={`${units(t.amount)} ${symbolOf(t.backing)}`}
-                sub={t.detail}
-                chip={<Chip tone={t.paid ? "green" : "amber"}>{t.label}</Chip>}
-              />
-            ))}
           </ul>
         )}
       </Panel>

@@ -517,7 +517,7 @@ function ClaimPlan() {
       .filter((e) => /^[0-9]+$/.test(e.available) && BigInt(e.available) > 0n && !claimed.includes(e.backing))
       .map((e) => ({ backing: e.backing, available: e.available }));
   }, [ready, claimed]);
-  const reading = portfolio.state.step === "opening-session" || portfolio.state.step === "reading";
+  const reading = portfolio.state.step === "reading";
 
   const claim = (e: { backing: string; available: string }) =>
     action.run(async () => {
@@ -768,7 +768,7 @@ function ListBattlesPlan({ namespace, intent }: { namespace: Namespace; intent: 
   );
 }
 
-/** "My positions": the wallet-signed read the Portfolio page uses. Read-only: it never prepares or signs an action. */
+/** "My positions": the same public by-account read the Portfolio page uses. Read-only: it never prepares or signs an action. */
 function PositionsPlan() {
   const { accountId, connected, state, load } = usePortfolio();
   const { signIn } = useWallet();
@@ -786,7 +786,7 @@ function PositionsPlan() {
       {state.step === "idle" || state.step === "error" ? (
         <Button type="button" onClick={() => void load()}>Read my positions</Button>
       ) : null}
-      {(state.step === "opening-session" || state.step === "reading") && <p role="status" className="text-xs text-mute">Reading your positions (your wallet may ask you to sign a read session)…</p>}
+      {(state.step === "reading") && <p role="status" className="text-xs text-mute">Reading your positions…</p>}
       {state.step === "error" && <p role="alert" className="text-xs text-neon-red">{state.message}</p>}
       {state.step === "ready" && state.data.positions.state === "error" && <p role="alert" className="text-xs text-neon-red">{state.data.positions.message}</p>}
       {positions && positions.length === 0 && <p className="text-sm">You have no positions yet.</p>}

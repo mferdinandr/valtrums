@@ -49,7 +49,7 @@ export interface ReadSessionOptions {
   maxNonceAgeMs?: number;
 }
 
-const ACCOUNT = /^(?=.{2,64}$)([a-z\d]+([-_][a-z\d]+)*\.)*[a-z\d]+([-_][a-z\d]+)*$/;
+export const ACCOUNT = /^(?=.{2,64}$)([a-z\d]+([-_][a-z\d]+)*\.)*[a-z\d]+([-_][a-z\d]+)*$/;
 const b64url = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64url");
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {

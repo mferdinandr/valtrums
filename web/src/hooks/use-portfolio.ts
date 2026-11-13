@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useActionWallet, useWallet } from "@/components/providers";
+import { useWallet } from "@/components/providers";
 import type { AccountStateData } from "@/lib/arena-read/account-state";
-import { ActionSession } from "@/lib/arena-read/action-session";
 import { applicationKey, fetchApplication, type Namespace } from "@/lib/arena-read/application";
 import { fetchReadTool, type ReadEnvelope, type ReadToolName } from "@/lib/arena-read/client";
 import {
@@ -16,76 +15,64 @@ import {
 
 export type Part<T> = { state: "ok"; env: ReadEnvelope<T> } | { state: "error"; message: string };
 
+export type PayoutsData = { accountId: string; payouts: PayoutItem[] };
 type EntitlementsData = { accountId: string; available: boolean; entitlements: unknown[] };
-type PayoutsData = { accountId: string; payouts: PayoutItem[] };
 
 export interface PortfolioData {
   accountState: Part<AccountStateData>;
   positions: Part<PositionsData>;
   entitlements: Part<EntitlementsData>;
-  payouts: Part<PayoutsData>;
 }
 
 export type LoadState =
   | { step: "idle" }
-  | { step: "opening-session" }
   | { step: "reading" }
   | { step: "ready"; data: PortfolioData; account: string }
   | { step: "error"; message: string };
 
-async function part<T>(tool: ReadToolName, session: string, signal: AbortSignal): Promise<Part<T>> {
+async function part<T>(tool: ReadToolName, accountId: string, signal: AbortSignal): Promise<Part<T>> {
   try {
-    return { state: "ok", env: await fetchReadTool<T>(tool, new URLSearchParams(), { session, signal }) };
+    return { state: "ok", env: await fetchReadTool<T>(tool, new URLSearchParams({ accountId }), { signal }) };
   } catch (e) {
     return { state: "error", message: e instanceof Error ? e.message : "read failed" };
   }
 }
 
 /**
- * Account reads through the wallet NEP-413 session. The session token is memory-only (ActionSession) and is
- * dropped with the account. Every load aborts the previous one and only the newest sequence for the current
- * account may commit, so a slow response for account A can never appear under account B.
+ * Account reads by account id. Positions, payouts and account state wrap public NEAR view calls, so no wallet
+ * signature is needed. Every load aborts the previous one and only the newest sequence for the current account
+ * may commit, so a slow response for account A can never appear under account B.
  */
 export function usePortfolio() {
   const { accountId } = useWallet();
-  const getWallet = useActionWallet();
   const [state, setState] = useState<LoadState>({ step: "idle" });
   const guard = useRef(new LatestRead());
-  const session = useRef<{ account: string; value: ActionSession } | null>(null);
 
-  // A different account or a sign-out discards the session, in-flight reads and every displayed value.
+  // A different account or a sign-out discards in-flight reads and every displayed value.
   useEffect(() => {
     guard.current.cancel();
-    session.current?.value.invalidate();
-    session.current = null;
     setState({ step: "idle" });
   }, [accountId]);
   useEffect(() => () => guard.current.cancel(), []);
 
   const load = useCallback(async () => {
-    if (!accountId || !getWallet) return;
+    if (!accountId) return;
     const read = guard.current.begin(accountId);
-    setState({ step: "opening-session" });
+    setState({ step: "reading" });
     try {
-      const wallet = await getWallet();
-      if (session.current?.account !== accountId) session.current = { account: accountId, value: new ActionSession({ accountId, wallet }) };
-      const token = await session.current.value.ensure();
-      if (!read.isCurrent()) return;
-      setState({ step: "reading" });
-      const [accountState, positions, entitlements, payouts] = await Promise.all([
-        part<AccountStateData>("inspect_account_state", token, read.signal),
-        part<PositionsData>("inspect_positions", token, read.signal),
-        part<EntitlementsData>("inspect_entitlements", token, read.signal),
-        part<PayoutsData>("inspect_payouts", token, read.signal),
+      const [accountState, positions, entitlements] = await Promise.all([
+        part<AccountStateData>("inspect_account_state", accountId, read.signal),
+        part<PositionsData>("inspect_positions", accountId, read.signal),
+        part<EntitlementsData>("inspect_entitlements", accountId, read.signal),
       ]);
       if (!read.isCurrent()) return;
-      setState({ step: "ready", account: accountId, data: { accountState, positions, entitlements, payouts } });
+      setState({ step: "ready", account: accountId, data: { accountState, positions, entitlements } });
     } catch (e) {
       if (read.isCurrent()) setState({ step: "error", message: e instanceof Error ? e.message : "could not read your account" });
     }
-  }, [accountId, getWallet]);
+  }, [accountId]);
 
-  return { accountId, connected: !!accountId && !!getWallet, state, load };
+  return { accountId, connected: !!accountId, state, load };
 }
 
 export interface DeploymentFacts {
