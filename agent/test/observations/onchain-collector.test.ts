@@ -150,6 +150,55 @@ describe("collector runner", () => {
     await r.pass();
     expect(v.battles).toBe(1);
   });
+  /** An unlocked battle with a start time that locks after `lockAfterReads` reads; the clock is controlled by the test. */
+  function startingBattle(startAtMs: number | null, lockAfterReads: number) {
+    let clock = NOW;
+    const base = views({ startMs: null });
+    const v = {
+      ...base,
+      battles: 0,
+      battle: async () => {
+        v.battles++;
+        return {
+          locked: v.battles > lockAfterReads, mode: "PriceGain" as const, observation_policy_hash: "policy",
+          start_at_ms: startAtMs === null ? null : String(startAtMs),
+          communities: [{ chain_id: "46630", token_address: `0x${"c".repeat(40)}`, reference_chain_id: "4663", reference_address: TOKEN }],
+        };
+      },
+    };
+    const r = new CollectorRunner(
+      { scope: { ...NS }, terms: new Map([["policy", terms]]), mappingVersion: "3", qualifiedModes: new Set(["PriceGain"]) },
+      {
+        views: v, journal, now: () => clock,
+        sourceFor: () => new RecordedSampleSource("live-test", "recorded", [{ community: 0, price: "100", priceScale: 18, observedAtMs: String(clock), evidenceHash: `e-${clock}`, pool: POOL, quote: "USD" }]),
+      },
+    );
+    return { v, r, tick: (ms: number) => (clock += ms) };
+  }
+
+  it("reads an unlocked battle on every pass around its start and samples in the pass that sees the lock", async () => {
+    const { v, r, tick } = startingBattle(NOW + 1_000, 2);
+    expect(await r.pass()).toBe(0); // read 1: unlocked, start 1 s away
+    tick(1_000);
+    expect(await r.pass()).toBe(0); // read 2: still unlocked, but read again instead of waiting 15 s
+    tick(1_000);
+    expect(await r.pass()).toBe(1); // read 3: locked, sampled at once
+    expect(v.battles).toBe(3);
+    expect((await loadObservationState(dir)).state.observations).toHaveLength(1);
+  });
+
+  it("keeps the 15 s recheck far from the start, long after it, and without a start time", async () => {
+    for (const startAt of [NOW + 60_000, NOW - 10 * 60_000, null]) {
+      const { v, r, tick } = startingBattle(startAt, 99);
+      await r.pass();
+      tick(1_000);
+      await r.pass();
+      tick(1_000);
+      await r.pass();
+      expect(v.battles).toBe(1);
+    }
+  });
+
   it("samples a round whose window is not open yet, so the start the oracle records has a sample next to it", async () => {
     expect(await runner(views({ startMs: null })).pass()).toBe(1);
     expect((await loadObservationState(dir)).state.observations).toHaveLength(1);
