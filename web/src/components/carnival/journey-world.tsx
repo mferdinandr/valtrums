@@ -478,7 +478,7 @@ function Environment(props: JourneyWorldProps) {
         </Suspense>
       )}
       <Nameplate
-        text="VALTRUM"
+        text="VALTRUMS"
         color="#8e687d"
         position={[0, 5.45, 6.5]}
         scale={4}
