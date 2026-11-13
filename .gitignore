@@ -30,3 +30,5 @@ agent/.data/
 
 # Local development worker journals and logs
 .live-state/
+.vercel
+.env*
