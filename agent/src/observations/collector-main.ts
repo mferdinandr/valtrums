@@ -7,7 +7,11 @@ import { abortableSleep } from "../loop.js";
 import { termsSchema, type ObservationTerms } from "../lifecycle-oracle/config.js";
 import { VersionedLifecycleReadSource } from "../mcp/application-adapter.js";
 import { ObservationCollector, type CollectRound, type SampleSource } from "./collector.js";
-import { ObservationJournal } from "./journal.js";
+import { ObservationJournal, type JournalWriter } from "./journal.js";
+import { journalStoreFromEnv } from "./journal-store.js";
+import { appDb, closeAppDb } from "../app-state/app-db.js";
+import { PgObservationJournal } from "../app-state/pg-observation-journal.js";
+import { createPgLockSession } from "../app-state/pg-session.js";
 import { OnchainSlot0Source } from "./onchain-source.js";
 import { MODES, namespaceSchema, type Mode, type ObservationNamespace } from "./schema.js";
 
@@ -54,7 +58,7 @@ export class CollectorRunner {
     private readonly cfg: RunnerConfig,
     private readonly deps: {
       views: CollectorViews;
-      journal: ObservationJournal;
+      journal: JournalWriter;
       sourceFor: (terms: ObservationTerms) => SampleSource;
       now?: () => number;
       log?: Logger;
@@ -174,7 +178,13 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
     battle: (id) => source.battle(id) as Promise<BattleView | null>,
     round: (id) => source.round(id) as Promise<RoundView | null>,
   };
-  const journal = await ObservationJournal.open(need("OBSERVATION_JOURNAL_DIR"));
+  // The file journal in OBSERVATION_JOURNAL_DIR, or the database journal with OBSERVATION_JOURNAL_STORE=database.
+  const store = journalStoreFromEnv(env);
+  if (!store) throw new Error("missing required environment variable OBSERVATION_JOURNAL_DIR (or set OBSERVATION_JOURNAL_STORE=database)");
+  const journal = store.kind === "file"
+    ? await ObservationJournal.open(store.dir)
+    : await PgObservationJournal.open({ db: appDb(env)!, session: await createPgLockSession(store.url), namespace: scope });
+  log.info("observation journal opened", { store: store.kind });
   try {
   const runner = new CollectorRunner(
     { scope, terms, qualifiedModes: qualified, mappingVersion: env.COLLECTOR_MAPPING_VERSION?.trim() || "3" },
@@ -197,6 +207,7 @@ export async function runCollector(env: NodeJS.ProcessEnv, stop: AbortSignal): P
   }
   } finally {
     await journal.close();
+    await closeAppDb();
     log.info("observation collector stopped; journal released");
   }
 }

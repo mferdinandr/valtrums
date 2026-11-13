@@ -1,5 +1,5 @@
 import { errorMessage, silentLogger, type Logger } from "../logger.js";
-import { ObservationConflictError, ObservationValidationError, type ObservationJournal } from "./journal.js";
+import { ObservationConflictError, ObservationValidationError, type JournalWriter } from "./journal.js";
 import { observationSchema, type Mode, type ObservationNamespace } from "./schema.js";
 
 /**
@@ -75,7 +75,7 @@ export function normalizeIdentity(id: AssetIdentity): AssetIdentity {
 export class ObservationCollector {
   private readonly log: Logger;
   constructor(
-    private readonly journal: ObservationJournal,
+    private readonly journal: JournalWriter,
     private readonly source: SampleSource,
     private readonly opts: { now?: () => number; qualifiedModes: ReadonlySet<Mode>; log?: Logger },
   ) {

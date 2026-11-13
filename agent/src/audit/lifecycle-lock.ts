@@ -15,6 +15,11 @@ export const DEFAULT_MIN_REMAINING_MS = 60_000;
 export const DEFAULT_RETRY_AFTER_MS = 30_000;
 /** The contract locks only with at least this many funded communities. */
 export const MIN_FUNDED_COMMUNITIES = 2;
+/**
+ * After the lock transaction returns, views (read at `final`) can trail it by a few blocks. Read the
+ * `locked` flag this many times, this far apart, before calling the lock unconfirmed and backing off.
+ */
+export const DEFAULT_CONFIRM = { tries: 8, delayMs: 500 } as const;
 const MAX_ERROR_CHARS = 300;
 
 export type LockOutcome =
@@ -52,6 +57,10 @@ export interface LifecycleLockDeps {
   deposit?: string;
   gas?: string;
   log?: Logger;
+  /** How often to re-read the `locked` flag after a lock transaction returns (default DEFAULT_CONFIRM). */
+  confirm?: { tries: number; delayMs: number };
+  /** Waits between confirmation reads; injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -102,7 +111,7 @@ export class LifecycleLocker {
         this.deps.gas ?? LOCK_GAS,
         this.deps.deposit ?? LOCK_DEPOSIT,
       );
-      if (await this.deps.isLocked(battleId)) {
+      if (await this.confirmLocked(battleId)) {
         this.locked.add(battleId);
         this.retryAt.delete(battleId);
         this.log.info("lifecycle battle locked", { battleId });
@@ -117,6 +126,21 @@ export class LifecycleLocker {
       this.log.error("lifecycle lock failed", { battleId, error });
       return { status: "failed", error };
     }
+  }
+
+  /** Re-reads the `locked` flag until the view catches up with the lock transaction, or the tries run out. */
+  private async confirmLocked(battleId: number): Promise<boolean> {
+    const { tries, delayMs } = this.deps.confirm ?? DEFAULT_CONFIRM;
+    const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    for (let i = 0; i < Math.max(1, tries); i++) {
+      if (i > 0) await sleep(delayMs);
+      try {
+        if (await this.deps.isLocked(battleId)) return true;
+      } catch {
+        // A failed read is not a "no": try again, and fall back to unconfirmed (re-read next visit).
+      }
+    }
+    return false;
   }
 
   private backoff(battleId: number): void {

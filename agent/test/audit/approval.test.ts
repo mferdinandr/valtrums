@@ -129,6 +129,29 @@ describe("approval binding and refresh (fixture-only)", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("keeps and persists a decision only after the arena accepted it", async () => {
+    const persisted: string[] = [];
+    const failing = new AuditSubmitter("arena.testnet", { call: async () => { throw new Error("rpc down"); } } as never);
+    const { d } = deps({ submitter: failing, persist: async (b, c) => void persisted.push(`${b}:${c}`) });
+    await expect(refreshBattleAudit(1, [asset], d)).rejects.toThrow("rpc down");
+    // Not approved here, so the next pass audits it again instead of trusting a record the arena never saw.
+    expect(d.records.has("1:0")).toBe(false);
+    expect(persisted).toEqual([]);
+    const ok = deps({ persist: async (b, c) => void persisted.push(`${b}:${c}`) });
+    expect((await refreshBattleAudit(1, [asset], ok.d)).ready).toBe(true);
+    expect(persisted).toEqual(["1:0"]);
+  });
+
+  it("a failed persist is logged and never fails the audit", async () => {
+    const errors: string[] = [];
+    const log = { info: () => undefined, warn: () => undefined, error: (msg: string) => void errors.push(msg) };
+    const { d, calls } = deps({ persist: async () => { throw new Error("db down"); }, log: log as never });
+    expect((await refreshBattleAudit(1, [asset], d)).ready).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(d.records.has("1:0")).toBe(true);
+    expect(errors).toHaveLength(1);
+  });
+
   it("a locked battle is never refreshed or submitted", async () => {
     const { d, calls, goplusCalls } = deps({ isLocked: async () => true });
     const r = await refreshBattleAudit(1, [asset], d);

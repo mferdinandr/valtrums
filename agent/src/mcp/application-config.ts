@@ -11,6 +11,8 @@ import { JsonFileReportArchive } from "../audit/report-archive.js";
 import { loadObservationState } from "../observations/journal.js";
 import { loadObservationConfig } from "../observations/config.js";
 import { loadOracleStatus } from "../lifecycle-oracle/status.js";
+import { PgObservationReader } from "../app-state/pg-observation-journal.js";
+import { loadPgOracleStatus } from "../app-state/pg-oracle-status.js";
 import { loadCustodyPaths } from "./custody-config.js";
 import { z } from "zod";
 
@@ -64,12 +66,23 @@ export async function loadApplicationReads(env: NodeJS.ProcessEnv, views: (netwo
     if (observationConfig && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
       const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
       if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
-        // Read-only replay on every request: a missing or corrupt journal is an explicit 503, never an empty chart.
-        binding.observations = { namespace: namespaceOf(d), load: async () => (await loadObservationState(observationConfig.dir)).state,
+        // A missing, unreachable or corrupt journal is an explicit 503, never an empty chart. The file journal is replayed
+        // on every request; the database journal is loaded once and then only its new records.
+        const dir = observationConfig.dir;
+        const reader = observationConfig.databaseUrl ? new PgObservationReader(appDb(env)!, namespaceOf(d)) : null;
+        binding.observations = { namespace: namespaceOf(d), load: reader ? () => reader.load() : async () => (await loadObservationState(dir!)).state,
           qualifiedModes: observationConfig.qualifiedModes, coveragePolicy: observationConfig.coveragePolicy };
       }
     }
-    if (env.ORACLE_STATE_DIR?.trim() && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
+    if (observationConfig?.databaseUrl && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
+      // The oracle status follows the journal store; a status directory as well would be read from another place.
+      if (env.ORACLE_STATE_DIR?.trim()) throw new Error("set only one of OBSERVATION_JOURNAL_STORE=database and ORACLE_STATE_DIR");
+      const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
+      if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
+        const db = appDb(env)!;
+        binding.oracle = { namespace: namespaceOf(d), load: () => loadPgOracleStatus(db, namespaceOf(d)), staleAfterMs: 60_000 };
+      }
+    } else if (env.ORACLE_STATE_DIR?.trim() && env.ARENA_APPLICATION_OBSERVATION_SCOPE) {
       const scope = JSON.parse(env.ARENA_APPLICATION_OBSERVATION_SCOPE);
       if (namespaceKey(scope) === namespaceKey(namespaceOf(d))) {
         const dir = env.ORACLE_STATE_DIR.trim();

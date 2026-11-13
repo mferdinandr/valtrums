@@ -22,6 +22,7 @@ import { AuditSubmitter } from "./audit/approval.js";
 import { loadAuditConfig, loadReportArchiveConfig } from "./audit/config.js";
 import { appDb, createReportArchive } from "./app-state/app-db.js";
 import { PgBaselineStore } from "./app-state/pg-stores.js";
+import { PgAuditRecordStore } from "./app-state/pg-audit-records.js";
 import { createIndexerRuntime, loadIndexerRuntimeConfig } from "./indexer/wiring.js";
 import { fetchGoPlusTokenSecurity } from "./audit/goplus-client.js";
 import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/lifecycle-pass.js";
@@ -114,6 +115,19 @@ async function main(): Promise<void> {
   const archiveCfg = loadReportArchiveConfig(process.env, auditCfg !== null);
   const auditSource = new NearLifecycleAuditSource(cfg.arenaContractId, transport);
   const auditRecords = new Map<string, AuditRecord>();
+  // With APP_DATABASE_URL the audit decisions survive a restart, so open battles are not all re-audited (and a lock
+  // near a start is not delayed by it). Without it, or if the database cannot be read, they start empty as before.
+  const recordDb = auditCfg ? appDb() : null;
+  const recordStore = recordDb ? new PgAuditRecordStore(recordDb, cfg.arenaContractId) : null;
+  if (recordStore) {
+    try {
+      const loaded = await recordStore.load();
+      for (const [key, record] of loaded.records) auditRecords.set(key, record);
+      log.info("audit records loaded", { records: loaded.records.size, skipped: loaded.skipped });
+    } catch (err) {
+      log.error("could not load audit records; open battles will be audited again", { error: errorMessage(err) });
+    }
+  }
   // Filled by each audit sweep with the next battle start, so the loop can wake exactly then.
   const lifecycleWake: { nextStartMs: number | null } = { nextStartMs: null };
   const lifecycleAudit = auditCfg
@@ -179,6 +193,7 @@ async function main(): Promise<void> {
           }),
           submitter: new AuditSubmitter(cfg.arenaContractId, transport),
           records: auditRecords,
+          ...(recordStore ? { persist: (battleId: number, community: number, record: AuditRecord) => recordStore.put(battleId, community, record) } : {}),
         },
         reports: new AuditReportStore(),
         ...(archiveCfg ? { archive: createReportArchive(archiveCfg.path), arena: cfg.arenaContractId } : {}),

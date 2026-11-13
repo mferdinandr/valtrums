@@ -14,7 +14,7 @@ export default function TerminalPage() {
     <div className="lifecycle-page">
       <header className="arcade-heading arcade-heading--terminal">
         <div>
-        <span className="arcade-kicker">TERMINAL</span>
+        <span className="arcade-kicker">ASSISTANT</span>
         <h1>What’s your next move?</h1>
         <p>
           Ask in English or Bahasa Indonesia. Review your action before signing.

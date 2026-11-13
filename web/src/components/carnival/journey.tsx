@@ -479,7 +479,7 @@ export function LandingJourney() {
               </Button>
             </div>
             <nav className="journey-destinations" aria-label="Portfolio help">
-              <Link href="/terminal">Review an intent in Terminal ↗</Link>
+              <Link href="/terminal">Review an intent in Assistant ↗</Link>
               <button
                 className="journey-text-link"
                 onClick={() => setTopic("rules")}
@@ -521,7 +521,7 @@ export function LandingJourney() {
             >
               <Link href={createPath}>Create Battle ↗</Link>
               <Link href="/portfolio">Your portfolio ↗</Link>
-              <Link href="/terminal">Terminal ↗</Link>
+              <Link href="/terminal">Assistant ↗</Link>
               <button
                 className="journey-text-link"
                 onClick={() => setTopic("planned")}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { WalletButton } from "@/components/wallet-button";
-import { Bot, Droplets, Swords, Layers3, Terminal, Plus } from "lucide-react";
+import { Bot, Droplets, Swords, Layers3, Sparkles, Plus } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { arenaNavigationActive } from "@/lib/arena-read/routes";
 
@@ -15,7 +15,7 @@ const LINKS = [
     label: "Create",
     icon: Plus,
   },
-  { href: "/terminal", label: "Terminal", icon: Terminal },
+  { href: "/terminal", label: "Assistant", icon: Sparkles },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/faucet", label: "Faucet", icon: Droplets },
   { href: "/portfolio", label: "Portfolio", icon: Layers3 },

@@ -53,6 +53,14 @@ const keyed = env.FASTNEAR_API_KEY ? `https://test.rpc.fastnear.com?apiKey=${env
 const rpc = (name, fallback) => process.env[name] || keyed || fallback;
 
 const base = { PATH: process.env.PATH, HOME: process.env.HOME, NEAR_NETWORK: "testnet", ARENA_CONTRACT_ID: ARENA };
+// Observation journal and oracle status: files in LIVE_STATE_DIR (default), or the application database with
+// OBSERVATION_JOURNAL_STORE=database (OpenSpec observation-journal-database). The collector, the oracle and the read API
+// must use the same one; scripts/dev.mjs passes the same switch to the read API.
+const journalDb = (process.env.OBSERVATION_JOURNAL_STORE || local.OBSERVATION_JOURNAL_STORE) === "database";
+const journalEnv = journalDb
+  ? { OBSERVATION_JOURNAL_STORE: "database", APP_DATABASE_URL: local.APP_DATABASE_URL }
+  : { OBSERVATION_JOURNAL_DIR: path.join(STATE, "journal") };
+const oracleStateEnv = journalDb ? {} : { ORACLE_STATE_DIR: path.join(STATE, "oracle") };
 const procs = [
   {
     name: "agent",
@@ -69,8 +77,11 @@ const procs = [
       AUDIT_WETH_PRICE_POOL: local.AUDIT_WETH_PRICE_POOL, AUDIT_WETH_PRICE_POOL_MIN_USD: local.AUDIT_WETH_PRICE_POOL_MIN_USD,
       ...(env.GOPLUS_ACCESS_TOKEN ? { GOPLUS_ACCESS_TOKEN: env.GOPLUS_ACCESS_TOKEN } : {}),
       BASELINE_STORE_PATH: path.join(STATE, "baselines.json"),
-      // Baselines (and the audit archive when enabled) go to Postgres when the application database is configured.
-      // Only this process gets it: the oracle and the collector use no application table.
+      // Durable audit history: the full evidence behind each approval hash the arena stores (append-only). Postgres
+      // when APP_DATABASE_URL is set below, else this file.
+      AUDIT_REPORT_ARCHIVE_ENABLED: "true", AUDIT_REPORT_ARCHIVE_PATH: path.join(STATE, "audit-archive.json"),
+      // Baselines, the audit archive and the latest audit decisions go to Postgres when the application database is configured.
+      // The oracle and the collector get it only with OBSERVATION_JOURNAL_STORE=database.
       ...(local.APP_DATABASE_URL ? { APP_DATABASE_URL: local.APP_DATABASE_URL } : {}),
     },
   },
@@ -81,7 +92,7 @@ const procs = [
       ...base,
       NEAR_RPC_URL: rpc("ORACLE_RPC_URL", "https://test.rpc.fastnear.com"),
       ORACLE_ACCOUNT_ID: env.TESTNET_ORACLE_ACCOUNT_ID, ORACLE_PRIVATE_KEY: env.TESTNET_ORACLE_PRIVATE_KEY,
-      ORACLE_STATE_DIR: path.join(STATE, "oracle"), OBSERVATION_JOURNAL_DIR: path.join(STATE, "journal"),
+      ...oracleStateEnv, ...journalEnv,
       ARENA_APPLICATION_OBSERVATION_SCOPE: SCOPE, ORACLE_TERMS_PATH: TERMS_PATH, ORACLE_WRITES_ENABLED: "true",
       ORACLE_ROUNDS_STORAGE_DEPOSIT_YOCTO: "500000000000000000000000", OBSERVATION_QUALIFIED_MODES: "PriceGain", ORACLE_EVIDENCE_KINDS: "live",
       ORACLE_INTERVAL_SECS: process.env.ORACLE_INTERVAL_SECS || "1",
@@ -93,7 +104,7 @@ const procs = [
     env: {
       ...base,
       NEAR_RPC_URL: rpc("COLLECTOR_RPC_URL", "https://rpc.testnet.fastnear.com"),
-      ARENA_APPLICATION_OBSERVATION_SCOPE: SCOPE, ORACLE_TERMS_PATH: TERMS_PATH, OBSERVATION_JOURNAL_DIR: path.join(STATE, "journal"),
+      ARENA_APPLICATION_OBSERVATION_SCOPE: SCOPE, ORACLE_TERMS_PATH: TERMS_PATH, ...journalEnv,
       REFERENCE_RPC_URL: "http://127.0.0.1:18546", OBSERVATION_QUALIFIED_MODES: "PriceGain", COLLECTOR_INTERVAL_MS: "1000",
     },
   },

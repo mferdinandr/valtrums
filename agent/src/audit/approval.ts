@@ -1,5 +1,5 @@
 import type { NearTransport } from "../near-client.js";
-import { silentLogger, type Logger } from "../logger.js";
+import { errorMessage, silentLogger, type Logger } from "../logger.js";
 import {
   evaluateCommunity,
   goplusTarget,
@@ -145,6 +145,17 @@ export interface RefreshDeps {
   fetchLp: (asset: AuditAsset) => Promise<LpEvidence | null>;
   submitter: Pick<AuditSubmitter, "submit">;
   records: Map<string, AuditRecord>;
+  /**
+   * Optional durable copy of `records` (Postgres when APP_DATABASE_URL is set), written after the arena accepted the
+   * submission so a restart starts from it. A failed write is logged and never fails the audit: the approval landed.
+   */
+  persist?: (battleId: number, community: number, record: AuditRecord) => Promise<void>;
+  /**
+   * False: only first decisions are made (no record, or the asset or policy changed). An existing decision is neither
+   * renewed before expiry nor retried when it did not pass. The arena accepts a deposit while an approval exists and
+   * checks its expiry only at lock, so an idle battle needs no renewal (default true).
+   */
+  renew?: boolean;
   log?: Logger;
   /** True once the battle snapshot froze; audits are then never refreshed or submitted. */
   isLocked: (battleId: number) => Promise<boolean>;
@@ -204,6 +215,7 @@ export async function refreshBattleAudit(
   );
   for (const { index, reason } of before.needsRefresh) {
     if (deps.shouldYield?.()) break;
+    if (deps.renew === false && (reason === "expired" || reason === "not_passed" || reason === "no_expiry")) continue;
     const log = deps.log ?? silentLogger;
     if (reason === "not_passed" && deps.notPassedRetryMs) {
       const last = deps.records.get(key(index));
@@ -223,10 +235,23 @@ export async function refreshBattleAudit(
       now: deps.now(),
       ...(hold ? { referenceHold: hold } : {}),
     });
-    deps.records.set(key(index), record);
     log.info("audit: submitting outcome", { battleId, community: index, result: record.result });
     await deps.submitter.submit(battleId, index, record);
+    // Kept only once the arena has it: a record whose submission failed would read as approved here (and, being
+    // persisted, after a restart too) while the arena refuses the lock, until it expires.
+    deps.records.set(key(index), record);
     log.info("audit: outcome submitted", { battleId, community: index, result: record.result });
+    if (deps.persist) {
+      try {
+        await deps.persist(battleId, index, record);
+      } catch (err) {
+        log.error("audit: could not store the decision; a restart will audit this community again", {
+          battleId,
+          community: index,
+          error: errorMessage(err).slice(0, 300),
+        });
+      }
+    }
   }
   const after = lockReadiness(
     assets,
