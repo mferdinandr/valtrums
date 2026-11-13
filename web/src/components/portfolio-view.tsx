@@ -100,7 +100,7 @@ function FilterChips({ label, value, onChange, options }: {
 }
 
 const daoGroup = (voteStatus: string): "voting" | "decided" | "pending" => (voteStatus === "voting" ? "voting" : voteStatus === "decided" ? "decided" : "pending");
-const DAO_GROUP_TITLE = { voting: "Voting open", decided: "Decided", pending: "Pending" } as const;
+const DAO_GROUP_TITLE = { voting: "Voting open", decided: "Decided", pending: "No votes" } as const;
 
 function chipFor(stage: BattleStage, winner: number | null, community: number): ReactNode {
   if (stage === "finished") return <Chip tone={winner === community ? "green" : "grey"}>{winner === community ? "Won" : "Lost"}</Chip>;
@@ -137,9 +137,21 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
   }, [arena, idKey]);
   const byStage = (stage: BattleStage) => rows.filter((r) => briefs?.get(r.battleId)?.stage === stage);
   const unknown = briefs === null ? rows : rows.filter((r) => !briefs.has(r.battleId));
-  const sections: Array<{ key: string; title: string; stage: BattleStage | null; list: typeof rows }> = [
-    ...STAGE_ORDER.map((stage) => ({ key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) })),
-    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown }] : []),
+  const won = (r: (typeof rows)[number]) => briefs?.get(r.battleId)?.winner === r.community;
+  const finished = byStage("finished");
+  type Section = { key: string; title: string; stage: BattleStage | null; list: typeof rows; extra?: boolean };
+  // "extra" sections (Won, Lost) are only selectable as a filter; "All" does not list their rows twice.
+  const sections: Section[] = [
+    ...STAGE_ORDER.flatMap((stage): Section[] => [
+      { key: stage, title: STAGE_TITLE[stage], stage, list: byStage(stage) },
+      ...(stage === "finished"
+        ? [
+            { key: "won", title: "Won", stage, list: finished.filter(won), extra: true },
+            { key: "lost", title: "Lost", stage, list: finished.filter((r) => !won(r)), extra: true },
+          ]
+        : []),
+    ]),
+    ...(briefs !== null ? [{ key: "unknown", title: "Status unavailable", stage: null, list: unknown } as Section] : []),
   ].filter((x) => x.list.length > 0);
   const [filter, setFilter] = useState("all");
   const [visible, setVisible] = useState<Record<string, number>>({});
@@ -192,7 +204,7 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
               options={[{ key: "all", title: "All", count: rows.length }, ...sections.map((x) => ({ key: x.key, title: x.title, count: x.list.length }))]}
             />
             {sections
-              .filter((x) => activeFilter === "all" || activeFilter === x.key)
+              .filter((x) => (activeFilter === "all" ? !x.extra : activeFilter === x.key))
               .map((x) => {
                 const shown = Math.min(x.list.length, visible[x.key] ?? POSITIONS_PAGE);
                 return (
