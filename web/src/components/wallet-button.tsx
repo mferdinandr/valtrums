@@ -67,7 +67,7 @@ function BalanceMenu({ accountId }: { accountId: string }) {
                 <span>NEAR</span>
                 <span>{formatUnits(BigInt(balances.near), NEAR_DECIMALS, 3)}</span>
               </li>
-              {balances.tokens.map((t) => (
+              {balances.tokens.filter((t) => t.symbol !== "AI").map((t) => (
                 <li key={t.token} className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2"><TokenIcon symbol={t.symbol} size={20} />{t.symbol}</span>
                   <span>{formatUnits(BigInt(t.balance), TOKEN_DECIMALS, 2)}</span>
