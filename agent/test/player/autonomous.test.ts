@@ -253,12 +253,16 @@ describe("autonomous agent (NEAR AI decides)", () => {
     expect(calls.filter((c) => c.methodName === "ft_transfer_call")).toHaveLength(1);
   });
 
-  it("does not deposit while approvals are missing and backs off from that battle", async () => {
+  it("does not deposit while approvals are missing, backs off briefly, then looks again", async () => {
     const model = ai(() => answer(1, 0, "250"));
-    const { deps, calls } = setup({ battles: { 1: battle([community(WALLET, "100", false)]) }, balances: { [WALLET]: 1_000n }, live: true, registered: true, model });
+    const { deps, calls, clock } = setup({ battles: { 1: battle([community(WALLET, "100", false)]) }, balances: { [WALLET]: 1_000n }, live: true, registered: true, model });
     expect(await playOnce(agent({ approvalWaitMs: 10_000 }), deps)).toMatchObject({ kind: "skipped", reason: "approvals_pending" });
     expect(calls).toHaveLength(0);
-    expect((await playOnce(agent(), deps)).kind).toBe("no_option"); // blocked for ten minutes
+    // Not "already deposited": nothing was sent, the battle is only held back for a moment.
+    expect(await playOnce(agent(), deps)).toMatchObject({ kind: "no_option", reason: "retry_later:1" });
+    clock.t += 16_000; // approvals usually land shortly after: the agent must not sit out the whole battle
+    expect(await playOnce(agent({ approvalWaitMs: 10_000 }), deps)).toMatchObject({ kind: "skipped", reason: "approvals_pending" });
+    expect(calls).toHaveLength(0);
   });
 
   it("stops after too many failures", async () => {

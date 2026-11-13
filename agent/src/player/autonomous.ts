@@ -18,6 +18,8 @@ const ONE_YOCTO = "1";
 const BLOCK_MS = 10 * 60_000;
 const HOUR_MS = 3_600_000;
 const APPROVAL_POLL_MS = 2_000;
+/** After approvals did not arrive in time the agent looks again soon: they usually land a little later, before the start. */
+const APPROVAL_RETRY_MS = 15_000;
 /** How many polls (APPROVAL_POLL_MS apart) to wait for a freshly joined community to show in the battle view. */
 const JOIN_VISIBLE_TRIES = 15;
 /** After a model answer that is missing or invalid, do not ask again about those battles for this long. */
@@ -182,6 +184,7 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
   const candidates: Candidate[] = [];
   // Why battles were passed over, so "nothing to play" can say which of the three it is (shown in the owner's log).
   const alreadyIn: number[] = [];
+  const coolingOff: number[] = [];
   const startingSoon: number[] = [];
   const count = await deps.battleCount();
   for (let id = count, scanned = 0; id >= 1 && scanned < agent.scanBattles; id--, scanned++) {
@@ -194,30 +197,39 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
       continue;
     }
     const present = new Set(battle.communities.map((c) => c.representation));
-    const done = (rep: string) => state.has(actedKey(agent.account, id, rep)) || state.isBlocked(actedKey(agent.account, id, rep), now());
+    // Acted: a deposit was sent. Blocked: held back for a while (approvals late, a failed answer), nothing deposited yet.
+    const acted = (rep: string) => state.has(actedKey(agent.account, id, rep));
+    const done = (rep: string) => acted(rep) || state.isBlocked(actedKey(agent.account, id, rep), now());
     let held = false;
+    let cooling = false;
+    const skipDone = (rep: string): boolean => {
+      if (!done(rep)) return false;
+      if (acted(rep)) held = true;
+      else cooling = true;
+      return true;
+    };
     for (const [community, c] of battle.communities.entries()) {
       const balance = balances.get(c.representation);
       if (balance === undefined) continue;
-      if (done(c.representation)) {
-        held = true;
-        continue;
-      }
+      if (skipDone(c.representation)) continue;
       candidates.push({ battleId: id, community, representation: c.representation, needsJoin: false, balance, vault: BigInt(c.vault) });
     }
     for (const [rep, balance] of balances) {
       if (present.has(rep)) continue;
-      if (done(rep)) {
-        held = true;
-        continue;
-      }
+      if (skipDone(rep)) continue;
       candidates.push({ battleId: id, community: battle.communities.length, representation: rep, needsJoin: true, balance, vault: 0n });
     }
     if (held) alreadyIn.push(id);
+    if (cooling) coolingOff.push(id);
   }
   if (candidates.length === 0) {
     // The newest battle that explains the silence wins: "already in #36" beats "#37 starts too soon".
-    const reason = alreadyIn.length > 0 ? `already_in:${Math.max(...alreadyIn)}` : startingSoon.length > 0 ? `starting_soon:${Math.max(...startingSoon)}` : "none_open";
+    const newest = (ids: number[]) => Math.max(...ids);
+    const reason =
+      alreadyIn.length > 0 ? `already_in:${newest(alreadyIn)}`
+      : coolingOff.length > 0 ? `retry_later:${newest(coolingOff)}`
+      : startingSoon.length > 0 ? `starting_soon:${newest(startingSoon)}`
+      : "none_open";
     log({ event: "no_option", agent: agent.account, reason });
     return { kind: "no_option", reason };
   }
@@ -320,7 +332,7 @@ export async function playOnce(agent: AutonomousAgentConfig, deps: AutonomousDep
           const approved = c && c.audit_evidence_hash && c.backing_evidence_hash && c.audit_expires_at_ms && BigInt(c.audit_expires_at_ms) > BigInt(now());
           if (approved) break;
           if (now() >= deadline) {
-            state.markBlocked(key, now() + BLOCK_MS);
+            state.markBlocked(key, now() + APPROVAL_RETRY_MS);
             return skip("approvals_pending");
           }
           await sleep(APPROVAL_POLL_MS);
