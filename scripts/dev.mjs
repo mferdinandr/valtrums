@@ -69,7 +69,12 @@ for (const [port, host, enabled] of [[18546, "rpc.mainnet.chain.robinhood.com", 
 }
 // Share journals with the read API; no signing key enters the web process.
 const scope = JSON.stringify({ deploymentId: env.NEXT_PUBLIC_ARENA_READ_DEPLOYMENT || "near-testnet-existing-arena", network: "near-testnet", arenaContract: env.ARENA_CONTRACT_ID || "arena.valtrum-owner-b694.testnet", protocol: "lifecycle-v2" });
-const shared = { LIVE_STATE_DIR: state, OBSERVATION_JOURNAL_DIR: path.join(state, "journal"), ORACLE_STATE_DIR: path.join(state, "oracle"), ARENA_APPLICATION_OBSERVATION_SCOPE: scope, OBSERVATION_QUALIFIED_MODES: "PriceGain", OBSERVATION_BOUNDARY_TOLERANCE_MS: "5000", OBSERVATION_MAX_GAP_MS: "15000" };
+// OBSERVATION_JOURNAL_STORE=database (in agent/.env.local or the shell): the workers and the read API read the journal and
+// the oracle status from the application database instead of LIVE_STATE_DIR. Every one of them gets the same switch.
+const journalFiles = env.OBSERVATION_JOURNAL_STORE === "database"
+  ? { OBSERVATION_JOURNAL_STORE: "database" }
+  : { OBSERVATION_JOURNAL_DIR: path.join(state, "journal"), ORACLE_STATE_DIR: path.join(state, "oracle") };
+const shared = { LIVE_STATE_DIR: state, ...journalFiles, ARENA_APPLICATION_OBSERVATION_SCOPE: scope, OBSERVATION_QUALIFIED_MODES: "PriceGain", OBSERVATION_BOUNDARY_TOLERANCE_MS: "5000", OBSERVATION_MAX_GAP_MS: "15000" };
 if (workers) {
   console.log("[dev] Testnet workers enabled: audit, backing refresh, lock and oracle submit transactions.");
   start("agent / oracle / collector", process.execPath, ["scripts/testnet-wiring/live-run.mjs"], shared);
