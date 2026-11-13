@@ -132,12 +132,13 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
               return (
               <Card
                 className="lifecycle-crew battle-preview-card"
+                data-tone={failed || battle.status === "cancelled" ? "failed" : undefined}
                 key={`${namespace.deploymentId}:${battle.battleId}`}
               >
                 <div className="battle-preview-meta"><p className="eyebrow text-neon-green">
                   BATTLE #{battle.battleId} · {battle.enteredCount ?? battle.communities.length} ENTERED
                   {battle.pendingCount ? ` · ${battle.pendingCount} PENDING` : ""}
-                </p><span className="battle-preview-status">{failed ? "Failed to start" : battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
+                </p><span className="battle-preview-status" data-tone={failed || battle.status === "cancelled" ? "failed" : undefined}>{failed ? "Failed to start" : battle.status === "open" ? "Open to join" : battle.status === "decided" ? "Finished" : battle.status === "cancelled" ? "Cancelled" : "In progress"}</span></div>
                 <h2 className="mt-3 text-xl">
                   <span className="sr-only">Battle #{battle.battleId}: </span>
                   {modeName(battle.mode)}
@@ -158,6 +159,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                 <div className="battle-preview-roster">
                   {battle.communities.map((c) => (
                     <div key={c.index} title={c.representation} className="battle-preview-token">
+                      {battle.winner === c.index && <span className="battle-preview-win">WIN</span>}
                       {c.label ? (
                         <>
                           <TokenIcon symbol={displaySymbol(c.label, "")} size={44} />
@@ -169,14 +171,6 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                     </div>
                   ))}
                 </div>
-                {battle.winner !== null && (
-                  <p className="mt-3 text-xs">
-                    Recorded winner:{" "}
-                    {battle.communities[battle.winner]?.label
-                      ? displaySymbol(battle.communities[battle.winner]!.label, "")
-                      : communityName(battle.winner)}
-                  </p>
-                )}
                 <div className="battle-preview-enter grid gap-3">
                   <Button asChild variant="cyan">
                     <Link href={`/arena/${battle.battleId}`}>

@@ -527,23 +527,46 @@
   font-size: 12px;
   font-weight: 600;
 }
+.battle-preview-status[data-tone="failed"] {
+  background: #f8dcdc;
+  color: #a12626;
+}
+.battle-preview-card[data-tone="failed"] {
+  background: #fdeceb;
+  border-top-color: #d05a5a;
+}
+.battle-preview-card[data-tone="failed"] .battle-preview-roster { border-block-color: #ecc3c0; }
+.battle-preview-card h2 + p { margin-bottom: 1.15rem; }
 .battle-preview-roster {
+  align-items: end;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.6rem;
-  margin: 1.15rem 0;
+  margin: auto 0 0;
   padding: 1rem 0;
   border-block: 1px dashed #d8dfd3;
 }
+.battle-preview-win {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: #ffd23f;
+  color: #5a4300;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
 .battle-preview-token {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: flex-end;
+  gap: 0.35rem;
   padding: 0.25rem 0;
   min-width: 0;
+  text-align: center;
 }
 .battle-preview-token strong { font-size: 12px; overflow-wrap: anywhere; }
-.battle-preview-enter { margin-top: auto; padding-top: 1rem; }
+.battle-preview-enter { padding-top: 0.75rem; }
 .battle-preview-enter a { width: 100%; justify-content: center; text-align: center; }
 .battle-preview-secondary { margin-top: 0.6rem; }
 .battle-preview-secondary > button { width: 100%; }
