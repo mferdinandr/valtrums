@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Expand, X, TrendingUp } from "lucide-react";
-import { chartSegments, clipToPlayhead, displayStandings, relativeToLeader, scoresDiffer, type ChartSeries } from "./model";
+import { chartSegments, clipToPlayhead, displayStandings, relativeToLeader, scoresDiffer, smoothPath, type ChartSeries } from "./model";
 import "./chart.css";
 import { TokenIcon } from "@/components/token-icon";
 
@@ -268,6 +268,8 @@ function Plot({
     left + ((t - start) / Math.max(1, end - start)) * (width - left - right);
   const y = (v: number) =>
     top + ((max - v) / (max - min)) * (height - top - bottom);
+  /** The plotted value at a drawing y (the inverse of `y`), for the head's tooltip on the curve. */
+  const valueAt = (py: number) => max - ((py - top) / (height - top - bottom)) * (max - min);
   const times = [
     ...new Set(series.flatMap((s) => s.points.map((p) => p.x))),
   ].sort((a, b) => a - b);
@@ -370,20 +372,32 @@ function Plot({
           </text>
         ))}
         {[...drawSeries]
-          .map((s) => (connected && Number.isFinite(smooth.playhead) ? { ...s, points: clipToPlayhead(s.points, smooth.playhead) } : s))
           .sort((a, b) => Number(a.id === selected) - Number(b.id === selected))
-          .map((s) => (
+          .map((full) => {
+            // Lines are smooth curves through every recorded sample, drawn up to the playhead. The curve's shape
+            // comes from all samples, so it does not change when the head passes a sample.
+            const cut = connected && Number.isFinite(smooth.playhead) ? smooth.playhead : Infinity;
+            const curves = connected
+              ? chartSegments(full.points).flatMap((segment) => {
+                  const path = smoothPath(segment.map((p) => ({ x: x(p.x), y: y(p.value!) })), cut === Infinity ? Infinity : x(cut));
+                  return path ? [path] : [];
+                })
+              : [];
+            const s = connected && cut !== Infinity ? { ...full, points: clipToPlayhead(full.points, cut) } : full;
+            const head = curves.at(-1)?.end;
+            const recorded = new Set(full.points.map((p) => p.x));
+            return { s, curves, head, recorded };
+          })
+          .map(({ s, curves, head, recorded }) => (
             <g
               key={s.id}
               opacity={s.id === selected ? 1 : s.inactive ? 0.28 : 0.65}
             >
               {connected &&
-                chartSegments(s.points).map((segment, i) => (
-                  <polyline
+                curves.map((curve, i) => (
+                  <path
                     key={i}
-                    points={segment
-                      .map((p) => `${x(p.x)},${y(p.value!)}`)
-                      .join(" ")}
+                    d={curve.d}
                     fill="none"
                     onClick={() => onSelect(s.id)}
                     style={{ cursor: "pointer" }}
@@ -412,11 +426,14 @@ function Plot({
               {s.points
                 .filter((p) => p.value !== null && Number.isFinite(p.value))
                 .filter((_, i, a) => !connected || i === a.length - 1)
-                .map((p) => (
+                .map((p) => {
+                  // The moving head sits on the curve. Between samples its tooltip reads the curve; on a sample, the exact value.
+                  const value = connected && head && !recorded.has(p.x) ? valueAt(head.y) : p.value!;
+                  return (
                   <circle
                     key={p.x}
-                    cx={x(p.x)}
-                    cy={y(p.value!)}
+                    cx={connected && head ? head.x : x(p.x)}
+                    cy={connected && head ? head.y : y(p.value!)}
                     r={s.id === selected ? 4 : 3}
                     fill={s.color}
                     stroke="#fffaf0"
@@ -425,13 +442,14 @@ function Plot({
                     style={{ cursor: "pointer" }}
                   >
                     <title>
-                      {s.name}: {deviation ? (inverse(p.value!) === 0 ? "leading" : `${Math.abs(inverse(p.value!)).toExponential(3)} points behind the leader`) : score(p.value!, signed)}
+                      {s.name}: {deviation ? (inverse(value) === 0 ? "leading" : `${Math.abs(inverse(value)).toExponential(3)} points behind the leader`) : score(value, signed)}
                       {connected
                         ? ` at ${p.x.toFixed(1)}s`
                         : " · available snapshot"}
                     </title>
                   </circle>
-                ))}
+                  );
+                })}
             </g>
           ))}
         {inspected !== null && inspected !== undefined && (

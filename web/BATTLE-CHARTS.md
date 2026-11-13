@@ -80,9 +80,10 @@ reloads the evidence, and hiding the tab pauses only these refreshes.
 
 While a round is live, lines are played back behind the newest sample so they draw continuously at
 real-time speed instead of jumping once per sample. The delay follows the widest recent gap between
-samples plus 0.6 s (1.2 to 4.5 s). Between two recorded samples the line head moves along the straight
-segment joining them; nothing is drawn past the newest sample, and if samples stop, playback eases
-into the newest one and rests there.
+samples plus 0.6 s (1.2 to 4.5 s). Lines are smooth monotone cubic curves (as d3's curveMonotoneX):
+they pass exactly through every recorded sample and never overshoot between two of them, so they show
+no peak or dip the data does not have. The line head moves along that same curve; nothing is drawn
+past the newest sample, and if samples stop, playback eases into the newest one and rests there.
 
 When the tokens' exact scores differ at all (even in the 13th or 14th decimal), the chart switches to
 the race view: the leader sits on the top line and every other token is drawn below by how far it
