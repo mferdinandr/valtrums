@@ -34,7 +34,6 @@ Accounts and contracts are listed in [deployment.md](deployment.md); recorded ob
 
 - **Round observations.** The contract stores outcomes, not per-second samples. The chart of locked battles shows only persisted observations. Only the Price % Gain mode has a qualified live observation source today.
 - **Player agents.** Grant agents can only reserve budget and cannot execute a deposit. A recorded run with several independently funded agents is still to be added. Self-run agents don't claim their winnings; hosted agents do. See [player-agents.md](player-agents.md).
-- **Leftover burn and payout UI.** The DAO decision panel still shows a "Send burn to sink" button and the portfolio a disabled payout form; both belong to the retired Robinhood testnet path and are to be removed.
 - **End-to-end demo with failure recovery** (issue #80) is not done.
 - **Reachability.** The Robinhood mainnet RPC hosts may be blocked on some networks. Set `PRICE_PREVIEW_RPC_URL` and `REFERENCE_RPC_URL` to a reachable RPC.
 - [Historical security findings](security-review.md) are a development self-review, not an audit of the target design, WAR, furnace or a deployment.
