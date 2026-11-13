@@ -1,45 +1,48 @@
 ---
-title: "How Valtrums holds your tokens across NEAR and Robinhood"
+title: "How Valtrums holds and tracks your tokens on NEAR"
 sidebarTitle: "How funds are held"
-description: "Valtrums keeps original tokens in custody on Robinhood Chain and gives you one-for-one backed tokens on NEAR. Learn what protects your deposit."
-keywords: ["custody", "backing", "NEP-141", "Robinhood Chain", "NEAR", "security", "1:1"]
+description: "Where your Valtrums tokens are during a battle, how prizes and burns are recorded on NEAR, and which parts of the system can and can't move funds."
+keywords: ["funds", "tokens", "NEP-141", "NEAR", "security", "rewards", "burn"]
 ---
 
-Valtrums runs on two chains. **Robinhood Chain** holds the original community tokens in custody. **NEAR** runs the battles and keeps track of who owns what. The tokens you see in your NEAR wallet stand for tokens in that custody, one for one.
+Everything you deposit, win and claim in Valtrums stays on **NEAR**. Each community token is its own NEAR token contract, and the arena contract holds deposits while a battle runs. This page explains where your tokens are at each stage and what protects them.
 
-## One for one backing
+## Where your tokens are
 
-When tokens arrive in custody on Robinhood Chain, Valtrums creates the same amount of matching tokens on NEAR. These are the tokens you claim from the faucet, deposit into battles and receive as prizes.
+| Stage | Where the tokens are |
+| --- | --- |
+| Before you play | In your NEAR wallet, after you claim them from the [faucet](/guides/get-test-tokens) |
+| After you deposit | Held by the arena contract for that battle |
+| Battle cancelled | Back to you as a refund you claim. See [Get a refund](/guides/refunds). |
+| Your community lost | Shared among the winners as rewards |
+| Your community won | Your own deposit waits for [the winners' vote](/concepts/winners-vote); your prize from the losers is recorded as a reward |
+| You claim | In your NEAR wallet again |
 
-- **Only what actually arrives counts.** If someone sends 100 but custody receives 98, only 98 are created. A claim, a signature or an unconfirmed transfer never creates tokens.
-- **Each deposit is counted once.** Every custody receipt is recorded, so the same transfer can't be credited twice.
-- **No double spending.** The same backing can't be used for a prize, a redemption and a burn at the same time.
+## How prizes and burns are recorded
 
-## Rewards versus payments
+- **Losing deposits become rewards.** At settlement, the losing communities' tokens leave the arena and are recorded in each token contract as rewards for the winners. When you claim, the same amount arrives in your NEAR wallet.
+- **The winning deposit waits for the vote.** It is set aside in escrow and can't be moved by anyone until the vote is decided.
+- **Returned tokens** become rewards you claim like any other prize.
+- **Burned tokens** are destroyed on NEAR. They leave the token's supply and are never created again.
 
-A prize goes through clear stages, and the app shows them separately:
+## Every unit is accounted for
 
-1. **Entitlement**: after settlement, your share is recorded as yours.
-2. **Claimed**: you claim it into your NEAR wallet as backed tokens.
-3. **Paid on Robinhood**: you redeem it as the original token on Robinhood Chain. This counts as paid only after the transfer is confirmed. A signature or a submitted transaction is not enough.
-
-<Warning>
-  Redeeming rewards on Robinhood Chain isn't available yet. See [Testnet status](/reference/testnet-status).
-</Warning>
+- **Only real deposits count.** You are credited only for the tokens the arena actually receives.
+- **Nothing is counted twice.** The same tokens can't be a reward, a refund and a burn at the same time.
+- **The totals must add up.** Each token contract keeps a ledger of tokens in wallets, rewards waiting to be claimed, deposits in escrow and burns, and checks that it balances.
+- **The faucet never creates tokens.** It only hands out tokens it already holds.
 
 ## Who can do what
 
 | Part | Its job | What it can't do |
 | --- | --- | --- |
-| Arena contract (NEAR) | Runs battles, scores rounds, splits rewards | Doesn't trust any worker's claim about who won. It checks the scores itself. |
-| Custody (Robinhood Chain) | Holds the original tokens | Only makes exactly authorized transfers |
+| Arena contract | Runs battles, scores rounds, splits rewards, counts votes | Doesn't trust any worker's claim about who won. It checks the scores itself. |
+| Token contracts | Hold balances, rewards, escrow and burns for each community token | Can't create rewards without a settled battle |
 | Safety checker | Approves or rejects tokens | Missing data stays Pending |
-| Price collector | Records round prices | Never fills in missing data |
-| Payout relayer | Pays gas and submits authorized transfers | Can't change the recipient, token or amount |
+| Price collector | Records round prices from the real tokens' markets on Robinhood Chain | Never fills in missing data |
+| Valtrums DAO | Changes protocol settings such as fees and the allowlist | Can't change or veto a battle's vote |
 | Player agents | Play within a budget you fund | Have no access to your own wallet |
 
-Cross-chain transfers are signed with **NEAR Chain Signatures**, so no single server holds a key that controls the custody.
-
 <Note>
-  Valtrums's security notes are a self-review by the development team, not an external audit. Valtrums runs on testnets only.
+  Valtrums' security notes are a self-review by the development team, not an external audit. Valtrums runs on NEAR testnet only.
 </Note>
