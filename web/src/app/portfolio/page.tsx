@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { PortfolioView } from "@/components/portfolio-view";
 import { useApplicationDeployment, useWallet } from "@/components/providers";
 import { RecoveryAlerts } from "@/components/recovery-alerts";
@@ -8,12 +9,13 @@ import { CarnivalScene } from "@/components/carnival/scene";
 import "@/components/lifecycle/lifecycle.css";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { usePortfolio } from "@/hooks/use-portfolio";
 
 /**
  * Portfolio of the connected account on the lifecycle deployment. Positions, entitlements, transfers, late funds,
  * DAO principal and alerts are separate sections with their source and freshness. Account reads need one wallet
- * signature (NEP-413); the session token stays in memory. Nothing on this page is legacy A/B data.
+ * signature (NEP-413), requested automatically when the page opens; the session token stays in memory. Nothing on this page is legacy A/B data.
  */
 export default function PortfolioPage() {
   const namespace = useApplicationDeployment();
@@ -21,6 +23,13 @@ export default function PortfolioPage() {
   const portfolio = usePortfolio();
 
   const ready = portfolio.state.step === "ready" ? portfolio.state.data : null;
+
+  // Load as soon as the wallet is connected. Only the idle step triggers it, so an error does not retry in a loop.
+  const { state, connected, load } = portfolio;
+  const hasNamespace = !!namespace;
+  useEffect(() => {
+    if (hasNamespace && connected && state.step === "idle") void load();
+  }, [hasNamespace, connected, state.step, load]);
 
   if (!namespace) {
     return (
@@ -57,19 +66,29 @@ export default function PortfolioPage() {
           <div className="min-w-0">
             <p className="text-xs text-mute">Connected account</p>
             <p className="truncate text-base font-semibold">{portfolio.accountId}</p>
-            {portfolio.state.step !== "ready" && (
-              <p className="text-xs text-mute">Sign once to view your portfolio. This read-only request cannot move your funds.</p>
-            )}
+            {busy && <p className="text-xs text-mute">Approve the read-only signature in your wallet. It cannot move your funds.</p>}
           </div>
-          <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>
-            {busy ? "Loading…" : portfolio.state.step === "ready" ? "Refresh" : "Sign and view portfolio"}
-          </Button>
+          {(ready || portfolio.state.step === "error") && (
+            <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>
+              {ready ? "Refresh" : "Try again"}
+            </Button>
+          )}
           {portfolio.state.step === "error" && (
             <p role="alert" className="w-full text-sm text-neon-amber">
               {portfolio.state.message}. Nothing was loaded.
             </p>
           )}
         </Card>
+      )}
+
+      {busy && !ready && (
+        <SkeletonGroup label="Loading your portfolio" className="space-y-3">
+          <Card className="space-y-3 p-4">
+            <Skeleton style={{ width: 160, height: 18 }} />
+            <Skeleton style={{ width: "100%", height: 56, borderRadius: 8 }} />
+            <Skeleton style={{ width: "100%", height: 56, borderRadius: 8 }} />
+          </Card>
+        </SkeletonGroup>
       )}
 
       {ready && <PortfolioView data={ready} arena={namespace.arenaContract} onChanged={() => void portfolio.load()} />}
