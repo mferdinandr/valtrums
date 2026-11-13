@@ -88,6 +88,64 @@ export function clipToPlayhead(points: readonly ChartPoint[], playhead: number):
   return out;
 }
 
+/** A point in drawing (pixel) coordinates. */
+export interface PlotPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * A smooth SVG path through `pts` (sorted by x), cut at `cutX`. It uses monotone cubic interpolation
+ * (Fritsch-Carlson, as d3's curveMonotoneX): the curve passes exactly through every point and never
+ * overshoots between two of them, so it shows no peak or dip the data does not have. Between two points
+ * the curve's x advances linearly with the curve parameter, so the cut is an exact split of that piece.
+ * Returns the path and where it ends (the moving head), or null when no point is at or before `cutX`.
+ * Display-only geometry.
+ */
+export function smoothPath(pts: readonly PlotPoint[], cutX = Infinity): { d: string; end: PlotPoint } | null {
+  const n = pts.length;
+  if (n === 0 || pts[0]!.x > cutX) return null;
+  const f = (v: number) => (Math.round(v * 100) / 100).toString();
+  if (n === 1) return { d: `M${f(pts[0]!.x)},${f(pts[0]!.y)}`, end: pts[0]! };
+  const slope = (i: number) => {
+    const h = pts[i + 1]!.x - pts[i]!.x;
+    return h > 0 ? (pts[i + 1]!.y - pts[i]!.y) / h : 0;
+  };
+  const tangents = pts.map((_, i) => {
+    if (i === 0) return slope(0);
+    if (i === n - 1) return slope(n - 2);
+    const s0 = slope(i - 1), s1 = slope(i);
+    const h0 = pts[i]!.x - pts[i - 1]!.x, h1 = pts[i + 1]!.x - pts[i]!.x;
+    const p = h0 + h1 > 0 ? (s0 * h1 + s1 * h0) / (h0 + h1) : 0;
+    return (Math.sign(s0) + Math.sign(s1)) * Math.min(Math.abs(s0), Math.abs(s1), 0.5 * Math.abs(p)) || 0;
+  });
+  let d = `M${f(pts[0]!.x)},${f(pts[0]!.y)}`;
+  let end: PlotPoint = pts[0]!;
+  for (let i = 0; i < n - 1; i++) {
+    const a = pts[i]!, b = pts[i + 1]!;
+    if (a.x >= cutX) break;
+    const h = b.x - a.x;
+    // Cubic Bezier control points of the Hermite piece.
+    const c1 = { x: a.x + h / 3, y: a.y + (tangents[i]! * h) / 3 };
+    const c2 = { x: b.x - h / 3, y: b.y - (tangents[i + 1]! * h) / 3 };
+    if (b.x <= cutX) {
+      d += `C${f(c1.x)},${f(c1.y)} ${f(c2.x)},${f(c2.y)} ${f(b.x)},${f(b.y)}`;
+      end = b;
+      continue;
+    }
+    // Split the piece at the cut (de Casteljau) and draw only its first part.
+    const t = h > 0 ? (cutX - a.x) / h : 0;
+    const lerp = (p: PlotPoint, q: PlotPoint) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    const p01 = lerp(a, c1), p12 = lerp(c1, c2), p23 = lerp(c2, b);
+    const p012 = lerp(p01, p12), p123 = lerp(p12, p23);
+    const head = lerp(p012, p123);
+    d += `C${f(p01.x)},${f(p01.y)} ${f(p012.x)},${f(p012.y)} ${f(head.x)},${f(head.y)}`;
+    end = head;
+    break;
+  }
+  return { d, end };
+}
+
 /** Display-only geometry. Never use floating-point chart values to settle a battle. */
 export function chartSegments(points: readonly ChartPoint[]) {
   const segments: ChartPoint[][] = [];
