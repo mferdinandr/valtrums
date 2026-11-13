@@ -104,11 +104,4 @@ export function AccordionGroup({ children }: { children: ReactNode }) {
   return <div className="accordion-group">{children}</div>;
 }
 
-export function Accordion({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <details className="accordion">
-      <summary>{title}</summary>
-      <div className="accordion-body">{children}</div>
-    </details>
-  );
-}
+export { Accordion } from "./accordion";
