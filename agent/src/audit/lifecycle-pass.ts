@@ -41,6 +41,26 @@ const MIN_FUNDED = 2;
 const LOCK_REVISIT_MS = 3_000;
 /** After a backing refresh is sent, the battle is looked at again after this long to confirm it. */
 const BACKING_RECHECK_MS = 4_000;
+/**
+ * Pre-warm: this long before a battle's start the agent wakes and renews any audit or backing approval that would
+ * not outlive the lock, so the visit at the start time finds everything ready and sends the lock at once instead
+ * of first running provider checks and approval transactions.
+ */
+export const PREWARM_LEAD_MS = 120_000;
+/**
+ * Approval life wanted at the start time: the lock's 60 s minimum (lifecycle-lock.ts, backing-refresh.ts) plus
+ * slack for the lock transaction and a late visit.
+ */
+export const LOCK_LIFE_MARGIN_MS = 90_000;
+
+/**
+ * How far ahead approvals of a battle must be renewed on this visit: enough to still hold LOCK_LIFE_MARGIN_MS at
+ * the start (or now, once the start passed), or null outside the pre-warm window (the normal margins apply).
+ */
+export function prewarmAheadMs(startAtMs: number | null, nowMs: number): number | null {
+  if (startAtMs === null || !Number.isFinite(startAtMs) || startAtMs - nowMs > PREWARM_LEAD_MS) return null;
+  return Math.max(startAtMs, nowMs) + LOCK_LIFE_MARGIN_MS - nowMs;
+}
 
 /** The lifecycle asset identity has no separate version field; this label names that shape (v2 adds the optional reference pair). */
 export const ASSET_MAPPING_VERSION = "asset-identity-v2";
@@ -69,6 +89,18 @@ export function fundedIndices(view: LifecycleBattleView): number[] {
     if (c.vault === undefined || (/^[0-9]+$/.test(c.vault) && BigInt(c.vault) > 0n)) out.push(i);
   });
   return out;
+}
+
+/**
+ * A battle created without a start time that holds no deposit: it can neither lock (fewer than two funded) nor be
+ * cancelled (only a started battle can), so renewing its approvals every few minutes only spends provider calls and
+ * transactions. Approvals are still made once for each community. Such a battle is the earlier, start-less shape and
+ * is treated as retired: once its approvals expire the action service refuses deposits (`audit_expired`), while the
+ * arena itself still accepts a direct one, and that first deposit makes it a normal battle again. New battles always
+ * have a start time and are never idle.
+ */
+export function isIdleBattle(view: LifecycleBattleView): boolean {
+  return !view.start_at_ms && fundedIndices(view).length === 0;
 }
 
 export function assetsOf(view: LifecycleBattleView): CommittedAsset[] {
@@ -109,11 +141,18 @@ export interface LifecycleAuditPassDeps {
   /** Optional cancel step (AUDIT_CANCEL_ENABLED): cancels a battle whose start passed with fewer than two funded communities. */
   cancel?: Pick<LifecycleCanceller, "tryCancel">;
   /**
-   * Written by every sweep: the earliest future start time (ms) among unlocked battles with at least two funded
-   * communities, or null. The agent loop sleeps until then so the lock goes out at the start time, not up to a
-   * whole interval later.
+   * Written by every sweep: the next time (ms) the agent must act for an unlocked battle with at least two funded
+   * communities (its pre-warm, PREWARM_LEAD_MS before the start, or the start itself once that is closer), or null.
+   * The agent loop sleeps until then so approvals are renewed ahead and the lock goes out at the start time, not up
+   * to a whole interval later.
    */
-  wake?: { nextStartMs: number | null; /** Battles starting at `nextStartMs`; the next pass handles them first. */ imminent?: number[] };
+  wake?: {
+    nextStartMs: number | null;
+    /** Battles due at `nextStartMs`; the next pass handles them first. */
+    imminent?: number[];
+    /** Start time of the `imminent` battles; later than `nextStartMs` when the wake is a pre-warm. */
+    imminentStartMs?: number | null;
+  };
   log?: Logger;
 }
 
@@ -164,12 +203,21 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
       deps.wake && deps.wake.nextStartMs !== null && deps.wake.nextStartMs <= wakeNow + 1_000 && deps.wake.nextStartMs >= wakeNow - 10_000 && (deps.wake.imminent?.length ?? 0) > 0
         ? [...deps.wake.imminent!].sort((a, b) => b - a)
         : null;
+    // A pre-warm wake: the battles' start is still ahead, so the hint is kept for the start itself (the loop sleeps
+    // until then, and every other battle yields once it comes).
+    const fastStart = fast ? (deps.wake?.imminentStartMs ?? null) : null;
+    const prewarming = fastStart !== null && fastStart > wakeNow + 1_000;
     if (fast && deps.wake) {
       hot.push(...fast);
       for (let id = total; id >= 1; id--) if (!fast.includes(id)) rest.push(id);
-      deps.wake.imminent = [];
-      deps.wake.nextStartMs = null;
-      log.info("lifecycle audit fast path: starting battles first", { battles: fast });
+      if (prewarming) {
+        deps.wake.nextStartMs = fastStart;
+      } else {
+        deps.wake.imminent = [];
+        deps.wake.nextStartMs = null;
+        deps.wake.imminentStartMs = null;
+      }
+      log.info(prewarming ? "lifecycle audit pre-warm: renewing starting battles first" : "lifecycle audit fast path: starting battles first", { battles: fast });
     }
     // Bound read concurrency; signatures and approval submissions below remain sequential.
     for (let newest = fast ? 0 : total; newest >= 1; newest -= 3) {
@@ -188,23 +236,31 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
       const nowMs = deps.refresh.now().getTime();
       let next: number | null = null;
       let imminent: number[] = [];
+      let imminentStart: number | null = null;
       for (const [id, v] of views) {
         if (!v || v.locked || v.cancelled || !v.start_at_ms || fundedIndices(v).length < MIN_FUNDED) continue;
         const startMs = Number(v.start_at_ms);
         if (!Number.isFinite(startMs) || startMs <= nowMs) continue;
-        if (next === null || startMs < next) {
-          next = startMs;
+        // Wake for the pre-warm while it is still ahead, then for the start itself.
+        const due = startMs - PREWARM_LEAD_MS > nowMs ? startMs - PREWARM_LEAD_MS : startMs;
+        if (next === null || due < next) {
+          next = due;
           imminent = [id];
-        } else if (startMs === next) imminent.push(id);
+          imminentStart = startMs;
+        } else if (due === next) {
+          imminent.push(id);
+          imminentStart = Math.min(imminentStart ?? startMs, startMs);
+        }
       }
       deps.wake.nextStartMs = next;
       deps.wake.imminent = imminent;
+      deps.wake.imminentStartMs = imminentStart;
     }
-    // A battle whose start has come must not wait behind the renewal of an idle one: every other battle yields
-    // (stops before its next provider call or transaction) once that start time passes. The pass then returns
-    // at once and the next one takes the fast path above.
+    // A battle whose start (or pre-warm) has come must not wait behind the renewal of an idle one: every other
+    // battle yields (stops before its next provider call or transaction) once that time passes. The pass then
+    // returns at once and the next one takes the fast path above. A pre-warm pass yields the same way at the start.
     const startingIds = new Set<number>(fast ?? deps.wake?.imminent ?? []);
-    const dueStart = fast ? null : (deps.wake?.nextStartMs ?? null);
+    const dueStart = fast ? (prewarming ? fastStart : null) : (deps.wake?.nextStartMs ?? null);
     const yieldFor = (id: number): boolean => dueStart !== null && !startingIds.has(id) && deps.refresh.now().getTime() >= dueStart;
     log.info("lifecycle audit discovery complete", { battles: total, priorityBattles: hot.length, durationMs: Date.now() - discoveryStarted });
     const queue = [...hot, ...rest];
@@ -318,10 +374,17 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         open.add(id);
         attempted.set(id, view.communities.length);
         visitedAt.set(id, deps.refresh.now().getTime());
-        log.info("lifecycle audit checking battle", { battleId: id, communities: view.communities.length });
+        // An idle battle (no start time and nothing deposited) can never lock or be cancelled until someone deposits,
+        // so its approvals are made once and not renewed; the first deposit makes it a normal battle again.
+        const idle = isIdleBattle(view);
+        log.info("lifecycle audit checking battle", { battleId: id, communities: view.communities.length, ...(idle ? { idle } : {}) });
         const auditStarted = Date.now();
+        // Near the start, renew what would not outlive the lock now rather than at the start time.
+        const prewarm = prewarmAheadMs(view.start_at_ms ? Number(view.start_at_ms) : null, deps.refresh.now().getTime());
         const result = await refreshBattleAudit(id, assetsOf(view), {
           ...deps.refresh,
+          ...(prewarm !== null ? { refreshAheadMs: Math.max(deps.refresh.refreshAheadMs ?? 0, prewarm) } : {}),
+          ...(idle ? { renew: false } : {}),
           log,
           registry,
           isLocked: async () => false,
@@ -382,7 +445,12 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
         let backingReady: boolean | undefined;
         if (deps.backing) {
           const backingStarted = Date.now();
-          const backed = await deps.backing.refresh(id, (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass", () => yieldFor(id));
+          const backed = await deps.backing.refresh(
+            id,
+            (i) => deps.refresh.records.get(`${id}:${i}`)?.result === "pass",
+            () => yieldFor(id),
+            { ...(prewarm !== null ? { aheadMs: prewarm } : {}), ...(idle ? { initialOnly: true } : {}) },
+          );
           log.info("lifecycle backing refresh complete", { battleId: id, ready: [...backed.ready], failed: backed.failed.length, durationMs: Date.now() - backingStarted });
           errors += backed.failed.length;
           // The refresh just sent is not yet confirmed (ready was read before sending). Look again in a few

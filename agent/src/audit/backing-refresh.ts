@@ -96,16 +96,25 @@ export class BackingRefresher {
     wanted: (community: number) => boolean = () => true,
     /** Checked before each transaction; true stops sending (the next visit continues). */
     shouldYield: () => boolean = () => false,
+    opts: {
+      /** Pre-warm before a start: renew an approval with less than this much life too (never below the usual margin). */
+      aheadMs?: number;
+      /**
+       * Idle battle: send only for a community with no approval at all (never backed, or withdrawn). The arena accepts
+       * a deposit while an approval exists and checks its expiry only at lock, so an expiring one is left alone.
+       */
+      initialOnly?: boolean;
+    } = {},
   ): Promise<BackingRefreshResult> {
     const result: BackingRefreshResult = { sent: [], failed: [], ready: new Set() };
     const nowMs = this.deps.now().getTime();
-    const ahead = this.deps.refreshAheadMs ?? DEFAULT_BACKING_REFRESH_AHEAD_MS;
+    const ahead = Math.max(this.deps.refreshAheadMs ?? DEFAULT_BACKING_REFRESH_AHEAD_MS, opts.aheadMs ?? 0);
     const minRemaining = this.deps.minRemainingMs ?? DEFAULT_BACKING_MIN_REMAINING_MS;
     for (const status of await this.deps.source.statuses(battleId)) {
       const remaining = status.expiresAtMs === null ? 0 : status.expiresAtMs - nowMs;
       if (status.trusted && status.assetMatches && status.fresh && remaining >= minRemaining) result.ready.add(status.community);
       if (!wanted(status.community)) continue;
-      const lapsing = !status.fresh || !status.assetMatches || remaining < ahead;
+      const lapsing = opts.initialOnly ? status.expiresAtMs === null : !status.fresh || !status.assetMatches || remaining < ahead;
       if (!lapsing) continue;
       if (!status.trusted) {
         result.failed.push(status.community);
