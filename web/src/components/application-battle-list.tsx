@@ -132,6 +132,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
               return (
               <Card
                 className="lifecycle-crew battle-preview-card"
+                data-tone={failed || battle.status === "cancelled" ? "failed" : undefined}
                 key={`${namespace.deploymentId}:${battle.battleId}`}
               >
                 <div className="battle-preview-meta"><p className="eyebrow text-neon-green">

@@ -531,6 +531,11 @@
   background: #f8dcdc;
   color: #a12626;
 }
+.battle-preview-card[data-tone="failed"] {
+  background: #fdeceb;
+  border-top-color: #d05a5a;
+}
+.battle-preview-card[data-tone="failed"] .battle-preview-roster { border-block-color: #ecc3c0; }
 .battle-preview-card h2 + p { margin-bottom: 1.15rem; }
 .battle-preview-roster {
   align-items: end;
