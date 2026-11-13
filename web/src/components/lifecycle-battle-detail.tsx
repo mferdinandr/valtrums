@@ -358,12 +358,12 @@ export function LifecycleBattleDetail({
               {fixture && <span>fixture data</span>}
             </div>
             <div className="match-clock" role="timer" aria-label={phase.kind === "window_open" ? "Time remaining in round" : "Battle status"}>
-              <span>{phase.kind === "window_open" ? `ROUND ${detail.round!.round_id} · TIME LEFT` : phase.kind === "not_started" && open.kind === "gathering" ? "BATTLE STARTS IN" : "BATTLE STATUS"}</span>
-              <strong>{phase.kind === "window_open" ? (now ? formatCountdown(phase.msLeft) : "—") : phase.kind === "not_started" && open.kind === "gathering" && now ? formatCountdown(open.msLeft) : phase.kind === "decided" ? "FINISHED" : phase.kind === "awaiting_resolution" ? "RESULT PENDING" : status === "cancelled" ? "CANCELLED" : "GET READY"}</strong>
+              <span>{phase.kind === "window_open" ? `ROUND ${detail.round!.round_id} · TIME LEFT` : phase.kind === "not_started" && open.kind === "gathering" ? "BATTLE STARTS IN" : open.kind === "cancellable" ? "BATTLE FAILED" : "BATTLE STATUS"}</span>
+              <strong>{phase.kind === "window_open" ? (now ? formatCountdown(phase.msLeft) : "—") : phase.kind === "not_started" && open.kind === "gathering" && now ? formatCountdown(open.msLeft) : phase.kind === "decided" ? "FINISHED" : phase.kind === "awaiting_resolution" ? "RESULT PENDING" : status === "cancelled" ? "CANCELLED" : open.kind === "cancellable" ? "NOT ENOUGH CREWS" : open.kind === "awaiting_lock" ? "LOCKING CREWS" : detail.battle.locked ? "OPENING ROUND" : "GET READY"}</strong>
             </div>
             <div className="match-status" role="status">
               <span>{phase.kind === "decided" ? "WINNER" : phase.kind === "window_open" ? "LIVE ROUND" : "ARENA"}</span>
-              <strong>{phase.kind === "decided" ? name(phase.winner) : phase.kind === "awaiting_resolution" ? "Awaiting resolution" : status === "cancelled" ? "Cancelled" : detail.battle.locked ? "Crews locked" : open.kind === "gathering" || open.kind === "no_start" ? "Deposits open" : "Starting soon"}</strong>
+              <strong>{phase.kind === "decided" ? name(phase.winner) : phase.kind === "awaiting_resolution" ? "Awaiting resolution" : status === "cancelled" ? "Cancelled" : open.kind === "cancellable" ? "Failed to start" : detail.battle.locked ? "Crews locked" : open.kind === "gathering" || open.kind === "no_start" ? "Deposits open" : "Starting soon"}</strong>
             </div>
           </>
         }
