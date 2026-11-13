@@ -14,8 +14,8 @@ import { usePortfolio } from "@/hooks/use-portfolio";
 
 /**
  * Portfolio of the connected account on the lifecycle deployment. Positions, entitlements, transfers, late funds,
- * DAO principal and alerts are separate sections with their source and freshness. Account reads need one wallet
- * signature (NEP-413), requested automatically when the page opens; the session token stays in memory. Nothing on this page is legacy A/B data.
+ * DAO principal and alerts are separate sections with their source and freshness. Account reads use the connected account id
+ * and need no signature: they wrap public NEAR view calls and load automatically when the page opens. Nothing on this page is legacy A/B data.
  */
 export default function PortfolioPage() {
   const namespace = useApplicationDeployment();
@@ -42,7 +42,7 @@ export default function PortfolioPage() {
     );
   }
 
-  const busy = portfolio.state.step === "opening-session" || portfolio.state.step === "reading";
+  const busy = portfolio.state.step === "reading";
   return (
     <div className="lifecycle-page">
       <header className="arcade-heading arcade-heading--portfolio">
@@ -66,7 +66,6 @@ export default function PortfolioPage() {
           <div className="min-w-0">
             <p className="text-xs text-mute">Connected account</p>
             <p className="truncate text-base font-semibold">{portfolio.accountId}</p>
-            {busy && <p className="text-xs text-mute">Approve the read-only signature in your wallet. It cannot move your funds.</p>}
           </div>
           {(ready || portfolio.state.step === "error") && (
             <Button type="button" onClick={() => void portfolio.load()} disabled={busy || !portfolio.connected}>

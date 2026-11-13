@@ -117,36 +117,3 @@ describe("action wallet", () => {
     expect(txHashOf(null)).toBeNull();
   });
 });
-
-describe("token persistence", () => {
-  const store = () => {
-    const m = new Map<string, string>();
-    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
-  };
-  const fresh = (storage: ReturnType<typeof store>) => {
-    const h = harness();
-    return { ...h, session: new ActionSession({ accountId: ACCOUNT, wallet: h.wallet, fetchImpl: h.fetchImpl, now: h.now, storage }) };
-  };
-
-  it("reuses a stored token after a reload without asking the wallet again", async () => {
-    const storage = store();
-    const first = fresh(storage);
-    await first.session.ensure();
-    expect(first.signed).toHaveLength(1);
-    const second = fresh(storage);
-    expect(await second.session.ensure()).toBe("tok1");
-    expect(second.signed).toHaveLength(0);
-  });
-
-  it("drops the stored token on invalidate and ignores corrupt storage", async () => {
-    const storage = store();
-    const first = fresh(storage);
-    await first.session.ensure();
-    first.session.invalidate();
-    expect(storage.getItem(`valtrum.session.${ACCOUNT}`)).toBeNull();
-    storage.setItem(`valtrum.session.${ACCOUNT}`, "not json");
-    const second = fresh(storage);
-    await second.session.ensure();
-    expect(second.signed).toHaveLength(1);
-  });
-});

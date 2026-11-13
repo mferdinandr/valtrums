@@ -4,8 +4,8 @@ import type { ActionWallet, UnsignedTransaction } from "@/lib/terminal/actions";
  * Client side of the NEP-413 read/action session. The wallet signs messages whose text and recipients
  * come from the read service (`/api/arena/session/config`), never from this bundle. The session token
  * only selects whose data may be read and which action records may be used: it carries no signing or
- * spending authority, is never written to localStorage, a cookie or a URL. It is kept in sessionStorage (this tab only, cleared when the tab closes)
- * so a reload does not ask the wallet to sign again.
+ * spending authority, lives in memory only (a reload asks the wallet again) and is never written to
+ * localStorage, sessionStorage, a cookie or a URL.
  */
 
 export interface SessionConfig {
@@ -53,7 +53,7 @@ export const toBase64 = (bytes: Uint8Array): string => {
   return btoa(s);
 };
 
-/** Session for one connected account. The token is mirrored to sessionStorage (per tab, per account) so a reload can reuse it. */
+/** Memory-only session for one connected account. */
 export class ActionSession {
   private token: string | null = null;
   private expiresAtMs = 0;
@@ -67,28 +67,7 @@ export class ActionSession {
     now?: () => number;
     /** Reopen when fewer than this many ms remain. */
     refreshMarginMs?: number;
-    /** Where the token survives a reload. Defaults to sessionStorage when the browser has it. */
-    storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
   }) {}
-
-  private get storage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null {
-    if (this.deps.storage !== undefined) return this.deps.storage;
-    try { return typeof sessionStorage === "undefined" ? null : sessionStorage; } catch { return null; }
-  }
-  private get storageKey(): string { return `valtrum.session.${this.deps.accountId}`; }
-
-  /** Reload a stored token for this account; anything unreadable, expired or for another account is dropped. */
-  private restore(): void {
-    try {
-      const raw = this.storage?.getItem(this.storageKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as { token?: unknown; expiresAtMs?: unknown };
-      if (typeof saved.token === "string" && typeof saved.expiresAtMs === "number") {
-        this.token = saved.token;
-        this.expiresAtMs = saved.expiresAtMs;
-      } else this.storage?.removeItem(this.storageKey);
-    } catch { /* storage unavailable or corrupt: sign again */ }
-  }
 
   private get now(): number { return (this.deps.now ?? Date.now)(); }
   private get doFetch(): FetchLike { return this.deps.fetchImpl ?? ((u, i) => fetch(u, i)); }
@@ -100,7 +79,6 @@ export class ActionSession {
 
   /** A valid token, opening a session (one wallet signature) when there is none. Concurrent calls share one prompt. */
   ensure(): Promise<string> {
-    if (!this.token) this.restore();
     if (this.token && this.now < this.expiresAtMs - (this.deps.refreshMarginMs ?? 60_000)) return Promise.resolve(this.token);
     return (this.opening ??= this.open().finally(() => { this.opening = null; }));
   }
@@ -110,7 +88,6 @@ export class ActionSession {
     this.token = null;
     this.expiresAtMs = 0;
     this.config = null;
-    try { this.storage?.removeItem(this.storageKey); } catch { /* ignore */ }
   }
 
   private async open(): Promise<string> {
@@ -131,7 +108,6 @@ export class ActionSession {
     }
     this.token = body.token;
     this.expiresAtMs = expires;
-    try { this.storage?.setItem(this.storageKey, JSON.stringify({ token: body.token, expiresAtMs: expires })); } catch { /* ignore */ }
     return body.token;
   }
 }
