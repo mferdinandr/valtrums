@@ -1,6 +1,6 @@
 "use client";
 
-import { Coins, Flame, Layers, Send } from "lucide-react";
+import { Coins, Flame, Layers } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ClaimAllButton } from "@/components/claim-all-button";
@@ -13,7 +13,7 @@ import { formatUnits } from "@/lib/amounts";
 import { daoBlocksClaim } from "@/lib/arena-read/account-state";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { symbolOf } from "@/lib/arena-read/claim";
-import { describePayouts, normalizePositions } from "@/lib/arena-read/portfolio";
+import { normalizePositions } from "@/lib/arena-read/portfolio";
 import { readBattleBriefs, STAGE_ORDER, STAGE_TITLE, type BattleBrief, type BattleStage } from "@/lib/arena-read/position-status";
 import { config } from "@/lib/config";
 
@@ -88,11 +88,9 @@ const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm t
 export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData; arena: string; onChanged: () => void }) {
   const positions = data.positions.state === "ok" ? data.positions.env.data.positions : null;
   const state = data.accountState.state === "ok" ? data.accountState.env.data : null;
-  const transfers = data.payouts.state === "ok" ? describePayouts(data.payouts.env.data.payouts) : null;
   const claimable = (state?.entitlements ?? []).filter((e) => /^[0-9]+$/.test(e.available) && BigInt(e.available) > 0n);
   const dao = state?.daoPrincipal ?? [];
   const waiting = daoBlocksClaim(state);
-  const pending = (transfers ?? []).filter((t) => !t.paid).length;
   const groups = data.positions.state === "ok" ? normalizePositions(data.positions.env.data) : [];
   // Only deposits count as positions; a joined community without a deposit is not shown.
   const rows = groups.flatMap((g) => g.rows.filter((r) => r.valid && r.amount !== "0").map((r) => ({ ...r, asset: g.asset })));
@@ -120,11 +118,10 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-3">
         <Tile icon={<Layers size={18} aria-hidden="true" />} label="Battles joined" value={positions === null ? "–" : ids.length} tone="blue" />
         <Tile icon={<Coins size={18} aria-hidden="true" />} label="Ready to claim" value={state === null ? "–" : claimable.length} tone="green" />
         <Tile icon={<Flame size={18} aria-hidden="true" />} label="In DAO decision" value={state === null ? "–" : dao.length} tone="rose" />
-        <Tile icon={<Send size={18} aria-hidden="true" />} label="Transfers pending" value={transfers === null ? "–" : pending} tone="amber" />
       </div>
 
       <Panel title="Ready to claim" hint="Goes to your NEAR wallet, 1:1 with the source custody.">
@@ -228,26 +225,6 @@ export function PortfolioView({ data, arena, onChanged }: { data: PortfolioData;
                 />
               );
             })}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel title="Transfers to Robinhood Chain" hint="A transfer counts as paid only when it is confirmed.">
-        {transfers === null ? (
-          <Empty>Transfers could not be read right now.</Empty>
-        ) : transfers.length === 0 ? (
-          <Empty>No transfers.</Empty>
-        ) : (
-          <ul className="space-y-2">
-            {transfers.map((t) => (
-              <Row
-                key={t.key}
-                symbol={symbolOf(t.backing)}
-                title={`${units(t.amount)} ${symbolOf(t.backing)}`}
-                sub={t.detail}
-                chip={<Chip tone={t.paid ? "green" : "amber"}>{t.label}</Chip>}
-              />
-            ))}
           </ul>
         )}
       </Panel>

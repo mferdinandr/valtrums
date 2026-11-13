@@ -15,14 +15,13 @@ import {
 
 export type Part<T> = { state: "ok"; env: ReadEnvelope<T> } | { state: "error"; message: string };
 
+export type PayoutsData = { accountId: string; payouts: PayoutItem[] };
 type EntitlementsData = { accountId: string; available: boolean; entitlements: unknown[] };
-type PayoutsData = { accountId: string; payouts: PayoutItem[] };
 
 export interface PortfolioData {
   accountState: Part<AccountStateData>;
   positions: Part<PositionsData>;
   entitlements: Part<EntitlementsData>;
-  payouts: Part<PayoutsData>;
 }
 
 export type LoadState =
@@ -61,14 +60,13 @@ export function usePortfolio() {
     const read = guard.current.begin(accountId);
     setState({ step: "reading" });
     try {
-      const [accountState, positions, entitlements, payouts] = await Promise.all([
+      const [accountState, positions, entitlements] = await Promise.all([
         part<AccountStateData>("inspect_account_state", accountId, read.signal),
         part<PositionsData>("inspect_positions", accountId, read.signal),
         part<EntitlementsData>("inspect_entitlements", accountId, read.signal),
-        part<PayoutsData>("inspect_payouts", accountId, read.signal),
       ]);
       if (!read.isCurrent()) return;
-      setState({ step: "ready", account: accountId, data: { accountState, positions, entitlements, payouts } });
+      setState({ step: "ready", account: accountId, data: { accountState, positions, entitlements } });
     } catch (e) {
       if (read.isCurrent()) setState({ step: "error", message: e instanceof Error ? e.message : "could not read your account" });
     }
