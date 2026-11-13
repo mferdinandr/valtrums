@@ -4,7 +4,7 @@ Legacy automation reads arena state to resume audit, pricing and settlement. Thi
 
 Pass order: sample prices, audit `Proposed` battles, lock `Approved` battles with initial 30-minute TWAPs, settle ended `Live` battles, drive pending settlement steps, then (hourly) the liquidity watchdog.
 
-The [Robinhood target](../docs/product-spec.md) is planned: 30-second rounds without TWAP, separate GoPlus/LP audit, per-token payouts and bounded player agents/MCP. Existing TWAP, swaps, bond and credit behavior below describes the current implementation only. Infrastructure credentials never authorize spending player funds. See [current state](../docs/current-state.md) and [planned interfaces](../docs/interfaces.md).
+The lifecycle arena ([product spec](../docs/product-spec.md)) runs on NEAR testnet: 30-second rounds without TWAP, separate GoPlus/LP audit, per-token rewards claimed on NEAR and bounded player agents/MCP. Robinhood Chain mainnet is only read for prices and liquidity. TWAP, swaps, bond and credit behavior below belongs to the legacy two-side arena. Infrastructure credentials never authorize spending player funds. See [current state](../docs/current-state.md) and [planned interfaces](../docs/interfaces.md).
 
 ## Run
 
@@ -24,8 +24,8 @@ Optional:
 | `AGENT_INTERVAL_SECS` | `30` | seconds between passes |
 | `WATCHDOG_INTERVAL_SECS` | `3600` | seconds between watchdog checks |
 | `BASELINE_STORE_PATH` | `./.agent-state/baselines.json` | liquidity baselines recorded at audit |
-| `EXECUTION_MODE` | `mock` | `mock`: the agent reports each step as realized = planned. `onchain`: the arena swaps on its execution DEX and the agent only dispatches steps. `foreign`: the agent executes the steps on an EVM chain through the MPC signer and reports the realized amounts (see below) |
-| `EXECUTION_SLIPPAGE_BPS` | `500` | onchain and foreign: tolerance below the quote used for `min_out`, integer 0 to 9999 |
+| `EXECUTION_MODE` | `mock` | `mock`: the agent reports each step as realized = planned. `onchain`: the arena swaps on its execution DEX and the agent only dispatches steps |
+| `EXECUTION_SLIPPAGE_BPS` | `500` | onchain: tolerance below the quote used for `min_out`, integer 0 to 9999 |
 | `STEP_TIMEOUT_SECS` | `600` | onchain: a dispatched step older than this is logged as stuck |
 | `MARKET_DATA` | `dexscreener` | `dexscreener`: prices, liquidity and the honeypot heuristic come from DexScreener. `mockdex`: they come from the arena's execution DEX (see "Testnet demo"). `ref`: they come from the exchange pools the swap adapter routes through (see "Exchange pools") |
 | `REF_EXCHANGE_ID` | unset | required with `MARKET_DATA=ref`: the exchange contract account, for example `ref-finance-101.testnet` |
@@ -47,7 +47,7 @@ Optional:
 
 ## Execution modes
 
-The mode must match the arena: `onchain` needs `execution_dex` set in `get_config`, `mock` and `foreign` need it unset (and `foreign` needs `get_foreign_config` to return a configuration) (the contract refuses `report_execution` otherwise). The agent checks this at startup and on every pass; on a mismatch it logs an error and skips settlement (`settle_battle` and step work) while the audit, price lock and watchdog keep running.
+The mode must match the arena: `onchain` needs `execution_dex` set in `get_config`, `mock` needs it unset (the contract refuses `report_execution` otherwise). The agent checks this at startup and on every pass; on a mismatch it logs an error and skips settlement (`settle_battle` and step work) while the audit, price lock and watchdog keep running.
 
 In `onchain` mode, for the first not-done step of a `Settling` battle:
 
@@ -55,44 +55,6 @@ In `onchain` mode, for the first not-done step of a `Settling` battle:
 - dispatched: wait. Later passes only poll the plan, so a step is never dispatched twice. A swap the DEX refuses sets `dispatched` back to `false` and is retried with a fresh `min_out`.
 
 `min_out` = `floor(quote * (10000 - EXECUTION_SLIPPAGE_BPS) / 10000)`, at least 1, where the quote comes from the mock DEX view `get_rate { token_in, token_out }` (`out = in * num / den`, floored) on the account in `execution_dex`. Dump quotes loser coin to USDC; Buy and Burn quote USDC to the winner coin. A zero quote, a missing rate or a failing view means nothing is dispatched and the step is retried next pass.
-
-## Foreign-chain execution (`EXECUTION_MODE=foreign`)
-
-> **Warning: this path moves real value on a real chain.** Exercise it first on Base Sepolia (chain id 84532) with test tokens, and only then, deliberately, on any other chain. The agent signs through the arena, so a wrong token map, router or fee tier can send funds to the wrong place within the limits the contract enforces (router, treasury and burn addresses only).
-
-The owner configures the signer, chain, router, treasury and burn addresses with `set_foreign`; `execution_dex` stays unset. Each battle signs from its own EVM address, derived by the signer from the arena account and the path `valtrum-battle-<id>`. That address must hold the loser coin and some native coin for gas before settlement; nothing in this repository moves funds there.
-
-Per plan step, in order, the executor does the following. All of it is derived from chain state (the plan's `done` flags, the battle's signature requests, receipts, the token allowance), so a restart resumes instead of repeating.
-
-1. Dump: swap the loser coin for USDC. Buy: swap USDC for the winner coin. Burn: swap USDC for the winner coin with the burn address as recipient. Return: transfer USDC to the treasury address. Swaps use Uniswap V3 `exactInputSingle` on the configured router with the configured fee tier. A zero-amount step is reported as 0 without a transaction.
-2. Check the wallet holds enough of the token to spend, and read the quote (`min_out`) from the quoter. No quote, no signature (nothing is sent, not even an approval).
-3. If the router's allowance is below the amount, request, send and confirm an `approve` for exactly that amount first. An allowance that is already enough skips it.
-4. Request the signature with `request_signature` (nonce from the pending transaction count, fees from the node, gas limit = estimate + 20%), poll `get_signature_request`, and on `Failed` call `retry_signature` while the contract allows it (5 attempts).
-5. Check the signed bytes (hash, chain id, target contract, calldata), send them unless the node already knows the transaction, and wait for the receipt with the configured confirmations.
-6. The realized amount is the sum of ERC-20 `Transfer` logs of the proceeds token to the step's recipient (USDC at the wallet for Dump, the winner coin at the wallet for Buy, the winner coin at the burn address for Burn, USDC at the treasury for Return). `report_execution` is then called once by the settlement driver.
-
-A reverted transaction is never reported: the executor raises an error and the battle stays stopped (later passes find the same reverted receipt and raise it again) until someone intervenes. The same holds for exhausted signature attempts, a nonce used by another transaction, and an unfunded wallet; a signature or receipt that is merely slow is picked up again on the next pass.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `FOREIGN_RPC_URL` | required | EVM JSON-RPC endpoint. `https`, or `http` for localhost. May contain an API key: never logged |
-| `FOREIGN_CHAIN_ID` | required | must equal the chain id in the arena's `get_foreign_config` and the one the RPC serves |
-| `FOREIGN_CONFIRMATIONS` | `3` | blocks (including the inclusion block) before a receipt counts, 1 to 100 |
-| `FOREIGN_USDC_ADDRESS` | required | USDC on the foreign chain |
-| `FOREIGN_TOKEN_MAP` | required | JSON object of NEAR token account id to EVM address, e.g. `{"pepe.testnet":"0x..."}` |
-| `FOREIGN_FEE_TIER` | `3000` | Uniswap V3 pool fee: 100, 500, 3000 or 10000 |
-| `FOREIGN_QUOTER_ADDRESS` | required | Uniswap V3 QuoterV2, read with `eth_call` for `min_out` |
-
-Startup fails with a message naming the variable for any missing or malformed value. The agent logs the chain id and a warning that real value moves, never the RPC URL or the key.
-
-Assumptions and limits of this mode:
-
-- The EVM address of a path comes from the signer's `derived_public_key` view (arguments `path`, `predecessor` = arena account, `domain_id` = 0), not from a local key derivation. The key-to-address conversion (keccak of the 64-byte public key) is tested against a known vector; the view's arguments and the `secp256k1:<base58>` key format are taken from the signer's documented interface and have not been run against a live signer from here. The agent does not recover the signer from signed transactions, so a mismatch shows up as an unfunded or wrong address, not as a local check.
-- Token amounts are used as they are: the NEAR and EVM versions of a token must have the same decimals.
-- Fees are fixed when the request is made (twice the next base fee plus the node's tip). A transaction that stays unmined because fees rose is not replaced; it is waited for on every pass.
-- Requests of a step are found by scanning the newest 500 signature requests.
-- Confirmations protect against shallow reorganisations only.
-- Polling is every 5 seconds, up to 40 polls for a signature and 60 for a receipt per pass; then the pass stops for that battle and the next one resumes.
 
 ## RPC endpoints
 
@@ -106,7 +68,7 @@ Assumptions and limits of this mode:
 | `AUDIT_REPORT_ARCHIVE_PATH` | `./.agent-state/audit-reports/archive.json` | archive file. `AUDIT_ARCHIVE_PATH` (the read API / MCP name) is an alias for the same file; both may be set only if equal, otherwise startup fails |
 | `INDEXER_ENABLED` | unset | `true` runs the read-only event indexer on every pass. There is no live block source yet, so `INDEXER_RECORDED_CHAIN` is required and its blocks and finality are **fixture assertions**, not chain state |
 | `INDEXER_RECORDED_CHAIN` | unset | recorded chain file (`arena-indexer-recorded-v1`) |
-| `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the backing and payout contracts) |
+| `INDEXER_CONTRACTS` | arena only | extra comma-separated emitter accounts to allowlist (for example the community token contracts) |
 | `INDEXER_STATE_DIR` | `./.agent-state/indexer` | indexer state directory (single writer) |
 | `INDEXER_RETENTION_DEPTH` | `10000` | finalized blocks kept behind the finalized head; older ones become a hashed summary checkpoint and are pruned (provisional blocks and dedup keys never are) |
 | `INDEXER_ANCHOR_HEIGHT`, `INDEXER_ANCHOR_HASH` | lowest recorded height, genesis | declared start of the processed chain |
@@ -114,7 +76,7 @@ Assumptions and limits of this mode:
 | `INDEXER_GENESIS_HEIGHT`, `INDEXER_GENESIS_HASH`, `INDEXER_PROVIDER_EVIDENCE` | unset | required with `near-data`: the pinned genesis block and the reviewed provider qualification record (a path or short reference). `INDEXER_ANCHOR_HEIGHT` and `INDEXER_ANCHOR_HASH` (parent hash of the first block) are also required |
 | `INDEXER_NEARDATA_URL`, `NEAR_RPC_URL` | `https://<network>.neardata.xyz`, `https://archival-rpc.<network>.near.org` | HTTPS origins without credentials, query or redirects; live mode reads at most 20 blocks per pass |
 
-The indexer has no write authority and an indexer failure never blocks settlement or payout passes.
+The indexer has no write authority and an indexer failure never blocks settlement passes.
 
 ## Limits
 
@@ -158,14 +120,6 @@ Minimum battle timeline with `TWAP_WINDOW_SECS=60`, `AGENT_INTERVAL_SECS=30` (ti
 
 With the default window the same steps take roughly 25 minutes before a lock and 30 minutes of history before settlement.
 
-## Intents fixture (`intents-fixture`, testnet only)
-
-NEAR Intents lists no testnet asset, so the testnet demo uses a local **fixture** of the 1Click API (D29). It is not NEAR Intents and proves no Intents integration; the real `intents` route stays refused.
-
-- `NEAR_NETWORK=testnet pnpm build && pnpm intents:fixture` serves `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit` and `/v0/status` on `127.0.0.1:${INTENTS_FIXTURE_PORT:-8791}`. It refuses to start unless the network is testnet and sends or reads no credentials. `PUT /fixture/solver-mode` with `{"mode":"complete"|"fail"|"refund"}` drives the fake solver.
-- `INTENTS_FIXTURE=1` makes the action service accept `route: "intents-fixture"` on deposits (testnet only; the service refuses to start on any other network). Every preview, status, response and log line carries the fixture label.
-- Tests: `test/intents-fixture/` (golden and drift tests against `docs/evidence/2026-11-09-intents-routes.json`, solver, route, server and trace tests; no network). Mapping and migration: `docs/intents-asset-mapping.md`.
-
 
 ## Audit archive: producer and consumer config
 
@@ -186,26 +140,6 @@ ARENA_CONTRACT_ID=arena.example.testnet
 - `inspect_audit` keeps the historical `result`, the read-time `freshness` (`fresh`/`expired`/`not_applicable`) and `currentApproval: notEstablished` separate. An empty answer is labeled (archive missing, producer disabled or battle not audited yet); a corrupt archive is an error, not an empty history.
 - Retention: there is no pruning; capacity is finite and a full archive is a visible sink error. Retention policy is an open decision.
 
-## Payout roles (relayer and operator)
-
-Two separate processes, each with its own NEAR account and key. A process refuses to start if the other role's variables or the arena agent key (`AGENT_PRIVATE_KEY[_FILE]`) are in its environment. The browser, the read API/MCP and the arena agent never hold either key. The arena agent's optional reconciler (`PAYOUT_RECONCILE_ENABLED`) is unchanged: it never requests signatures and never holds the operator key.
-
-| Variable | Role | Meaning |
-| --- | --- | --- |
-| `PAYOUT_CONTRACT_ID`, `PAYOUT_EVM_RPC_URL` (https), `PAYOUT_CHAIN_ID`, `PAYOUT_INTERVAL_SECS` | both | payout contract, source-chain read RPC (may embed a key: not logged), the one chain every payout must name, pass interval (default 30, min 5) |
-| `PAYOUT_RELAYER_ACCOUNT_ID`, `PAYOUT_RELAYER_PRIVATE_KEY` or `_FILE` | relayer | must be the relayer fixed at payout contract initialization |
-| `PAYOUT_RELAYER_MAX_FEE_PER_GAS_WEI` | relayer | fee cap of the first request; the contract still enforces its registered cap |
-| `PAYOUT_SIGNING_GRACE_SECS` | relayer | how long a signer answer may be missing before the payout is held (default 300) |
-| `PAYOUT_OPERATOR_ACCOUNT_ID`, `PAYOUT_OPERATOR_PRIVATE_KEY` or `_FILE` | operator | must be the operator fixed at initialization |
-| `PAYOUT_OPERATOR_SUBMIT` | operator | `true` submits confirm/revert/restore; default is a dry run that logs the checked proof |
-
-Run: `pnpm -C agent build`, then `pnpm -C agent payout:relayer` and `pnpm -C agent payout:operator`.
-
-- **Relayer pass:** reconcile existing attempts first (rebroadcast the stored signed transaction, record broadcast/pending, hold on missing evidence), then `request_signature` for an `authorized` payout that has no attempt, names the configured chain, whose nonce slot is unused and which reconciliation cleared. Eligibility comes from contract state, so a restart, lost response or duplicate pass never creates a second request; a failed or unconfirmed request is logged and never retried in the same pass.
-- **Operator pass:** reads from its own RPC, builds the proof from finalized chain state, re-checks it against the payout's contract view, then submits. It confirms only an exact finalized transfer (token, sender, destination, amount) of a recorded attempt; it restores only after every attempt is proven reverted and the nonce slot is finalized. Wrong or partial evidence, a used nonce without a matching receipt, a reorg or a client timeout leave the payout open (`reconciliation_required`); a timeout never restores liability.
-- **Status references** (for the read API and portfolio): structured log lines `payout relayer pass` (`requested`, `skipped[]`, `errors`), `payout operator pass` (`results[]` with `submitted|dry_run|refused|failed`, `unresolved`, `errors`), `payout reconciled` (per payout `kind`) and the contract's `get_payout` / `list_open_payouts` state. A signature, a pending transaction or a timeout is never delivered or restored funds; only `confirmed` and `restored` are terminal.
-- **Restart/recovery:** just restart the process. No in-memory state is required for safety. After an operator `failed` result, check `get_payout` and let the next pass re-read the chain.
-- **Not live proof:** everything above is fixture-tested. Live release stays gated by #148 (custody spendability) and #80 (end-to-end acceptance).
 
 ## Market observations (journal, reads and collector)
 
@@ -248,10 +182,6 @@ Behavior per pass, re-derived from the contract so a restart or a second process
 
 Status: `status.json` in `ORACLE_STATE_DIR` (non-authoritative, no secrets) and the `oracle` component of the application health read (set `ORACLE_STATE_DIR` and the observation scope on the read service and declare `capabilities.oracle` in the manifest). Recovery: stop the process, inspect `status.json` and the contract's round view, then restart; remove `oracle.lock` only after confirming no oracle process runs. Live round proof is not claimed: the oracle account, terms, provider qualification and a funded deployment are owner gates (#80). Qualification status today (`docs/scoring-market-data.md`, recorded 2026-11-08): no candidate token has a compliant circulating-supply source, so market-cap and volume modes cannot run; price gain and lowest drawdown need on-chain pool reads and owner decisions on provider, cadence and tolerance, so `OBSERVATION_QUALIFIED_MODES` stays empty (and the oracle holds every round `mode_unqualified`) until that record exists.
 
-## Custody gate in application health (#148)
-
-`ARENA_APPLICATION_CUSTODY_PATHS` (with `ARENA_APPLICATION_OBSERVATION_SCOPE` naming the deployment, and `capabilities.custody` declared in the manifest) is a JSON array of `{label, depositContract, tokenHolder, payoutSender, holderCodeHash}` (addresses are 20-byte hex, `holderCodeHash` is a 32-byte hex or null for an account without code). The health read's `custody` component runs `assessCustody` on each path: source-chain transfers and payouts are reported enabled only when at least one path exists and every path's token holder is the account the payout contract signs for. Unconfigured, deposit-only (holder is the deposit contract), unreviewed contract-code holders and malformed values all keep them disabled with the reason. The value is operator-asserted facts and the component is never `healthy`: a payout proof needs the live test in `forwarder-deploy-runbook.md`.
-
 ## Player agent program
 
 Two programs exist; read [docs/player-agents.md](../docs/player-agents.md) first. `pnpm -C agent player:auto --config <file> [--live] [--once]` runs **autonomous** agents that play with their own account and balance (join, register, deposit, no approval step; every play is decided by NEAR AI Cloud, so `NEAR_AI_API_KEY` is required; dry run by default, testnet only; example config `player-autonomous.example.json`). The rest of this section describes the **grant** agent.
@@ -284,16 +214,14 @@ Setup: apply `supabase/migrations/*.sql` to the project (every table has row-lev
 
 ## Testnet faucet
 
-The faucet is a NEAR contract (`contracts/faucet`, crate `valtrum-faucet`), not a service: nothing to host and no faucet key to protect. It gives the caller a fixed amount of each backed representation token it holds. It never mints: a representation can only be minted from finalized custody, so the operator funds the contract once (below). Players need only a NEAR testnet account and a little NEAR for gas; the web page at `/faucet` reads the contract over RPC and each claim is a transaction the player's own wallet signs.
+The faucet is a NEAR contract (`contracts/faucet`, crate `valtrum-faucet`), not a service: nothing to host and no faucet key to protect. It gives the caller a fixed amount of each community token it holds. It never mints, so the operator stocks it (below). Players need only a NEAR testnet account and a little NEAR for gas; the web page at `/faucet` reads the contract over RPC and each claim is a transaction the player's own wallet signs.
 
 - **Claim:** `claim(token)`. The claimer is always the caller. One claim per account and token per cooldown (24 h by default) and an optional daily budget per token that bounds what many new accounts can take. A failed transfer restores the cooldown, the budget and the record deposit.
 - **Owner:** `set_token(token, symbol, amount, daily_budget)`, `remove_token`, `set_cooldown_secs`, `set_paused`, `set_owner`, `withdraw_ft`, `withdraw_near`.
 - **Web:** set `NEXT_PUBLIC_FAUCET_CONTRACT_ID` in `web/.env.local`.
 - **Tests:** `cargo test -p valtrum-faucet`.
 
-### Funding the faucet (operator)
+### Stocking the faucet (operator)
 
-`pnpm -C agent faucet:plan plan --faucet <contract account> --operator <account> --battle <open lifecycle battle id> --depositor <0x address> [--tokens 1000000] [--claim 100] [--daily 100000] [--symbols CASHCAT,WALLET]` prints the ordered steps and exact commands to deploy the contract and put backed representation on it for all six tokens (default stock 1,000,000 per token, which serves 10,000 claims of 100). It prints text only: it sends nothing, reads no key and makes no network call. Every step that sends a transaction is marked, names its signer and refers to keys by environment variable name; you review and run each one yourself. `faucet:plan attest --file <verify output>` turns a verified custody verdict into the registry `attest` call for the verifier account.
-
-Prerequisites it checks for you: an open lifecycle battle that includes the backings (`claim_receipt` fails closed without one; one battle can hold all six tokens), separate operator and faucet accounts, and a reachable Robinhood RPC. Wait for the finalized block once for all deposits, then verify, attest, claim the receipt and claim the representation per token. This is the first live run of that path on testnet.
+The faucet on testnet holds 1,000,000 of each community token (100 per claim, 100,000 per day). To restock a token, register the faucet on the token contract (`storage_deposit`), transfer tokens to it with `ft_transfer`, and call `set_token(token, symbol, amount, daily_budget)` as the faucet owner.
 

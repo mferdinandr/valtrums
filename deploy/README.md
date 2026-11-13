@@ -85,7 +85,7 @@ How a user or operator verifies it:
 - Price history for TWAPs accrues from the agent's own samples; after a long outage the fetcher refuses to write prices until enough history exists.
 - Final prices use the 30 minutes before the pass that settles, so settle promptly after `end_time`.
 - A dispatched settlement step that never gets proceeds is logged as `STUCK STEP` and not retried; the contract has no reset method.
-- Legacy foreign EVM execution exists; live signer assumptions and receipt/reporting limits are documented in [agent/README.md](../agent/README.md). Target Robinhood custody and original-token payouts remain unimplemented.
+- The arena runs on NEAR only. The agent reads Robinhood Chain mainnet for prices and liquidity and never sends transactions there.
 - Legacy quotes come from mock DEX rates or Ref exchange returns, depending on MARKET_DATA. Other sources require an adapter.
 
 See [agent/README.md](../agent/README.md) for the full list.

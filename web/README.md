@@ -6,7 +6,7 @@ One Next.js application for the lifecycle arena on NEAR testnet. There is no leg
 | --- | --- |
 | `/` | Landing scene |
 | `/arena`, `/arena/new`, `/arena/<id>` | Battle list, creation, and one battle (communities, deposits, rounds) |
-| `/portfolio` | Your positions and payout state |
+| `/portfolio` | Your positions, rewards to claim and winners' votes |
 | `/terminal` | Lifecycle intent terminal (see below) |
 | `/agents` | Grant and revoke player-agent budgets on the player-policy contract |
 | `/faucet` | Claim test tokens from the faucet contract (up to two tokens per wallet approval) |
@@ -26,7 +26,7 @@ Configuration lives in `web/.env.local` (see [.env.example](../.env.example) for
 
 ## Terminal
 
-The `/terminal` page is the lifecycle intent terminal (OpenSpec `arena-mcp-terminal`). A prompt in English or Bahasa Indonesia becomes one validated intent (`create_battle`, `register_position`, `deposit` or `payout`), then the same reviewed call, canonical preview comparison, wallet signature and verified receipt as the other lifecycle pages; a deposit's position credit is read separately. Communities are numbered from 1, amounts are exact whole base units, and tokens are matched by registry address through `/api/arena/v1/assets` (never invented). Payout is reviewed but cannot be submitted until spendable custody (#148) is proven and the contract exposes an entitlement. Without `NEAR_AI_API_KEY` the deterministic rules parse; with it, `/api/terminal/lifecycle` asks the model (server-only `NEAR_AI_BASE_URL` and `NEAR_AI_MODEL`) and still validates its reply strictly, falling back to the rules. Model output never authorizes anything. Previews and signing also need the read service with actions enabled (`ACTION_STORE_PATH` in the agent environment).
+The `/terminal` page is the lifecycle intent terminal (OpenSpec `arena-mcp-terminal`). A prompt in English or Bahasa Indonesia becomes one validated intent (for example `create_battle`, `register_position` or `deposit`), then the same reviewed call, canonical preview comparison, wallet signature and verified receipt as the other lifecycle pages; a deposit's position credit is read separately. Communities are numbered from 1, amounts are exact whole base units, and tokens are matched by registry address through `/api/arena/v1/assets` (never invented). Without `NEAR_AI_API_KEY` the deterministic rules parse; with it, `/api/terminal/lifecycle` asks the model (server-only `NEAR_AI_BASE_URL` and `NEAR_AI_MODEL`) and still validates its reply strictly, falling back to the rules. Model output never authorizes anything. Previews and signing also need the read service with actions enabled (`ACTION_STORE_PATH` in the agent environment).
 
 ## Faucet
 
@@ -41,4 +41,4 @@ A battle that is not locked yet shows a display-only chart of the competing toke
 - Lines stay flat while a pool has no trades, because the price only changes on a swap.
 - If a restricted network blocks the RPC host, point `PRICE_PREVIEW_RPC_URL` at a reachable relay. Use the dedicated name: a `REFERENCE_RPC_URL` exported in the shell would otherwise override `.env.local` for the dev server.
 
-See [current state](../docs/current-state.md), [deployment](../docs/deployment.md) and [planned agent/MCP interfaces](../docs/interfaces.md). The target must display reward entitlement, confirmed foreign transfer and DAO principal separately and enforce player budgets/expiry outside the browser.
+See [current state](../docs/current-state.md), [deployment](../docs/deployment.md) and [planned agent/MCP interfaces](../docs/interfaces.md). The target must display reward entitlements and DAO principal separately and enforce player budgets/expiry outside the browser.
