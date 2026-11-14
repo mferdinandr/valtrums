@@ -1,4 +1,5 @@
 import type { CallReview } from "./create-review";
+import { localTime } from "../local-time";
 
 /**
  * Player-agent grants (OpenSpec `arena-player-agents`). A grant is created and revoked by the user's own wallet on
@@ -133,7 +134,7 @@ export function buildGrantReview(form: GrantForm, ctx: GrantContext): GrantRevie
       { label: "Per action", value: `${form.perAction} base units` },
       { label: "Total budget", value: `${form.cumulative} base units` },
       { label: "Gas per action", value: `${gas} Tgas` },
-      { label: "Valid until", value: new Date(expiresAtMs).toISOString() },
+      { label: "Valid until", value: localTime(expiresAtMs) },
       { label: "Scope", value: form.battleId === "" ? "any battle" : `battle #${form.battleId}` },
       { label: "Grant id", value: localIdHex },
       { label: "Storage deposit (upper bound)", value: `${GRANT_STORAGE_DEPOSIT_YOCTO} yoctoNEAR` },

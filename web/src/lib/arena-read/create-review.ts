@@ -1,5 +1,5 @@
 import type { ScoringMode } from "./lifecycle";
-import { startTimeProblems, utc } from "./open-arena";
+import { localTime, startTimeProblems } from "./open-arena";
 
 /**
  * Review of the calls that create a battle (D41). A battle exists only with its creator's deposit: the creator
@@ -97,7 +97,7 @@ export function buildCreatorDepositReview(
       { label: "Recipient", value: arenaContract },
       { label: "Amount", value: `${deposit.amount} base units of ${name}` },
       { label: "Challenge", value: mode },
-      { label: "Start time", value: `${utc(Number(startAtMs))} (${startAtMs} ms)` },
+      { label: "Start time", value: `${localTime(Number(startAtMs))} (${startAtMs} ms)` },
       { label: "Attached deposit", value: "1 yoctoNEAR (required by ft_transfer_call)" },
       { label: "Gas", value: `${CREATE_GAS_TGAS} Tgas` },
     ],
