@@ -245,4 +245,34 @@ describe("runOnce lifecycle audit hook and config (fixture-only)", () => {
     expect(() => loadAuditConfig({ ...env, AUDIT_REFERENCE_REGISTRY: "[]" }, 30)).toThrow(/on-chain registry/);
     expect(() => loadAuditConfig({ ...env, AUDIT_REFERENCE_REGISTRY: "" }, 30)).toThrow(/on-chain registry/);
   });
+
+  it("reads each finished battle once per pass and does not scan or re-read it while auditing the open one", async () => {
+    const views: Record<number, LifecycleBattleView> = {
+      1: { ...view(true) }, 2: { ...view(true) }, 3: { ...view(true) }, 4: { ...view(true) }, 5: view(),
+    };
+    const reads = new Map<number, number>();
+    const counting: LifecycleAuditSource = {
+      count: async () => 5,
+      get: async (id) => {
+        reads.set(id, (reads.get(id) ?? 0) + 1);
+        return views[id] ?? null;
+      },
+    };
+    const pass = createLifecycleAuditPass({
+      source: counting,
+      refresh: {
+        policy: FIXTURE_RESOLVED,
+        registry: staticReferenceRegistry(registry),
+        now: () => NOW,
+        refreshAheadMs: 60_000,
+        fetchGoPlus: async () => refGoplus(),
+        fetchLp: async () => refLp("10001"),
+        submitter: new AuditSubmitter("arena.testnet", { call: async () => undefined } as never),
+        records: new Map(),
+      },
+    });
+    expect(await pass()).toMatchObject({ errors: 0 });
+    // Finished battles: one read in discovery, nothing more.
+    for (const id of [1, 2, 3, 4]) expect(reads.get(id)).toBe(1);
+  });
 });
