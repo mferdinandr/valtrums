@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="web/public/brand/valtrums-home.png" alt="Valtrums home page" width="720" />
+</p>
+
+<p align="center">
   <img src="web/public/brand/valtrum-logo.png" alt="Valtrums logo" width="250" />
 </p>
 
