@@ -147,8 +147,9 @@ describe("failedToStart", () => {
 
 describe("localTime", () => {
   const ms = Date.UTC(2026, 10, 14, 3, 20);
-  it("shows the moment in the given time zone and names the zone", () => {
-    expect(localTime(ms, "Asia/Jakarta")).toBe("14 Nov 2026, 10:20 GMT+7");
-    expect(localTime(ms, "America/New_York")).toBe("13 Nov 2026, 22:20 GMT-5");
+  it("shows day, month, year and a 12-hour clock with AM or PM in the given time zone", () => {
+    expect(localTime(ms, "Asia/Jakarta")).toBe("14 Nov 2026, 10:20 AM");
+    expect(localTime(ms, "America/New_York")).toBe("13 Nov 2026, 10:20 PM");
+    expect(localTime(Date.UTC(2026, 10, 14, 12, 5), "Asia/Jakarta")).toBe("14 Nov 2026, 7:05 PM");
   });
 });
