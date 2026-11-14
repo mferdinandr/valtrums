@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionWallet, useWallet } from "@/components/providers";
-import { ActionSession, createActionWallet } from "@/lib/arena-read/action-session";
-import { previewCreate } from "@/lib/arena-read/create-flow";
-import type { CallReview } from "@/lib/arena-read/create-review";
-import { buildEscrowRefundReview, buildRefundReview, escrowRefundRequest, refundRequest } from "@/lib/arena-read/open-arena";
+import { txHashOf } from "@/lib/arena-read/action-session";
+import { outcomeFailure } from "@/lib/arena-read/claim";
+import { buildRefundBatch } from "@/lib/arena-read/open-arena";
 import { readCreatorEscrow, readMyPositions } from "@/lib/arena-read/positions";
 import { config } from "@/lib/config";
-import { executeTerminalAction } from "@/lib/terminal/actions";
 
 /** One thing the connected account can take back from a cancelled battle. */
 export type Claim =
@@ -23,20 +21,24 @@ export type RefundState =
 
 const POLL_MS = 5_000;
 
+const CONFIRM_TRIES = 8;
+const CONFIRM_DELAY_MS = 1_000;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
- * Takes back everything the connected account has in a cancelled battle with one click: each credited position
- * and, for the creator, the deposit still held in escrow. Every claim is previewed and compared with the call the
- * page reviewed before the wallet is asked for anything, exactly like a single action; a failure stops the run and
- * a second click continues from what is still owed, so nothing is claimed twice.
+ * Takes back everything the connected account has in a failed battle with one click and one wallet approval: each
+ * credited position and, for the creator, the deposit still held in escrow. With `cancelFirst` the same transaction
+ * also cancels the battle, so a depositor never has to cancel as a separate step. The calls are signed as one
+ * transaction to the arena (split only if their gas would not fit); afterwards what is still owed is read again, and
+ * a failure leaves the next click to continue from what is left, so nothing is claimed twice.
  */
-export function useRefund(arena: string, battleId: number, communityCount: number, nameOf: (community: number) => string) {
+export function useRefund(arena: string, battleId: number, communityCount: number, nameOf: (community: number) => string, cancelFirst = false) {
   const { accountId } = useWallet();
   const getWallet = useActionWallet();
   const [claims, setClaims] = useState<Claim[] | null>(null);
   const [state, setState] = useState<RefundState>({ step: "idle" });
   const scope = `${accountId}:${arena}:${battleId}`;
   const [receipts, setReceipts] = useState<{ scope: string; hashes: string[] }>({ scope, hashes: [] });
-  const session = useRef<{ account: string; value: ActionSession } | null>(null);
   const busy = useRef(false);
 
   const read = useCallback(async (): Promise<Claim[]> => {
@@ -53,7 +55,6 @@ export function useRefund(arena: string, battleId: number, communityCount: numbe
   }, [accountId, arena, battleId, communityCount]);
 
   useEffect(() => {
-    session.current = null;
     setState({ step: "idle" });
     if (!accountId) {
       setClaims(null);
@@ -78,35 +79,48 @@ export function useRefund(arena: string, battleId: number, communityCount: numbe
     try {
       // What is still owed right now, not what the page showed a moment ago.
       const todo = await read();
-      setState({ step: "running", done: 0, total: todo.length });
+      const batch = buildRefundBatch(arena, battleId, {
+        cancel: cancelFirst,
+        positions: todo.flatMap((c) => (c.kind === "position" ? [{ community: c.community, label: nameOf(c.community) }] : [])),
+        escrow: todo.some((c) => c.kind === "escrow"),
+      });
+      if (!batch.ok) throw new Error(batch.problems.join("; "));
+      const total = batch.transactions.length;
+      setState({ step: "running", done: 0, total });
       const wallet = await getWallet();
-      if (session.current?.account !== accountId) session.current = { account: accountId, value: new ActionSession({ accountId, wallet }) };
-      const active = session.current.value;
-      for (const [i, claim] of todo.entries()) {
-        const review: CallReview | null = (() => {
-          const r = claim.kind === "position"
-            ? buildRefundReview(arena, battleId, claim.community, nameOf(claim.community))
-            : buildEscrowRefundReview(arena, battleId);
-          return r.ok ? r : null;
-        })();
-        if (!review) throw new Error("the reviewed call is not valid");
-        const request = claim.kind === "position" ? refundRequest(battleId, claim.community) : escrowRefundRequest(battleId);
-        const deps = { session: await active.ensure(), wallet: createActionWallet(active, { accountId, wallet }) };
-        const outcome = await previewCreate(request, review, accountId, deps);
-        if (outcome.step === "blocked") throw new Error(`the prepared transaction does not match what you reviewed (${outcome.reasons.join("; ")}). Nothing was signed.`);
-        const result = await executeTerminalAction(outcome.previewed, deps);
-        if (result.txHash) { const hash = result.txHash; setReceipts((previous) => ({ scope, hashes: [...new Set([...(previous.scope === scope ? previous.hashes : []), hash])] })); }
-        if (!result.ok) throw new Error(`${result.reason}${result.txHash ? ` (transaction ${result.txHash})` : ""}`);
-        setState({ step: "running", done: i + 1, total: todo.length });
+      const remember = (outcome: unknown) => {
+        const hash = txHashOf(outcome);
+        if (hash) setReceipts((previous) => ({ scope, hashes: [...new Set([...(previous.scope === scope ? previous.hashes : []), hash])] }));
+      };
+      if (wallet.signAndSendTransactions && total > 1) {
+        const outcome = await wallet.signAndSendTransactions({ transactions: batch.transactions });
+        for (const o of Array.isArray(outcome) ? outcome : [outcome]) remember(o);
+        const failure = outcomeFailure(outcome);
+        if (failure) throw new Error(`The refund failed: ${failure}`);
+      } else {
+        for (const [i, tx] of batch.transactions.entries()) {
+          const outcome = await wallet.signAndSendTransaction(tx);
+          remember(outcome);
+          const failure = outcomeFailure(outcome);
+          if (failure) throw new Error(`The refund failed: ${failure}`);
+          setState({ step: "running", done: i + 1, total });
+        }
       }
-      setClaims(await read().catch(() => []));
+      // The chain view can trail the transaction by a few blocks: wait until nothing is owed any more.
+      let left = await read();
+      for (let i = 0; i < CONFIRM_TRIES && left.length > 0; i++) {
+        await sleep(CONFIRM_DELAY_MS);
+        left = await read();
+      }
+      setClaims(left);
+      if (left.length > 0) throw new Error("The refund is not recorded yet.");
       setState({ step: "done" });
     } catch (e) {
       setState({ step: "failed", message: e instanceof Error ? e.message : String(e) });
     } finally {
       busy.current = false;
     }
-  }, [accountId, getWallet, read, arena, battleId, nameOf, scope]);
+  }, [accountId, getWallet, read, arena, battleId, nameOf, scope, cancelFirst]);
 
   return { claims, state, run, txHashes: receipts.scope === scope ? receipts.hashes : [], connected: !!accountId && !!getWallet };
 }
