@@ -11,6 +11,7 @@ import { JoinDeposit } from "@/components/lifecycle-join-deposit";
 import { LifecycleParticipate } from "@/components/lifecycle-participate";
 import { BattleResult } from "@/components/battle-result";
 import { DaoDecision } from "@/components/dao-decision";
+import { OnchainProof } from "@/components/onchain-proof";
 import { WinnerCelebration } from "@/components/winner-celebration";
 import { MyPosition } from "@/components/my-position";
 import { OpenArenaHeader, OpenArenaPanel } from "@/components/lifecycle-open-arena";
@@ -171,6 +172,10 @@ export function LifecycleBattleDetail({
             nameOf={name}
           />
         </div>
+      )}
+
+      {safeBattleId !== null && namespace.arenaContract && (
+        <OnchainProof contract={namespace.arenaContract} battleId={safeBattleId} />
       )}
 
       <div>
