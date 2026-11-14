@@ -8,7 +8,7 @@ export const ENTITLEMENT_DEPOSIT_YOCTO = 10_000_000_000_000_000_000_000n;
 /** Contract bound on `max_entitlements` of `settle_lifecycle_battle`. */
 export const MAX_SETTLE_BATCH = 15;
 /** Only the newest battles are visited each pass; older ones were settled long ago. */
-export const DEFAULT_RECENT_BATTLES = 20;
+export const DEFAULT_RECENT_BATTLES = 10;
 /** Stop after this many batches per battle in one pass; the next pass continues. */
 export const DEFAULT_MAX_BATCHES = 10;
 /** After a batch that did not advance the cursor, wait this long before trying the same battle again. */
