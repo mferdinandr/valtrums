@@ -135,7 +135,7 @@ export function LifecycleBattleDetail({
       <div className="match-position-content">
       <OpenArenaHeader phase={open} />
 
-      <div>
+      <div className="empty:hidden">
       {blockers.length > 0 && (
         <div className="lifecycle-callout">
           <strong>Deposits are not open yet</strong>
