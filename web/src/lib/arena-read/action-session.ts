@@ -22,6 +22,13 @@ export interface WalletLike {
     receiverId: string;
     actions: Array<{ type: "FunctionCall"; params: { methodName: string; args: object; gas: string; deposit: string } }>;
   }): Promise<unknown>;
+  /** Several transactions under one approval. Not every wallet offers it; callers fall back to one at a time. */
+  signAndSendTransactions?(params: {
+    transactions: Array<{
+      receiverId: string;
+      actions: Array<{ type: "FunctionCall"; params: { methodName: string; args: object; gas: string; deposit: string } }>;
+    }>;
+  }): Promise<unknown>;
 }
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;

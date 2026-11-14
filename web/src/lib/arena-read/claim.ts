@@ -73,6 +73,59 @@ export function buildRegisterReview(backing: string, account: string, label?: st
   };
 }
 
+export interface ClaimBatchItem {
+  backing: string;
+  /** What the token owes the account right now, in base units. */
+  available: string;
+  registered: boolean;
+}
+
+export interface BatchTransaction {
+  receiverId: string;
+  actions: Array<{ type: "FunctionCall"; params: { methodName: string; args: object; gas: string; deposit: string } }>;
+}
+
+const gasUnits = (tgas: string): string => (BigInt(tgas) * 10n ** 12n).toString();
+
+/**
+ * Everything the account must sign to take its prizes, one transaction per token: a registration-only storage deposit
+ * first where the account is not registered, then the claim, both on the same contract so they run in order. The calls
+ * are the ones `buildRegisterReview` and `buildClaimReview` describe, so a wallet shows exactly what the page reviewed.
+ * Only the connected account's own entitlement can be claimed, so no server preview is needed.
+ */
+export function buildClaimBatch(account: string, items: readonly ClaimBatchItem[]): { ok: true; transactions: BatchTransaction[] } | { ok: false; problems: string[] } {
+  const transactions: BatchTransaction[] = [];
+  const problems: string[] = [];
+  for (const item of items) {
+    const claim = buildClaimReview(item.backing, item.available);
+    if (!claim.ok) {
+      problems.push(...claim.problems);
+      continue;
+    }
+    const actions: BatchTransaction["actions"] = [];
+    if (!item.registered) {
+      const register = buildRegisterReview(item.backing, account);
+      if (!register.ok) {
+        problems.push(...register.problems);
+        continue;
+      }
+      actions.push({ type: "FunctionCall", params: { methodName: register.method, args: register.args as object, gas: gasUnits(register.gasTgas), deposit: register.depositYocto } });
+    }
+    actions.push({ type: "FunctionCall", params: { methodName: claim.method, args: claim.args as object, gas: gasUnits(claim.gasTgas), deposit: claim.depositYocto } });
+    transactions.push({ receiverId: item.backing, actions });
+  }
+  return problems.length > 0 ? { ok: false, problems } : { ok: true, transactions };
+}
+
+/** The first failure in a wallet's answer to a transaction or a batch of them, or null. Wallets return one outcome or a list. */
+export function outcomeFailure(outcome: unknown): string | null {
+  for (const o of Array.isArray(outcome) ? outcome : [outcome]) {
+    const failure = (o as { status?: { Failure?: unknown } } | null)?.status?.Failure;
+    if (failure !== undefined && failure !== null) return typeof failure === "string" ? failure : JSON.stringify(failure).slice(0, 200);
+  }
+  return null;
+}
+
 /** Whether `account` is registered on a token (NEP-145 `storage_balance_of`). */
 export async function readRegistered(rpcUrl: string, backing: string, account: string): Promise<boolean> {
   return (await rpcView<unknown>(rpcUrl, backing, "storage_balance_of", { account_id: account })) != null;
