@@ -117,11 +117,8 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
 
           <Label>
             Start time (your local time)
-            <Input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} aria-describedby="start-help" />
+            <Input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} />
           </Label>
-          <p id="start-help" className="-mt-4 text-xs text-mute">
-            {startAtMs ? `Starts ${localTime(Number(startAtMs))}. ` : ""}1 minute to 7 days from now.
-          </p>
           </div>
 
           <div hidden={step !== 1} className="space-y-2">
