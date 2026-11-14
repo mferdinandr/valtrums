@@ -29,6 +29,7 @@ import { createLifecycleAuditPass, NearLifecycleAuditSource } from "./audit/life
 import type { AuditRecord } from "./audit/decision.js";
 import { LifecycleLocker } from "./audit/lifecycle-lock.js";
 import { LifecycleCanceller } from "./audit/lifecycle-cancel.js";
+import { LifecycleSettler } from "./lifecycle-settle.js";
 import { BackingRefresher, NearBackingStatusSource } from "./audit/backing-refresh.js";
 import { createLpFetcher } from "./audit/lp-fetcher.js";
 import { buildAuditPolicy } from "./audit/policy.js";
@@ -201,6 +202,20 @@ async function main(): Promise<void> {
       })
     : undefined;
 
+  // Prize settlement of finished lifecycle battles: off unless LIFECYCLE_SETTLE_ENABLED=true. Any account may call
+  // `settle_lifecycle_battle` and the arena fixes the split, so the agent only pays the per-prize storage deposit.
+  const lifecycleSettler =
+    process.env.LIFECYCLE_SETTLE_ENABLED?.trim() === "true"
+      ? new LifecycleSettler({ contractId: cfg.arenaContractId, transport, now: () => new Date(), log })
+      : undefined;
+  const lifecycleSettle = lifecycleSettler
+    ? async () => {
+        const out = await lifecycleSettler.pass();
+        if (out.settled > 0) log.info("lifecycle prizes recorded", { prizes: out.settled });
+        return { errors: out.errors };
+      }
+    : undefined;
+
   // Payout restart reconciliation: only when PAYOUT_RECONCILE_ENABLED=true. It runs before the
   // first pass and on every pass; it never requests a signature or creates a spend.
   const payoutCfg = loadPayoutReconcileConfig(process.env);
@@ -270,7 +285,7 @@ async function main(): Promise<void> {
         const indexed = await indexer.sync();
         if (indexed) log.info("indexer sync complete", { status: indexed.status, reason: indexed.reason });
       }
-      const report = await runOnce({ ...deps, watchdog, ...(lifecycleAudit ? { lifecycleAudit } : {}) });
+      const report = await runOnce({ ...deps, watchdog, ...(lifecycleAudit ? { lifecycleAudit } : {}), ...(lifecycleSettle ? { lifecycleSettle } : {}) });
       if (report.errors === 0) health.markPassSucceeded();
       log.info("pass complete", { ...report, watchdog });
     },

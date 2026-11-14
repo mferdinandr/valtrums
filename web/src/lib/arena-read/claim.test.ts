@@ -1,6 +1,6 @@
 // FIXTURE-ONLY: no chain is read.
 import { describe, expect, it } from "vitest";
-import { buildClaimReview, buildRegisterReview, buildSettleReview, claimRequest, readEntitlement, readRegistered, REGISTER_DEPOSIT_YOCTO, settleBatch, settleRequest } from "./claim";
+import { buildClaimBatch, buildClaimReview, outcomeFailure, buildRegisterReview, buildSettleReview, claimRequest, readEntitlement, readRegistered, REGISTER_DEPOSIT_YOCTO, settleBatch, settleRequest } from "./claim";
 
 describe("claim to the NEAR wallet", () => {
   it("is one yocto call with the amount, matching the action service's preview", () => {
@@ -67,5 +67,32 @@ describe("settle the prizes", () => {
   });
   it("refuses when everything is recorded", () => {
     expect(buildSettleReview("arena.testnet", 35, { recorded: 4, total: 4 }).ok).toBe(false);
+  });
+});
+
+describe("claim all in one approval", () => {
+  const A = "cashcat.rep.testnet";
+  const B = "wallet.rep.testnet";
+  it("builds one transaction per token, registering first only where the account is not registered", () => {
+    const out = buildClaimBatch("alice.testnet", [
+      { backing: A, available: "30", registered: true },
+      { backing: B, available: "70", registered: false },
+    ]);
+    if (!out.ok) throw new Error("expected a batch");
+    expect(out.transactions.map((t) => t.receiverId)).toEqual([A, B]);
+    expect(out.transactions[0]?.actions.map((a) => a.params.methodName)).toEqual(["claim_entitlement_as_representation"]);
+    expect(out.transactions[1]?.actions.map((a) => a.params.methodName)).toEqual(["storage_deposit", "claim_entitlement_as_representation"]);
+    expect(out.transactions[1]?.actions[0]?.params).toMatchObject({ args: { account_id: "alice.testnet", registration_only: true }, deposit: REGISTER_DEPOSIT_YOCTO });
+    expect(out.transactions[0]?.actions[0]?.params).toMatchObject({ args: { amount: "30" }, deposit: "1", gas: "30000000000000" });
+  });
+  it("refuses a malformed amount or contract instead of sending a partial batch", () => {
+    expect(buildClaimBatch("alice.testnet", [{ backing: A, available: "0", registered: true }]).ok).toBe(false);
+    expect(buildClaimBatch("alice.testnet", [{ backing: A, available: "5", registered: true }, { backing: "", available: "5", registered: true }]).ok).toBe(false);
+    expect(buildClaimBatch("", [{ backing: A, available: "5", registered: false }]).ok).toBe(false);
+  });
+  it("finds a failure in one outcome or in a list of them", () => {
+    expect(outcomeFailure({ status: { SuccessValue: "" } })).toBeNull();
+    expect(outcomeFailure([{ status: { SuccessValue: "" } }, { status: { Failure: { ActionError: { kind: "x" } } } }])).toContain("ActionError");
+    expect(outcomeFailure(undefined)).toBeNull();
   });
 });
