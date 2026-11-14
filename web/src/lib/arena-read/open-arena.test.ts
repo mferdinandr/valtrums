@@ -4,6 +4,7 @@ import {
   buildCancelReview,
   buildJoinReview,
   buildRefundReview,
+  buildRefundBatch,
   failedToStart,
   isDormantLegacy,
   JOIN_DEPOSIT_YOCTO,
@@ -164,5 +165,34 @@ describe("isDormantLegacy", () => {
     expect(isDormantLegacy({ ...legacy, startAtMs: "1000" })).toBe(false);
     expect(isDormantLegacy({ ...legacy, enteredCount: 1 })).toBe(false);
     for (const status of ["locked", "decided", "cancelled"]) expect(isDormantLegacy({ ...legacy, status })).toBe(false);
+  });
+});
+
+describe("buildRefundBatch", () => {
+  const arena = "arena.test.testnet";
+  it("cancels first and then refunds the position, all in one transaction to the arena", () => {
+    const out = buildRefundBatch(arena, 7, { cancel: true, positions: [{ community: 2 }], escrow: false });
+    if (!out.ok) throw new Error("expected a batch");
+    expect(out.transactions).toHaveLength(1);
+    expect(out.transactions[0]?.receiverId).toBe(arena);
+    expect(out.transactions[0]?.actions.map((a) => a.params.methodName)).toEqual(["cancel_lifecycle_battle", "claim_lifecycle_refund"]);
+    expect(out.transactions[0]?.actions[1]?.params).toMatchObject({ args: { battle_id: 7, community: 2 }, deposit: "1", gas: "60000000000000" });
+  });
+  it("skips the cancel once the arena is cancelled and adds the creator escrow last", () => {
+    const out = buildRefundBatch(arena, 7, { cancel: false, positions: [{ community: 0 }], escrow: true });
+    if (!out.ok) throw new Error("expected a batch");
+    expect(out.transactions[0]?.actions.map((a) => a.params.methodName)).toEqual(["claim_lifecycle_refund", "claim_lifecycle_escrow_refund"]);
+  });
+  it("splits the calls when their gas would exceed one transaction", () => {
+    const positions = [0, 1, 2, 3, 4, 5].map((community) => ({ community }));
+    const out = buildRefundBatch(arena, 7, { cancel: true, positions, escrow: false });
+    if (!out.ok) throw new Error("expected a batch");
+    expect(out.transactions.length).toBeGreaterThan(1);
+    expect(out.transactions.flatMap((t) => t.actions).map((a) => a.params.methodName)[0]).toBe("cancel_lifecycle_battle");
+    for (const t of out.transactions) expect(t.actions.reduce((sum, a) => sum + Number(BigInt(a.params.gas) / 10n ** 12n), 0)).toBeLessThanOrEqual(300);
+  });
+  it("refuses an empty refund and a bad battle id", () => {
+    expect(buildRefundBatch(arena, 7, { cancel: false, positions: [], escrow: false }).ok).toBe(false);
+    expect(buildRefundBatch(arena, 0, { cancel: true, positions: [], escrow: false }).ok).toBe(false);
   });
 });
