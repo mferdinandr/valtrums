@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import {
-  MUSIC_FADE_MS,
+  MUSIC_FADE_SECONDS,
   MUSIC_PREF_KEY,
   MUSIC_SRC,
   MUSIC_VOLUME,
-  fadeVolume,
+  loopEnd,
   parseMusicPref,
   type MusicPref,
 } from "@/lib/background-music";
@@ -28,63 +28,85 @@ function writePref(pref: MusicPref) {
   }
 }
 
+type Player = { ctx: AudioContext; gain: GainNode };
+
 /**
  * Looping background music with a navbar toggle. It lives in the root layout,
  * so it keeps playing across route changes. Browsers only allow sound after a
  * user gesture, so playback starts on the first click, tap or key press.
+ * Web Audio loops the decoded buffer on the exact musical cycle (no MP3 gap).
  */
 export function MusicToggle() {
-  const audio = useRef<HTMLAudioElement | null>(null);
-  const fadeFrame = useRef<number | null>(null);
-  const [pref, setPref] = useState<MusicPref>("on");
+  const player = useRef<Player | null>(null);
+  const starting = useRef<Promise<Player | null> | null>(null);
+  const [pref, setPref] = useState<MusicPref | null>(null);
   const [available, setAvailable] = useState(true);
-  const [ready, setReady] = useState(false);
 
-  const fadeTo = useCallback((target: number, then?: () => void) => {
-    const el = audio.current;
-    if (!el) return;
-    if (fadeFrame.current !== null) cancelAnimationFrame(fadeFrame.current);
-    const from = el.volume;
-    const start = performance.now();
-    const step = (now: number) => {
-      el.volume = fadeVolume(from, target, now - start, MUSIC_FADE_MS);
-      if (now - start < MUSIC_FADE_MS) fadeFrame.current = requestAnimationFrame(step);
-      else {
-        fadeFrame.current = null;
-        then?.();
-      }
-    };
-    fadeFrame.current = requestAnimationFrame(step);
+  const ramp = useCallback((p: Player, to: number) => {
+    const now = p.ctx.currentTime;
+    p.gain.gain.cancelScheduledValues(now);
+    p.gain.gain.setValueAtTime(p.gain.gain.value, now);
+    p.gain.gain.linearRampToValueAtTime(to, now + MUSIC_FADE_SECONDS);
   }, []);
 
-  const play = useCallback(() => {
-    const el = audio.current;
-    if (!el) return;
-    el.play()
-      .then(() => fadeTo(MUSIC_VOLUME))
-      .catch(() => {
-        // Autoplay blocked or decoding failed; the next gesture tries again.
-      });
-  }, [fadeTo]);
+  /** Create the context and start the loop once; later calls reuse it. */
+  const ensurePlayer = useCallback((): Promise<Player | null> => {
+    if (player.current) return Promise.resolve(player.current);
+    if (starting.current) return starting.current;
+    starting.current = (async () => {
+      try {
+        const ctx = new AudioContext();
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        gain.connect(ctx.destination);
+        const res = await fetch(MUSIC_SRC);
+        if (!res.ok) throw new Error(`music ${res.status}`);
+        const buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        source.loopStart = 0;
+        source.loopEnd = loopEnd(buffer.duration);
+        source.connect(gain);
+        source.start();
+        player.current = { ctx, gain };
+        return player.current;
+      } catch {
+        setAvailable(false);
+        return null;
+      } finally {
+        starting.current = null;
+      }
+    })();
+    return starting.current;
+  }, []);
+
+  const play = useCallback(async () => {
+    const p = await ensurePlayer();
+    if (!p) return;
+    await p.ctx.resume().catch(() => undefined);
+    ramp(p, MUSIC_VOLUME);
+  }, [ensurePlayer, ramp]);
+
+  const stop = useCallback(() => {
+    const p = player.current;
+    if (!p) return;
+    ramp(p, 0);
+    window.setTimeout(() => {
+      if (readPref() === "off") void p.ctx.suspend();
+    }, MUSIC_FADE_SECONDS * 1000 + 50);
+  }, [ramp]);
 
   useEffect(() => {
-    const el = new Audio(MUSIC_SRC);
-    el.loop = true;
-    el.preload = "auto";
-    el.volume = 0;
-    const onError = () => setAvailable(false);
-    el.addEventListener("error", onError);
-    audio.current = el;
-    const initial = readPref();
-    setPref(initial);
-    setReady(true);
-
+    setPref(readPref());
     const onGesture = () => {
-      if (readPref() === "on" && el.paused) play();
+      if (readPref() === "on" && player.current?.ctx.state !== "running") void play();
     };
     const onVisibility = () => {
-      if (document.hidden) el.pause();
-      else if (readPref() === "on" && el.currentTime > 0) play();
+      const p = player.current;
+      if (!p) return;
+      if (document.hidden) void p.ctx.suspend();
+      else if (readPref() === "on") void play();
     };
     window.addEventListener("pointerdown", onGesture);
     window.addEventListener("keydown", onGesture);
@@ -93,28 +115,26 @@ export function MusicToggle() {
       window.removeEventListener("pointerdown", onGesture);
       window.removeEventListener("keydown", onGesture);
       document.removeEventListener("visibilitychange", onVisibility);
-      el.removeEventListener("error", onError);
-      if (fadeFrame.current !== null) cancelAnimationFrame(fadeFrame.current);
-      el.pause();
-      audio.current = null;
+      void player.current?.ctx.close();
+      player.current = null;
     };
   }, [play]);
 
   const toggle = () => {
-    const next: MusicPref = pref === "on" ? "off" : "on";
+    const next: MusicPref = pref === "off" ? "on" : "off";
     setPref(next);
     writePref(next);
-    if (next === "on") play();
-    else fadeTo(0, () => audio.current?.pause());
+    if (next === "on") void play();
+    else stop();
   };
 
-  if (!available || !ready) return null;
+  if (!available || pref === null) return null;
   const on = pref === "on";
   return (
     <button
       type="button"
       onClick={toggle}
-      // The window listener would otherwise start the music before toggle() runs.
+      // Keep the window gesture listener from starting music before toggle() runs.
       onPointerDown={(e) => e.stopPropagation()}
       aria-pressed={on}
       aria-label={on ? "Mute background music" : "Play background music"}
