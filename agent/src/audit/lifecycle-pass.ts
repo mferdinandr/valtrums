@@ -66,6 +66,8 @@ export function prewarmAheadMs(startAtMs: number | null, nowMs: number): number 
 export const ASSET_MAPPING_VERSION = "asset-identity-v2";
 
 export class NearLifecycleAuditSource implements LifecycleAuditSource {
+  /** Locked and cancelled battles never change back, so their view is read once and kept. */
+  private readonly finished = new Map<number, LifecycleBattleView>();
   constructor(
     private readonly contractId: string,
     private readonly transport: Pick<NearTransport, "view">,
@@ -74,11 +76,14 @@ export class NearLifecycleAuditSource implements LifecycleAuditSource {
     return Number(await this.transport.view<number | string>(this.contractId, "get_lifecycle_battle_count", {}));
   }
   async get(id: number): Promise<LifecycleBattleView | null> {
-    return (
+    const kept = this.finished.get(id);
+    if (kept) return kept;
+    const view =
       (await this.transport.view<LifecycleBattleView | null>(this.contractId, "get_lifecycle_battle", {
         battle_id: id,
-      })) ?? null
-    );
+      })) ?? null;
+    if (view && (view.locked || view.cancelled)) this.finished.set(id, view);
+    return view;
   }
 }
 
@@ -179,6 +184,12 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
   const provenance: ArchiveProvenance = deps.provenance ?? "recorded";
   // Survives across passes: whether a battle's funded communities were all audit-ready at its last visit.
   const lastFundedReady = new Map<number, boolean>();
+  // Idle battles (no start time, nothing deposited) whose communities were all approved, with how many communities that
+  // was: they are not visited again until a community joins or a deposit makes them a normal battle, because every
+  // visit reads their backing status and repeats the archive.
+  const idleDone = new Map<number, number>();
+  const settledIdle = (id: number, v: LifecycleBattleView | null | undefined): boolean =>
+    !!v && idleDone.get(id) === v.communities.length && isIdleBattle(v);
   return async () => {
     let checked = 0;
     let ready = 0;
@@ -272,13 +283,17 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
     const visitedAt = new Map<number, number>();
     const recheckAt = new Map<number, number>();
     let forced = false;
-    for (const [id, v] of views) if (v && !v.locked && !v.cancelled) open.add(id);
+    for (const [id, v] of views) if (v && !v.locked && !v.cancelled && !settledIdle(id, v)) open.add(id);
     for (let pos = 0; pos < queue.length; pos++) {
       const id = queue[pos]!;
       if (yieldFor(id)) {
         log.info("lifecycle audit yielding to a starting battle", { next: id });
         return { checked, ready, errors };
       }
+      // Locked and cancelled battles never change back and have nothing left to audit: skip them before the
+      // scans and reads below, which would otherwise repeat for every finished battle on every pass.
+      const seen = views.get(id);
+      if (seen && (seen.locked || seen.cancelled || settledIdle(id, seen))) continue;
       try {
         // A token that joined an already-visited (or later-queued) open battle jumps the queue.
         let jumped = false;
@@ -391,6 +406,7 @@ export function createLifecycleAuditPass(deps: LifecycleAuditPassDeps): () => Pr
           shouldYield: () => yieldFor(id),
         });
         log.info("lifecycle audit evaluation complete", { battleId: id, durationMs: Date.now() - auditStarted, ready: result.ready });
+        if (idle && view.communities.every((_, i) => deps.refresh.records.has(`${id}:${i}`))) idleDone.set(id, view.communities.length);
         // Attribution is bounded to the current view's communities and their trusted indices.
         for (let i = 0; i < view.communities.length; i++) {
           const record = deps.refresh.records.get(`${id}:${i}`);
