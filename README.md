@@ -1,4 +1,7 @@
-![Valtrums logo](web/public/brand/valtrum-logo.png)
+<p align="center">
+  <img src="web/public/brand/valtrum-logo.png" alt="Valtrums logo" width="250" />
+</p>
+
 
 # Valtrums
 
