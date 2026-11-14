@@ -10,7 +10,7 @@ import {
   msToLocalInput,
   openPhase,
   readJoinableAssets,
-  startTimeProblems, buildEscrowRefundReview, escrowRefundRequest } from "./open-arena";
+  startTimeProblems, buildEscrowRefundReview, escrowRefundRequest, localTime } from "./open-arena";
 import { battleStatus, type LifecycleCommunity, type LifecycleDetail } from "./lifecycle";
 
 const NOW = 1_800_000_000_000;
@@ -142,5 +142,13 @@ describe("failedToStart", () => {
   it("is false without a usable start time", () => {
     expect(failedToStart({ ...base, startAtMs: null }, 5000)).toBe(false);
     expect(failedToStart({ ...base, startAtMs: "soon" }, 5000)).toBe(false);
+  });
+});
+
+describe("localTime", () => {
+  const ms = Date.UTC(2026, 10, 14, 3, 20);
+  it("shows the moment in the given time zone and names the zone", () => {
+    expect(localTime(ms, "Asia/Jakarta")).toBe("14 Nov 2026, 10:20 GMT+7");
+    expect(localTime(ms, "America/New_York")).toBe("13 Nov 2026, 22:20 GMT-5");
   });
 });

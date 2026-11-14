@@ -29,6 +29,13 @@ export type Review = ({ ok: true } & CallReview) | { ok: false; problems: string
 
 export const utc = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC";
 
+/** A moment in the viewer's own time zone, with the zone named, for example "14 Nov 2026, 10:20 GMT+7". `timeZone` is for tests. */
+export const localTime = (ms: number, timeZone?: string): string =>
+  new Date(ms).toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short",
+    ...(timeZone ? { timeZone } : {}),
+  });
+
 /** Problems with a start time in milliseconds (a decimal string), checked against the arena's window. */
 export function startTimeProblems(startAtMs: string | null, nowMs: number): string[] {
   if (!startAtMs) return ["choose a start time"];

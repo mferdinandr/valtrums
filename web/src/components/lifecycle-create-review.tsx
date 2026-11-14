@@ -23,7 +23,7 @@ import {
 import { formatUnits, parseUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
 import { firstDepositProblems } from "@/lib/arena-read/create-deposit";
-import { localInputToMs, msToLocalInput, utc } from "@/lib/arena-read/open-arena";
+import { localInputToMs, msToLocalInput, localTime } from "@/lib/arena-read/open-arena";
 import { TokenIcon } from "@/components/token-icon";
 import "@/components/lifecycle/lifecycle.css";
 
@@ -120,7 +120,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
             <Input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} aria-describedby="start-help" />
           </Label>
           <p id="start-help" className="-mt-4 text-xs text-mute">
-            {startAtMs ? `Starts ${utc(Number(startAtMs))}. ` : ""}1 minute to 7 days from now.
+            {startAtMs ? `Starts ${localTime(Number(startAtMs))}. ` : ""}1 minute to 7 days from now.
           </p>
           </div>
 
@@ -156,7 +156,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
 
         {step === 2 && <div className="setup-summary">
           <h2>Ready to start a rivalry?</h2>
-          <dl><div><dt>Challenge</dt><dd>{MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}</dd></div><div><dt>Starts</dt><dd>{startAtMs ? utc(Number(startAtMs)) : "Choose a start time"}</dd></div><div><dt>Your deposit</dt><dd>{label ?? "Choose a crew and amount"}</dd></div></dl>
+          <dl><div><dt>Challenge</dt><dd>{MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}</dd></div><div><dt>Starts</dt><dd>{startAtMs ? localTime(Number(startAtMs)) : "Choose a start time"}</dd></div><div><dt>Your deposit</dt><dd>{label ?? "Choose a crew and amount"}</dd></div></dl>
           <p>Your deposit waits for approval. Your wallet will show each transaction before signing. Your first battle may require a one-time 0.05 NEAR storage prepayment, which is withdrawable.</p>
         </div>}
         {step === 2 && problems.length > 0 && (
