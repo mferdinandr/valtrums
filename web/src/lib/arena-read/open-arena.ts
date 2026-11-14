@@ -1,6 +1,7 @@
 import type { CallReview } from "./create-review";
 import type { LifecycleDetail } from "./lifecycle";
 import { rpcView } from "./agent-grant";
+import { gasUnits, type BatchTransaction } from "./claim";
 
 /**
  * Open arena (D34 to D36): a battle is created with a start time and no invited communities; before the
@@ -222,6 +223,46 @@ export function failedToStart(b: { status: string; startAtMs: string | null; ent
  */
 export function isDormantLegacy(b: { status: string; startAtMs: string | null; enteredCount: number }): boolean {
   return b.status === "open" && !b.startAtMs && b.enteredCount === 0;
+}
+
+/** A transaction carries at most 300 Tgas, so a long refund is split across several transactions. */
+export const MAX_TX_GAS_TGAS = 300;
+
+/**
+ * Everything the connected account signs to take its money back from a failed battle: the cancel first when the arena
+ * has not been cancelled yet (anyone may cancel), then each credited position and the creator's escrow. All calls go to
+ * the arena, so they share one transaction and run in order; only when their gas would not fit in one transaction
+ * (300 Tgas) are they split. The calls are the ones the reviews above describe.
+ */
+export function buildRefundBatch(
+  arena: string,
+  battleId: number,
+  what: { cancel: boolean; positions: ReadonlyArray<{ community: number; label?: string }>; escrow: boolean },
+): { ok: true; transactions: BatchTransaction[] } | { ok: false; problems: string[] } {
+  const reviews: Review[] = [
+    ...(what.cancel ? [buildCancelReview(arena, battleId)] : []),
+    ...what.positions.map((p) => buildRefundReview(arena, battleId, p.community, p.label)),
+    ...(what.escrow ? [buildEscrowRefundReview(arena, battleId)] : []),
+  ];
+  const problems = reviews.flatMap((r) => (r.ok ? [] : r.problems));
+  if (problems.length > 0) return { ok: false, problems };
+  if (reviews.length === 0) return { ok: false, problems: ["there is nothing to refund"] };
+  const transactions: BatchTransaction[] = [];
+  let gas = 0;
+  for (const r of reviews) {
+    if (!r.ok) continue;
+    const action = { type: "FunctionCall" as const, params: { methodName: r.method, args: r.args as object, gas: gasUnits(r.gasTgas), deposit: r.depositYocto } };
+    const tgas = Number(r.gasTgas);
+    const last = transactions[transactions.length - 1];
+    if (last && gas + tgas <= MAX_TX_GAS_TGAS) {
+      last.actions.push(action);
+      gas += tgas;
+    } else {
+      transactions.push({ receiverId: arena, actions: [action] });
+      gas = tgas;
+    }
+  }
+  return { ok: true, transactions };
 }
 
 /** One allowlisted token as the arena returns it from `get_lifecycle_joinable_assets`. */

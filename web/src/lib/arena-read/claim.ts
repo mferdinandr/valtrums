@@ -85,7 +85,7 @@ export interface BatchTransaction {
   actions: Array<{ type: "FunctionCall"; params: { methodName: string; args: object; gas: string; deposit: string } }>;
 }
 
-const gasUnits = (tgas: string): string => (BigInt(tgas) * 10n ** 12n).toString();
+export const gasUnits = (tgas: string): string => (BigInt(tgas) * 10n ** 12n).toString();
 
 /**
  * Everything the account must sign to take its prizes, one transaction per token: a registration-only storage deposit

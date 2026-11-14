@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { TransactionLink } from "@/components/transaction-link";
 import { Card } from "@/components/ui/card";
@@ -69,13 +69,15 @@ export function OpenArenaPanel({
     <Card aria-label="Open arena">
       {phase.kind === "cancellable" && (
         <p className="text-sm">
-          Not enough funded communities ({entered} of {MIN_FUNDED}). Anyone can cancel it; depositors then get a refund.
+          Not enough funded communities ({entered} of {MIN_FUNDED}). The battle is cancelled and depositors get a refund.
         </p>
       )}
       {phase.kind === "cancelled" && <p className="text-sm">Cancelled. Depositors can claim a refund.</p>}
       {battleId === null ? null : (
         <div className="mt-6 space-y-8">
-          {phase.kind === "cancellable" && <CancelStep namespace={namespace} battleId={battleId} />}
+          {phase.kind === "cancellable" && (
+            <RefundStep namespace={namespace} battleId={battleId} detail={detail} name={name} cancelFirst fallback={<CancelStep namespace={namespace} battleId={battleId} />} />
+          )}
           {phase.kind === "cancelled" && <RefundStep namespace={namespace} battleId={battleId} detail={detail} name={name} />}
         </div>
       )}
@@ -101,10 +103,16 @@ function CancelStep({ namespace, battleId }: { namespace: Namespace; battleId: n
   );
 }
 
-/** One button that takes back everything the connected account has in a cancelled battle (positions and escrow). */
-function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespace; battleId: number; detail: LifecycleDetail; name: (i: number) => string }) {
+/**
+ * One button that takes back everything the connected account has in a failed battle (positions and escrow). With
+ * `cancelFirst` the battle is not cancelled yet and the same approval cancels it too; an account with nothing to
+ * take back sees `fallback` instead, so anyone can still cancel.
+ */
+function RefundStep({
+  namespace, battleId, detail, name, cancelFirst = false, fallback = null,
+}: { namespace: Namespace; battleId: number; detail: LifecycleDetail; name: (i: number) => string; cancelFirst?: boolean; fallback?: ReactNode }) {
   const { signIn } = useWallet();
-  const refund = useRefund(namespace.arenaContract, battleId, detail.battle.communities.length, name);
+  const refund = useRefund(namespace.arenaContract, battleId, detail.battle.communities.length, name, cancelFirst);
   const transactions = refund.txHashes?.length > 0 ? <div className="space-y-1">{refund.txHashes.map((hash, i) => <div key={hash} className="text-xs"><span>Refund transaction {i + 1}</span><TransactionLink hash={hash} /></div>)}</div> : null;
   const amount = (units: string) => formatUnits(BigInt(units), TOKEN_DECIMALS, 4);
   if (!refund.connected) {
@@ -115,6 +123,7 @@ function RefundStep({ namespace, battleId, detail, name }: { namespace: Namespac
     );
   }
   if (refund.claims === null) return <p role="status" className="text-xs text-mute">Checking what you can get back…</p>;
+  if (refund.claims.length === 0 && cancelFirst && refund.state.step !== "done") return <>{fallback}</>;
   if (refund.claims.length === 0) {
     return (
       <div><p role="status" className="text-sm text-mute">
