@@ -6,6 +6,7 @@ import { TransactionLink } from "@/components/transaction-link";
 import { Card } from "@/components/ui/card";
 import { Step } from "@/components/lifecycle-participate";
 import { useWallet } from "@/components/providers";
+import { useNow } from "@/hooks/use-now";
 import { useRefund } from "@/hooks/use-refund";
 import { formatUnits } from "@/lib/amounts";
 import { TOKEN_DECIMALS } from "@/lib/arena-read/balances";
@@ -15,8 +16,8 @@ import {
   buildCancelReview,
   cancelRequest,
   isFunded,
+  localTime,
   MIN_FUNDED,
-  utc,
   type OpenPhase,
 } from "@/lib/arena-read/open-arena";
 
@@ -26,17 +27,21 @@ const tokenName = (representation: string): string => {
   return first.replace(/^backing-/, "").toUpperCase();
 };
 
-/** The one-line open arena status shown above everything else, without a card. */
+/**
+ * The open arena status shown above everything else, without a card: the title, then one line under it. The join
+ * deadline is in the viewer's own time zone, so it appears once the page is in the browser (the server has no zone).
+ */
 export function OpenArenaHeader({ phase }: { phase: OpenPhase }) {
+  const inBrowser = useNow(3_600_000) > 0;
   if (phase.kind === "no_start" || phase.kind === "locked") return null;
   return (
-    <p role="status" aria-live="polite" className="text-base font-bold">
-      Open arena
-      {phase.kind === "gathering" && <> · Join until {utc(phase.startAtMs)}</>}
-      {phase.kind === "awaiting_lock" && <> · Started, waiting for the lock</>}
-      {phase.kind === "cancellable" && <> · Not enough funded communities</>}
-      {phase.kind === "cancelled" && <> · Cancelled</>}
-    </p>
+    <div role="status" aria-live="polite" className="text-center">
+      <p className="text-base font-bold uppercase tracking-wide">Open arena</p>
+      {phase.kind === "gathering" && inBrowser && <p className="text-sm text-mute">Join until {localTime(phase.startAtMs)}</p>}
+      {phase.kind === "awaiting_lock" && <p className="text-sm text-mute">Started, waiting for the lock</p>}
+      {phase.kind === "cancellable" && <p className="text-sm text-mute">Not enough funded communities</p>}
+      {phase.kind === "cancelled" && <p className="text-sm text-mute">Cancelled</p>}
+    </div>
   );
 }
 
