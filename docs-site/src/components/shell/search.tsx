@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Search as SearchIcon, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SearchItem } from "./types";
 
 interface Hit {
@@ -80,8 +81,9 @@ export function Search({ items }: { items: SearchItem[] }) {
         <span>Search docs</span>
         <kbd>⌘K</kbd>
       </button>
-      {open && (
-        <div className="search-backdrop" onClick={() => setOpen(false)}>
+      {open &&
+        createPortal(
+          <div className="search-backdrop" onClick={() => setOpen(false)}>
           <div
             role="dialog"
             aria-modal="true"
@@ -138,8 +140,9 @@ export function Search({ items }: { items: SearchItem[] }) {
               </ul>
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
