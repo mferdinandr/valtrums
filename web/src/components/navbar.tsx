@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { WalletButton } from "@/components/wallet-button";
+import { MusicToggle } from "@/components/music-toggle";
 import { Bot, BookOpen, Droplets, Swords, Layers3, Sparkles, Plus } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { arenaNavigationActive } from "@/lib/arena-read/routes";
@@ -78,6 +79,7 @@ export function Navbar() {
           </a>
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <MusicToggle />
           <WalletButton />
         </div>
       </div>
