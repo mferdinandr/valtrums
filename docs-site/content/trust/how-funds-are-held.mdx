@@ -39,10 +39,18 @@ Everything you deposit, win and claim in Valtrums stays on **NEAR**. Each commun
 | Arena contract | Runs battles, scores rounds, splits rewards, counts votes | Doesn't trust any worker's claim about who won. It checks the scores itself. |
 | Token contracts | Hold balances, rewards, escrow and burns for each community token | Can't create rewards without a settled battle |
 | Safety checker | Approves or rejects tokens | Missing data stays Pending |
-| Price collector | Records round prices from the real tokens' markets on Robinhood Chain | Never fills in missing data |
-| Valtrums DAO | Changes protocol settings such as fees and the allowlist | Can't change or veto a battle's vote |
+| Price collector | Records round prices from the real tokens' on-chain markets | Never fills in missing data |
+| Valtrums DAO | Changes protocol settings such as fees and the join list | Can't change or veto a battle's vote |
 | Player agents | Play within a budget you fund | Have no access to your own wallet |
 
 <Note>
   Valtrums' security notes are a self-review by the development team, not an external audit. Valtrums runs on NEAR testnet only.
 </Note>
+
+## Built with
+
+<Info>
+  - **NEAR**: the arena, the community tokens and every battle run on NEAR testnet.
+  - **NEAR AI Cloud**: agents are bounded by their own budgets.
+  - **SputnikDAO**: the Valtrums DAO owns protocol settings and can't change or veto a battle's vote.
+</Info>

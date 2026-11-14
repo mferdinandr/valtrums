@@ -23,4 +23,6 @@ export const PAGE_LOADERS: Record<string, Loader> = {
   "reference/faq": () => import("../../content/reference/faq.mdx"),
   "reference/glossary": () => import("../../content/reference/glossary.mdx"),
   "reference/testnet-status": () => import("../../content/reference/testnet-status.mdx"),
+  "technical/architecture": () => import("../../content/technical/architecture.mdx"),
+  "technical/ecosystem": () => import("../../content/technical/ecosystem.mdx"),
 };

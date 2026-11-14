@@ -3,13 +3,14 @@
 import { useState } from "react";
 
 const STEPS = [
-  { label: "Open", detail: "The creator picks one scoring mode and a start time between 1 minute and 7 days away. There is no bond, and the creator must deposit before the lock." },
-  { label: "Join and deposit", detail: "Until the start time, anyone joins with CASHCAT, WALLET, GOOD, VLAD or DEGEN and deposits. A deposit counts once its tokens arrive and the community is approved." },
+  { label: "Open", detail: "The creator picks one scoring mode and a start time between 1 minute and 7 days away. There is no bond. The creator deposits a memecoin before the lock, and the Valtrums agent audits it to see whether it passes." },
+  { label: "Join and deposit", detail: "Until the start time, anyone joins with any memecoin and deposits. The Valtrums agent audits every token, and a deposit counts once its tokens arrive and the community passes." },
   { label: "Lock", detail: "At the start time, with two or more funded communities, everything is frozen. With fewer than two, anyone can cancel and depositors get refunds." },
   { label: "Rounds", detail: "Each round lasts exactly 30 seconds and is scored with the chosen mode from recorded prices. A unique best score wins." },
   { label: "Overtime", detail: "Tied leaders play again with every input reset. There is no cap on overtime rounds, and all deposits stay locked." },
   { label: "Settlement", detail: "Each losing deposit pays 99.9% to the winning backers, 0.05% to the creator and 0.05% to the protocol, in the original token." },
   { label: "Winners' vote", detail: "The winning community's own deposit sits in escrow while its backers vote on how much to burn and how much to return." },
+  { label: "Claim", detail: "Winners claim to their own NEAR wallet: the spoils from every losing community, plus their own deposit minus the part that was burned." },
 ];
 
 export function BattleStages() {

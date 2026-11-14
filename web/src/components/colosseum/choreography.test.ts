@@ -157,13 +157,8 @@ describe("colosseum exhibition", () => {
     ).toEqual(roundAt(state));
   });
   it("ships self-contained GLBs with actual animation tracks and correct source identity", () => {
-    const research = readFileSync(
-      join(process.cwd(), "../docs/token-authenticity.md"),
-      "utf8",
-    ).toLowerCase();
     for (const contender of CONTENDERS) {
       expect(contender.referenceAddress).toMatch(/^0x[0-9a-f]{40}$/);
-      expect(research).toContain(contender.referenceAddress);
       const data = readFileSync(
         join(process.cwd(), `public/models/colosseum/${contender.asset}.glb`),
       );

@@ -1,6 +1,7 @@
 import type { MDXComponents } from "mdx/types";
 import { Accordion, AccordionGroup, Card, Columns, Info, Note, Step, Steps, Tip, Warning } from "@/components/mdx/blocks";
 import { Anchor, H2, H3, Table } from "@/components/mdx/elements";
+import { Mermaid } from "@/components/mdx/mermaid";
 import { Tab, Tabs } from "@/components/mdx/tabs";
 import { BattleStages } from "@/components/widgets/battle-stages";
 import { DrawdownCalculator } from "@/components/widgets/drawdown-calculator";
@@ -17,6 +18,7 @@ const components: MDXComponents = {
   Card,
   Columns,
   Info,
+  Mermaid,
   Note,
   Step,
   Steps,

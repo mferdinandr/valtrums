@@ -7,6 +7,17 @@ keywords: ["assistant", "terminal", "natural language", "AI", "prompt", "intent"
 
 The **Assistant** page lets you play Valtrums by typing what you want instead of clicking through forms. It reads your sentence, turns it into one exact action and shows it to you for review. Nothing happens until you check the preview and sign in your wallet. The assistant can never sign or send anything on its own.
 
+## Why the assistant exists
+
+Playing on-chain usually means learning wallets, contracts and long forms before you can do anything fun. The assistant removes that wall.
+
+- **Play in plain words.** Say what you want, like `deposit 100 CASHCAT into the open arena`, instead of finding the right page, community and field.
+- **Make the chain easy.** The steps of a battle (join, deposit, vote, claim, refund) become one sentence each, so new players can start without knowing how any of it works underneath.
+- **Chain steps together.** One sentence can join a community, deposit and plan your vote, which saves many clicks.
+- **Stay in control.** The assistant only prepares an action. You see exactly what will happen and sign it yourself, so convenience never costs safety.
+- **Same rules for everyone.** It checks the battle's rules before it shows you anything, so you aren't sent into a step that would fail.
+- **A way in for AI.** The same plain-words layer is what lets people, assistants and player agents work with the arena in a shared way.
+
 ## What you can ask
 
 | Type something like | What it does |
@@ -45,3 +56,10 @@ You can chain steps too: `deposit 2 CASHCAT and 2 VLAD in the open arena, then v
 - **Tokens are matched exactly.** The assistant only uses supported tokens from the arena's registry. It never guesses a token.
 - **The assistant checks the rules first.** If a battle isn't open, has no winner yet or doesn't have that community, it tells you why instead of preparing a transaction.
 - **AI output is never trusted on its own.** When an AI model reads your request, its answer is strictly checked. If the check fails, simple built-in rules read your request instead.
+
+## Built with
+
+<Info>
+  - **NEAR AI Cloud (TEE)**: reads your sentence privately. Its answer is checked strictly before anything is proposed.
+  - **NEAR wallets**: you sign every action yourself.
+</Info>

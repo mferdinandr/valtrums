@@ -1,29 +1,45 @@
 ---
 title: "How Valtrums keeps unsafe tokens out of battles"
 sidebarTitle: "Token safety"
-description: "Valtrums only lets allowlisted tokens play, and each community needs a GoPlus security check and a liquidity check above USD 10,000 before deposits count."
-keywords: ["safety", "audit", "GoPlus", "allowlist", "liquidity", "honeypot", "approval"]
+description: "Any memecoin can play once it passes the Valtrums pre-audit: a security check and a liquidity check above USD 10,000 before deposits count."
+keywords: ["safety", "audit", "pre-audit", "liquidity", "honeypot", "approval"]
 ---
 
-Valtrums checks every token before its community can play. A token must be on the allowlist, pass a security check and show enough real liquidity. Until both a fresh safety approval and a backing approval are in place, deposits for that community are held in escrow and don't count.
+Anyone can launch a memecoin, so not every token is safe to put real stakes behind. Valtrums checks every token before its community can play, so battles stay fair for the people who join them.
 
-## The allowlist
+## Why every token is checked
 
-Only five tokens can join a battle: **CASHCAT**, **WALLET**, **GOOD**, **VLAD** and **DEGEN**. Communities are always identified by chain and token contract address, never by ticker alone, so a copycat token with the same name can't join. The Valtrums DAO manages the allowlist.
+A battle locks each community's deposits and pays the losers' tokens to the winners. That only works if the tokens behave honestly:
+
+- **Honeypots and traps.** A token that can't be sold, or that quietly changes its rules, would turn a battle's prize into something nobody can use.
+- **Hidden taxes.** A high buy, sell or transfer tax would take a bite out of every deposit and reward.
+- **Owner powers.** A token whose owner can mint, pause, blacklist or change balances can break a battle after the fact.
+- **Thin markets.** Rounds are scored from live prices. With too little liquidity, a price is easy to push around, so a winner could be decided by manipulation instead of the community.
+- **Copycats.** Many tokens share the same name. The check follows the token's contract address, so you always know which token is playing.
+
+Checking before the battle, instead of reacting afterwards, keeps depositors, creators and the winners' prizes protected, and lets any memecoin that is honest and liquid play.
+
+## How the check works
+
+Valtrums checks every token before its community can play. A token must pass the pre-audit: a security check and enough real liquidity. Until both a fresh safety approval and a backing approval are in place, deposits for that community are held in escrow and don't count.
+
+## Which tokens can play
+
+Any memecoin that passes the pre-audit can play, not only a fixed few. Communities are always identified by chain and token contract address, never by ticker alone, so a copycat token with the same name is a different token. Tokens that pass are added to the join list by the Valtrums DAO.
 
 ## The safety check
 
 Each community gets a fresh check that combines two independent sources.
 
 <AccordionGroup>
-  <Accordion title="Security scan (GoPlus)">
-    Valtrums reads the token's security report from GoPlus and rejects critical risks. Under the current policy:
+  <Accordion title="Security scan">
+    The pre-audit check logic scans the token's security report and rejects critical risks. Under the current policy:
 
     - Buy, sell and transfer tax must each be **5% or less**.
     - Owner powers such as minting, pausing, blacklisting or changing balances or taxes are only allowed when ownership is **renounced and can't be taken back**.
   </Accordion>
   <Accordion title="Liquidity check">
-    The token's liquidity must be **strictly above USD 10,000**, checked independently of GoPlus. Exactly USD 10,000 is not enough.
+    The token's liquidity must be **strictly above USD 10,000**, checked independently of the security scan. Exactly USD 10,000 is not enough.
   </Accordion>
 </AccordionGroup>
 
@@ -38,9 +54,13 @@ Each community gets a fresh check that combines two independent sources.
 Missing data always means **Pending**, never Pass. An approval is valid for 10 minutes by default and is refreshed automatically. When a battle locks, every funded community needs a fresh approval.
 
 <Note>
-  On testnet, each test token is checked through the real Robinhood Chain token it represents. The approval describes that real token, not the test token's own contract.
+  On testnet, each test token is checked through the real token it represents, using on-chain data. The approval describes that real token, not the test token's own contract.
 </Note>
 
-## What this doesn't promise
+## Built with
 
-The check filters out known critical risks. It doesn't guarantee a token's value or future behavior, and it isn't financial advice.
+<Info>
+  - **Pre-audit check logic**: the security scan behind every approval.
+  - **On-chain market data**: the independent liquidity check.
+  - **SputnikDAO**: the Valtrums DAO adds passing tokens to the join list.
+</Info>
