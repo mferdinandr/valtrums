@@ -215,6 +215,15 @@ export function failedToStart(b: { status: string; startAtMs: string | null; ent
   return nowMs >= Number(b.startAtMs) && b.enteredCount < MIN_FUNDED;
 }
 
+/**
+ * A listed battle of the earlier, start-less shape that holds no deposit: still open, it can neither lock nor be
+ * cancelled, so it would stay in the list as open forever. The agent treats it as retired too (`isIdleBattle`). New
+ * battles always have a start time. The first deposit into one makes it a normal battle again, and it shows again.
+ */
+export function isDormantLegacy(b: { status: string; startAtMs: string | null; enteredCount: number }): boolean {
+  return b.status === "open" && !b.startAtMs && b.enteredCount === 0;
+}
+
 /** One allowlisted token as the arena returns it from `get_lifecycle_joinable_assets`. */
 export interface JoinableAsset {
   chain_id: string;

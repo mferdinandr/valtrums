@@ -5,6 +5,7 @@ import {
   buildJoinReview,
   buildRefundReview,
   failedToStart,
+  isDormantLegacy,
   JOIN_DEPOSIT_YOCTO,
   localInputToMs,
   msToLocalInput,
@@ -151,5 +152,17 @@ describe("localTime", () => {
     expect(localTime(ms, "Asia/Jakarta")).toBe("14 Nov 2026, 10:20 AM");
     expect(localTime(ms, "America/New_York")).toBe("13 Nov 2026, 10:20 PM");
     expect(localTime(Date.UTC(2026, 10, 14, 12, 5), "Asia/Jakarta")).toBe("14 Nov 2026, 7:05 PM");
+  });
+});
+
+describe("isDormantLegacy", () => {
+  const legacy = { status: "open", startAtMs: null, enteredCount: 0 };
+  it("is true for an open battle without a start time and without a deposit", () => {
+    expect(isDormantLegacy(legacy)).toBe(true);
+  });
+  it("is false once it has a start time, a deposit, or is no longer open", () => {
+    expect(isDormantLegacy({ ...legacy, startAtMs: "1000" })).toBe(false);
+    expect(isDormantLegacy({ ...legacy, enteredCount: 1 })).toBe(false);
+    for (const status of ["locked", "decided", "cancelled"]) expect(isDormantLegacy({ ...legacy, status })).toBe(false);
   });
 });

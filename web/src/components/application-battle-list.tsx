@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
-import { failedToStart, MIN_FUNDED, utc } from "@/lib/arena-read/open-arena";
+import { failedToStart, isDormantLegacy, MIN_FUNDED, utc } from "@/lib/arena-read/open-arena";
 import {
   communityName,
   modeName,
@@ -117,7 +117,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
           {result.provenance.kind === "fixture" && (
             <p className="text-xs text-mute">Fixture data · not live battles</p>
           )}
-          {!result.data.items.length && (
+          {!result.data.items.some((b) => !isDormantLegacy(b)) && (
             <div className="lifecycle-empty">
               <h3>No battles found.</h3>
               <p className="mt-2 text-sm text-mute">
@@ -127,7 +127,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {result.data.items.map((battle) => {
+            {result.data.items.filter((b) => !isDormantLegacy(b)).map((battle) => {
               const failed = failedToStart(battle, Date.now());
               return (
               <Card
