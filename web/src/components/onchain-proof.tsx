@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   BadgeCheck,
+  ChevronDown,
   Coins,
   ExternalLink,
   Flag,
@@ -52,6 +53,7 @@ export function OnchainProof({ contract, battleId }: { contract: string; battleI
   const [data, setData] = useState<BattleActivity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [all, setAll] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -105,7 +107,26 @@ export function OnchainProof({ contract, battleId }: { contract: string; battleI
       {data && data.items.length === 0 && <p className="mt-4 text-sm text-mute">No transactions found for this battle yet.</p>}
 
       {data && data.items.length > 0 && (
-        <ol className="mt-4 space-y-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={`activity-${battleId}`}
+          className="mt-4 flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-edge bg-panel px-4 py-2.5 text-left text-sm hover:border-neon-green"
+        >
+          <span>
+            <span className="font-semibold text-ink">{data.items.length} transactions on NEAR</span>
+            <span className="text-mute"> · from battle creation to the last claim, each verifiable on the explorer</span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs text-mute">
+            {open ? "Hide" : "Show"}
+            <ChevronDown size={16} className={`transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+          </span>
+        </button>
+      )}
+
+      {data && data.items.length > 0 && open && (
+        <ol id={`activity-${battleId}`} className="mt-3 space-y-2">
           {data.items.filter((i) => all || !DETAIL.includes(i.kind) && !(i.kind === "join" && i.label.startsWith("Backer"))).map((item) => {
             const Icon = ICONS[item.kind];
             const highlight = item.kind === "settle" || item.kind === "create";
@@ -132,7 +153,7 @@ export function OnchainProof({ contract, battleId }: { contract: string; battleI
           })}
         </ol>
       )}
-      {data && data.items.length > 0 && (
+      {data && data.items.length > 0 && open && (
         <button
           type="button"
           onClick={() => setAll((v) => !v)}
