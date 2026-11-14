@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { CarnivalScene } from "@/components/carnival/scene";
 import { TokenIcon } from "@/components/token-icon";
 import { displaySymbol } from "@/lib/arena-read/token-style";
-import { failedToStart, isDormantLegacy, MIN_FUNDED, utc } from "@/lib/arena-read/open-arena";
+import { failedToStart, isDormantLegacy, localTime, MIN_FUNDED } from "@/lib/arena-read/open-arena";
 import {
   communityName,
   modeName,
@@ -148,7 +148,7 @@ export function ApplicationBattleList({ namespace }: { namespace: Namespace }) {
                     ? `Not enough crews funded (${battle.enteredCount} of ${MIN_FUNDED}) · open it to cancel and refund`
                     : battle.status === "open"
                     ? battle.startAtMs && /^[0-9]+$/.test(battle.startAtMs)
-                      ? `Starts ${utc(Number(battle.startAtMs))}`
+                      ? `Starts ${localTime(Number(battle.startAtMs))}`
                       : "Ready to meet your crew"
                     : battle.status === "decided"
                       ? "The result is recorded"
