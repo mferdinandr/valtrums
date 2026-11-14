@@ -275,4 +275,48 @@ describe("runOnce lifecycle audit hook and config (fixture-only)", () => {
     // Finished battles: one read in discovery, nothing more.
     for (const id of [1, 2, 3, 4]) expect(reads.get(id)).toBe(1);
   });
+
+  it("visits an idle battle (no start time, nothing deposited) once and then only reads it in discovery", async () => {
+    const idleView: LifecycleBattleView = {
+      locked: false,
+      communities: [{ chain_id: "46630", token_address: TOKEN, representation: "aa.token.testnet", custody_domain: "vault-1", reference_chain_id: REF_CHAIN, reference_address: REF_TOKEN, vault: "0" }],
+    };
+    let reads = 0;
+    const queries: unknown[] = [];
+    const calls: unknown[] = [];
+    const counting: LifecycleAuditSource = {
+      count: async () => 1,
+      get: async () => {
+        reads++;
+        return idleView;
+      },
+    };
+    const pass = createLifecycleAuditPass({
+      source: counting,
+      refresh: {
+        policy: FIXTURE_RESOLVED,
+        registry: staticReferenceRegistry(registry),
+        now: () => NOW,
+        refreshAheadMs: 60_000,
+        fetchGoPlus: async (q) => {
+          queries.push(q);
+          return refGoplus();
+        },
+        fetchLp: async () => refLp("10001"),
+        submitter: new AuditSubmitter("arena.testnet", { call: async (...a: unknown[]) => void calls.push(a) } as never),
+        records: new Map(),
+      },
+    });
+    await pass();
+    expect(queries).toHaveLength(1);
+    expect(calls.length).toBeGreaterThan(0);
+    const firstPassReads = reads;
+    reads = 0;
+    await pass();
+    await pass();
+    // Two more passes: the discovery read each, nothing else; no new audit or submission.
+    expect(reads).toBe(2);
+    expect(reads).toBeLessThan(firstPassReads * 2);
+    expect(queries).toHaveLength(1);
+  });
 });
