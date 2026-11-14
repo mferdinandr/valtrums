@@ -35,6 +35,8 @@ export interface RuntimeDeps {
    * so approvals are renewed ahead of their TTL. Errors it reports count toward `errors`.
    */
   lifecycleAudit?: () => Promise<{ errors: number }>;
+  /** Optional prize settlement of finished lifecycle battles (open to any caller); runs after the audit each pass. */
+  lifecycleSettle?: () => Promise<{ errors: number }>;
   log?: Logger;
   /** Wall clock in ms; injectable for tests. */
   nowMs?: () => number;
@@ -92,6 +94,13 @@ export async function runOnce(deps: RuntimeDeps): Promise<PassReport> {
     const audit = deps.lifecycleAudit;
     await guard("lifecycle audit", {}, async () => {
       report.errors += (await audit()).errors;
+    });
+  }
+
+  if (deps.lifecycleSettle) {
+    const settle = deps.lifecycleSettle;
+    await guard("lifecycle settle", {}, async () => {
+      report.errors += (await settle()).errors;
     });
   }
 
