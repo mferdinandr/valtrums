@@ -222,7 +222,7 @@ export function LifecycleCreateReview({ namespace }: { namespace: Namespace }) {
         <div className="setup-preview-caption">{chosen ? "Drag to look around your crew." : "Choose a token in step 2 to meet your crew."}</div>
         <dl className="setup-preview-ticket">
           <div><dt>Challenge</dt><dd>{MODE_COPY[mode as keyof typeof MODE_COPY]?.name ?? mode}</dd></div>
-          <div><dt>Starts</dt><dd>{startAtMs ? new Date(Number(startAtMs)).toLocaleString() : "Not set"}</dd></div>
+          <div><dt>Starts</dt><dd>{startAtMs ? localTime(Number(startAtMs)) : "Not set"}</dd></div>
           <div><dt>Opening deposit</dt><dd>{label ?? "Not selected"}</dd></div>
         </dl>
         <p className="setup-preview-note">Others can join before the battle starts.</p>
