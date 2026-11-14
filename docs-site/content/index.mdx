@@ -11,6 +11,25 @@ Valtrums is an open arena where token communities battle each other. You back a 
   Valtrums runs on **NEAR testnet**. The tokens you play with are test tokens with no value. No real money is involved.
 </Warning>
 
+## The problem
+
+Memecoins live and die by one number: the price.
+
+- **Only up and down.** A memecoin's value depends on the chart going up. When it goes down, holders have nothing else to hold on to.
+- **No utility.** Most memecoins can't be used for anything. There is no game, prize, vote or purpose behind the token.
+- **Falling prices leave nothing.** When the price drops, the token is just a bag. The community has no way to put it to work or get something back.
+- **Trust is thin.** Honeypots, hidden taxes and thin markets make unchecked tokens risky, and the chain is hard for newcomers and AI agents to use.
+
+## The solution
+
+Valtrums gives memecoins something to do, whatever the chart says.
+
+- **A use for every token.** Your memecoin becomes your community's stake in a battle: it can back a team, win prizes and join a vote, even when its price is down.
+- **Real rules, real winners.** Communities compete in 30-second rounds scored from live on-chain market data. The contract decides the winner, with exact math and no operator.
+- **Prizes in real tokens.** The winning community shares the losing communities' original tokens.
+- **A mechanic with meaning.** The winners vote how much of their own deposit to burn, so a win can reshape the token's supply.
+- **Safe and easy.** Every token passes a pre-audit before it plays, and the assistant and NEAR AI agents make it simple for everyone.
+
 ## How it works in one minute
 
 <Steps>
@@ -18,7 +37,7 @@ Valtrums is an open arena where token communities battle each other. You back a 
     Anyone can create a battle. The creator picks how the winner is scored and when the battle starts, then makes the first deposit.
   </Step>
   <Step title="Communities join and deposit">
-    Before the start time, anyone can bring in a community by depositing one of the supported tokens: **CASHCAT**, **WALLET**, **GOOD**, **VLAD** or **DEGEN**.
+    Before the start time, anyone can bring in a community by depositing a memecoin that has passed the Valtrums pre-audit. On testnet you can start with **CASHCAT**, **WALLET**, **GOOD**, **VLAD** or **DEGEN**.
   </Step>
   <Step title="Rounds decide the winner">
     At the start time, deposits close and the battle locks. Each round lasts exactly 30 seconds. If the top communities tie, they play another round, as many times as needed.
@@ -51,7 +70,16 @@ Valtrums is an open arena where token communities battle each other. You back a 
 ## What makes Valtrums different
 
 - **You win real tokens, not points.** Rewards are the original tokens the losing communities deposited. They are not swapped into another token.
-- **Real prices decide.** Every round is scored from live market prices of the real tokens on Robinhood Chain.
+- **Real prices decide.** Every round is scored from live on-chain market data of the real tokens.
 - **Unsafe tokens are kept out.** A community can only play after its token passes a safety check and a liquidity check. See [Token safety](/trust/token-safety).
 - **The community decides.** The winners, not an operator, vote on what happens to their own deposit. See [The winners' vote](/concepts/winners-vote).
 - **AI agents can play for you.** You can fund an agent that picks battles with NEAR AI. See [Player agents](/tools/player-agents).
+
+## Built with
+
+<Info>
+  - **NEAR**: battles, tokens, rewards and the vote run on NEAR testnet.
+  - **NEAR AI Cloud (TEE)**: powers the assistant and the player agents.
+  - **Pre-audit check logic** and **on-chain market data**: the pre-audit and the live prices that score every round.
+  - **SputnikDAO**: the Valtrums DAO that owns protocol settings.
+</Info>

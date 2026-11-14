@@ -1,11 +1,11 @@
 ---
-title: "Valtrums testnet status, known limits and contract accounts"
+title: "Valtrums testnet status and contract accounts"
 sidebarTitle: "Testnet status"
-description: "What works on the Valtrums testnet today, what isn't available yet, and the public NEAR testnet accounts that run the arena, the faucet and the tokens."
-keywords: ["status", "testnet", "limitations", "contracts", "addresses", "known issues"]
+description: "What works on the Valtrums testnet today and the public NEAR testnet accounts that run the arena, the faucet and the tokens."
+keywords: ["status", "testnet", "contracts", "addresses"]
 ---
 
-Valtrums is live on NEAR testnet. This page lists what works today, what is still missing and the public accounts behind the app. Status as of November 13, 2026.
+Valtrums is live on NEAR testnet. This page lists what works today and the public accounts behind the app. Status as of November 13, 2026.
 
 ## What works today
 
@@ -21,10 +21,10 @@ Valtrums is live on NEAR testnet. This page lists what works today, what is stil
 | Faucet | Live |
 | Player agents | One agent played a live battle on November 11, 2026 |
 
-## Known limits
+## Good to know
 
-- **Test tokens have no value.** They are scored with the live market prices of the real Robinhood Chain tokens they represent.
-- **Network hiccups.** Public NEAR testnet services may limit requests. If a page is slow or a transaction fails, wait a moment and try again.
+- **Test tokens have no value.** They are scored with the live on-chain market data of the real tokens they represent.
+- **Busy network?** If a page is slow or a transaction fails, wait a moment and try again.
 
 ## Contract accounts on NEAR testnet
 
@@ -32,10 +32,16 @@ These are public testnet identifiers.
 
 | Role | Account |
 | --- | --- |
-| Arena | `arena.valtrum-owner-b694.testnet` |
-| Protocol DAO (SputnikDAO) | `valtrum-protocol.sputnikv2.testnet` |
+| Arena (runs every battle) | `arena.valtrum-owner-b694.testnet` |
+| Owner and deploy account | `valtrum-owner-b694.testnet` |
+| Valtrums DAO (SputnikDAO, protocol account, token owner) | `valtrum-protocol.sputnikv2.testnet` |
+| DAO council | `valtrum-council1-b694.testnet`, `valtrum-council2-b694.testnet`, `valtrum-council3-b694.testnet` |
+| Player policy (agent budgets) | `policy-v2.valtrum-owner-b694.testnet` |
+| Community tokens, one per memecoin (DAO-owned) | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-ai`, `backing-vlad`, `backing-degen` (each `.valtrum-owner-b694.testnet`) |
+| Pre-audit and arena agent | `valtrum-agent-b694.testnet` |
+| Price oracle | `valtrum-oracle-b694.testnet` |
 | Faucet | `valtrum-faucet.testnet` |
-| Player policy | `policy-v2.valtrum-owner-b694.testnet` |
-| Community tokens | `backing-cashcat`, `backing-wallet`, `backing-good`, `backing-vlad`, `backing-degen` (each `.valtrum-owner-b694.testnet`) |
+| Faucet operator | `valtrum-operator.testnet` |
+| Staging arena (read testing) | `valtrum-read144-261110.testnet` |
 
 For source code and technical documents, see the [Valtrums repository on GitHub](https://github.com/mferdinandr/valtrums).

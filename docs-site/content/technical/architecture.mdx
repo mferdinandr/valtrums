@@ -1,0 +1,72 @@
+---
+title: "How Valtrums is built"
+sidebarTitle: "Architecture"
+description: "How a Valtrums battle flows from deposit to reward: the arena, the community tokens, the price and safety workers, and the winners' vote, all on NEAR."
+keywords: ["architecture", "flow", "NEAR", "arena", "agents", "DAO"]
+---
+
+Valtrums runs entirely on NEAR. The arena contract is the referee: it freezes each battle, scores every 30-second round from live on-chain market data, and splits the prize. Small workers feed it safety checks and prices, and none of them can touch player funds.
+
+## The big picture
+
+<Mermaid
+  caption="How the parts of Valtrums fit together"
+  chart={`flowchart TB
+    U["User wallet"] --> UI["Web app, assistant or agent tools"]
+    UI --> PA["Player agent (own budget)"]
+    UI --> A
+    PA --> A
+    subgraph NEAR["NEAR testnet"]
+        A["Arena: lock, rounds, allocation"]
+        R["Community tokens + ledger"]
+        D["Escrow: winners' vote"]
+        F["Faucet"]
+        A --> R
+        A --> D
+        F --> U
+    end
+    subgraph WORKERS["Workers (separate credentials)"]
+        AU["Pre-audit + liquidity checker"]
+        O["Price collector"]
+    end
+    subgraph EXT["On-chain market data (read only)"]
+        POOLS["Uniswap v3 pools"]
+    end
+    GP["Token-risk data"] --> AU
+    POOLS -->|"Liquidity"| AU
+    POOLS -->|"Prices"| O
+    AU -->|"Safety results"| A
+    O -->|"Round prices"| A`}
+/>
+
+| Part | What it does |
+| --- | --- |
+| **Arena** | Opens battles, locks them at the start time, scores rounds, handles ties, and settles rewards |
+| **Community tokens** | One token contract per memecoin community. It keeps balances, rewards, escrow and burns in a single ledger that must always balance |
+| **Safety checker** | Runs the pre-audit (a security scan plus a liquidity check) before a community can play |
+| **Price collector** | Records point-in-time prices, supply and volume from the real tokens' on-chain markets |
+| **Valtrums DAO** | Owns protocol settings such as fees and the join list; it cannot change a battle's result or vote |
+| **Player agents** | NEAR AI agents that play with their own budget |
+| **Assistant and web app** | Turn plain words into one reviewed action that you sign yourself |
+
+## One battle, end to end
+
+1. **Open.** A creator picks a scoring mode and a start time, then makes the first deposit.
+2. **Join and deposit.** Communities join with memecoins that passed the pre-audit. A deposit counts once the community has a fresh safety approval and a backing approval.
+3. **Lock.** At the start time the arena freezes the communities, vaults, mode and price policy. With fewer than two funded communities, the battle is cancelled and everyone is refunded.
+4. **Rounds.** Each round lasts 30 seconds. The collector records prices and the arena checks the scores itself instead of trusting a worker's winner.
+5. **Overtime.** If the leaders tie, they play again from scratch, with no limit on rounds.
+6. **Settlement.** Every losing vault is split: 99.9% to the winning community by stake, 0.05% to the creator and 0.05% to the protocol.
+7. **The winners' vote.** The winning community votes how much of its own deposit to burn or return. The arena contract counts the votes.
+8. **Claim.** Winners claim their rewards into their own NEAR wallet.
+
+## Design principles
+
+- **The contract is the referee.** Scores, ties, fees and the vote are all computed on-chain with exact integer math.
+- **Workers never hold your funds.** Safety checks and prices are evidence the arena verifies. Player funds stay in player accounts and token contracts.
+- **Real data decides.** Rounds use live on-chain market data, never a made-up number, and missing data keeps a round pending instead of becoming a zero.
+- **One ledger per token.** Rewards, refunds, escrow and burns come from the same balanced ledger, so the same tokens can never be paid twice.
+- **The community decides its own deposit.** No owner, worker or DAO can override the winners' vote.
+- **AI stays bounded.** Agents use their own budget, every decision comes from NEAR AI Cloud (TEE) and is logged for audit, and model output is treated as untrusted until validated.
+
+See [How a battle works](/concepts/how-a-battle-works), [Rewards and fees](/concepts/rewards-and-fees) and [How funds are held](/trust/how-funds-are-held) for the player view.

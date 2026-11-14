@@ -45,6 +45,10 @@ export const NAVIGATION: NavGroup[] = [
     group: "Reference",
     pages: ["reference/faq", "reference/glossary", "reference/testnet-status"],
   },
+  {
+    group: "How it's built",
+    pages: ["technical/architecture", "technical/ecosystem"],
+  },
 ];
 
 export const ALL_SLUGS: string[] = NAVIGATION.flatMap((g) => g.pages);

@@ -7,6 +7,21 @@ keywords: ["DAO", "vote", "burn", "return", "escrow", "winning principal"]
 
 When a Valtrums battle ends, the winning community's own deposit (the winning principal) is held in escrow. Only the backers of that community can vote, and the vote decides how much of it is burned and how much is returned to them. Rewards from the losing communities are recorded separately and don't depend on how the vote turns out.
 
+## Why there is a burn
+
+Valtrums is built for memecoin communities, and a memecoin should do something. The burn gives a win a lasting effect on the token itself, and lets the winners decide how big that effect is.
+
+- **A win that changes the token.** Winning is more than collecting prizes. Burned tokens are destroyed for good, so the winning community can shrink its own supply.
+- **Scarcity the community chooses.** Fewer tokens in existence means each remaining token is a larger share of the whole. Winners set the burn from 0% to 100%, so a community that wants a deflationary meme can go all the way, and one that prefers to keep its deposits can return them.
+- **Fair to every winner.** The same burn share applies to every backer's deposit in proportion to what they put in. Nobody is singled out, and your reward from the losing communities is never touched.
+- **Owned by the community.** No owner, worker or council decides. The winners' own vote does, counted by the arena contract.
+- **Visible on-chain.** A burn is not a promise: the tokens are destroyed on NEAR, where anyone can check the supply.
+- **A ritual with stakes.** Winning, then deciding together whether to burn, gives each battle a shared moment that memecoin communities can rally around.
+
+<Note>
+  A burn changes supply, not value, and it doesn't promise a price. It is a mechanic for the community, not financial advice.
+</Note>
+
 ## How the vote works
 
 - **Who votes.** Only accounts that deposited in the winning community. Losing and eliminated communities don't vote. The creator votes only if they backed the winner.
@@ -52,3 +67,10 @@ Anyone can finish the decision. The arena contract counts the votes itself. No o
 - Large holders have the most influence in their own battle.
 - Votes are public, so later voters can see the running totals.
 - With no quorum and no automatic fallback, a deposit can stay locked if nobody votes.
+
+## Built with
+
+<Info>
+  - **NEAR**: the arena contract counts the winners' votes and tokens are burned on NEAR.
+  - **SputnikDAO**: the Valtrums DAO is a SputnikDAO. It owns protocol settings such as the vote window, fees and the join list, and it receives the protocol fee. It cannot change or veto a battle's vote.
+</Info>

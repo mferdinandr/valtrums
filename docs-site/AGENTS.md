@@ -9,7 +9,7 @@ A Next.js app (`@valtrum/docs`) that renders the MDX pages in `content/`. See RE
 - Use the app's scoring mode names (Biggest price climb, Community growth, Trading energy, Steadiest crew) and give the formal name once.
 - "Winners' vote" for the DAO decision on winning principal; burned tokens are "destroyed on NEAR".
 - "Reward" or "prize" is an entitlement until it is claimed into the winner's NEAR wallet.
-- Everything players do happens on NEAR. Robinhood Chain is only the source of prices and token audits; don't describe custody or payouts on Robinhood.
+- Everything players do happens on NEAR. On-chain market data is only the source of prices and token audits; don't name the chain and don't describe custody or payouts elsewhere.
 - The product is "Valtrums". On-chain account IDs keep their deployed `valtrum-*` names.
 
 ## Style
@@ -22,7 +22,8 @@ A Next.js app (`@valtrum/docs`) that renders the MDX pages in `content/`. See RE
 
 ## Content boundaries
 
-- Audience: players, creators and agent owners using the web app. Not contributors.
-- Don't document infrastructure, env vars, CI, deploy scripts or internal workers. Link to the GitHub repo instead.
+- Audience of the player sections (Get started to Reference): players, creators and agent owners using the web app. Keep them free of infrastructure, env vars, CI and internal workers.
+- The **How it's built** section (`content/technical/`) is a short, judge-friendly overview: flow, architecture and ecosystem. No code identifiers, commands, env vars, runbooks, transaction hashes, evidence files, OpenSpec, limitations or internal decisions. Look forward, not at gaps.
 - Every fact must come from `web/`, the contracts or `../docs`. Mark unbuilt features as not available yet.
 - Everything is testnet only; say so where money is involved.
+- End each player page with a **Built with** note that names the ecosystem pieces it relies on (NEAR, NEAR AI Cloud, SputnikDAO, the pre-audit check logic, on-chain market data). The winners' vote is counted by the arena contract; SputnikDAO owns protocol settings only.

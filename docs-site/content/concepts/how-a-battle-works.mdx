@@ -1,13 +1,28 @@
 ---
 title: "How a Valtrums battle works, from opening to prizes"
 sidebarTitle: "How a battle works"
-description: "Follow a Valtrums battle through every stage: opening, joining, the lock, 30-second rounds, overtime on ties, settlement and the winners' vote."
+description: "Follow a Valtrums battle through every stage: opening, joining, the lock, 30-second rounds, overtime on ties, settlement, the winners' vote and claiming your prizes."
 keywords: ["battle lifecycle", "rounds", "overtime", "lock", "settlement"]
 ---
 
-Every Valtrums battle follows the same seven stages. A battle needs at least two communities with real deposits to start, and it always ends with exactly one winning community. Step through the stages below, or read the details that follow.
+Every Valtrums battle follows the same eight stages. A battle needs at least two communities with real deposits to start, and it always ends with exactly one winning community. Step through the stages below, or read the details that follow.
 
 <BattleStages />
+
+<Mermaid
+  caption="A battle from opening to settlement"
+  chart={`flowchart LR
+    A["Open<br/>mode + start time"] --> B["Join + deposit<br/>pre-audited memecoins"]
+    B --> C{"Start time:<br/>2+ funded communities?"}
+    C -- "no" --> X["Cancel + refunds"]
+    C -- "yes" --> D["Locked snapshot"]
+    D --> E["30 s round"]
+    E --> F{"Unique<br/>best score?"}
+    F -- "tie" --> E
+    F -- "yes" --> G["Settlement"]
+    G --> H["Losing tokens<br/>to winners"]
+    G --> I["Winning deposit<br/>to escrow and vote"]`}
+/>
 
 ## 1. Open
 
@@ -16,11 +31,11 @@ Anyone can open a battle. The creator picks:
 - **One scoring mode** for the whole battle, including any overtime rounds. See [Scoring modes](/concepts/scoring-modes).
 - **A start time** between 1 minute and 7 days from now.
 
-Opening a battle is free: there is no bond. Communities are not invited. The creator must make a real deposit in one of the communities before the battle locks.
+Opening a battle is free: there is no bond. Communities are not invited. The creator must make a real deposit of a memecoin (their own community's token) before the battle locks. Like every community, it is then checked by the Valtrums agent, which audits the token to see whether it passes. Only communities that pass can play.
 
 ## 2. Join and deposit
 
-Until the start time, anyone can join with one of the supported tokens: **CASHCAT**, **WALLET**, **GOOD**, **VLAD** or **DEGEN**. Joining with a token adds that token's community (crew) to the battle. Players then deposit that token to back it.
+Until the start time, anyone can join with **any memecoin**. Joining with a token adds that token's community (crew) to the battle, and players then deposit that token to back it. The Valtrums agent audits every token (a security scan and a liquidity check), and only tokens that pass the pre-audit can play. On testnet the faucet gives you CASHCAT, WALLET, GOOD, VLAD and DEGEN to try.
 
 A deposit only counts after Valtrums confirms the tokens actually arrived and the community has fresh safety and backing approvals. Until then it shows as **In escrow**. See [Join a battle and deposit](/guides/join-and-deposit).
 
@@ -57,3 +72,21 @@ When the protocol itself created the battle, it receives the full 0.1%. Rewards 
 ## 7. The winners' vote
 
 The winning community's own deposit doesn't go back automatically. It is held in escrow while the winning backers vote on what share to burn and what share to return. Rewards from the losing communities don't depend on this vote. See [The winners' vote](/concepts/winners-vote).
+
+## 8. Claim your prizes
+
+When the vote is done, the winners claim to their own NEAR wallet:
+
+- **The spoils:** your share of every losing community's token.
+- **Your own deposit, minus the burn:** the part of your winning deposit that the vote did not burn comes back to you.
+
+Only the burned part is gone. See [Claim rewards](/guides/claim-rewards).
+
+## Built with
+
+<Info>
+  - **NEAR**: the arena, the community tokens and every battle run on NEAR testnet.
+  - **Pre-audit check logic** and **on-chain liquidity data**: the pre-audit every token must pass.
+  - **On-chain market data**: the live prices that score each 30-second round.
+  - **SputnikDAO**: the Valtrums DAO owns protocol settings and receives the protocol fee. The winners' own vote is counted by the arena contract.
+</Info>
