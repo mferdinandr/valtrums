@@ -1,4 +1,4 @@
-# Valtrum web
+# Valtrum web app
 
 One Next.js application for the lifecycle arena on NEAR testnet. There is no legacy two-side mode and no in-memory demo data: every page reads the deployed contracts, directly over RPC or through the read service.
 

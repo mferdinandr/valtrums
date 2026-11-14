@@ -1,4 +1,4 @@
-# Valtrums user docs
+# Valtrum user docs
 
 The public Valtrums documentation at https://docs.valtrums.xyz. It is a small Next.js app written for players: creating and joining battles, scoring, rewards, the winners' vote, the assistant and player agents. The overview of the flow, architecture and ecosystem is in `content/technical/`.
 
