@@ -15,12 +15,12 @@ A permissionless token-community arena on NEAR testnet, scored from live Robinho
 
 ```
 contracts/   Rust workspace: arena/, router/, ref-adapter/, war/, furnace/, mocks, integration tests
-docs/        Product spec, rules, architecture and docs/openspec (spec-driven changes)
+docs/        Recorded testnet evidence (docs/evidence) and OpenSpec (docs/openspec); the written docs live in docs-site/ (git-ignored docs/*.md is a local archive)
 agent/       Auditor, settlement, watchdog, intent parser
 web/         Frontend + AI prompt terminal
 ```
 
-## Core mechanics (target, see docs/product-spec.md)
+## Core mechanics (target, see docs-site/content/technical/product-spec.mdx)
 
 - A creator (user or protocol) picks one scoring mode (Price % Gain, Market Cap % Growth, Volume-to-Market Cap Ratio or Lowest % Drawdown) and a start time (now + 60 s to now + 7 days); communities are not invited. No bond. The creator must hold a real positive deposit before the snapshot locks.
 - Before the start, anyone joins with a protocol-allowlisted token (CASHCAT, WALLET, GOOD, VLAD, DEGEN; AI excluded) and deposits. The lock needs 2+ funded communities with fresh approvals; empty ones are excluded. Below 2 funded after the start, anyone cancels and depositors pull refunds (D34 to D38).
@@ -29,7 +29,7 @@ web/         Frontend + AI prompt terminal
 - Winning principal goes to DAO escrow; winners vote burn (destroyed on NEAR) or return (D22). Each community token contract keeps a ledger that must balance.
 - Approval needs a GoPlus check (critical risk rejects, unknown data stays Pending) plus an independent LP check above USD 10,000.
 - Infrastructure workers never hold authority over player funds. Player agents act only within user-delegated budgets.
-- Current code (docs/current-state.md) is still the earlier two-side arena (bond, TWAP, swap settlement, credit); treat it as the base to change, not as the rules.
+- Current code (docs-site/content/technical/current-state.mdx) is still the earlier two-side arena (bond, TWAP, swap settlement, credit); treat it as the base to change, not as the rules.
 
 ## Commands
 
@@ -80,7 +80,7 @@ For any NEAR work, invoke the matching skill via the Skill tool before writing c
 ## Specs and tracking
 
 - OpenSpec lives in `docs/openspec/`; run it from `docs/` (`cd docs && npx @fission-ai/openspec validate --all --strict --no-interactive`). Slash commands are in `.claude/commands/opsx`.
-- Product source of truth: `docs/product-spec.md`. Work order and status: `docs/implementation-roadmap.md` and `docs/implementation-tracker.md`. Current code snapshot: `docs/current-state.md`.
+- Product source of truth: `docs-site/content/technical/product-spec.mdx`. Work order and status: `docs-site/content/technical/implementation-roadmap.mdx` and `docs-site/content/technical/implementation-tracker.mdx`. Current code snapshot: `docs-site/content/technical/current-state.mdx`.
 - Open decisions (DAO, tax/admin policy) are not decided silently; ask the owner.
 
 <!-- claude-reflect: learned rules (saved from the band; edit freely) -->

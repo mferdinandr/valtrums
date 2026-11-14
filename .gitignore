@@ -32,3 +32,8 @@ agent/.data/
 .live-state/
 .vercel
 .env*
+
+# Archived written docs (moved to docs-site/content/technical); docs/evidence and docs/openspec stay tracked
+/docs/*.md
+/docs/evidence/
+/docs/openspec/

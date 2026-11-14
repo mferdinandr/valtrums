@@ -124,7 +124,8 @@ else
     printf '%s\n' "$CODE" | grep -Eq '^(contracts/|scripts/fetch-sputnikdao-wasm\.py)' && STAGES+=(contracts)
     printf '%s\n' "$CODE" | grep -Eq '^(agent/|web/|docs-site/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)' && STAGES+=(node)
   fi
-  has '^docs/' && STAGES+=(docs)
+  # OpenSpec is kept out of git now, so the stage only runs where it is tracked.
+  has '^docs/' && [ -n "$(git ls-files docs/openspec | head -n 1)" ] && STAGES+=(docs)
 fi
 
 if [ "${#STAGES[@]}" -eq 0 ]; then
