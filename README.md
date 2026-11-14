@@ -1,13 +1,12 @@
+<h1 align="center">
+  <img src="web/public/brand/valtrum-logo.png" alt="Valtrums logo" width="56" align="absmiddle" />
+  Valtrums
+</h1>
+
 <p align="center">
   <img src="web/public/brand/valtrums-home.png" alt="Valtrums home page" width="720" />
 </p>
 
-<p align="center">
-  <img src="web/public/brand/valtrum-logo.png" alt="Valtrums logo" width="250" />
-</p>
-
-
-# Valtrums
 
 [![CI](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml/badge.svg)](https://github.com/mferdinandr/valtrum/actions/workflows/ci.yml)
 
